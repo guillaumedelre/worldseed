@@ -419,5 +419,38 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
 - **Une texture 4065x4065 s'importe sans redimensionnement** (`power_of_two_mode = NONE`) et
   reste exacte : 0 ecart sur 16 524 225 texels, 19 biomes presents. Compter 66 Mo par tuile en
   B8G8R8A8 non compresse, 264 Mo pour le monde.
+
+### Semis de vegetation PCG a l'echelle du monde (9 septembre 2026)
+
+- **La densite survit intacte a `PCGProjection` sur le Landscape.** Mesure : apres projection,
+  les proportions d'identifiants reproduisent la composition de la fenetre au dixieme de point
+  (desert 39,7 % contre 39,8 % attendus). On peut donc echantillonner et projeter UNE FOIS par
+  pas de grille, puis trier par biome, au lieu de projeter une fois par couche : une trentaine
+  de projections de terrain economisees.
+- **Le bleu vif des rochers de desert, palmiers, bambous et falaises est un defaut de RVT.**
+  Ces packs passent par `M_Assets_MasterMat`, dont le switch STATIQUE `UseRVT` echantillonne une
+  Runtime Virtual Texture absente du niveau. Comme c'est un switch statique, aucune chirurgie de
+  graphe : dupliquer l'instance de materiau, switch a false, et la poser dans
+  `override_materials` du descripteur ISM du semeur. 15 materiaux concernes sur 139 maillages.
+  Ne PAS chercher a creer la RVT : deja tente et abandonne (texture vide, terrain aplati).
+- **`is_component_partitioned = True` est le reglage de la CUISSON EN EDITEUR, pas de
+  l'execution.** Paye comptant : pose sur les 4 tuiles, il a cree **15 876 `PCGPartitionActor`
+  persistants, 847 Mo sous `Content/__ExternalActors__`, pour zero instance produite**. Le
+  planificateur d'execution (`PCGRuntimeGenScheduler.cpp`) fabrique ses propres acteurs de
+  partition `RF_Transient`, depuis un pool, et ne passe pas par ce reglage. Nettoyage :
+  `destroy_actors` par lots de 500 puis `save_dirty_packages` (comptez plusieurs minutes, le
+  thread de jeu reste occupe ; ce n'est pas un blocage).
+- **La generation a l'execution ne se laisse pas configurer en trois essais.** Mesures :
+  composant partitionne -> 15 876 acteurs et 0 instance ; non partitionne + `GenerateAtRuntime`
+  -> la tuile ENTIERE se genere (1,5 et 1,9 million d'instances, l'editeur monte a 15 Go) ;
+  non partitionne + rayon borne a 500 m -> 0 instance. Le levier n'a pas ete trouve ; reprendre
+  avec `pcg.RuntimeGeneration.EnableDebugging 1` et le `PCGWorldActor`
+  (`treat_editor_viewport_as_generation_source`) plutot qu'en aveugle.
+- **Ordre des operations pour couper un semis qui se regenere** : poser d'abord
+  `generation_trigger = GenerateOnDemand`, `regenerate_in_editor = False` et `activated = False`,
+  SEULEMENT ENSUITE `cleanup(True)`. Un `cleanup` seul est aussitot defait.
+- **Cout du monde complet** : environ 12,9 millions d'instances pour les 16 biomes terrestres aux
+  pas de 900 / 1400 / 3000 / 6000 cm, soit 292 fois le banc de 2 km (44 117 instances). Cuire
+  n'est pas envisageable.
 
 <!-- END VibeUE -->
