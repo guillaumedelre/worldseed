@@ -489,5 +489,43 @@ Quatre points, tous payes comptant :
   que le planificateur tournait bien et que le probleme etait ailleurs. La source de generation
   en editeur est `PCGWorldActor.treat_editor_viewport_as_generation_source` ; en PIE, le pion
   suffit via `enable_world_partition_generation_sources`.
+
+### PCG : ne jamais transformer une grande texture en points (9 septembre 2026)
+
+- **`ConvertToPointData` sur une surface de texture couvrant toute une tuile est une faute
+  lourde en generation partitionnee.** Une tuile de 16 km au pas de 900 cm fait 1778^2, soit
+  3,16 MILLIONS de points - et chaque maille de 256 m les fabrique tous avant d'en jeter 99 %
+  via `CullPointsOutsideActorBounds`. Mesure au lancement d'un PIE : editeur a **32,2 Go**, thread
+  de jeu bloque **74 s**.
+- **Le bon sens de lecture est l'inverse** : semer d'abord DANS la maille avec un
+  `PCGSurfaceSampler` (Surface = le Landscape, Bounding Shape = l'entree du graphe, donc les
+  bornes de la maille), PUIS lire la carte des biomes au point avec **`PCGSampleTexture`**
+  (`texture_mapping_method = Planar`, `density_merge_function = Set`), qui reporte la couleur lue
+  dans la densite. L'identifiant de biome arrive intact et le cout suit la taille de la maille.
+  Apres correction, meme PIE : pic a **22,6 Go**, stabilise a **13,6 Go**, blocage **4 s**.
+  Resultat identique sur le banc : 44 244 instances et 77 maillages contre 44 074 et 77.
+- **Un `PCGTextureSampler` par pas de grille, c'est une `PCGTextureData` par noeud**, chacune une
+  copie FLOTTANTE de la texture (4065^2 x 4 canaux x 4 octets = 252 Mo). Quatre pas x cinq graphes
+  = vingt copies. Un seul echantillonneur par graphe, decimation par `PCGSelectPoints` de ratio
+  (fin/large)^2 pour les pas plus larges - il ne touche pas a la densite.
+- **`pcg.Cache.Editor.MemoryBudgetMB` vaut 6144 par defaut** : PCG garde chaque resultat
+  intermediaire et remplit ce budget. Ramene a 2048 dans `Config/DefaultEngine.ini`.
+- **Lire l'alerte memoire de Windows correctement** : elle porte sur le COMMIT, pas sur la RAM
+  libre. Mesure typique ici : 72,4 Go engages pour une limite machine de 90,5 (63,8 de RAM +
+  26,7 de fichier d'echange), alors qu'il restait 44,9 Go de RAM libre. `memreport` en console
+  donne le detail ; attention, ses colonnes `ResExcKB` sur-comptent (la somme depassait la
+  memoire physique du processus).
+
+### Ultra Dynamic Sky : ne compile pas dans ce projet (9 septembre 2026)
+
+Depose dans le niveau, `Ultra_Dynamic_Sky` n'instancie AUCUN de ses 20 composants (ni soleil, ni
+atmosphere, ni nuages) : la scene reste noire. Cause : le Blueprint est en `BS_ERROR`, et il n'est
+pas seul - **34 des 85 Blueprints du pack sont en erreur au chargement**, 39 apres une double
+passe de recompilation. Les messages designent des classes de composants non resolues
+(`Cloud Paint Actors Manager`, `UDS_PlayerOcclusion`, `UDS_Utility_Opener`), des enums invalides et
+des tableaux de references objet incompatibles avec eux-memes - la signature d'un pack qui ne
+correspond pas a cette version du moteur. Les 823 assets sont pourtant bien presents : il ne
+manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
+(`Worldseed_SunLight` / `_SkyLight` / `_Atmosphere` / `_Fog`) a ete restaure.
 
 <!-- END VibeUE -->

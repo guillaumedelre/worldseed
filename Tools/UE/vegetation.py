@@ -203,27 +203,35 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
     st.set_editor_property("keep_zero_density_points", True)
     st.set_editor_property("synchronous_load", True)
 
-    # NE PAS remplacer ce couple par un PCGSurfaceSampler, meme si son entree
-    # "Bounding Shape" est tentante : il remet la densite du point a 1.0 puis la
-    # multiplie par celle de la forme bornante (PCGSurfaceSampler.cpp:322). La
-    # densite de la SURFACE - donc notre identifiant de biome - n'y survit pas.
-    # Mesure : 124 maillages au lieu de 77, chaque espece semee dans tous les
-    # biomes. `ConvertToPointData`, lui, preserve la densite exacte.
-    conv, _cs = graph.add_node_of_type(unreal.PCGConvertToPointDataSettings)
-    graph.add_edge(sampler, "Out", conv, _pin(conv))
+    # ON NE TRANSFORME PAS LA TEXTURE EN POINTS. C'etait la faute lourde de la
+    # version precedente : `ConvertToPointData` sur une surface qui couvre toute
+    # la tuile fabrique 1600057/900 = 1778^2, soit 3,16 MILLIONS de points, et il
+    # le refait dans CHAQUE maille de 256 m avant d'en jeter 99 %. Mesure au
+    # lancement d'un PIE : l'editeur montait a 32 Go et le thread de jeu restait
+    # bloque plus d'une minute.
+    #
+    # Le bon sens de lecture est l'inverse : on seme d'abord DANS la maille en
+    # echantillonnant le Landscape (le `Bounding Shape` vient de l'entree du
+    # graphe, donc les bornes de la maille), puis on lit la carte des biomes AU
+    # POINT avec `PCGSampleTexture`, dont `density_merge_function = Set` reporte
+    # la couleur lue dans la densite. L'identifiant de biome arrive donc intact,
+    # et le cout suit la taille de la maille, plus celle de la tuile.
+    surf, ss = graph.add_node_of_type(unreal.PCGSurfaceSamplerSettings)
+    spacing_m = finest / 100.0
+    ss.set_editor_property("points_per_squared_meter", 1.0 / (spacing_m ** 2))
+    ss.set_editor_property("unbounded", False)
+    ss.set_editor_property("apply_density_to_points", False)   # la densite viendra du biome
+    ss.set_editor_property("point_extents", unreal.Vector(50.0, 50.0, 50.0))
+    graph.add_edge(land, "Out", surf, "Surface")
+    graph.add_edge(graph.get_input_node(), "In", surf, "Bounding Shape")
 
-    # C'EST CE NOEUD QUI BORNE LE SEMIS A LA MAILLE. Sans lui, en generation
-    # partitionnee, chaque maille de 256 m refaisait la tuile ENTIERE : mesure,
-    # des instances etalees sur 8000 m dans une cellule de 256, et 560 000
-    # instances pour trois cellules seulement.
-    cull, _cus = graph.add_node_of_type(unreal.PCGCullPointsOutsideActorBoundsSettings)
-    graph.add_edge(conv, "Out", cull, _pin(cull))
-
-    # Une seule projection de terrain, elle aussi partagee.
-    project, ps = graph.add_node_of_type(unreal.PCGProjectionSettings)
-    ps.set_editor_property("keep_zero_density_points", True)
-    graph.add_edge(cull, "Out", project, "In")
-    graph.add_edge(land, "Out", project, "Projection Target")
+    lire, ls2 = graph.add_node_of_type(unreal.PCGSampleTextureSettings)
+    ls2.set_editor_property("texture_mapping_method", unreal.PCGTextureMappingMethod.PLANAR)
+    ls2.set_editor_property("density_merge_function", unreal.PCGDensityMergeOperation.SET)
+    ls2.set_editor_property("clamp_output_density", False)
+    graph.add_edge(surf, "Out", lire, "Point")
+    graph.add_edge(sampler, "Out", lire, "BaseTexture")
+    project = lire            # les points sortent deja poses sur le terrain
 
     for spacing_name, layers in by_spacing.items():
         texel = float(spacings[spacing_name])
