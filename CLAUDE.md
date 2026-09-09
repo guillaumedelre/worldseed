@@ -350,4 +350,41 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
   automatiquement a l'enregistrement (`RegisterLandscapeActorWithProxyInternal`). Impossible
   d'eviter la passe de fusion GPU pour un import en masse.
 
+### PCG et carte des biomes (session du 9 septembre 2026)
+
+- **`EPCGTextureFilter` vaut `Bilinear` par defaut sur TOUS les noeuds PCG** (`PCGCommon.h`,
+  `PCGTextureSampler.h`, `PCGPinPropertiesGPU.h`...). C'est le filtre de PCG, **distinct** de
+  `TextureFilter` pose sur l'asset : mettre `TF_NEAREST` sur la texture ne l'empeche pas. Sur une
+  carte d'IDENTIFIANTS comme `biome_index.png`, il interpole les identifiants et rend des biomes
+  qui n'existent pas la, sans la moindre erreur. Mesure sur le banc de 2 km : grille de semis a
+  1500 cm sur une carte a 393,7 cm/texel, **307 points sur 17956 faux (1,71 %)**, du type
+  `plage` lu comme `alpin` ou `roche_nue` lu comme `foret_tropicale_humide`. En `Point` : 0 faux.
+  Le piege ne se voit PAS si la grille tombe pile sur les centres de texels (le bilineaire y
+  degenere en exact) : tester avec un pas qui n'est ni multiple ni diviseur du texel.
+- **La surface d'une `PCGTextureData` est la boite LOCALE [-1,1] transformee**
+  (`PCGTextureData.cpp`). Donc l'echelle du `Transform` vaut la **demi-portee**, et le centre est
+  a `origine + (n-1)/2 * texel`, pas `origine + n/2 * texel` : se tromper decale tout
+  l'echantillonnage d'un demi-texel (197 cm ici).
+- **`keep_zero_density_points` doit etre a True** quand un identifiant vaut 0 : sinon les points
+  de l'ocean (id 0, donc densite 0) sont filtres avant d'etre lus.
+- **PCG force lui-meme sRGB off + `TMGS_NoMipmaps` + `TC_VectorDisplacementmap`** sur les textures
+  qu'il echantillonne (`PCGTextureData.cpp`) : sans ces reglages il **duplique la texture en
+  memoire** pour se les donner. Les poser a l'import evite la copie (66 Mo par tuile 4065).
+- **Ne jamais `delete_asset` un graphe PCG encore reference par un `PCGComponent` du niveau** :
+  ensure dans `ObjectTools.cpp:4045`, qui ouvre un **modal**. L'editeur se fige, un
+  `CrashReportClientEditor` apparait, `gameThreadStallSeconds` s'envole et tout appel MCP pend
+  jusqu'au timeout client. Reutiliser l'asset et le vider avec `PCGGraph.remove_nodes(...)`.
+- **`Texture2D.blueprint_get_cpu_copy()` est un cul-de-sac pour verifier un import** : il exige
+  `availability = CPU`, ce qui n'envoie au GPU qu'un placeholder noir. Utiliser
+  `Texture.export_to_disk(path, ImageWriteOptions)` et comparer le PNG hors editeur (verification
+  exhaustive, 262144 texels, et non par sondage).
+- **Lire les points generes par PCG depuis Python** : `PCGDataPtrWrapper` n'expose rien ; passer
+  par `export_text()` pour recuperer le chemin d'objet, puis `unreal.load_object`, puis
+  `get_transform_values_from_range` / `get_density_values_from_range` avec un
+  `PCGPointInputRange`.
+- **`PCGBiomeCore` / `PCGBiomeSample` sont livres binaires avec l'engine 5.8** (Experimental,
+  v0.2, `EnabledByDefault: false`) : les activer dans le `.uproject` suffit, aucun rebuild.
+  Quasi tout est du contenu Blueprint/PCG (un seul `.h`, module vide) : aucune API C++, aucune
+  garantie de compatibilite entre versions moteur.
+
 <!-- END VibeUE -->
