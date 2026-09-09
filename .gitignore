@@ -1,0 +1,20 @@
+# Artefacts de compilation et caches Unreal
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+.vs/
+*.stackdump
+
+# Contenu binaire : bundles achetes (Orasot, UltraDynamicSky) et monde genere.
+# Exclu volontairement : ce depot suit le GENERATEUR et la configuration, pas
+# les assets, qui pesent plusieurs Go et se regenerent depuis la graine.
+Content/
+
+# Environnement Python du generateur
+Tools/WorldGen/.venv/
+__pycache__/
+*.pyc
+
+# Le plugin VibeUE possede son propre depot git.
+Plugins/

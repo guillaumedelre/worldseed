@@ -1,0 +1,262 @@
+{
+  "_comment": "Worldseed - regles de generation. Tout est editable ici; aucun seuil n'est en dur dans le code.",
+  "seed": 20260909,
+  "world": {
+    "sizeKm": 32.0,
+    "resolution": 8129,
+    "simResolution": 2049,
+    "latitudeSpanDeg": 180.0,
+    "tropicDeg": 23.44,
+    "polarCircleDeg": 66.56,
+    "minElevationM": -1200.0,
+    "maxElevationM": 1600.0,
+    "detailAmplitudeM": 85.0,
+    "detailOctaves": 6,
+    "detailFrequency": 160.0
+  },
+  "tectonics": {
+    "plateCount": 18,
+    "landRatio": 0.42,
+    "northPole": "ocean",
+    "southPole": "continent",
+    "poleForcingRadiusDeg": 14.0,
+    "poleForcingStrength": 0.75,
+    "mountainHeightM": 1300.0,
+    "mountainWidthKm": 6.0,
+    "riftDepthM": 320.0,
+    "oceanDepthM": -800.0,
+    "continentBaseM": 120.0,
+    "octaves": 8,
+    "lacunarity": 2.0,
+    "gain": 0.5,
+    "baseFrequency": 6.0,
+    "warpStrength": 0.35,
+    "warpFrequency": 1.4,
+    "oceanBorderKm": 1.5,
+    "detailAmplitudeContinentM": 340.0,
+    "detailAmplitudeOceanM": 130.0,
+    "shelfWidthKm": 1.4,
+    "plateWarpStrength": 0.14,
+    "plateWarpFrequency": 2.2,
+    "continentSmoothKm": 1.8,
+    "coastNoiseAmount": 0.42,
+    "coastNoiseFrequency": 5.5,
+    "ridgedMix": 0.45
+  },
+  "temperature": {
+    "equatorC": 27.0,
+    "poleC": -25.0,
+    "lapseRateCPerKm": 6.5,
+    "seasonalAmplitudeEquatorC": 3.0,
+    "seasonalAmplitudePoleC": 22.0,
+    "oceanModerationC": 6.0,
+    "oceanModerationRangeKm": 3.0,
+    "latitudeExponent": 2.0
+  },
+  "precipitation": {
+    "evaporationRate": 0.02,
+    "orographicFactor": 2.5,
+    "baseRainRate": 0.004,
+    "convergenceFactor": 3.0,
+    "subsidenceFactor": 0.75,
+    "advectionSweeps": 400,
+    "advectionStepPx": 1.6,
+    "maxPrecipMm": 4000.0,
+    "saturationRefTempC": 20.0,
+    "saturationScaleC": 16.0,
+    "windJitter": 0.18,
+    "smoothSigmaPx": 2.0,
+    "cellsPerHemisphere": 3.0,
+    "targetMedianLandMm": 715.0,
+    "polarFrontStrength": 0.45,
+    "cellWobble": 0.3,
+    "cellWobbleFrequency": 2.4
+  },
+  "erosion": {
+    "iterations": 60,
+    "flowUpdateEvery": 5,
+    "incisionRateM": 1.0,
+    "areaExponent": 0.5,
+    "slopeExponent": 1.0,
+    "maxIncisionPerStepM": 6.0,
+    "depositionRate": 0.25,
+    "talusAngleDeg": 34.0,
+    "thermalIterationsPerStep": 1,
+    "hillslopeDiffusion": 0.06,
+    "hillslopeIterations": 2
+  },
+  "hydrology": {
+    "riverDischargeThreshold": 0.004,
+    "minStrahlerOrder": 2,
+    "maxRiverActors": 60,
+    "minRiverLengthM": 900.0,
+    "minLakeAreaHa": 4.0,
+    "maxLakeActors": 40,
+    "widthCoefA": 130.0,
+    "widthExponent": 0.5,
+    "maxRiverWidthM": 48.0,
+    "minRiverWidthM": 6.0,
+    "depthCoefB": 6.0,
+    "depthExponent": 0.4,
+    "simplifyToleranceM": 20.0,
+    "maxPointsPerRiver": 120,
+    "riparianCells": 2,
+    "runoffCoefficient": 0.35,
+    "maxPointSpacingM": 160.0
+  },
+  "biomes": {
+    "treeLineTempC": 4.0,
+    "permanentIceTempC": -6.0,
+    "bareRockSlopeDeg": 42.0,
+    "alpineGravelSlopeDeg": 26.0,
+    "beachElevationM": 6.0,
+    "marshMaxSlopeDeg": 2.0,
+    "marshMinPrecipMm": 900.0,
+    "whittakerBands": [
+      {
+        "tMax": -5.0,
+        "cuts": [
+          [120.0, "desert_froid"],
+          [1000000.0, "toundra"]
+        ]
+      },
+      {
+        "tMax": 3.0,
+        "cuts": [
+          [150.0, "desert_froid"],
+          [350.0, "toundra"],
+          [1000000.0, "taiga"]
+        ]
+      },
+      {
+        "tMax": 12.0,
+        "cuts": [
+          [150.0, "desert_froid"],
+          [400.0, "steppe"],
+          [1200.0, "foret_temperee"],
+          [1000000.0, "foret_temperee_humide"]
+        ]
+      },
+      {
+        "tMax": 20.0,
+        "cuts": [
+          [250.0, "desert_chaud"],
+          [600.0, "prairie"],
+          [1500.0, "foret_temperee"],
+          [1000000.0, "foret_temperee_humide"]
+        ]
+      },
+      {
+        "tMax": 99.0,
+        "cuts": [
+          [300.0, "desert_chaud"],
+          [900.0, "savane"],
+          [2000.0, "foret_tropicale_seche"],
+          [1000000.0, "foret_tropicale_humide"]
+        ]
+      }
+    ],
+    "ids": {
+      "ocean": 0,
+      "lac": 1,
+      "riviere": 2,
+      "calotte": 3,
+      "toundra": 4,
+      "taiga": 5,
+      "foret_temperee": 6,
+      "foret_temperee_humide": 7,
+      "prairie": 8,
+      "steppe": 9,
+      "desert_froid": 10,
+      "desert_chaud": 11,
+      "savane": 12,
+      "foret_tropicale_seche": 13,
+      "foret_tropicale_humide": 14,
+      "alpin": 15,
+      "roche_nue": 16,
+      "plage": 17,
+      "marais": 18
+    },
+    "labels": {
+      "0": "Océan",
+      "1": "Lac",
+      "2": "Rivière",
+      "3": "Calotte glaciaire",
+      "4": "Toundra",
+      "5": "Taïga",
+      "6": "Forêt tempérée",
+      "7": "Forêt tempérée humide",
+      "8": "Prairie",
+      "9": "Steppe",
+      "10": "Désert froid",
+      "11": "Désert chaud",
+      "12": "Savane",
+      "13": "Forêt tropicale sèche",
+      "14": "Forêt tropicale humide",
+      "15": "Alpin",
+      "16": "Roche nue",
+      "17": "Plage",
+      "18": "Marais"
+    },
+    "debugColors": {
+      "0": [24, 62, 122],
+      "1": [46, 116, 181],
+      "2": [86, 164, 214],
+      "3": [242, 246, 250],
+      "4": [166, 176, 152],
+      "5": [46, 84, 62],
+      "6": [70, 128, 66],
+      "7": [42, 104, 54],
+      "8": [150, 168, 92],
+      "9": [178, 172, 108],
+      "10": [176, 176, 166],
+      "11": [214, 190, 126],
+      "12": [196, 172, 92],
+      "13": [128, 152, 70],
+      "14": [30, 110, 58],
+      "15": [150, 146, 140],
+      "16": [112, 108, 104],
+      "17": [226, 212, 172],
+      "18": [96, 118, 84]
+    },
+    "alpineMinElevationM": 850.0
+  },
+  "surfaces": {
+    "_comment": "Ordre des 10 couches du materiau M_WorldseedLandscape. Chaque biome est une recette de melange.",
+    "layers": ["Snow", "Stone", "Gravel", "DesertSand", "BiomGrass5", "Grass", "GrassBiom2", "GrassBiom3", "GrassBiom4", "Biom4Gravel"],
+    "layerAssetNames": ["Snow", "Stone", "Gravel", "DesertSand", "Biom Grass 5", "Grass", "Grass Biom 2", "Grass Biom 3", "Grass Biom 4", "Biom 4 Gravel"],
+    "recipes": {
+      "0": [0.0, 0.1, 0.2, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "1": [0.0, 0.05, 0.25, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+      "2": [0.0, 0.1, 0.55, 0.2, 0.0, 0.05, 0.0, 0.0, 0.0, 0.1],
+      "3": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "4": [0.28, 0.1, 0.22, 0.0, 0.0, 0.0, 0.0, 0.3, 0.1, 0.0],
+      "5": [0.06, 0.05, 0.1, 0.0, 0.0, 0.05, 0.0, 0.04, 0.55, 0.15],
+      "6": [0.0, 0.05, 0.08, 0.0, 0.02, 0.65, 0.0, 0.1, 0.05, 0.05],
+      "7": [0.0, 0.04, 0.06, 0.0, 0.0, 0.5, 0.2, 0.06, 0.06, 0.08],
+      "8": [0.0, 0.04, 0.1, 0.04, 0.22, 0.6, 0.0, 0.0, 0.0, 0.0],
+      "9": [0.0, 0.08, 0.18, 0.14, 0.48, 0.12, 0.0, 0.0, 0.0, 0.0],
+      "10": [0.1, 0.26, 0.4, 0.16, 0.08, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "11": [0.0, 0.08, 0.14, 0.72, 0.06, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "12": [0.0, 0.05, 0.1, 0.28, 0.52, 0.05, 0.0, 0.0, 0.0, 0.0],
+      "13": [0.0, 0.05, 0.08, 0.1, 0.3, 0.2, 0.22, 0.05, 0.0, 0.0],
+      "14": [0.0, 0.03, 0.05, 0.0, 0.0, 0.1, 0.7, 0.04, 0.04, 0.04],
+      "15": [0.22, 0.3, 0.38, 0.0, 0.04, 0.06, 0.0, 0.0, 0.0, 0.0],
+      "16": [0.0, 0.72, 0.26, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "17": [0.0, 0.04, 0.1, 0.84, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "18": [0.0, 0.02, 0.06, 0.02, 0.0, 0.2, 0.1, 0.05, 0.05, 0.5]
+    },
+    "slopeRockStartDeg": 22.0,
+    "slopeRockFullDeg": 40.0,
+    "snowStartC": -1.0,
+    "snowFullC": -9.0,
+    "variationAmount": 0.35,
+    "variationFrequency": 22.0
+  },
+  "export": {
+    "writeClimateTextures": true,
+    "writeDebugBiomeColor": true,
+    "writeReport": true,
+    "reportMaxPx": 1100
+  }
+}
