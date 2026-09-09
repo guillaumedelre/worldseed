@@ -102,6 +102,8 @@ def run(
     ero: dict,
     sea_level: float = 0.0,
     progress=None,
+    fill_epsilon_m: float = 1e-4,
+    arid: np.ndarray | None = None,
 ) -> tuple[np.ndarray, ErosionReport]:
     """Boucle d'erosion complete. Retourne (relief erode, rapport)."""
     dem = elevation_m.astype(np.float32, copy=True)
@@ -132,7 +134,7 @@ def run(
 
     for it in range(iterations):
         if it % every == 0:
-            flow = compute_flow(dem, rain_weight, sea_level)
+            flow = compute_flow(dem, rain_weight, sea_level, fill_epsilon_m, arid)
             flow_updates += 1
             acc_ref = float(np.percentile(flow.accumulation, 99.9))
             area_norm = (flow.accumulation / np.float32(max(acc_ref, 1e-9))).astype(np.float32)

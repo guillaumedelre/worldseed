@@ -109,7 +109,8 @@ def pixel_to_world_cm(j: float, i: float, geo) -> tuple[float, float]:
     return x, y
 
 
-def rivers_to_json(rivers, dem: np.ndarray, geo, water_drop_m: float = 0.0) -> list[dict]:
+def rivers_to_json(rivers, dem: np.ndarray, geo, water_drop_m: float = 0.0,
+                   precip_mm: np.ndarray | None = None) -> list[dict]:
     """Rivieres en coordonnees monde Unreal, pretes pour un WaterBodyRiver."""
     out = []
     n = geo.n
@@ -130,8 +131,15 @@ def rivers_to_json(rivers, dem: np.ndarray, geo, water_drop_m: float = 0.0) -> l
         # sinon le WaterBody produit des marches d'escalier remontantes.
         for k in range(1, len(pts)):
             pts[k]["z"] = min(pts[k]["z"], pts[k - 1]["z"])
+        # Pluie a l'embouchure : sert au controle des bassins endoreiques, qui ne
+        # sont legitimes qu'en zone aride.
+        jm, im = r.points_px[-1]
+        jm = int(np.clip(round(jm), 0, n - 1))
+        im = int(np.clip(round(im), 0, n - 1))
         out.append({
             "points": pts,
+            "mouthPrecipMm": (round(float(precip_mm[jm, im]), 1)
+                              if precip_mm is not None else None),
             "strahler": int(r.strahler),
             "lengthM": round(float(r.length_m), 1),
             "mouth": r.mouth,

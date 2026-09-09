@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import ndimage
 
+from . import hydrology
 from .config import Rules
 
 
@@ -86,7 +87,9 @@ def classify(
     is_land = dem > 0.0
     is_ocean = ~is_land
 
-    lake_mask = (lake_depth_m > 0.05) & is_land
+    # Meme critere que l'export des lacs : une cuvette comblee n'est un lac
+    # que si elle est assez profonde et assez etendue (hydrology.lake_mask).
+    lake_mask = hydrology.lake_mask(lake_depth_m, is_land, geo, rules["hydrology"])
     channel = (accumulation >= float(rules["hydrology"]["riverDischargeThreshold"])) & is_land
     riparian = int(rules["hydrology"]["riparianCells"])
     if riparian > 0:

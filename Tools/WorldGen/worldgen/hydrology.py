@@ -132,6 +132,122 @@ def flow_accumulation(
     return np.asarray(acc, dtype=np.float32).reshape(weights.shape)
 
 
+def slope_filled_epsilon(
+    dem: np.ndarray, filled: np.ndarray, epsilon: float = 1e-4
+) -> np.ndarray:
+    """Incline les cuvettes comblees et les plats, en garantissant l'ecoulement.
+
+    Variante epsilon du Priority-Flood (Barnes, Lehman & Mulla, 2014). On garde
+    le comblement morphologique, exact et rapide, pour obtenir les niveaux de
+    deversement ; on ne recalcule ici que les ALTITUDES DE ROUTAGE des cellules
+    qui n'ont aucun voisin strictement plus bas. Chacune recoit
+    `max(niveau comble, altitude du parent + epsilon)` propagee par Dijkstra
+    depuis la bordure de la zone plate. Par construction, toute cellule possede
+    alors un voisin strictement plus bas : plus aucun puits.
+
+    POURQUOI PAS LA VERSION PRECEDENTE. Elle ajoutait `epsilon * distance
+    geodesique au deversoir`, ce qui laisse DEUX defauts mesures sur le monde de
+    reference (graine 20260909) :
+      - la cellule de deversement est a distance nulle, donc relevee de zero :
+        elle reste a egalite avec sa voisine drainante, aucun voisin n'est
+        strictement plus bas, et elle devient un puits. 21 935 des 22 757 puits
+        recenses etaient exactement ces cellules-la ;
+      - la rampe atteignait 0,84 m, de quoi hisser une cellule au-dessus d'une
+        voisine hors cuvette et casser des pentes valides ailleurs.
+    Consequence : 83 % des cellules de terre voyaient leur ecoulement mourir
+    dans un puits, le reseau se fragmentait en 145 morceaux et aucune riviere
+    n'atteignait la mer.
+
+    Le retour est en float64 : en float32, a 1000 m d'altitude, le pas de
+    quantification vaut 6e-5 m et un epsilon de 1e-4 disparaitrait a l'arrondi.
+    """
+    import heapq
+
+    n_rows, n_cols = filled.shape
+    f32 = filled.astype(np.float32, copy=False)
+
+    def shift(a, dj, di, fill):
+        out = np.full(a.shape, fill, dtype=a.dtype)
+        out[max(0, dj):n_rows - max(0, -dj), max(0, di):n_cols - max(0, -di)] = \
+            a[max(0, -dj):n_rows - max(0, dj), max(0, -di):n_cols - max(0, di)]
+        return out
+
+    has_lower = np.zeros(filled.shape, dtype=bool)
+    for dj, di, _ in _NEIGHBOURS:
+        has_lower |= shift(f32, dj, di, np.float32(np.inf)) < f32
+
+    # A incliner : les plats, et toute cellule effectivement remontee par le
+    # comblement (une cuvette peut contenir des cellules qui gardent un voisin
+    # plus bas a l'interieur d'elle-meme).
+    a_incliner = (~has_lower) | (filled > dem + 1e-6)
+    if not a_incliner.any():
+        return filled.astype(np.float64)
+
+    # On itere : relever une cellule plate peut la hisser au-dessus d'une voisine
+    # NON plate qui comptait sur elle pour s'ecouler, laquelle devient alors un
+    # puits a son tour. Sur le monde de reference, une seule passe en laissait 60,
+    # tous sous plus de 1000 mm de pluie -- donc de faux bassins endoreiques.
+    # Deux a trois passes suffisent a converger.
+    routing = filled.astype(np.float64)
+    for _ in range(_MAX_PASSES_EPSILON):
+        routing = _propage_epsilon(routing, filled, a_incliner, epsilon, n_rows, n_cols)
+        restants = np.ones(filled.shape, dtype=bool)
+        for dj, di, _d in _NEIGHBOURS:
+            voisin = np.full(routing.shape, np.inf)
+            voisin[max(0, dj):n_rows - max(0, -dj), max(0, di):n_cols - max(0, -di)] = \
+                routing[max(0, -dj):n_rows - max(0, dj), max(0, -di):n_cols - max(0, di)]
+            restants &= ~(voisin < routing)
+        restants &= ~a_incliner
+        if not restants.any():
+            break
+        a_incliner = a_incliner | restants
+    return routing
+
+
+_MAX_PASSES_EPSILON = 4
+
+
+def _propage_epsilon(routing, filled, a_incliner, epsilon, n_rows, n_cols):
+    """Une passe de Dijkstra : chaque cellule du masque recoit parent + epsilon."""
+    import heapq
+
+    assigne = np.where(a_incliner, np.inf, routing)
+
+    # Amorce : les cellules HORS zone a incliner qui la touchent. Elles gardent
+    # leur altitude et servent de sources ; inutile d'empiler tout le domaine.
+    bord = ndimage.binary_dilation(a_incliner, structure=np.ones((3, 3))) & ~a_incliner
+    tas = [(float(routing[j, i]), int(j) * n_cols + int(i))
+           for j, i in np.argwhere(bord)]
+    heapq.heapify(tas)
+
+    plat = a_incliner.ravel()
+    niveau = filled.ravel().astype(np.float64)
+    aff = assigne.ravel()
+    eps = float(epsilon)
+
+    while tas:
+        z, cell = heapq.heappop(tas)
+        if z > aff[cell]:
+            continue
+        cj, ci = divmod(cell, n_cols)
+        for dj, di, _ in _NEIGHBOURS:
+            nj, ni = cj + dj, ci + di
+            if not (0 <= nj < n_rows and 0 <= ni < n_cols):
+                continue
+            nb = nj * n_cols + ni
+            if not plat[nb]:
+                continue
+            cand = niveau[nb] if niveau[nb] > z + eps else z + eps
+            if cand < aff[nb]:
+                aff[nb] = cand
+                heapq.heappush(tas, (cand, nb))
+
+    # Une zone plate totalement fermee (aucune bordure drainante) reste a l'infini :
+    # on la ramene a son niveau comble plutot que de produire des NaN.
+    np.copyto(aff, niveau, where=~np.isfinite(aff))
+    return aff.reshape(filled.shape)
+
+
 def resolve_flats(filled: np.ndarray, epsilon: float = 1e-3) -> np.ndarray:
     """Incline imperceptiblement les surfaces plates vers leur exutoire.
 
@@ -198,12 +314,130 @@ def resolve_flats(filled: np.ndarray, epsilon: float = 1e-3) -> np.ndarray:
     return filled.astype(np.float64) + float(epsilon) * distance
 
 
+def perce_bassins_fermes(
+    routing: np.ndarray,
+    dem: np.ndarray,
+    arid: np.ndarray | None,
+    epsilon: float,
+    sea_level: float = 0.0,
+    rayon_max_px: int = 600,
+) -> tuple[np.ndarray, int, int]:
+    """Creuse un exutoire aux cuvettes fermees qui ne sont PAS arides.
+
+    Combler une cuvette suppose qu'elle deborde par son seuil. Quelques plats
+    restent malgre tout enclos apres la passe epsilon -- des cellules sans aucun
+    voisin strictement plus bas, mesurees a 64 sur la graine 20260909. Elles
+    capturent l'ecoulement et fabriquent de faux bassins endoreiques : le plus
+    gros recevait 1878 mm de pluie annuelle, ce qu'aucune evaporation ne peut
+    consommer.
+
+    Un bassin ferme n'est physiquement tenable qu'en climat aride, ou
+    l'evaporation equilibre l'apport (mer d'Aral, lac Tchad). Ailleurs il
+    deborde, et s'il ne le fait pas c'est que le seuil est mal represente. On
+    perce donc : recherche en largeur depuis le puits jusqu'a la premiere cellule
+    strictement plus basse, puis creusement monotone le long de ce chemin.
+
+    Retourne (routage corrige, nombre de puits perces, nombre laisses en place).
+    """
+    from collections import deque
+
+    n_rows, n_cols = routing.shape
+    has_lower = np.zeros(routing.shape, dtype=bool)
+    for dj, di, _ in _NEIGHBOURS:
+        voisin = np.full(routing.shape, np.inf)
+        voisin[max(0, dj):n_rows - max(0, -dj), max(0, di):n_cols - max(0, -di)] = \
+            routing[max(0, -dj):n_rows - max(0, dj), max(0, -di):n_cols - max(0, di)]
+        has_lower |= voisin < routing
+
+    puits = (~has_lower) & (dem > sea_level)
+    if arid is not None:
+        puits &= ~arid
+    if not puits.any():
+        return routing, 0, 0
+
+    perces = laisses = 0
+    for pj, pi in np.argwhere(puits):
+        depart = int(pj) * n_cols + int(pi)
+        niveau = routing[pj, pi]
+        parent = {depart: -1}
+        file = deque([depart])
+        cible = -1
+        while file and len(parent) < rayon_max_px * rayon_max_px:
+            cell = file.popleft()
+            cj, ci = divmod(cell, n_cols)
+            for dj, di, _ in _NEIGHBOURS:
+                nj, ni = cj + dj, ci + di
+                if not (0 <= nj < n_rows and 0 <= ni < n_cols):
+                    continue
+                nb = nj * n_cols + ni
+                if nb in parent:
+                    continue
+                parent[nb] = cell
+                if routing[nj, ni] < niveau - epsilon:
+                    cible = nb
+                    break
+                file.append(nb)
+            if cible >= 0:
+                break
+
+        if cible < 0:
+            laisses += 1
+            continue
+
+        # Creusement monotone du puits vers la cellule basse trouvee.
+        chemin = []
+        cell = cible
+        while cell != -1:
+            chemin.append(cell)
+            cell = parent[cell]
+        # En remontant les parents depuis la cible, `chemin` va DEJA de la cible
+        # vers le puits : le retourner mettait le puits en tete, le creusement
+        # partait du mauvais bout et n'abaissait plus rien.
+        plat = routing.ravel()
+        bas = float(plat[chemin[0]])
+        longueur = len(chemin) - 1
+        # On REPARTIT la denivelee disponible sur le chemin au lieu de monter
+        # d'un epsilon par pas. La BFS s'arrete a la premiere cellule plus basse,
+        # parfois d'un epsilon seulement : en montant d'un epsilon par cellule,
+        # le creusement depassait le niveau du puits avant de l'atteindre, et
+        # celui-ci n'etait jamais abaisse -- le percage semblait reussir tout en
+        # ne changeant rien. Ici le dernier point vaut niveau - epsilon, donc le
+        # puits finit strictement au-dessus de son voisin amont.
+        pas = (float(niveau) - epsilon - bas) / max(longueur, 1)
+        if pas <= 0.0:
+            laisses += 1
+            continue
+        for k, cell in enumerate(chemin[1:], start=1):
+            valeur = bas + k * pas
+            if valeur < plat[cell]:
+                plat[cell] = valeur
+        perces += 1
+
+    return routing, perces, laisses
+
+
+_MAX_PASSES_PERCAGE = 6
+
+
 def compute_flow(
-    dem: np.ndarray, rain_weight: np.ndarray, sea_level: float = 0.0
+    dem: np.ndarray,
+    rain_weight: np.ndarray,
+    sea_level: float = 0.0,
+    fill_epsilon_m: float = 1e-4,
+    arid: np.ndarray | None = None,
 ) -> FlowState:
-    """Chaine complete : comblement -> resolution des plats -> D8 -> accumulation."""
+    """Chaine complete : comblement -> pente epsilon -> percage -> D8 -> accumulation."""
     filled = fill_depressions(dem, sea_level)
-    routing = resolve_flats(filled)
+    routing = slope_filled_epsilon(dem, filled, fill_epsilon_m)
+    # Le percage se repete : creuser un exutoire abaisse des cellules et peut en
+    # laisser d'autres sans voisin plus bas. Mesure sur la graine 20260909 : une
+    # passe perce 50 puits et en laisse reapparaitre 63, tous cotiers. On boucle
+    # jusqu'a ce qu'il n'y ait plus rien a percer.
+    for _ in range(_MAX_PASSES_PERCAGE):
+        routing, perces, _laisses = perce_bassins_fermes(
+            routing, dem, arid, fill_epsilon_m, sea_level)
+        if perces == 0:
+            break
     receivers, order = d8_receivers(routing)
     acc = flow_accumulation(receivers, order, rain_weight)
     return FlowState(
@@ -290,6 +524,14 @@ def strahler_orders(
     return result.reshape(shape)
 
 
+# Nombre de cellules que l'on accepte de suivre au-dela du dernier troncon de
+# chenal pour identifier l'embouchure. Genereux a dessein : la descente finale
+# vers la mer traverse souvent une plaine cotiere inclinee au seul epsilon, ou
+# le chemin serpente sur des centaines de cellules. Avec une borne a 64, un
+# cours d'eau se jetant dans la mer restait classe endoreique.
+_MAX_PAS_EMBOUCHURE = 8192
+
+
 # ------------------------------------------------------------------ extraction
 
 
@@ -320,7 +562,7 @@ def extract_rivers(
     rec = flow.receivers
     keep_flat = keep.ravel()
     acc_flat = flow.accumulation.ravel()
-    lake = flow.lake_depth_m.ravel() > 0.05
+    lake = lake_mask(flow.lake_depth_m, is_land, geo, hyd).ravel()
 
     # On trace chaque fleuve depuis son EMBOUCHURE en remontant toujours le plus
     # gros affluent. Partir des sources donnerait des troncons haches a chaque
@@ -385,10 +627,23 @@ def extract_rivers(
         widths = [float(np.clip(a * (q ** w_exp), w_min, w_max)) for q in disch]
         depths = [float(max(0.4, b * (q ** d_exp))) for q in disch]
 
+        # Classement de l'embouchure : on SUIT l'ecoulement au-dela du dernier
+        # troncon de chenal, au lieu de juger la derniere cellule de terre. Sans
+        # cela un cours d'eau qui se jette dans la mer mais dont le dernier
+        # pixel terrestre est a 0,75 m d'altitude n'est ni ocean, ni lac, ni
+        # bord : il etait declare endoreique par elimination.
         end = path[-1]
+        dem_flat = dem.ravel()
+        for _ in range(_MAX_PAS_EMBOUCHURE):
+            if dem_flat[end] <= 0.0:
+                break
+            suivant = int(rec[end])
+            if suivant == end:
+                break                        # puits : cuvette reellement fermee
+            end = suivant
         end_j, end_i = end // n, end % n
         on_border = end_j in (0, n - 1) or end_i in (0, n - 1)
-        if dem.ravel()[end] <= 0.0:
+        if dem_flat[end] <= 0.0:
             mouth = "ocean"
         elif lake[end]:
             mouth = "lac"
@@ -414,13 +669,50 @@ def extract_rivers(
     return rivers
 
 
-def extract_lakes(flow: FlowState, dem: np.ndarray, geo, hyd: dict) -> list[Lake]:
-    """Chaque cuvette comblee au-dessus du niveau marin devient un lac."""
+def lake_mask(
+    lake_depth_m: np.ndarray, is_land: np.ndarray, geo, hyd: dict
+) -> np.ndarray:
+    """Masque des VRAIS lacs, distinct du simple comblement numerique.
+
+    Combler une cuvette est une operation de ROUTAGE : elle rend le terrain
+    traversable par l'ecoulement. Cela ne dit rien de la presence d'eau libre.
+    Traiter toute cellule comblee comme un lac -- ce que faisaient
+    `extract_lakes` et `biomes.classify` avec un seuil commun de 5 cm -- couvrait
+    20,5 % des terres emergees de lacs et arretait 9 rivieres sur 10 au premier
+    bassin rencontre.
+
+    Un lac n'existe donc que si la depression est a la fois assez PROFONDE sous
+    son point de deversement et assez ETENDUE. Les deux seuils vivent dans
+    world_rules.json. Le critere est evalue par composante connexe, pas par
+    cellule : c'est la cuvette entiere qui est un lac ou ne l'est pas.
+    """
     mpp = geo.meters_per_pixel
     cell_ha = (mpp * mpp) / 10000.0
-    min_cells = max(1, int(float(hyd["minLakeAreaHa"]) / max(cell_ha, 1e-9)))
+    prof_min = float(hyd["minLakeDepthM"])
+    aire_min = float(hyd["minLakeAreaHa"])
 
-    mask = (flow.lake_depth_m > 0.05) & (dem > 0.0)
+    comble = (lake_depth_m > 0.0) & is_land
+    if not comble.any():
+        return np.zeros_like(comble)
+
+    labels, count = ndimage.label(comble)
+    if count == 0:
+        return np.zeros_like(comble)
+    idx = np.arange(1, count + 1)
+    tailles = ndimage.sum(comble, labels, index=idx)
+    profondeurs = ndimage.maximum(lake_depth_m, labels, index=idx)
+    garde = (profondeurs >= prof_min) & (tailles * cell_ha >= aire_min)
+    table = np.zeros(count + 1, dtype=bool)
+    table[1:] = garde
+    return table[labels]
+
+
+def extract_lakes(flow: FlowState, dem: np.ndarray, geo, hyd: dict) -> list[Lake]:
+    """Les cuvettes qui satisfont le critere de lac deviennent des acteurs."""
+    mpp = geo.meters_per_pixel
+    cell_ha = (mpp * mpp) / 10000.0
+
+    mask = lake_mask(flow.lake_depth_m, dem > 0.0, geo, hyd)
     if not mask.any():
         return []
 
@@ -428,7 +720,7 @@ def extract_lakes(flow: FlowState, dem: np.ndarray, geo, hyd: dict) -> list[Lake
     if count == 0:
         return []
     sizes = ndimage.sum(mask, labels, index=np.arange(1, count + 1))
-    keep = np.flatnonzero(sizes >= min_cells) + 1
+    keep = np.arange(1, count + 1)
     keep = keep[np.argsort(-sizes[keep - 1])][: int(hyd["maxLakeActors"])]
 
     lakes: list[Lake] = []

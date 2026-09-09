@@ -121,6 +121,37 @@ def _checks(rules, geo, dem, climate, biome, rivers_json, zonal,
     out.append(["Terrain praticable (moins de 25°)", "au moins 50 %",
                 "{:.0f} % {}".format(walk, "OK" if walk >= 50.0 else "ECART")])
 
+    # --- drainage ------------------------------------------------------------
+    # Le controle "rivieres sortant du monde = 0" passait au vert pour la
+    # mauvaise raison : rien ne sortait parce que rien n'allait nulle part. Ces
+    # quatre lignes verifient que le reseau REJOINT la mer.
+    hyd = rules["hydrology"]
+    if rivers_json:
+        vers_mer = sum(1 for r in rivers_json if r["mouth"] == "ocean")
+        part = 100.0 * vers_mer / len(rivers_json)
+        out.append(["Cours d'eau atteignant l'océan", "au moins 60 %",
+                    "{:.0f} % ({}/{}) {}".format(part, vers_mer, len(rivers_json),
+                                                 "OK" if part >= 60.0 else "ECART")])
+
+        plus_long = max(r["lengthM"] for r in rivers_json)
+        largeur_monde = float(rules.get("world.sizeKm")) * 1000.0
+        part_long = 100.0 * plus_long / largeur_monde
+        out.append(["Longueur du plus long cours d'eau", "au moins 30 % du monde",
+                    "{:.0f} % ({:.1f} km) {}".format(part_long, plus_long / 1000.0,
+                                                     "OK" if part_long >= 30.0 else "ECART")])
+
+        seuil_aride = float(hyd["aridPrecipThresholdMm"])
+        fautifs = sum(1 for r in rivers_json
+                      if r["mouth"] == "endoreique"
+                      and (r.get("mouthPrecipMm") or 0.0) >= seuil_aride)
+        out.append(["Bassins endoréiques hors zone aride",
+                    "0 (au-dessus de {:.0f} mm)".format(seuil_aride),
+                    "{} {}".format(fautifs, "OK" if fautifs == 0 else "ECART")])
+
+    part_lacs = 100.0 * float(biome.lake_mask[land].mean()) if land.any() else 0.0
+    out.append(["Part des lacs sur les terres", "moins de 5 %",
+                "{:.1f} % {}".format(part_lacs, "OK" if part_lacs < 5.0 else "ECART")])
+
     # --- couches de peinture -------------------------------------------------
     # Ces deux controles portent sur ce qu'Unreal PEINT reellement, pas sur la
     # carte des biomes. Ils manquaient, et un signe inverse dans le terme de
@@ -165,8 +196,13 @@ def run(
     _log(verbose, "climat (passe 1) : pluie pour ponderer l'erosion", started)
 
     # 3. erosion ---------------------------------------------------------------
+    fill_eps = float(rules.get("hydrology.fillEpsilonM"))
+    # Un bassin ferme n'est tenable qu'en climat aride : ailleurs on lui perce un
+    # exutoire plutot que de laisser un faux endoreisme.
+    aride = clim.precip_mm < float(rules.get("hydrology.aridPrecipThresholdMm"))
     dem, ero_report = erosion_mod.run(
-        tec.elevation_m, clim.precip_mm, geo, rules["erosion"]
+        tec.elevation_m, clim.precip_mm, geo, rules["erosion"],
+        fill_epsilon_m=fill_eps, arid=aride,
     )
     _log(verbose, "erosion : {} iterations, {} recalculs d'ecoulement".format(
         ero_report.iterations, ero_report.flow_updates), started)
@@ -191,7 +227,7 @@ def run(
     weights = hydro_mod.discharge_weights(
         clim.precip_mm, geo, float(hyd.get("runoffCoefficient", 0.35))
     )
-    flow = hydro_mod.compute_flow(dem, weights)
+    flow = hydro_mod.compute_flow(dem, weights, 0.0, fill_eps, aride)
     rivers = hydro_mod.extract_rivers(flow, dem, geo, hyd)
     lakes = hydro_mod.extract_lakes(flow, dem, geo, hyd)
     _log(verbose, "hydrologie : {} rivieres, {} lacs, debit max {:.3f} m3/s".format(
@@ -211,7 +247,8 @@ def run(
     _log(verbose, "surfaces : {} couches".format(weights_layers.shape[2]), started)
 
     # 9. export ----------------------------------------------------------------
-    rivers_json = export_mod.rivers_to_json(rivers, dem, geo)
+    rivers_json = export_mod.rivers_to_json(rivers, dem, geo,
+                                            precip_mm=clim.precip_mm)
     lakes_json = export_mod.lakes_to_json(lakes, geo)
     zonal = _zonal_profile(geo, dem, clim.temp_mean_c, clim.precip_mm)
 
