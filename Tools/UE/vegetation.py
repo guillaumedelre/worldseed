@@ -181,45 +181,64 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
     out_node = graph.get_output_node()
     n_layers = 0
 
+    # UN SEUL echantillonneur de texture pour tout le graphe, au pas le plus fin.
+    # POURQUOI CA COMPTE : chaque noeud PCGTextureSampler materialise sa propre
+    # `PCGTextureData`, qui est une copie FLOTTANTE de la texture - 4065 x 4065
+    # x 4 canaux x 4 octets = 252 Mo la piece. La premiere version en creait un
+    # par pas de grille, soit 4 par graphe et 20 en tout (4 tuiles + banc) :
+    # 6,7 Go de RAM pour vingt copies de la meme carte, mesure au memreport.
+    # Les pas plus larges s'obtiennent maintenant par decimation du meme nuage.
+    finest = float(min(spacings.values()))
+    sampler, st = graph.add_node_of_type(unreal.PCGTextureSamplerSettings)
+    st.set_editor_property("texture", texture)
+    st.set_editor_property("filter", unreal.PCGTextureFilter.POINT)
+    st.set_editor_property("texel_size", finest)
+    st.set_editor_property("use_absolute_transform", True)
+    st.set_editor_property("transform", unreal.Transform(
+        unreal.Vector(location_cm["x"], location_cm["y"], 0.0),
+        unreal.Rotator(0.0, 0.0, 0.0),
+        unreal.Vector(half_span_cm, half_span_cm, 1.0)))
+    st.set_editor_property("use_density_source_channel", True)
+    st.set_editor_property("color_channel", unreal.PCGTextureColorChannel.RED)
+    st.set_editor_property("keep_zero_density_points", True)
+    st.set_editor_property("synchronous_load", True)
+
+    # NE PAS remplacer ce couple par un PCGSurfaceSampler, meme si son entree
+    # "Bounding Shape" est tentante : il remet la densite du point a 1.0 puis la
+    # multiplie par celle de la forme bornante (PCGSurfaceSampler.cpp:322). La
+    # densite de la SURFACE - donc notre identifiant de biome - n'y survit pas.
+    # Mesure : 124 maillages au lieu de 77, chaque espece semee dans tous les
+    # biomes. `ConvertToPointData`, lui, preserve la densite exacte.
+    conv, _cs = graph.add_node_of_type(unreal.PCGConvertToPointDataSettings)
+    graph.add_edge(sampler, "Out", conv, _pin(conv))
+
+    # C'EST CE NOEUD QUI BORNE LE SEMIS A LA MAILLE. Sans lui, en generation
+    # partitionnee, chaque maille de 256 m refaisait la tuile ENTIERE : mesure,
+    # des instances etalees sur 8000 m dans une cellule de 256, et 560 000
+    # instances pour trois cellules seulement.
+    cull, _cus = graph.add_node_of_type(unreal.PCGCullPointsOutsideActorBoundsSettings)
+    graph.add_edge(conv, "Out", cull, _pin(cull))
+
+    # Une seule projection de terrain, elle aussi partagee.
+    project, ps = graph.add_node_of_type(unreal.PCGProjectionSettings)
+    ps.set_editor_property("keep_zero_density_points", True)
+    graph.add_edge(cull, "Out", project, "In")
+    graph.add_edge(land, "Out", project, "Projection Target")
+
     for spacing_name, layers in by_spacing.items():
         texel = float(spacings[spacing_name])
 
-        # Un echantillonneur de texture par pas de grille : `texel_size` EST le
-        # pas, et il n'y en a qu'un par noeud.
-        sampler, st = graph.add_node_of_type(unreal.PCGTextureSamplerSettings)
-        st.set_editor_property("texture", texture)
-        st.set_editor_property("filter", unreal.PCGTextureFilter.POINT)
-        st.set_editor_property("texel_size", texel)
-        st.set_editor_property("use_absolute_transform", True)
-        st.set_editor_property("transform", unreal.Transform(
-            unreal.Vector(location_cm["x"], location_cm["y"], 0.0),
-            unreal.Rotator(0.0, 0.0, 0.0),
-            unreal.Vector(half_span_cm, half_span_cm, 1.0)))
-        st.set_editor_property("use_density_source_channel", True)
-        st.set_editor_property("color_channel", unreal.PCGTextureColorChannel.RED)
-        st.set_editor_property("keep_zero_density_points", True)
-        st.set_editor_property("synchronous_load", True)
-
-        # NE PAS remplacer ce couple par un PCGSurfaceSampler, meme si son entree
-        # "Bounding Shape" est tentante : il remet la densite du point a 1.0 puis
-        # la multiplie par celle de la forme bornante (PCGSurfaceSampler.cpp:322).
-        # La densite de la SURFACE - donc notre identifiant de biome - n'y survit
-        # pas. Mesure : 124 maillages au lieu de 77, chaque espece semee dans
-        # tous les biomes. `ConvertToPointData`, lui, preserve la densite exacte.
-        conv, _cs = graph.add_node_of_type(unreal.PCGConvertToPointDataSettings)
-        graph.add_edge(sampler, "Out", conv, _pin(conv))
-
-        # C'EST CE NOEUD QUI BORNE LE SEMIS A LA MAILLE. Sans lui, en generation
-        # partitionnee, chaque maille de 256 m refaisait la tuile ENTIERE :
-        # mesure, des instances etalees sur 8000 m dans une cellule de 256, et
-        # 560 000 instances pour trois cellules seulement.
-        cull, _cus = graph.add_node_of_type(unreal.PCGCullPointsOutsideActorBoundsSettings)
-        graph.add_edge(conv, "Out", cull, _pin(cull))
-
-        project, ps = graph.add_node_of_type(unreal.PCGProjectionSettings)
-        ps.set_editor_property("keep_zero_density_points", True)
-        graph.add_edge(cull, "Out", project, "In")
-        graph.add_edge(land, "Out", project, "Projection Target")
+        # Decimation : un pas deux fois plus large, c'est quatre fois moins de
+        # points. `PCGSelectPoints` ne touche pas a la densite, donc
+        # l'identifiant de biome traverse intact.
+        if texel > finest:
+            sel, sels = graph.add_node_of_type(unreal.PCGSelectPointsSettings)
+            sels.set_editor_property("ratio", (finest / texel) ** 2)
+            sels.set_editor_property("keep_zero_density_points", True)
+            graph.add_edge(project, "Out", sel, _pin(sel))
+            source = sel
+        else:
+            source = project
 
         for bname, biome_id, layer in layers:
             # La densite vaut identifiant / 255 : une bande d'un demi-cran de
@@ -227,7 +246,7 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             filt, fs = graph.add_node_of_type(unreal.PCGDensityFilterSettings)
             fs.set_editor_property("lower_bound", (biome_id - 0.5) / 255.0)
             fs.set_editor_property("upper_bound", (biome_id + 0.5) / 255.0)
-            graph.add_edge(project, "Out", filt, _pin(filt))
+            graph.add_edge(source, "Out", filt, _pin(filt))
 
             lo, hi = layer["scale"]
             xf, xs = graph.add_node_of_type(unreal.PCGTransformPointsSettings)
