@@ -18,6 +18,8 @@ import numpy as np
 from scipy import ndimage
 
 from . import hydrology
+from .climate import wind_field
+from . import noise
 from .config import Rules
 
 
@@ -118,9 +120,31 @@ def classify(
     # Calotte : meme le mois le plus chaud reste sous le seuil de gel permanent.
     index[is_land & (temp_max_c < np.float32(bio["permanentIceTempC"]))] = np.uint8(ids["calotte"])
 
-    # Estran : bande basse au contact de l'ocean.
-    coast = ndimage.binary_dilation(is_ocean, iterations=2) & is_land
-    beach = coast & (dem < np.float32(bio["beachElevationM"])) & (slope < np.float32(12.0))
+    # Estran : bande basse au contact de l'ocean, de largeur VARIABLE.
+    #
+    # L'ancienne regle dilatait l'ocean de deux pixels puis coupait net a
+    # slope < 12 degres. Mesure sur la graine 20260909 : la bande cotiere a une
+    # pente MEDIANE de 31 degres -- ces cotes sont escarpees -- si bien que le
+    # seuil en eliminait quatre cinquiemes et la plage tombait a 0,2 % des
+    # terres, soit un a deux pixels de large.
+    #
+    # La pente ne doit pas trancher mais MODULER : large sur une cote plate,
+    # nulle contre une falaise. On y ajoute l'exposition aux vents dominants,
+    # une cote au vent recevant davantage de depot sedimentaire.
+    dist_ocean_m = ndimage.distance_transform_edt(is_land).astype(np.float32) * np.float32(spacing)
+    f_pente = np.float32(1.0) - noise.smoothstep(
+        float(bio["beachSlopeFlatDeg"]), float(bio["beachSlopeSteepDeg"]), slope)
+
+    # Le gradient de la distance a l'ocean pointe vers l'interieur des terres :
+    # un vent aligne avec lui souffle de la mer vers la cote, donc au vent.
+    wind_u, wind_v = wind_field(geo, rules)
+    gy, gx = np.gradient(dist_ocean_m, np.float32(spacing))
+    norme = np.maximum(np.hypot(gx, gy), np.float32(1e-6))
+    exposition = np.clip((wind_u * gx + wind_v * gy) / norme, 0.0, 1.0).astype(np.float32)
+
+    largeur = (np.float32(bio["beachWidthM"]) * f_pente
+               * (np.float32(1.0) + np.float32(bio["beachWindwardBonus"]) * exposition))
+    beach = is_land & (dist_ocean_m <= largeur) & (dem < np.float32(bio["beachElevationM"]))
     index[beach] = np.uint8(ids["plage"])
 
     # Marais : plat, humide, au contact de l'eau douce.

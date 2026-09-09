@@ -213,6 +213,7 @@ def _advect_moisture(
     np.clip(rate, 0.0, 0.9, out=rate)
 
     evap = np.float32(prec["evaporationRate"])
+    conv_moisture = np.float32(prec["moistureConvergenceRate"])
     step = np.float32(prec["advectionStepPx"])
     sweeps = int(prec["advectionSweeps"])
 
@@ -234,6 +235,27 @@ def _advect_moisture(
         # Evaporation au-dessus de l'eau, jamais au-dessus des terres :
         # c'est ce qui fait emerger la continentalite.
         humidity = np.where(is_water, humidity + evap * (h_max - humidity), humidity)
+
+        # CONVERGENCE DE L'HUMIDITE.
+        #
+        # L'advection semi-lagrangienne TRANSPORTE l'humidite mais ne la
+        # CONCENTRE pas : map_coordinates echantillonne un seul point amont, si
+        # bien que des vents convergents n'accumulent aucune masse. Or c'est
+        # precisement ce qui alimente la ZCIT : les alizes des deux hemispheres
+        # convergent et empilent l'humidite d'un immense bassin oceanique.
+        #
+        # Sans ce terme, l'equateur avait le taux de pluie le plus fort (0,0159)
+        # ET l'humidite la plus faible du monde (0,019 pour une capacite de
+        # 1,395, soit 1,3 % de saturation) : l'air y etait lessive en quelques
+        # kilometres apres la cote et l'interieur restait sec. La bande la plus
+        # humide tombait a -42 degres au lieu de l'equateur.
+        #
+        # La forme est celle de l'evaporation -- un apport proportionnel au
+        # deficit de saturation -- mais pilote par la convergence et actif AUSSI
+        # au-dessus des terres, parce que la pluie de mousson tombe sur les
+        # continents.
+        humidity = humidity + conv_moisture * conv_norm * (h_max - humidity)
+
         np.clip(humidity, 0.0, None, out=humidity)
         np.minimum(humidity, h_max, out=humidity)
 

@@ -94,10 +94,20 @@ def _checks(rules, geo, dem, climate, biome, rivers_json, zonal,
     out.append(["Bassins endoréiques", "normal en zone aride", "{}".format(endo)])
 
     # La bande la plus humide doit etre l'equateur.
+    # Controle durci : la ZCIT doit tomber a moins de 15 degres de l'equateur.
     wettest = max(zonal, key=lambda z: z["precipMm"])
-    out.append(["Latitude la plus humide", "équateur (0°)",
+    out.append(["Latitude la plus humide", "équateur, à ±15° près",
                 "{:+.0f}° {}".format(wettest["lat"],
-                                        "OK" if abs(wettest["lat"]) <= 20.0 else "ECART")])
+                                     "OK" if abs(wettest["lat"]) <= 15.0 else "ECART")])
+
+    # Le pic equatorial doit dominer nettement la ceinture desertique. Sur Terre
+    # le rapport vaut environ 8 ; en dessous de 2 la ZCIT n'existe pas vraiment.
+    eq_band = min(zonal, key=lambda z: abs(z["lat"]))
+    sub = [z["precipMm"] for z in zonal if 22.0 <= abs(z["lat"]) <= 38.0]
+    if sub and max(sub) > 0.0:
+        rapport = eq_band["precipMm"] / max(sum(sub) / len(sub), 1e-9)
+        out.append(["Rapport pluie équateur / ±30°", "supérieur à 2",
+                    "{:.1f} {}".format(rapport, "OK" if rapport > 2.0 else "ECART")])
 
     # La ceinture aride doit tomber entre 15 et 45 degres.
     sub = [z for z in zonal if 12.0 <= abs(z["lat"]) <= 50.0]
@@ -112,6 +122,11 @@ def _checks(rules, geo, dem, climate, biome, rivers_json, zonal,
     pole = min(z["tempC"] for z in zonal)
     out.append(["Gradient thermique", "équateur nettement plus chaud",
                 "{:+.0f} vs {:+.0f} °C {}".format(eq, pole, "OK" if eq - pole > 20.0 else "ECART")])
+
+    part_plage = biome.counts.get(rules["biomes"]["labels"][str(rules["biomes"]["ids"]["plage"])], 0.0)
+    out.append(["Part de la plage sur les terres", "entre 1 % et 4 %",
+                "{:.2f} % {}".format(part_plage,
+                                     "OK" if 1.0 <= part_plage <= 4.0 else "ECART")])
 
     n_biomes = len(biome.counts)
     out.append(["Diversité de biomes", "au moins 8",

@@ -55,6 +55,8 @@
   },
   "precipitation": {
     "evaporationRate": 0.02,
+    "_comment_convergence_humidite": "Apport d'humidite par convergence des vents, de meme forme que l'evaporation mais pilote par la branche ascendante des cellules de circulation, et actif aussi au-dessus des terres. Sans lui, l'advection transporte l'humidite sans la concentrer : la ZCIT n'est alimentee par rien et l'equateur reste sec. 0 = comportement d'avant. Plage utile : 0,002 a 0,02.",
+    "moistureConvergenceRate": 0.004,
     "orographicFactor": 2.5,
     "baseRainRate": 0.004,
     "convergenceFactor": 3.0,
@@ -119,7 +121,12 @@
     "permanentIceTempC": -6.0,
     "bareRockSlopeDeg": 42.0,
     "alpineGravelSlopeDeg": 26.0,
-    "beachElevationM": 6.0,
+    "_comment_plage": "Bande littorale. Sa largeur n'est pas fixe : elle vaut beachWidthM module par la pente (pleine sous beachSlopeFlatDeg, nulle au-dela de beachSlopeSteepDeg) et majoree de beachWindwardBonus sur les cotes au vent. beachElevationM plafonne l'altitude atteinte, dune comprise. Mesure sur la graine 20260909 : 150 m et 15 m donnent 1,5 % des terres ; 40 m et 6 m n'en donnaient que 0,5 %.",
+    "beachElevationM": 15.0,
+    "beachWidthM": 150.0,
+    "beachSlopeFlatDeg": 8.0,
+    "beachSlopeSteepDeg": 30.0,
+    "beachWindwardBonus": 0.6,
     "marshMaxSlopeDeg": 2.0,
     "marshMinPrecipMm": 900.0,
     "whittakerBands": [
