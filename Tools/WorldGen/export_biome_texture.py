@@ -252,6 +252,93 @@ def cut_bench(src: Path) -> Path:
     return out
 
 
+def biomecore_palette(n_biomes: int = 19) -> list[tuple[int, int, int]]:
+    """Palette pour `BP_PCGBiomeTexture`, qui reconnait les biomes par COULEUR.
+
+    BiomeCore ne lit pas des identifiants : il compare la couleur echantillonnee
+    au `BiomeColor` de chaque definition, a `BiomeColorTolerance` pres (0,01 par
+    defaut, en espace lineaire). Les couleurs de `biome_debug_rgb.png` ne sont
+    pas faites pour ca : la paire la plus proche (foret_temperee_humide /
+    foret_tropicale_humide) n'est ecartee que de 14/255, et l'ecart se resserre
+    encore en lineaire dans les tons sombres.
+
+    On prend donc un reseau a trois niveaux par canal : deux couleurs distinctes
+    different d'au moins 127/255 sur un canal, soit 0,216 en lineaire une fois
+    passe le decodage sRGB. C'est vingt fois la tolerance, et le reseau donne
+    27 places pour 19 biomes.
+    """
+    levels = (0, 128, 255)
+    lattice = [(r, g, b) for r in levels for g in levels for b in levels]
+    # L'ordre fixe rend la palette reproductible d'une generation a l'autre.
+    if n_biomes > len(lattice):
+        raise SystemExit("{} biomes ne tiennent pas dans le reseau".format(n_biomes))
+    return lattice[:n_biomes]
+
+
+def cut_biomecore(src: Path, tiles_per_side: int = 2) -> Path:
+    """Ecrit la carte des biomes en couleurs BiomeCore : tuiles + fenetre du banc."""
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    labels = manifest["biomes"]["labels"]
+    ids = manifest["biomes"]["ids"]
+    arr = np.asarray(Image.open(src / "biome_index.png"))
+    palette = biomecore_palette(len(ids))
+
+    lut = np.zeros((256, 3), dtype=np.uint8)
+    for i, colour in enumerate(palette):
+        lut[i] = colour
+    rgb = lut[arr]
+
+    full_n = int(manifest["world"]["resolution"])
+    tile_quads = (full_n - 1) // tiles_per_side
+    tile_n = tile_quads + 1
+    root = src / "tiles"
+    for ty in range(tiles_per_side):
+        for tx in range(tiles_per_side):
+            d = root / "x{}_y{}".format(tx, ty)
+            if not d.is_dir():
+                raise SystemExit("tuile absente : {}".format(d))
+            y0, x0 = ty * tile_quads, tx * tile_quads
+            out = d / "biome_biomecore.png"
+            Image.fromarray(rgb[y0:y0 + tile_n, x0:x0 + tile_n]).save(out, optimize=True)
+            print("CREATED: {}  ({}x{})".format(out, tile_n, tile_n))
+
+    bench = src / "bench"
+    bench.mkdir(exist_ok=True)
+    n = BENCH_SIZE_PX
+    row0, col0 = BENCH_CENTRE_ROW - n // 2, BENCH_CENTRE_COL - n // 2
+    out = bench / "biome_bench_biomecore.png"
+    Image.fromarray(rgb[row0:row0 + n, col0:col0 + n]).save(out, optimize=True)
+    print("CREATED: {}  ({}x{})".format(out, n, n))
+
+    spec = {
+        "_comment": "Couleurs a recopier dans le BiomeColor de chaque "
+                    "BiomeDefinition de BiomeCore. Importer la texture en sRGB, "
+                    "sans mipmaps, non compressee.",
+        "tolerance": 0.01,
+        "biomes": [
+            {"id": i, "key": key, "label": labels[str(i)],
+             "rgb255": list(palette[i]),
+             "linear": [round(_srgb_to_linear(c / 255.0), 6) for c in palette[i]]}
+            for key, i in sorted(ids.items(), key=lambda kv: kv[1])
+        ],
+    }
+    (bench / "biomecore_palette.json").write_text(
+        json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+    print("CREATED: {}".format(bench / "biomecore_palette.json"))
+
+    # Controle : la plus petite distance entre deux couleurs, en lineaire.
+    lin = np.array([[_srgb_to_linear(c / 255.0) for c in col] for col in palette])
+    dmin = min(float(np.linalg.norm(lin[i] - lin[j]))
+               for i in range(len(lin)) for j in range(i + 1, len(lin)))
+    print("\nEcart lineaire minimal entre deux biomes : {:.4f} "
+          "(tolerance BiomeCore 0,0100 -> marge x{:.0f})".format(dmin, dmin / 0.01))
+    return bench / "biomecore_palette.json"
+
+
+def _srgb_to_linear(c: float) -> float:
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
 def verify_roundtrip(src: Path, exported: Path | None = None) -> bool:
     """Compare la texture reexportee d'Unreal au PNG source, texel par texel.
 
@@ -304,10 +391,14 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
 
+    root = Path(args[0]) if args else \
+        here.parent.parent / "Saved" / "WorldGen" / "20260909"
+
     if "--verify-roundtrip" in flags:
-        root = Path(args[0]) if args else \
-            here.parent.parent / "Saved" / "WorldGen" / "20260909"
         raise SystemExit(0 if verify_roundtrip(root) else 1)
+    if "--biomecore" in flags:
+        cut_biomecore(root)
+        raise SystemExit(0)
     src = Path(args[0]) if args else \
         here.parent.parent / "Saved" / "WorldGen" / "20260909"
 

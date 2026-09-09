@@ -386,5 +386,38 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
   v0.2, `EnabledByDefault: false`) : les activer dans le `.uproject` suffit, aucun rebuild.
   Quasi tout est du contenu Blueprint/PCG (un seul `.h`, module vide) : aucune API C++, aucune
   garantie de compatibilite entre versions moteur.
+
+### PCGBiomeCore : ce qui a ete compris, et ou ca coince (9 septembre 2026)
+
+- **BiomeCore reconnait les biomes par COULEUR, pas par identifiant.** Chaque `BiomeDefinition`
+  porte un `BiomeColor` compare a la couleur echantillonnee, a `BiomeColorTolerance` pres (0,01
+  par defaut). Les couleurs de `biome_debug_rgb.png` ne conviennent pas : la paire la plus proche
+  n'est ecartee que de 14/255. D'ou `export_biome_texture.py --biomecore`, qui sort une palette
+  sur un reseau a trois niveaux par canal : ecart lineaire minimal 0,216, soit 22 fois la
+  tolerance. Le sample d'Epic met **alpha = 0** dans ses `BiomeColor`.
+- **Le sampler interne de BiomeCore est deja en `Point` avec `force_editor_only_cpu_sampling`**
+  (`BiomeLocalCache_Texture`, texel 800 cm) : Epic a fait le bon choix, ce qui confirme le
+  diagnostic sur `EPCGTextureFilter`.
+- **Il faut un acteur `BP_PCGBiomeCore` dans le niveau**, dont la boite recouvre les acteurs de
+  biome, sinon chaque `BP_PCGBiomeTexture` s'arrete sur "No Overlapping BiomeCore, add one or
+  enable Local Preview".
+- **La taille de la surface vient de l'ECHELLE DE L'ACTEUR, pas de l'extent de la boite.**
+  L'extent non scale vaut 100 uu et le construction script pose l'echelle a la resolution de la
+  texture. Pour couvrir une demi-portee de H centimetres il faut donc
+  `set_actor_scale3d(H / 100)` ; poser l'extent numeriquement ne sert a rien et donne
+  "Texture data has a texel size larger than its data - will return empty data"
+  (le controle est `2 * Transform.Scale / TexelSize`, `PCGTextureData.cpp:315`).
+- **NON RESOLU** : une fois ces trois points corriges, le montage ne sort toujours aucune
+  instance, sur `GetAttributeFromPointIndex : index 0 hors limites, 0 elements` a l'interieur de
+  `LocalBiomeCore`. Reste a determiner si l'appariement de couleur se fait en espace LINEAIRE ou
+  sRGB (le sample n'utilise que des 0 et des 1, ou les deux coincident, donc il ne tranche pas).
+  Le montage est en place et desactive dans le niveau (`Worldseed_BiomeCore`,
+  `Worldseed_BiomeTex_*`) pour etre repris sans le refaire.
+- **Le chemin natif, lui, marche et est prouve exact** : `PCGTextureSampler` en `Point` +
+  `PCGConvertToPointData` + `PCGProjection` sur le Landscape + `PCGStaticMeshSpawner`. Voir
+  `Tools/UE/pcg_bench.py`.
+- **Une texture 4065x4065 s'importe sans redimensionnement** (`power_of_two_mode = NONE`) et
+  reste exacte : 0 ecart sur 16 524 225 texels, 19 biomes presents. Compter 66 Mo par tuile en
+  B8G8R8A8 non compresse, 264 Mo pour le monde.
 
 <!-- END VibeUE -->

@@ -406,6 +406,72 @@ def step2_graph(texel_size_cm: float = 3000.0) -> dict:
     return {"graph": GRAPH_PATH, "actor": BENCH_ACTOR, "log": list(_log)}
 
 
+TILES_DIR = r"D:\UE\Worldseed\Saved\WorldGen\20260909\tiles"
+TILE_TEXTURE_DIR = "/Game/Worldseed/PCG/Biomes"
+
+
+def import_world_biome_tiles(tiles: list[str] | None = None,
+                             force: bool = False) -> dict:
+    """Importe les 4 cartes de biomes du monde, une par tuile de Landscape.
+
+    Memes reglages qu'au banc, pour la meme raison : ce sont des identifiants,
+    pas des couleurs. Attention au poids : 4065 x 4065 en B8G8R8A8 non compresse
+    fait 66 Mo par tuile, 264 Mo pour le monde. C'est le prix de l'exactitude ;
+    un semis de vegetation se contenterait de la moitie de la resolution (le
+    cache de BiomeCore, lui, travaille a 800 cm).
+    """
+    tiles = tiles or ["x0_y0", "x1_y0", "x0_y1", "x1_y1"]
+    out = {}
+    for tile in tiles:
+        png = os.path.join(TILES_DIR, tile, "biome_index.png")
+        if not os.path.isfile(png):
+            log("ERROR", "absent : {} (lancer export_biome_texture.py)".format(png))
+            out[tile] = None
+            continue
+        name = "T_BiomeIndex_" + tile
+        path = "{}/{}".format(TILE_TEXTURE_DIR, name)
+        if unreal.EditorAssetLibrary.does_asset_exist(path):
+            if not force:
+                log("SKIPPED", "{} deja present".format(path))
+                out[tile] = path
+                continue
+            unreal.EditorAssetLibrary.delete_asset(path)
+
+        task = unreal.AssetImportTask()
+        task.filename = png
+        task.destination_path = TILE_TEXTURE_DIR
+        task.destination_name = name
+        task.replace_existing = True
+        task.automated = True
+        task.save = False
+        unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+        tex = unreal.EditorAssetLibrary.load_asset(path)
+        if not isinstance(tex, unreal.Texture2D):
+            log("ERROR", "import echoue : {}".format(path))
+            out[tile] = None
+            continue
+        tex.set_editor_property("srgb", False)
+        tex.set_editor_property("mip_gen_settings",
+                                unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+        tex.set_editor_property("compression_settings",
+                                unreal.TextureCompressionSettings.TC_VECTOR_DISPLACEMENTMAP)
+        tex.set_editor_property("filter", unreal.TextureFilter.TF_NEAREST)
+        tex.set_editor_property("address_x", unreal.TextureAddress.TA_CLAMP)
+        tex.set_editor_property("address_y", unreal.TextureAddress.TA_CLAMP)
+        # Sans ceci, une texture de 4065 est susceptible d'etre redimensionnee
+        # vers une puissance de deux : les identifiants n'y survivraient pas.
+        tex.set_editor_property("power_of_two_mode",
+                                unreal.TexturePowerOfTwoSetting.NONE)
+        tex.set_editor_property("never_stream", True)
+        unreal.EditorAssetLibrary.save_asset(path)
+        w, h = tex.blueprint_get_size_x(), tex.blueprint_get_size_y()
+        cmin, cmax = tex.compute_texture_source_channel_min_max()
+        log("CREATED" if w == 4065 else "ERROR",
+            "{} {}x{} (attendu 4065) max source lineaire {:.6f}".format(path, w, h, cmax.r))
+        out[tile] = path if w == 4065 and h == 4065 else None
+    return out
+
+
 def step1_texture(force: bool = False) -> dict:
     """Etape 1 : la texture d'identifiants survit-elle a l'import ?"""
     _log.clear()
