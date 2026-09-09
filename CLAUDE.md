@@ -452,5 +452,42 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
 - **Cout du monde complet** : environ 12,9 millions d'instances pour les 16 biomes terrestres aux
   pas de 900 / 1400 / 3000 / 6000 cm, soit 292 fois le banc de 2 km (44 117 instances). Cuire
   n'est pas envisageable.
+
+### Generation PCG a l'execution : la configuration qui marche (9 septembre 2026)
+
+Reglee, verifiee en PIE, 1073 instances sur 1073 dans un biome autorise par leur recette.
+Quatre points, tous payes comptant :
+
+- **L'ORDRE : declencheur d'abord, partitionnement ensuite.** Le descripteur de grille est bati
+  avec `SetIsRuntime(IsManagedByRuntimeGenSystem())` (`PCGComponent.cpp:202`), et
+  `IsManagedByRuntimeGenSystem()` vaut exactement `GenerationTrigger == GenerateAtRuntime`
+  (`PCGComponent.h:526`). Partitionner AVANT de poser le declencheur donne un descripteur non
+  runtime, donc des `PCGPartitionActor` PERSISTANTS ecrits sous `Content/__ExternalActors__` :
+  15 876 acteurs et 847 Mo pour zero instance. Dans le bon ordre, le planificateur pioche dans
+  un pool d'acteurs `RF_Transient` et rien ne touche le disque.
+- **Il FAUT borner le semis a la maille.** Un `PCGTextureSampler` a transform absolu couvre toute
+  la tuile : sans bornage, CHAQUE maille de 256 m refait les 16 km. Mesure : des instances
+  etalees sur 8000 m dans une cellule de 256, 560 000 instances pour trois cellules. Le remede
+  est `PCGCullPointsOutsideActorBounds` juste apres `ConvertToPointData` ; apres correction,
+  chaque cellule tient dans ses 252 m.
+- **NE PAS remplacer `ConvertToPointData` par un `PCGSurfaceSampler`**, malgre son entree
+  `Bounding Shape` qui semble faite pour ca : il remet la densite du point a `1.0f` puis la
+  multiplie par celle de la forme bornante (`PCGSurfaceSampler.cpp:322`). La densite de la
+  SURFACE - donc l'identifiant de biome - n'y survit pas. Mesure : 124 maillages au lieu de 77,
+  chaque espece semee dans tous les biomes.
+- **Le cache de paysage doit etre serialise.** `PCGWorldActor.landscape_cache_object.serialization_mode`
+  vaut `NeverSerialize` par defaut ; la projection sur le Landscape echoue alors en generation a
+  l'execution. Le passer a `AlwaysSerialize` (768 entrees ici).
+- **NE JAMAIS reappliquer une propriete sur un composant deja en `GenerateAtRuntime`.**
+  `UPCGComponent::OnRefresh` commence par `check(!IsManagedByRuntimeGenSystem())`
+  (`PCGComponent.cpp:2968`), et `set_editor_property` declenche un PostEditChangeProperty MEME
+  quand la valeur ne change pas. Le refresh mis en file fait tomber l'editeur au tick SUIVANT,
+  donc pas dans l'appel fautif : editeur perdu en pleine sauvegarde. Pour modifier une tuile,
+  repasser d'abord en `GenerateOnDemand` (voir `vegetation.set_runtime_enabled`).
+- **Outils** : `pcg.RuntimeGeneration.EnableDebugging 1` fait tracer `[RUNTIMEGEN] UNPOOL /
+  GENERATE / CLEANUP` par maille, avec la priorite de distance. C'est ce qui a permis de voir
+  que le planificateur tournait bien et que le probleme etait ailleurs. La source de generation
+  en editeur est `PCGWorldActor.treat_editor_viewport_as_generation_source` ; en PIE, le pion
+  suffit via `enable_world_partition_generation_sources`.
 
 <!-- END VibeUE -->

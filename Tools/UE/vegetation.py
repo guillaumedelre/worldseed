@@ -184,6 +184,8 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
     for spacing_name, layers in by_spacing.items():
         texel = float(spacings[spacing_name])
 
+        # Un echantillonneur de texture par pas de grille : `texel_size` EST le
+        # pas, et il n'y en a qu'un par noeud.
         sampler, st = graph.add_node_of_type(unreal.PCGTextureSamplerSettings)
         st.set_editor_property("texture", texture)
         st.set_editor_property("filter", unreal.PCGTextureFilter.POINT)
@@ -198,12 +200,25 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
         st.set_editor_property("keep_zero_density_points", True)
         st.set_editor_property("synchronous_load", True)
 
-        convert, _c = graph.add_node_of_type(unreal.PCGConvertToPointDataSettings)
-        graph.add_edge(sampler, "Out", convert, _pin(convert))
+        # NE PAS remplacer ce couple par un PCGSurfaceSampler, meme si son entree
+        # "Bounding Shape" est tentante : il remet la densite du point a 1.0 puis
+        # la multiplie par celle de la forme bornante (PCGSurfaceSampler.cpp:322).
+        # La densite de la SURFACE - donc notre identifiant de biome - n'y survit
+        # pas. Mesure : 124 maillages au lieu de 77, chaque espece semee dans
+        # tous les biomes. `ConvertToPointData`, lui, preserve la densite exacte.
+        conv, _cs = graph.add_node_of_type(unreal.PCGConvertToPointDataSettings)
+        graph.add_edge(sampler, "Out", conv, _pin(conv))
+
+        # C'EST CE NOEUD QUI BORNE LE SEMIS A LA MAILLE. Sans lui, en generation
+        # partitionnee, chaque maille de 256 m refaisait la tuile ENTIERE :
+        # mesure, des instances etalees sur 8000 m dans une cellule de 256, et
+        # 560 000 instances pour trois cellules seulement.
+        cull, _cus = graph.add_node_of_type(unreal.PCGCullPointsOutsideActorBoundsSettings)
+        graph.add_edge(conv, "Out", cull, _pin(cull))
 
         project, ps = graph.add_node_of_type(unreal.PCGProjectionSettings)
         ps.set_editor_property("keep_zero_density_points", True)
-        graph.add_edge(convert, "Out", project, "In")
+        graph.add_edge(cull, "Out", project, "In")
         graph.add_edge(land, "Out", project, "Projection Target")
 
         for bname, biome_id, layer in layers:
@@ -263,6 +278,41 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
     return asset_path
 
 
+def set_runtime_enabled(label: str, enabled: bool) -> None:
+    """Allume ou eteint une tuile SANS jamais reappliquer une valeur inchangee.
+
+    `UPCGComponent::OnRefresh` commence par `check(!IsManagedByRuntimeGenSystem())`
+    (PCGComponent.cpp:2968). Or `set_editor_property` declenche un
+    PostEditChangeProperty MEME quand la valeur ne change pas, et celui-ci met un
+    refresh en file. Sur un composant deja en GenerateAtRuntime, ce refresh fait
+    tomber l'editeur sur l'assertion, au tick suivant - donc pas dans l'appel
+    fautif, ce qui rend le lien difficile a voir. Paye comptant : editeur perdu
+    en pleine sauvegarde.
+
+    Regle : on eteint TOUJOURS le mode execution avant de toucher au reste, et on
+    ne le rallume qu'en dernier, une seule fois.
+    """
+    sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    hits = [a for a in sub.get_all_level_actors() if a.get_actor_label() == label]
+    if not hits:
+        log("ERROR", "acteur introuvable : {}".format(label))
+        return
+    comp = hits[0].get_component_by_class(unreal.PCGComponent)
+    runtime_now = (comp.get_editor_property("generation_trigger")
+                   == unreal.PCGComponentGenerationTrigger.GENERATE_AT_RUNTIME)
+    if runtime_now == enabled:
+        log("SKIPPED", "{} est deja {}".format(label, "actif" if enabled else "inerte"))
+        return
+    if enabled:
+        comp.set_editor_property("generation_trigger",
+                                 unreal.PCGComponentGenerationTrigger.GENERATE_AT_RUNTIME)
+    else:
+        comp.set_editor_property("generation_trigger",
+                                 unreal.PCGComponentGenerationTrigger.GENERATE_ON_DEMAND)
+        comp.cleanup(True)
+    log("MODIFIED", "{} -> {}".format(label, "execution" if enabled else "inerte"))
+
+
 def place_volume(label: str, graph_path: str, location_cm: dict, half_span_cm: float,
                  partitioned: bool = False, runtime: bool = False) -> str:
     sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
@@ -282,15 +332,23 @@ def place_volume(label: str, graph_path: str, location_cm: dict, half_span_cm: f
     s = float(half_span_cm) * 2.0 / 200.0        # la brosse fait 200 uu de cote
     v.set_actor_scale3d(unreal.Vector(s, s, s))
     comp = v.get_component_by_class(unreal.PCGComponent)
-    comp.set_editor_property("is_component_partitioned", partitioned)
-    # A l'echelle du monde on ne CUIT rien : le semis complet pese 12,9 millions
-    # d'instances, soit 292 fois le banc. En GenerateAtRuntime, PCG ne fabrique
-    # que les mailles autour du joueur et les defait derriere lui : aucun acteur
-    # sur le disque, rien dans le versionnage, rien a charger au demarrage.
+    # L'ORDRE EST CRITIQUE, et il coute cher a l'envers. Le descripteur de grille
+    # est construit avec `SetIsRuntime(IsManagedByRuntimeGenSystem())`
+    # (PCGComponent.cpp:202), et `IsManagedByRuntimeGenSystem()` vaut exactement
+    # `GenerationTrigger == GenerateAtRuntime` (PCGComponent.h:526). Si l'on
+    # partitionne AVANT d'avoir pose le declencheur, le descripteur n'est pas
+    # runtime et PCG ecrit un PCGPartitionActor PERSISTANT par maille sous
+    # Content/__ExternalActors__ : mesure sur ce monde, 15 876 acteurs et 847 Mo
+    # pour zero instance. Declencheur d'abord, partitionnement ensuite.
     comp.set_editor_property(
         "generation_trigger",
         unreal.PCGComponentGenerationTrigger.GENERATE_AT_RUNTIME if runtime
         else unreal.PCGComponentGenerationTrigger.GENERATE_ON_DEMAND)
+    comp.set_editor_property("is_component_partitioned", partitioned)
+    # L'entree du graphe doit rendre les BORNES de l'acteur : pour un composant
+    # local, c'est celles de sa maille, et c'est ce que le Bounding Shape de
+    # l'echantillonneur de surface consomme.
+    comp.set_editor_property("input_type", unreal.PCGComponentInput.ACTOR)
     comp.set_graph(unreal.EditorAssetLibrary.load_asset(graph_path))
     log("CREATED", "{} ({}, {}, echelle {:.0f})".format(
         label, "partitionne" if partitioned else "monobloc",
@@ -386,6 +444,23 @@ def build_world(tiles: list[str] | None = None,
         path = build_graph("{}/PCG_Vegetation_{}".format(GRAPH_DIR, tile),
                            texture, loc, half, biomes, hierarchical=True)
         label = "Worldseed_Vegetation_" + tile
-        place_volume(label, path, loc, half, partitioned=False, runtime=True)
+        place_volume(label, path, loc, half, partitioned=True, runtime=True)
         made[tile] = label
+        n_persistants = count_persistent_partition_actors()
+        if n_persistants:
+            log("ERROR", "{} acteurs de partition PERSISTANTS apparus sur {} : "
+                         "l'ordre declencheur/partitionnement est faux".format(n_persistants, tile))
+            return {"tiles": made, "aborted": tile, "log": list(_log)}
     return {"tiles": made, "log": list(_log)}
+
+
+def count_persistent_partition_actors() -> int:
+    """Garde-fou : un PCGPartitionActor a paquet EXTERNE finit sur le disque.
+
+    Les acteurs de partition de la generation a l'execution sont RF_Transient et
+    vivent dans le paquet transitoire, donc `is_package_external()` est faux.
+    Ceux de la cuisson en editeur sont ecrits sous Content/__ExternalActors__.
+    """
+    sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    return len([a for a in sub.get_all_level_actors()
+                if isinstance(a, unreal.PCGPartitionActor) and a.is_package_external()])
