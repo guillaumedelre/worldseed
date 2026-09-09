@@ -26,6 +26,7 @@ Sortie :
 
 from __future__ import annotations
 
+import collections
 import json
 import sys
 from pathlib import Path
@@ -56,6 +57,53 @@ def _world_origin(manifest: dict) -> tuple[float, float, float]:
     return (float(ls["actorLocation"]["x"]),
             float(ls["actorLocation"]["y"]),
             float(ls["scale"]["x"]))
+
+
+def repair_below_sea_level(src: Path) -> int:
+    """Reclasse en ocean tout biome TERRESTRE situe sous l'altitude zero.
+
+    Repare une sortie DEJA generee, sans relancer la simulation ni retoucher au
+    relief : seul `biome_index.png` change, donc le Landscape importe dans Unreal
+    reste valable.
+
+    La cause est corrigee en amont dans `worldgen/export.py` (le trait de cote du
+    relief sur-echantillonne ne suivait pas celui de la classification), mais une
+    sortie produite AVANT ce correctif garde le defaut. Mesure sur la graine
+    20260909 : 89 420 pixels concernes, 0,35 % des terres, jusqu'a -12,1 m, dont
+    64 % de plage - d'ou de l'herbe et des arbres semes sous l'eau.
+
+    L'original est conserve sous `biome_index_avant_reparation.png`.
+    """
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    ids, labels = manifest["biomes"]["ids"], manifest["biomes"]["labels"]
+    world = manifest["world"]
+
+    bio_path = src / "biome_index.png"
+    biome = np.asarray(Image.open(bio_path)).copy()
+    height = np.asarray(Image.open(src / "height_16bit.png")).astype(np.float64)
+    alt = world["minElevationM"] + (height / 65535.0) * (
+        world["maxElevationM"] - world["minElevationM"])
+
+    eau = [ids["ocean"], ids["lac"], ids["riviere"]]
+    fautifs = ~np.isin(biome, eau) & (alt < 0.0)
+    n = int(fautifs.sum())
+    if not n:
+        print("OK: aucun biome terrestre sous le niveau de la mer")
+        return 0
+
+    detail = collections.Counter(biome[fautifs].tolist())
+    backup = src / "biome_index_avant_reparation.png"
+    if not backup.exists():
+        Image.fromarray(np.asarray(Image.open(bio_path)), mode="L").save(backup, optimize=True)
+        print("CREATED: {} (sauvegarde de l'original)".format(backup))
+
+    biome[fautifs] = np.uint8(ids["ocean"])
+    Image.fromarray(biome, mode="L").save(bio_path, optimize=True)
+    print("MODIFIED: {}".format(bio_path))
+    print("  {} pixels reclasses en ocean ({:.2f} % de la carte)".format(n, n / biome.size * 100))
+    for k, v in detail.most_common(6):
+        print("     {:<26} {:>7}".format(labels[str(k)], v))
+    return n
 
 
 def cut_tiles(src: Path, tiles_per_side: int = 2) -> list[Path]:
@@ -396,6 +444,9 @@ if __name__ == "__main__":
 
     if "--verify-roundtrip" in flags:
         raise SystemExit(0 if verify_roundtrip(root) else 1)
+    if "--repair" in flags:
+        repair_below_sea_level(root)
+        raise SystemExit(0)
     if "--biomecore" in flags:
         cut_biomecore(root)
         raise SystemExit(0)

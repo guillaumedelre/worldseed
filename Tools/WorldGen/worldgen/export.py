@@ -41,9 +41,25 @@ def upsample_heightmap(dem: np.ndarray, out_n: int, rules: Rules) -> np.ndarray:
     resolution n'apporte rien de visible.
     """
     big = resample(dem.astype(np.float32), out_n, order=3).astype(np.float32)
+
+    # Le trait de cote doit rester le MEME que celui vu par la classification des
+    # biomes. Celle-ci travaille sur le `dem` de simulation, dont le masque
+    # terre/mer monte en resolution au plus proche voisin ; le relief, lui, monte
+    # en bicubique puis recoit du detail fractal. Les deux divergent donc sur le
+    # littoral, et un pixel classe "plage" peut se retrouver sous le niveau zero.
+    # Mesure sur la graine 20260909 avant correction : 89 420 pixels de biome
+    # TERRESTRE sous l'altitude 0, jusqu'a -12,1 m, dont 64 % de plage - d'ou de
+    # l'herbe et des arbres semes sous l'eau dans Unreal.
+    terre = resample((dem > 0.0).astype(np.float32), out_n, order=0) > 0.5
+
+    def caler(champ: np.ndarray) -> np.ndarray:
+        """Force le signe de l'altitude a suivre le masque terre/mer."""
+        return np.where(terre, np.maximum(champ, np.float32(0.01)),
+                        np.minimum(champ, np.float32(-0.01))).astype(np.float32)
+
     amp = float(rules.get("world.detailAmplitudeM", 0.0))
     if amp <= 0.0:
-        return big
+        return caler(big)
 
     octaves = int(rules.get("world.detailOctaves", 4))
     base_freq = float(rules.get("world.detailFrequency", 90.0))
@@ -56,7 +72,7 @@ def upsample_heightmap(dem: np.ndarray, out_n: int, rules: Rules) -> np.ndarray:
     ref = float(np.percentile(slope, 92.0))
     mask = np.float32(1.0) - noise.smoothstep(0.0, max(ref, 1e-6), slope)
     mask *= noise.smoothstep(-20.0, 40.0, big)
-    return (big + detail * np.float32(amp) * mask).astype(np.float32)
+    return caler((big + detail * np.float32(amp) * mask).astype(np.float32))
 
 
 # --------------------------------------------------------------------- ecriture

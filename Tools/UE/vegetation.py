@@ -49,6 +49,10 @@ TILES_DIR = r"D:\UE\Worldseed\Saved\WorldGen\20260909\tiles"
 GRAPH_DIR = "/Game/Worldseed/PCG"
 TILE_TEXTURE_DIR = "/Game/Worldseed/PCG/Biomes"
 
+# Niveau de la mer, en centimetres monde : l'ocean est pose a Z = 0. Sert de
+# plancher au semis, voir le filtre dans build_graph.
+SEA_LEVEL_CM = 0.0
+
 _log: list[str] = []
 
 
@@ -231,7 +235,28 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
     ls2.set_editor_property("clamp_output_density", False)
     graph.add_edge(surf, "Out", lire, "Point")
     graph.add_edge(sampler, "Out", lire, "BaseTexture")
-    project = lire            # les points sortent deja poses sur le terrain
+
+    # RIEN NE POUSSE SOUS LA MER. Le generateur classe en biome TERRESTRE du
+    # relief situe sous le niveau zero : mesure sur le banc, 98 points semes
+    # sous l'eau, dont 48 % en Plage et 41 % en Desert froid, jusqu'a -11,5 m.
+    # Ce n'est pas un defaut d'alignement (ecart moyen entre l'altitude du
+    # generateur et le Z du monde : 0,0 m) mais un defaut de CLASSIFICATION, a
+    # corriger en amont dans worldgen. En attendant, on coupe ici.
+    # Reserve connue : ce filtre ne traite que l'ocean. Un terrain situe sous la
+    # surface d'un LAC reste semable, faute de connaitre le niveau de chaque lac
+    # dans le graphe.
+    sec, secs = graph.add_node_of_type(unreal.PCGAttributeFilteringSettings)
+    secs.get_editor_property("target_attribute").import_text("$Position.Z")
+    secs.set_editor_property("operator", unreal.PCGAttributeFilterOperator.GREATER_OR_EQUAL)
+    secs.set_editor_property("use_constant_threshold", True)
+    seuil = secs.get_editor_property("attribute_types")
+    seuil.set_editor_property("type", unreal.PCGMetadataTypes.DOUBLE)
+    seuil.set_editor_property("double_value", float(SEA_LEVEL_CM))
+    secs.set_editor_property("attribute_types", seuil)
+    graph.add_edge(lire, "Out", sec, "In")
+    # Le noeud de filtrage a DEUX sorties : on garde ce qui est au-dessus du
+    # niveau de la mer, donc "InsideFilter".
+    project, sortie_project = sec, "InsideFilter"
 
     for spacing_name, layers in by_spacing.items():
         texel = float(spacings[spacing_name])
@@ -243,10 +268,10 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             sel, sels = graph.add_node_of_type(unreal.PCGSelectPointsSettings)
             sels.set_editor_property("ratio", (finest / texel) ** 2)
             sels.set_editor_property("keep_zero_density_points", True)
-            graph.add_edge(project, "Out", sel, _pin(sel))
-            source = sel
+            graph.add_edge(project, sortie_project, sel, _pin(sel))
+            source, sortie = sel, "Out"
         else:
-            source = project
+            source, sortie = project, sortie_project
 
         for bname, biome_id, layer in layers:
             # La densite vaut identifiant / 255 : une bande d'un demi-cran de
@@ -254,7 +279,7 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             filt, fs = graph.add_node_of_type(unreal.PCGDensityFilterSettings)
             fs.set_editor_property("lower_bound", (biome_id - 0.5) / 255.0)
             fs.set_editor_property("upper_bound", (biome_id + 0.5) / 255.0)
-            graph.add_edge(source, "Out", filt, _pin(filt))
+            graph.add_edge(source, sortie, filt, _pin(filt))
 
             lo, hi = layer["scale"]
             xf, xs = graph.add_node_of_type(unreal.PCGTransformPointsSettings)

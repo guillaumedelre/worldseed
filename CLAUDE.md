@@ -527,5 +527,30 @@ des tableaux de references objet incompatibles avec eux-memes - la signature d'u
 correspond pas a cette version du moteur. Les 823 assets sont pourtant bien presents : il ne
 manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
 (`Worldseed_SunLight` / `_SkyLight` / `_Atmosphere` / `_Fog`) a ete restaure.
+
+### Vegetation semee sous l'eau : un desaccord de reechantillonnage (9 septembre 2026)
+
+- **Symptome** : herbe et arbres sous la surface de l'ocean, jusqu'a -12 m.
+- **Ce que ce n'est PAS** : un defaut d'alignement. L'ecart moyen entre l'altitude rendue par le
+  generateur et le Z du monde Unreal est de **0,0 m** (mesure sur 98 points).
+- **Cause reelle** : la simulation tourne en 2049 et la sortie en 8129. Le RELIEF monte en
+  resolution en **bicubique** (`order=3`) puis recoit du detail fractal dont le masque autorise
+  l'ajout des **-20 m** (`smoothstep(-20, 40, big)`), tandis que la carte des BIOMES monte au
+  **plus proche voisin**. Les deux trait de cote divergent donc mecaniquement. Mesure sur la
+  graine 20260909 : **89 420 pixels (0,35 % des terres)** portent un biome terrestre sous
+  l'altitude zero, dont 64 % de plage.
+- **Correction en amont** : `worldgen/export.py`, `upsample_heightmap` cale desormais le signe de
+  l'altitude sur le masque terre/mer monte au plus proche voisin, avant ET apres l'ajout du
+  detail. Toute nouvelle generation est saine.
+- **Reparation d'une sortie deja produite**, sans relancer la simulation ni retoucher au relief
+  importe : `export_biome_texture.py --repair` reclasse en ocean tout biome terrestre sous zero
+  et sauvegarde l'original. Apres reparation, re-tuiler, reimporter les textures, regenerer.
+  Resultat mesure : de 94 instances sous l'eau (jusqu'a -12 m) a **3, Z minimal -26 cm**, soit la
+  ligne d'eau a la resolution du pixel pres (3,94 m).
+- **Le selecteur d'attribut PCG n'est pas pilotable depuis Python** :
+  `PCGAttributePropertyInputSelector` est une struct opaque (`to_dict()` vide), `import_text`
+  ignore `$Position.Z` et `set_point_property` ne prend pas. Un filtre de hauteur pose ainsi
+  retombe silencieusement sur `$Density` et ne filtre rien. Corriger la DONNEE en amont plutot
+  que d'essayer de filtrer dans le graphe.
 
 <!-- END VibeUE -->

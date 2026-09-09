@@ -29,10 +29,10 @@
     "PBR": "/Game/Stylized_PBR_Nature/Rocks/Assets"
   },
   "spacings": {
-    "sousbois": 900,
-    "arbres_denses": 1400,
-    "arbres_epars": 3000,
-    "rares": 6000
+    "sousbois": 600,
+    "arbres_denses": 1000,
+    "arbres_epars": 2200,
+    "rares": 5000
   },
   "biomes": {
     "calotte": {
