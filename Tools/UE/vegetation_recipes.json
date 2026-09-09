@@ -1,0 +1,232 @@
+{
+  "_comment": [
+    "Recettes de vegetation Worldseed : une par biome, a partir de biome_index.",
+    "Ce fichier est fait pour etre RETOUCHE A LA MAIN : c'est lui qui decide de",
+    "l'aspect du monde, pas le code de vegetation.py.",
+    "",
+    "Un biome porte des COUCHES. Chaque couche est un semis independant :",
+    "  spacing  : le pas de grille, par son nom (voir 'spacings'). C'est ce qui",
+    "             fixe la densite. Un pas de 1200 cm donne au plus un element",
+    "             tous les 12 m ; la couche n'occupe que les points du biome.",
+    "  meshes   : [reference, poids]. La reference est 'RACINE:NomDuMesh', les",
+    "             racines etant listees dans 'roots'. Le poids est relatif a la",
+    "             couche.",
+    "  scale    : [min, max], tire au hasard, uniforme sur les trois axes.",
+    "  cull     : [debut, fin] en cm, distances de disparition de l'instance.",
+    "",
+    "Les identifiants 0 (ocean), 1 (lac) et 2 (riviere) n'ont pas de recette :",
+    "ce ne sont pas des biomes terrestres."
+  ],
+  "roots": {
+    "LPF": "/Game/Orasot_Bundle/LowPolyForestVol2/StaticMeshes/Environment",
+    "SFL": "/Game/Orasot_Bundle/StylizedForestLandscape/Meshes",
+    "BAM": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/StaticMeshes",
+    "DRK": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/StaticMeshes",
+    "DES": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/StaticMeshes",
+    "GRN": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/StaticMeshes",
+    "RED": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/StaticMeshes",
+    "PBF": "/Game/Stylized_PBR_Nature/Foliage/Assets",
+    "PBR": "/Game/Stylized_PBR_Nature/Rocks/Assets"
+  },
+  "spacings": {
+    "sousbois": 900,
+    "arbres_denses": 1400,
+    "arbres_epars": 3000,
+    "rares": 6000
+  },
+  "biomes": {
+    "calotte": {
+      "id": 3,
+      "layers": [
+        {"name": "affleurements", "spacing": "rares", "scale": [0.8, 2.0], "cull": [30000, 45000],
+         "meshes": [["PBR:SM_S_Rock_01", 1], ["PBR:SM_S_Rock_05", 1], ["PBR:SM_R_Rock_02", 1]]}
+      ]
+    },
+    "toundra": {
+      "id": 4,
+      "layers": [
+        {"name": "bois_mort", "spacing": "arbres_epars", "scale": [0.6, 1.0], "cull": [25000, 40000],
+         "meshes": [["LPF:SM_Env_death_tree_small_1", 2], ["LPF:SM_Env_death_tree_small_2", 2],
+                    ["LPF:SM_Env_death_tree_small_3", 2], ["LPF:SM_Env_death_tree_small_4", 1],
+                    ["LPF:SM_Env_death_tree_small_5", 1]]},
+        {"name": "cailloux", "spacing": "sousbois", "scale": [0.5, 1.2], "cull": [8000, 14000],
+         "meshes": [["LPF:SM_Env_scatter_rock_1", 2], ["LPF:SM_Env_scatter_rock_5", 2],
+                    ["LPF:SM_Env_scatter_rock_9", 2], ["LPF:SM_Env_bush_1", 1],
+                    ["LPF:SM_Env_bush_3", 1]]}
+      ]
+    },
+    "taiga": {
+      "id": 5,
+      "layers": [
+        {"name": "coniferes", "spacing": "arbres_denses", "scale": [0.8, 1.4], "cull": [40000, 60000],
+         "meshes": [["LPF:SM_Env_Pine_Tree_1", 3], ["LPF:SM_Env_Pine_Tree_2", 3],
+                    ["LPF:SM_Env_Pine_Tree_3", 3], ["PBF:SM_Pine_Tree_1", 2],
+                    ["PBF:SM_Pine_Tree_2", 2], ["PBF:SM_Pine_Tree_3", 2],
+                    ["PBF:SM_Pine_Tree_4", 2], ["SFL:SM_Pine", 1], ["SFL:SM_Pine_2", 1],
+                    ["LPF:SM_Env_death_tree_1", 1]]},
+        {"name": "sous_bois", "spacing": "sousbois", "scale": [0.7, 1.3], "cull": [9000, 15000],
+         "meshes": [["LPF:SM_Env_bush_1", 2], ["LPF:SM_Env_bush_4", 2], ["LPF:SM_Env_bush_6", 2],
+                    ["LPF:SM_Env_bush_berry_2", 1], ["LPF:SM_Env_mushroom_3", 1],
+                    ["LPF:SM_Env_mushroom_11", 1], ["LPF:SM_Env_treestump_2", 1],
+                    ["LPF:SM_Env_fallen_branch_4", 1]]}
+      ]
+    },
+    "foret_temperee": {
+      "id": 6,
+      "layers": [
+        {"name": "feuillus", "spacing": "arbres_denses", "scale": [0.8, 1.3], "cull": [40000, 60000],
+         "meshes": [["SFL:SM_Oak_Tree", 3], ["SFL:SM_Oak_Tree_2", 3], ["SFL:SM_Birch_Tree", 2],
+                    ["SFL:SM_Birch_Tree_2", 2], ["SFL:SM_Poplar_Tree", 2],
+                    ["SFL:SM_Poplar_Tree_2", 2], ["PBF:SM_Common_Tree_01", 2],
+                    ["PBF:SM_Common_Tree_04", 2], ["PBF:SM_Common_Tree_07", 2],
+                    ["PBF:SM_Common_Tree_10", 2], ["SFL:SM_Pine", 1]]},
+        {"name": "sous_bois", "spacing": "sousbois", "scale": [0.7, 1.3], "cull": [9000, 15000],
+         "meshes": [["SFL:SM_Bush", 2], ["SFL:SM_Bush_2", 2], ["SFL:SM_Fern", 2],
+                    ["LPF:SM_Env_bush_berry_5", 1], ["LPF:SM_Env_mushroom_7", 1],
+                    ["SFL:SM_Flower", 1], ["SFL:SM_Damdelion", 1],
+                    ["LPF:SM_Env_treestump_5", 1], ["LPF:SM_Env_fallen_tree", 1]]}
+      ]
+    },
+    "foret_temperee_humide": {
+      "id": 7,
+      "layers": [
+        {"name": "feuillus_denses", "spacing": "arbres_denses", "scale": [0.9, 1.5], "cull": [40000, 60000],
+         "meshes": [["PBF:SM_Common_Tree_02", 3], ["PBF:SM_Common_Tree_03", 3],
+                    ["PBF:SM_Common_Tree_05", 3], ["PBF:SM_Common_Tree_06", 3],
+                    ["PBF:SM_Common_Tree_08", 3], ["PBF:SM_Common_Tree_09", 3],
+                    ["PBF:SM_Common_Tree_11", 3], ["SFL:SM_Oak_Tree", 2],
+                    ["SFL:SM_Birch_Tree_2", 2]]},
+        {"name": "fougeres", "spacing": "sousbois", "scale": [0.8, 1.5], "cull": [9000, 15000],
+         "meshes": [["SFL:SM_Fern", 3], ["SFL:SM_Fern_2", 3], ["PBF:SM_Fern", 3],
+                    ["SFL:SM_Ivy", 1], ["LPF:SM_Env_plant_2", 2], ["LPF:SM_Env_plant_5", 2],
+                    ["LPF:SM_Env_mushroom_14", 1], ["LPF:SM_Env_mushroom_collection_1", 1],
+                    ["LPF:SM_Env_treestump_3", 1]]}
+      ]
+    },
+    "prairie": {
+      "id": 8,
+      "layers": [
+        {"name": "arbres_isoles", "spacing": "rares", "scale": [1.0, 1.5], "cull": [40000, 60000],
+         "meshes": [["SFL:SM_Oak_Tree_Accent", 2], ["PBF:SM_Common_Tree_04", 1],
+                    ["SFL:SM_Poplar_Tree", 1]]},
+        {"name": "fleurs", "spacing": "sousbois", "scale": [0.8, 1.3], "cull": [8000, 13000],
+         "meshes": [["SFL:SM_Damdelion", 3], ["SFL:SM_Flower", 2], ["SFL:SM_Flower_2", 2],
+                    ["SFL:SM_Red_Flower", 2], ["SFL:SM_Pink_Flower", 2], ["SFL:SM_Wheat", 2],
+                    ["PBF:SM_Clover", 2]]}
+      ]
+    },
+    "steppe": {
+      "id": 9,
+      "layers": [
+        {"name": "buissons", "spacing": "arbres_epars", "scale": [0.7, 1.2], "cull": [20000, 32000],
+         "meshes": [["DES:SM_Bush_Yellow", 3], ["DES:SM_Mid_Bush_1", 2], ["DES:SM_Bush_many_2", 2]]},
+        {"name": "herbes_seches", "spacing": "sousbois", "scale": [0.7, 1.2], "cull": [8000, 13000],
+         "meshes": [["SFL:SM_Wheat", 3], ["LPF:SM_Env_scatter_rock_3", 1],
+                    ["LPF:SM_Env_scatter_rock_12", 1]]}
+      ]
+    },
+    "desert_froid": {
+      "id": 10,
+      "layers": [
+        {"name": "bois_mort", "spacing": "arbres_epars", "scale": [0.7, 1.2], "cull": [25000, 40000],
+         "meshes": [["LPF:SM_Env_death_tree_2", 2], ["LPF:SM_Env_death_tree_4", 2],
+                    ["LPF:SM_Env_death_tree_small_2", 1]]},
+        {"name": "pierraille", "spacing": "sousbois", "scale": [0.5, 1.3], "cull": [9000, 15000],
+         "meshes": [["DES:SM_Gray_Rock_1", 2], ["DES:SM_Gray_Rock_2", 2],
+                    ["LPF:SM_Env_scatter_rock_7", 2], ["LPF:SM_Env_scatter_rock_16", 2]]}
+      ]
+    },
+    "desert_chaud": {
+      "id": 11,
+      "layers": [
+        {"name": "palmiers", "spacing": "rares", "scale": [0.9, 1.4], "cull": [40000, 60000],
+         "meshes": [["DES:SM_PalmTree", 2], ["DES:SM_PalmTree_Bend", 2],
+                    ["DES:SM_PalmTree_Slightly_Bend", 2], ["DES:SM_Hero_Tree_1_with_Roots", 1]]},
+        {"name": "buissons_secs", "spacing": "arbres_epars", "scale": [0.7, 1.2], "cull": [20000, 32000],
+         "meshes": [["DES:SM_Bush_Yellow", 3], ["DES:SM_Mid_Bush_1", 2], ["DES:SM_Bush_many_2", 2]]},
+        {"name": "rochers", "spacing": "sousbois", "scale": [0.5, 1.4], "cull": [10000, 16000],
+         "meshes": [["DES:SM_Rock_1", 2], ["DES:SM_Rock_2", 2], ["DES:SM_Rock_4", 2],
+                    ["DES:SM_Rock_5", 2], ["DES:SM_Gray_Rock_1", 1]]}
+      ]
+    },
+    "savane": {
+      "id": 12,
+      "layers": [
+        {"name": "arbres_isoles", "spacing": "rares", "scale": [1.0, 1.6], "cull": [40000, 60000],
+         "meshes": [["DES:SM_Hero_Tree_1_with_Roots", 3], ["DES:SM_PalmTree_Small", 1]]},
+        {"name": "herbes_hautes", "spacing": "sousbois", "scale": [0.8, 1.3], "cull": [9000, 14000],
+         "meshes": [["SFL:SM_Wheat", 3], ["DES:SM_Bush_Yellow", 2], ["DES:SM_Mid_Bush_1", 1],
+                    ["LPF:SM_Env_scatter_rock_11", 1]]}
+      ]
+    },
+    "foret_tropicale_seche": {
+      "id": 13,
+      "layers": [
+        {"name": "arbres", "spacing": "arbres_epars", "scale": [0.8, 1.3], "cull": [40000, 60000],
+         "meshes": [["RED:SM_Tree_1", 2], ["RED:SM_Tree_2", 2], ["RED:SM_Tree_3", 2],
+                    ["RED:SM_Tree_4", 2], ["GRN:SM_Mid_Tree_1", 2], ["DES:SM_PalmTree", 1]]},
+        {"name": "sous_bois", "spacing": "sousbois", "scale": [0.7, 1.3], "cull": [9000, 15000],
+         "meshes": [["RED:SM_Fern_1", 2], ["RED:SM_Fern_2", 2], ["RED:SM_Plant_1", 2],
+                    ["RED:SM_Plant_2", 2], ["DES:SM_Bush_Yellow", 1], ["RED:SM_Rock_1", 1]]}
+      ]
+    },
+    "foret_tropicale_humide": {
+      "id": 14,
+      "layers": [
+        {"name": "bambous", "spacing": "arbres_denses", "scale": [0.9, 1.5], "cull": [35000, 55000],
+         "meshes": [["BAM:SM_Bamboo", 4], ["BAM:SM_Bamboo_2", 4], ["BAM:SM_Bamboo_Sapling", 2],
+                    ["GRN:SM_Tree_1", 2], ["GRN:SM_Tree_2", 2]]},
+        {"name": "sous_bois_humide", "spacing": "sousbois", "scale": [0.8, 1.5], "cull": [9000, 15000],
+         "meshes": [["BAM:SM_Fern_1", 3], ["BAM:SM_Ivy", 2], ["GRN:SM_Plant_1", 2],
+                    ["GRN:SM_Flower_1", 1], ["GRN:SM_Flower_2", 1], ["GRN:SM_Flower_3", 1],
+                    ["LPF:SM_Env_mushroom_16", 1]]}
+      ]
+    },
+    "alpin": {
+      "id": 15,
+      "layers": [
+        {"name": "coniferes_epars", "spacing": "arbres_epars", "scale": [0.6, 1.1], "cull": [35000, 55000],
+         "meshes": [["SFL:SM_Pine", 3], ["SFL:SM_Pine_2", 3], ["LPF:SM_Env_Pine_Tree_2", 2],
+                    ["LPF:SM_Env_death_tree_3", 1]]},
+        {"name": "blocs", "spacing": "sousbois", "scale": [0.6, 1.6], "cull": [12000, 20000],
+         "meshes": [["DRK:SM_Rock_1", 2], ["DRK:SM_Rock_3", 2], ["DRK:SM_Rock_5", 2],
+                    ["SFL:SM_Big_Rock_1", 1], ["LPF:SM_Env_rock_4", 2],
+                    ["LPF:SM_Env_scatter_rock_14", 2]]}
+      ]
+    },
+    "roche_nue": {
+      "id": 16,
+      "layers": [
+        {"name": "falaises", "spacing": "rares", "scale": [0.9, 1.8], "cull": [40000, 60000],
+         "meshes": [["GRN:SM_Cliff_1", 2], ["GRN:SM_Cliff_2", 2], ["GRN:SM_Cliff_3", 2],
+                    ["SFL:SM_Big_Rock_2", 2], ["SFL:SM_Big_Rock_3", 2]]},
+        {"name": "eboulis", "spacing": "sousbois", "scale": [0.5, 1.5], "cull": [12000, 20000],
+         "meshes": [["LPF:SM_Env_rock_1", 2], ["LPF:SM_Env_rock_6", 2], ["LPF:SM_Env_rock_9", 2],
+                    ["LPF:SM_Env_scatter_rock_2", 2], ["LPF:SM_Env_scatter_rock_8", 2],
+                    ["LPF:SM_Env_scatter_rock_17", 2], ["PBR:SM_S_Rock_03", 2],
+                    ["PBR:SM_R_Rock_04", 2]]}
+      ]
+    },
+    "plage": {
+      "id": 17,
+      "layers": [
+        {"name": "palmiers_littoraux", "spacing": "rares", "scale": [0.9, 1.3], "cull": [35000, 55000],
+         "meshes": [["DES:SM_PalmTree_Bend", 3], ["DES:SM_PalmTree", 2], ["DES:SM_PalmTree_Small", 2]]},
+        {"name": "galets", "spacing": "sousbois", "scale": [0.4, 1.0], "cull": [8000, 13000],
+         "meshes": [["LPF:SM_Env_scatter_rock_4", 2], ["LPF:SM_Env_scatter_rock_13", 2],
+                    ["SFL:SM_Rock_Scatter_2", 1]]}
+      ]
+    },
+    "marais": {
+      "id": 18,
+      "layers": [
+        {"name": "bois_noye", "spacing": "arbres_epars", "scale": [0.7, 1.2], "cull": [25000, 40000],
+         "meshes": [["LPF:SM_Env_death_tree_small_3", 2], ["LPF:SM_Env_death_tree_5", 2],
+                    ["LPF:SM_Env_fallen_tree", 1]]},
+        {"name": "palustre", "spacing": "sousbois", "scale": [0.8, 1.4], "cull": [9000, 15000],
+         "meshes": [["SFL:SM_Fern_2", 2], ["RED:SM_Fern_1", 2], ["RED:SM_Plant_2", 2],
+                    ["SFL:SM_Ivy_2", 1], ["LPF:SM_Env_plant_3", 2]]}
+      ]
+    }
+  }
+}
