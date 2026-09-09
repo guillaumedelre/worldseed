@@ -581,6 +581,8 @@ def extract_rivers(
     b = float(hyd["depthCoefB"])
     d_exp = float(hyd["depthExponent"])
     w_min, w_max = float(hyd["minRiverWidthM"]), float(hyd["maxRiverWidthM"])
+    d_min = float(hyd["minRiverDepthM"])
+    exageration = float(hyd["geometryExaggeration"])
     tol_px = float(hyd["simplifyToleranceM"]) / mpp
     max_spacing_px = float(hyd["maxPointSpacingM"]) / mpp
     max_pts = int(hyd["maxPointsPerRiver"])
@@ -624,8 +626,24 @@ def extract_rivers(
         disch = []
         for (j, i) in simplified:
             disch.append(float(acc_flat[int(round(j)) * n + int(round(i))]))
-        widths = [float(np.clip(a * (q ** w_exp), w_min, w_max)) for q in disch]
-        depths = [float(max(0.4, b * (q ** d_exp))) for q in disch]
+        # GEOMETRIE HYDRAULIQUE, ET SON EXAGERATION ASSUMEE.
+        #
+        # Les coefficients a et b sont ceux de la geometrie hydraulique reelle
+        # (largeur = a * Q^0.5 avec a de l'ordre de 2 en SI, profondeur = b *
+        # Q^0.4 avec b de l'ordre de 0,3). Appliques tels quels ici, ils donnent
+        # des chenaux de 50 cm : c'est PHYSIQUEMENT JUSTE, parce qu'un monde de
+        # 32 km ne peut pas produire de fleuve -- le plus grand bassin y fait
+        # quelques dizaines de km2, soit environ 0,4 m3/s.
+        #
+        # On exagere donc sciemment, et on le nomme. L'exageration porte sur le
+        # DEBIT APPARENT, pas sur la largeur seule : ainsi largeur et profondeur
+        # restent dans leur proportion physique l'une par rapport a l'autre. Un
+        # cours d'eau ressemble alors a une vraie riviere portant
+        # geometryExaggeration fois son debit, au lieu d'un ruban large et plat.
+        # Le debit exporte dans rivers.json reste, lui, le debit VRAI.
+        disch_apparent = [q * exageration for q in disch]
+        widths = [float(np.clip(a * (q ** w_exp), w_min, w_max)) for q in disch_apparent]
+        depths = [float(max(d_min, b * (q ** d_exp))) for q in disch_apparent]
 
         # Classement de l'embouchure : on SUIT l'ecoulement au-dela du dernier
         # troncon de chenal, au lieu de juger la derniere cellule de terre. Sans
