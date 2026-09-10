@@ -552,5 +552,34 @@ manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
   ignore `$Position.Z` et `set_point_property` ne prend pas. Un filtre de hauteur pose ainsi
   retombe silencieusement sur `$Density` et ne filtre rien. Corriger la DONNEE en amont plutot
   que d'essayer de filtrer dans le graphe.
+
+### Eau : rideau vertical au bord des lacs, plaques sur les falaises (10 septembre 2026)
+
+- **Cause** : toute l'eau d'un niveau passe par la `WaterZone` qui la couvre, laquelle encode la
+  hauteur de surface dans UNE texture. Worldseed n'a qu'une zone de 34 km pour de l'eau allant de
+  0 m (ocean) a 545 m (Lac_03). A 1024 texels cela fait **33 m par texel** : au bord d'un lac
+  perche la surface doit franchir toute la difference d'altitude en un ou deux texels (rideau
+  vertical), et la ou le relief monte vite le texel voisin impose sa hauteur au-dessus de la roche
+  (plaques d'eau sur les falaises). Les deux symptomes ont la meme origine.
+- **Le moteur signale le second levier** : "Width of water quad tree tiles (1024) has exceeded the
+  cap for this platform (256). Tile sizes have been biased by a factor of 0.25" -- la tuile de
+  24 m demandee devient 96 m. D'ou `r.Water.WaterMesh.MaxWidthInTiles=2048` dans
+  `Config/DefaultEngine.ini`.
+- **CE QUI NE MARCHE PAS, et qui semble evident** : donner a chaque lac sa propre zone, petite et
+  fine, via `WaterBodyComponent.set_water_zone_override()`. Deux echecs mesures : tant que
+  l'override est pose **le lac cesse d'etre rendu** (verifie a l'image, zone de 4,9 km a 2048
+  texels soit 2,4 m/texel), et **l'override ne se serialise pas** -- il revient a `None` apres
+  rechargement du niveau, malgre un `save_dirty_packages` reussi. Les zones creees ont ete
+  supprimees. Ne pas refaire ce chemin sans comprendre d'abord pourquoi le rendu s'arrete.
+- **CE QUI MARCHE** : monter `render_target_resolution` de la zone unique de 1024 a 4096, soit
+  **33,2 -> 8,3 m par texel**. Quatre fois mieux, sans nouvel acteur, et ca tient au rechargement.
+  Ce n'est pas une correction complete : 8,3 m reste grossier pour une marche de 192 m.
+- **Piege annexe, paye deux fois** : les acteurs d'eclairage
+  (`Worldseed_SunLight` / `_SkyLight` / `_Atmosphere` / `_Fog`) ont disparu du niveau entre deux
+  sessions malgre une sauvegarde reussie. Verifier leur presence par les DESCRIPTEURS World
+  Partition (`get_actor_descs`), pas seulement par `get_all_level_actors` : un acteur non charge
+  et un acteur inexistant se ressemblent, et une scene noire au demarrage vient souvent de la.
+- **`load_level` echoue silencieusement si un PIE tourne** : il rend `False` et le journal dit
+  "The Editor is currently in a play mode". Appeler `editor_request_end_play()` d'abord.
 
 <!-- END VibeUE -->
