@@ -18,3 +18,7 @@ __pycache__/
 
 # Le plugin VibeUE possede son propre depot git.
 Plugins/
+
+# Exports vers d autres moteurs : gros binaires regenerables (1,1 Go pour Godot),
+# meme raison que Content/ -- on garde les scripts, pas leur sortie.
+/Export/
