@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Atlas Worldseed - documentation de reference des outils du projet.
+
+  Ce fichier est AUTONOME : il s'ouvre par un double-clic, sans serveur. Les
+  seules ressources externes sont les polices Google, qui ont toutes une pile de
+  repli declaree : sans reseau, la page reste lisible.
+
+  Les valeurs chiffrees sont des MESURES prises sur la graine 20260909, ou des
+  references citees. Aucune n'est estimee. Si le monde est regenere avec une
+  autre graine ou d'autres regles, les chiffres de cette page deviennent ceux
+  d'un monde qui n'existe plus : les regenerer demande de relire manifest.json
+  et uds_presets_livres.json, comme lors de la redaction.
+
+  Version en ligne, identique :
+  https://claude.ai/code/artifact/a6dfe9c1-09eb-4548-b749-dd019a0aeadd
+-->
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Atlas Worldseed</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,800;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* ------------------------------------------------------------------ jetons
+   Palette tiree des couleurs de debogage des biomes du generateur
+   (rules/world_rules.json, biomes.debugColors) : ocean 24,62,122 ;
+   calotte 242,246,250 ; taiga 46,84,62 ; desert chaud 214,190,126 ;
+   roche nue 112,108,104. Le monde donne ses propres couleurs au document. */
+:root {
+  --ocean:#183e7a; --taiga:#2e543e; --sable:#a3813a;
+  --fond:#f1f4f7; --surface:#ffffff; --surface-2:#e7ecf2;
+  --trait:#cdd6e0; --trait-fort:#9fb0c2; --grille:#dde4ec;
+  --texte:#101720; --texte-doux:#4a5866; --texte-faible:#6d7c8b;
+  --accent:#183e7a; --accent-doux:#dce6f4;
+  --ok:#2e543e; --ok-fond:#dceadf;
+  --attention:#8a6a20; --attention-fond:#f4e9d2;
+  --serie-t:#c2482c; --serie-p:#2d63b4;
+  --mesure:70ch; --r:3px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fond:#0c1118; --surface:#141b25; --surface-2:#1c2531;
+    --trait:#2a3644; --trait-fort:#46566a; --grille:#222d3a;
+    --texte:#e2e9f1; --texte-doux:#a9b7c6; --texte-faible:#7f8f9f;
+    --accent:#7aa5e8; --accent-doux:#1a2940;
+    --ok:#7cc396; --ok-fond:#17301f;
+    --attention:#d9b264; --attention-fond:#33280f;
+    --serie-t:#e8795c; --serie-p:#6fa2ef;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --fond:#0c1118; --surface:#141b25; --surface-2:#1c2531;
+  --trait:#2a3644; --trait-fort:#46566a; --grille:#222d3a;
+  --texte:#e2e9f1; --texte-doux:#a9b7c6; --texte-faible:#7f8f9f;
+  --accent:#7aa5e8; --accent-doux:#1a2940;
+  --ok:#7cc396; --ok-fond:#17301f;
+  --attention:#d9b264; --attention-fond:#33280f;
+  --serie-t:#e8795c; --serie-p:#6fa2ef;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin:0; background:var(--fond); color:var(--texte);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.62; -webkit-font-smoothing:antialiased;
+}
+a { color:var(--accent); text-underline-offset:3px; }
+a:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+
+.enveloppe { max-width:1200px; margin:0 auto; padding:0 28px 96px; }
+.corps { display:grid; grid-template-columns:190px minmax(0,1fr); gap:56px; align-items:start; }
+@media (max-width:940px){ .corps{grid-template-columns:1fr;gap:0} .rail{display:none} }
+
+.rail { position:sticky; top:24px; display:flex; flex-direction:column; gap:2px; font-size:13px; }
+.rail a { color:var(--texte-faible); text-decoration:none; padding:5px 10px;
+  border-left:2px solid var(--trait); line-height:1.35; }
+.rail a:hover { color:var(--accent); border-left-color:var(--accent); background:var(--accent-doux); }
+.rail .titre-rail { font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--texte-faible); padding:14px 10px 5px; }
+
+header.tete { padding:60px 0 36px; border-bottom:1px solid var(--trait); margin-bottom:40px; }
+.eyebrow { font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--texte-faible); margin:0 0 14px; }
+h1 { font-family:Spectral,Georgia,serif; font-weight:800; font-size:clamp(34px,5.4vw,58px);
+  line-height:1.04; letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance; }
+.chapo { font-size:18px; color:var(--texte-doux); max-width:var(--mesure); margin:0; }
+.chapo strong { color:var(--texte); font-weight:600; }
+
+section { scroll-margin-top:20px; padding-top:6px; }
+h2 { font-family:Spectral,Georgia,serif; font-weight:700; font-size:29px; line-height:1.18;
+  margin:58px 0 6px; letter-spacing:-.01em; text-wrap:balance; }
+h2 .num { font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:500;
+  color:var(--accent); letter-spacing:.1em; display:block; margin-bottom:5px; }
+h3 { font-family:"IBM Plex Sans",sans-serif; font-weight:600; font-size:16.5px; margin:34px 0 8px; }
+h4 { font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:11.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--texte-faible); margin:26px 0 10px; }
+p, ul, ol { max-width:var(--mesure); }
+p { margin:0 0 15px; }
+ul, ol { margin:0 0 15px; padding-left:20px; }
+li { margin-bottom:6px; }
+li::marker { color:var(--trait-fort); }
+code { font-family:"IBM Plex Mono",monospace; font-size:.875em; background:var(--surface-2);
+  padding:1px 5px; border-radius:2px; }
+strong { font-weight:600; }
+.sous { color:var(--texte-doux); }
+
+.cmd { background:var(--surface-2); border:1px solid var(--trait); border-radius:var(--r);
+  padding:13px 15px; margin:0 0 16px; overflow-x:auto;
+  font-family:"IBM Plex Mono",monospace; font-size:12.5px; line-height:1.7; white-space:pre; }
+.cmd .c { color:var(--texte-faible); }
+.formule { font-family:"IBM Plex Mono",monospace; font-size:13px;
+  border-left:3px solid var(--accent); background:var(--accent-doux);
+  padding:12px 16px; margin:0 0 16px; border-radius:0 var(--r) var(--r) 0;
+  overflow-x:auto; white-space:pre; }
+.formule .c { color:var(--texte-faible); }
+.note { border-left:3px solid var(--attention); background:var(--attention-fond);
+  padding:13px 16px; margin:0 0 18px; border-radius:0 var(--r) var(--r) 0; max-width:var(--mesure); }
+.note p:last-child { margin-bottom:0; }
+.note .etiq { font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--attention); display:block; margin-bottom:5px; }
+
+.tbl-boite { overflow-x:auto; margin:0 0 20px; border:1px solid var(--trait); border-radius:var(--r); }
+table { border-collapse:collapse; width:100%; font-size:13.5px; background:var(--surface); }
+th,td { text-align:left; padding:8px 13px; border-bottom:1px solid var(--trait); vertical-align:top; }
+thead th { font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--texte-faible); font-weight:500;
+  background:var(--surface-2); white-space:nowrap; }
+tbody tr:last-child td { border-bottom:0; }
+td.n, th.n { text-align:right; font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+td code { background:transparent; padding:0; color:var(--accent); }
+.pastille { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10.5px;
+  padding:1px 7px; border-radius:9px; letter-spacing:.05em; white-space:nowrap; }
+.p-ok { background:var(--ok-fond); color:var(--ok); }
+.p-att { background:var(--attention-fond); color:var(--attention); }
+
+/* ------------------------------------------------------------------ figures */
+figure { margin:0 0 26px; }
+.fig-boite { background:var(--surface); border:1px solid var(--trait); border-radius:var(--r);
+  padding:16px 18px 10px; overflow-x:auto; }
+figcaption { font-size:12.5px; color:var(--texte-faible); margin-top:9px; max-width:var(--mesure);
+  line-height:1.5; }
+figcaption b { color:var(--texte-doux); font-weight:600; }
+svg { display:block; max-width:100%; height:auto; }
+.sv-txt { fill:var(--texte-doux); font-family:"IBM Plex Mono",monospace; font-size:10px; }
+.sv-txt-fort { fill:var(--texte); font-family:"IBM Plex Sans",sans-serif; font-size:11px; font-weight:500; }
+.sv-axe { stroke:var(--trait-fort); stroke-width:1; }
+.sv-grille { stroke:var(--grille); stroke-width:1; }
+.legende { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:12px; font-size:11.5px;
+  color:var(--texte-doux); font-family:"IBM Plex Mono",monospace; }
+.legende span { display:inline-flex; align-items:center; gap:6px; }
+.legende i { width:11px; height:11px; border-radius:2px; display:inline-block;
+  border:1px solid rgba(128,128,128,.35); }
+
+/* ------------------------------------------------------------------ chaine */
+.chaine { display:flex; flex-direction:column; margin:0 0 24px; }
+.etape { display:grid; grid-template-columns:28px minmax(0,1fr); gap:16px; }
+.etape .rang { font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--accent);
+  padding-top:13px; text-align:right; }
+.etape .contenu { border-top:1px solid var(--trait); padding:12px 0 14px; }
+.etape:first-child .contenu { border-top:0; padding-top:0; }
+.etape:first-child .rang { padding-top:1px; }
+.etape .nom { font-weight:600; font-size:14.5px; margin:0 0 3px; }
+.etape .det { margin:0; font-size:13.5px; color:var(--texte-doux); max-width:var(--mesure); }
+.etape .fichiers { font-family:"IBM Plex Mono",monospace; font-size:11.5px;
+  color:var(--texte-faible); margin-top:5px; display:block; }
+
+.fiches { display:grid; gap:1px; background:var(--trait); border:1px solid var(--trait);
+  border-radius:var(--r); overflow:hidden; margin-bottom:22px; }
+.fiche { background:var(--surface); padding:14px 16px; display:grid;
+  grid-template-columns:minmax(180px,235px) minmax(0,1fr); gap:18px; }
+@media (max-width:640px){ .fiche{grid-template-columns:1fr;gap:4px} }
+.fiche .nom { font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--accent);
+  font-weight:500; word-break:break-word; }
+.fiche .quoi { font-size:13.5px; color:var(--texte-doux); }
+.fiche .quoi strong { color:var(--texte); }
+
+details { border:1px solid var(--trait); border-radius:var(--r); margin:0 0 14px;
+  background:var(--surface); max-width:var(--mesure); }
+summary { cursor:pointer; padding:11px 15px; font-size:13.5px; font-weight:500; }
+details[open] summary { border-bottom:1px solid var(--trait); }
+.details-corps { padding:14px 15px 4px; }
+.details-corps p, .details-corps ul { font-size:13.5px; }
+
+footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
+  font-size:12.5px; color:var(--texte-faible); max-width:var(--mesure); }
+@media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+
+</head>
+<body>
+
+<div class="enveloppe">
+
+<header class="tete">
+  <p class="eyebrow">Worldseed · Unreal Engine 5.8 · référence des outils</p>
+  <h1>Atlas Worldseed</h1>
+  <p class="chapo">Un monde de <strong>8 km de côté</strong> qui va d'un pôle à l'autre, engendré hors d'Unreal par une chaîne de huit étapes, puis importé en relief, en eau, en végétation et en météo. Ce document explique comment lancer chaque outil, comment le climat est construit, et sur quelles mesures terrestres il est calé.</p>
+  <figure style="margin-top:30px">
+    <div class="fig-boite" id="fig-bande"></div>
+    <figcaption><b>Le monde en une ligne.</b> Part de terres émergées et température moyenne par bande de latitude, mesurées sur la graine 20260909. La carte fait varier Y comme le sinus de la latitude : les bandes polaires sont donc étroites, comme sur une sphère.</figcaption>
+  </figure>
+</header>
+
+<div class="corps">
+  <nav class="rail" aria-label="Sommaire">
+    <span class="titre-rail">Sommaire</span>
+    <a href="#depart">Avant de commencer</a>
+    <a href="#vue">Vue d'ensemble</a>
+    <a href="#chaine">La chaîne</a>
+    <a href="#lancer">Lancer les outils</a>
+    <a href="#climat">Le système climatique</a>
+    <a href="#whittaker">Le diagramme des biomes</a>
+    <a href="#echelle">La règle d'échelle</a>
+    <a href="#unreal">Imbrication Unreal</a>
+    <a href="#uds">Imbrication UDS</a>
+    <a href="#terre">Le réalisme terrestre</a>
+    <a href="#pieges">Pièges de mesure</a>
+  </nav>
+
+  <main>
+
+<!-- ========================================================= 00 -->
+<section id="depart">
+<h2><span class="num">00</span>Avant de commencer</h2>
+
+<div class="note">
+  <span class="etiq">Le dépôt ne suffit pas à ouvrir le projet</span>
+  <p><strong>Trois packs payants sont nécessaires et ne sont pas versionnés</strong> sur <a href="https://github.com/guillaumedelre/worldseed">github.com/guillaumedelre/worldseed</a>. Les EULA de Fab et du Marketplace autorisent à intégrer un pack dans un <em>produit compilé</em>, jamais à en redistribuer les fichiers sources. Le dépôt étant public, les y pousser serait une redistribution. Il faut donc les posséder.</p>
+</div>
+
+<div class="tbl-boite"><table>
+<thead><tr><th>à installer</th><th>rôle dans le projet</th><th class="n">poids</th><th>dossier attendu</th></tr></thead>
+<tbody>
+<tr><td><strong>Orasot Bundle</strong><br><span class="sous">Fab, payant</span></td><td>matériau de terrain à dix couches, rochers, arbres, falaises</td><td class="n">937 Mo</td><td><code>Content/Orasot_Bundle/</code></td></tr>
+<tr><td><strong>Ultra Dynamic Sky</strong><br><span class="sous">Fab, payant</span></td><td>ciel, soleil physique, météo et système de climat — les 23 presets de villes réelles viennent de là</td><td class="n">545 Mo</td><td><code>Content/UltraDynamicSky/</code></td></tr>
+<tr><td><strong>Stylized PBR Nature</strong><br><span class="sous">Fab, payant</span></td><td>végétation légère : <code>SM_Grass</code> 40 triangles, <code>SM_Bush</code> 64 — les maillages les plus économes du projet</td><td class="n">393 Mo</td><td><code>Content/Stylized_PBR_Nature/</code></td></tr>
+<tr><td><strong>VibeUE</strong><br><span class="sous">gratuit, GitHub</span></td><td>expose l'API Python utilisée par tout <code>Tools/UE/</code></td><td class="n">444 Mo</td><td><code>Plugins/VibeUE/</code></td></tr>
+</tbody></table></div>
+
+<p><strong>Les noms de dossier comptent.</strong> Ils sont référencés en dur par les graphes PCG et par <code>vegetation_recipes.json</code> : un dossier nommé autrement casse toutes les références d'un coup. Sans ces packs, le projet s'ouvre mais le terrain est blanc, la végétation absente et le ciel noir — ce n'est pas un défaut du dépôt, c'est une contrainte de licence.</p>
+
+<h3>Un asset à recréer à la main</h3>
+<p><code>M_WorldseedLandscape</code> est exclu du dépôt pour la même raison : c'est une <em>copie</em> du matériau maître d'Orasot, augmentée d'une dixième couche. Le recréer prend une minute — dupliquer <code>M_LandscapeMasterMaterial</code> vers <code>/Game/Worldseed/Materials/M_WorldseedLandscape</code>, puis ajouter une couche <code>Snow</code> au <code>LandscapeLayerBlend</code>.</p>
+<p>Son <em>instance</em>, <code>MI_WorldseedLandscape</code>, est versionnée, elle : une instance ne contient que des surcharges et une référence au parent. Et ces surcharges comptent — voir la section sur les matériaux.</p>
+
+<h3>Le reste se régénère</h3>
+<div class="cmd"><span class="c"># 1. l'environnement du generateur</span>
+cd Tools/WorldGen &amp;&amp; python -m venv .venv
+.venv/Scripts/python.exe -m pip install numpy scipy pillow
+
+<span class="c"># 2. engendrer le monde (environ 5 min)</span>
+.venv/Scripts/python.exe -m worldgen
+
+<span class="c"># 3. dans l'editeur, tout reconstruire (environ 1 min)</span>
+rebuild_world.rebuild(r"&lt;racine&gt;/Saved/WorldGen/20260909")</div>
+<p>Ni le monde produit (2,2 Go sous <code>Saved/</code>) ni les acteurs World Partition (363 Mo) ne sont versionnés : ils se refont depuis la graine, qui est inscrite dans <code>world_rules.json</code>. <strong>Une graine donne toujours le même monde.</strong></p>
+</section>
+
+<!-- ========================================================= 01 -->
+<section id="vue">
+<h2><span class="num">01</span>Vue d'ensemble</h2>
+<p>Worldseed se divise en deux moitiés qui ne se parlent que par des <strong>fichiers</strong>. C'est délibéré : la simulation ne dépend pas d'Unreal, donc elle se relance en cinq minutes sans ouvrir l'éditeur, et l'éditeur ne recalcule jamais un monde.</p>
+
+<figure>
+  <div class="fig-boite" id="fig-archi"></div>
+  <figcaption><b>Ce qui circule entre les deux moitiés.</b> Chaque fichier produit hors éditeur alimente un composant Unreal précis. Rien ne remonte dans l'autre sens.</figcaption>
+</figure>
+
+<div class="fiches">
+  <div class="fiche"><div class="nom">Tools/WorldGen/</div><div class="quoi"><strong>Hors éditeur.</strong> Python pur (numpy, scipy, Pillow) dans son propre <code>.venv</code>. Simule tectonique, climat, érosion, hydrologie, biomes et surfaces, puis écrit des PNG, des JSON et un rapport HTML.</div></div>
+  <div class="fiche"><div class="nom">Tools/UE/</div><div class="quoi"><strong>Dans l'éditeur.</strong> Python d'Unreal, exécuté par le plugin VibeUE. Lit les fichiers précédents et fabrique le Landscape, l'eau, le semis PCG, les textures virtuelles et les presets climatiques.</div></div>
+  <div class="fiche"><div class="nom">rules/world_rules.json</div><div class="quoi"><strong>La source unique de vérité.</strong> Aucun seuil n'est en dur dans le code. Chaque valeur non évidente porte un commentaire qui dit d'où elle vient, ce qu'elle a coûté et ce qu'on a mesuré en la changeant.</div></div>
+  <div class="fiche"><div class="nom">Saved/WorldGen/&lt;graine&gt;/</div><div class="quoi">La sortie : relief 16 bits, dix cartes de poids, carte des biomes, cartes de climat, rivières et lacs en JSON, manifeste, presets UDS, grille de biomes.</div></div>
+</div>
+
+<div class="note">
+  <span class="etiq">Le principe qui gouverne tout le reste</span>
+  <p>Une valeur ne se règle pas à l'œil. Chaque réglage du fichier de règles est justifié par une mesure, et les mesures rejetées sont conservées dans le commentaire pour qu'on ne les retente pas. Trois outils existent uniquement pour ça : <code>metrics.py</code> compare deux mondes, <code>terre.py</code> compare le monde à la Terre, <code>diag_*.py</code> cherchent des défauts précis.</p>
+</div>
+</section>
+
+<!-- ========================================================= 02 -->
+<section id="chaine">
+<h2><span class="num">02</span>La chaîne, étape par étape</h2>
+<p>Une génération complète prend environ <strong>cinq minutes</strong> en 2049 de simulation et 4065 de sortie. L'ordre n'est pas négociable : chaque étape consomme la précédente.</p>
+
+<div class="chaine">
+  <div class="etape"><div class="rang">1</div><div class="contenu">
+    <p class="nom">Tectonique</p>
+    <p class="det">18 plaques, dorsales et chaînes, bruit fractal déformé. Impose un pôle océanique au nord et un continent au sud, puis noie une ceinture de 375 m au bord du monde — sauf sur un pôle continental, qui est un point et non un littoral.</p>
+    <span class="fichiers">tectonics.py → relief brut</span></div></div>
+  <div class="etape"><div class="rang">2</div><div class="contenu">
+    <p class="nom">Climat, première passe</p>
+    <p class="det">Sur le relief brut. Ne sert qu'à une chose : fournir la carte de pluie qui pondère l'érosion.</p>
+    <span class="fichiers">climate.py → pluie provisoire</span></div></div>
+  <div class="etape"><div class="rang">3</div><div class="contenu">
+    <p class="nom">Érosion</p>
+    <p class="det">60 itérations d'incision fluviale pondérée par la pluie, plus diffusion de versant et éboulement au-delà de l'angle de talus. Les bassins fermés ne sont tolérés qu'en climat aride.</p>
+    <span class="fichiers">erosion.py → relief final</span></div></div>
+  <div class="etape"><div class="rang">4</div><div class="contenu">
+    <p class="nom">Recalage du niveau marin</p>
+    <p class="det">L'érosion déplace de la matière ; sans recalage la part des terres dériverait. On décale le zéro pour retrouver exactement <code>tectonics.landRatio</code>.</p>
+    <span class="fichiers">pipeline.py → 29,2 % de terres</span></div></div>
+  <div class="etape"><div class="rang">5</div><div class="contenu">
+    <p class="nom">Climat, seconde passe</p>
+    <p class="det">Rejoué sur le relief final. C'est ce climat-là qui classe les biomes et qui alimente les presets météo.</p>
+    <span class="fichiers">climate.py → température, pluie, vent, continentalité</span></div></div>
+  <div class="etape"><div class="rang">6</div><div class="contenu">
+    <p class="nom">Hydrologie</p>
+    <p class="det">Écoulement sur relief comblé, extraction des rivières par seuil de débit et ordre de Strahler, des lacs par profondeur et surface de cuvette. Contours tracés en marching squares puis accrochés à la berge.</p>
+    <span class="fichiers">hydrology.py → rivers.json, lakes.json</span></div></div>
+  <div class="etape"><div class="rang">7</div><div class="contenu">
+    <p class="nom">Biomes</p>
+    <p class="det">Diagramme de Whittaker sur le couple température / pluie, puis quatre surcharges que ce couple ne peut pas connaître : l'étage alpin, la roche à nu, la calotte permanente, l'estran et le marais.</p>
+    <span class="fichiers">biomes.py → biome_index.png</span></div></div>
+  <div class="etape"><div class="rang">8</div><div class="contenu">
+    <p class="nom">Surfaces et export</p>
+    <p class="det">Dix couches de poids pour le matériau de terrain, relief monté en résolution avec du détail fractal effacé au bord de l'eau et dans les couloirs de rivière, rapport HTML avec seize contrôles.</p>
+    <span class="fichiers">surfaces.py, export.py → height_16bit.png, layer_*.png, manifest.json</span></div></div>
+</div>
+
+<div class="note">
+  <span class="etiq">Une dépendance à connaître par cœur</span>
+  <p>La pluie pilote l'érosion, donc le relief. <strong>Tout terme de température placé avant le calcul des précipitations déplace le terrain, les rivières et les lacs</strong> ; placé après, il ne déplace que les biomes. Le choix se fait sur la causalité réelle : le refroidissement continental vient <em>avant</em> (un air plus froid porte moins de vapeur), la prime de chaleur aride vient <em>après</em> (c'est la sécheresse qui réchauffe).</p>
+</div>
+</section>
+
+<!-- ========================================================= 03 -->
+<section id="lancer">
+<h2><span class="num">03</span>Lancer les outils</h2>
+
+<h3>Hors éditeur</h3>
+<p>Tout part du <code>.venv</code> de <code>Tools/WorldGen</code>. Le module principal doit être lancé <strong>depuis ce répertoire</strong>, sinon Python ne trouve pas le paquet <code>worldgen</code>.</p>
+<div class="cmd"><span class="c"># generer le monde (environ 5 min)</span>
+cd Tools/WorldGen
+.venv/Scripts/python.exe -m worldgen
+
+<span class="c"># variantes utiles</span>
+.venv/Scripts/python.exe -m worldgen --preview     <span class="c"># simulation 1025, erosion allegee</span>
+.venv/Scripts/python.exe -m worldgen --no-write    <span class="c"># calcule et controle sans rien ecrire</span>
+.venv/Scripts/python.exe -m worldgen --seed 12345  <span class="c"># autre graine</span></div>
+
+<p>Puis la préparation pour Unreal, depuis la racine du dépôt :</p>
+<div class="cmd">P=Tools/WorldGen/.venv/Scripts/python.exe
+M=Saved/WorldGen/20260909
+
+$P Tools/WorldGen/tile_world.py $M            <span class="c"># decoupe en tuiles importables</span>
+$P Tools/WorldGen/export_biome_texture.py $M  <span class="c"># carte des biomes + marquage mineral</span>
+$P Tools/WorldGen/spawn_point.py $M           <span class="c"># choisit le point d'apparition</span>
+$P Tools/WorldGen/export_uds_climate.py       <span class="c"># presets climatiques UDS + grille</span></div>
+
+<h4>Contrôle et diagnostic</h4>
+<div class="fiches">
+  <div class="fiche"><div class="nom">terre.py</div><div class="quoi"><strong>Le bulletin de conformité terrestre.</strong> Six critères sourcés, les 23 climats réels d'UDS passés dans notre diagramme de Whittaker, et un score d'écart aux grands biomes.</div></div>
+  <div class="fiche"><div class="nom">metrics.py</div><div class="quoi">Relevé complet d'une génération, et <code>--diff</code> entre deux relevés. <strong>À lancer avant et après toute correction</strong> : c'est le seul contrôle qui voit ce qui a bougé là où on ne touchait pas.</div></div>
+  <div class="fiche"><div class="nom">diag_uds_climat.py</div><div class="quoi">Trois contrôles : climat contre biomes, nos presets contre ceux d'UDS, neige des presets contre couche de neige peinte.</div></div>
+  <div class="fiche"><div class="nom">diag_eau.py</div><div class="quoi">Hauteur du mur d'eau le long des <em>arêtes</em> des polygones de lac, lit de rivière suspendu ou enterré, remontées du terrain le long des cours d'eau.</div></div>
+  <div class="fiche"><div class="nom">diag_climat.py · diag_hydro.py</div><div class="quoi">Profils zonaux, ceinture désertique, ombres pluviométriques ; réseau hydrographique, embouchures, endoréisme.</div></div>
+</div>
+
+<h3>Dans l'éditeur</h3>
+<p>Les scripts de <code>Tools/UE</code> s'exécutent par <code>execute_python_code</code>. Le préambule est toujours le même :</p>
+<div class="cmd">import sys, importlib
+sys.path.insert(0, r"D:\UE\Worldseed\Tools\UE")
+import rebuild_world; importlib.reload(rebuild_world)
+print(rebuild_world.rebuild(r"D:\UE\Worldseed\Saved\WorldGen\20260909"))</div>
+
+<div class="note">
+  <span class="etiq">Attendu, pas une panne</span>
+  <p><code>execute_python_code</code> remonte <code>PYTHON_EXECUTION_TIMEOUT</code> au bout de 30 secondes <strong>alors que le script continue et aboutit</strong>. Ne pas relancer l'appel : lire la preuve dans <code>Saved/Logs/Worldseed.log</code>, où chaque script journalise ses <code>CREATED:</code> / <code>MODIFIED:</code> / <code>DELETED:</code>.</p>
+</div>
+
+<div class="fiches">
+  <div class="fiche"><div class="nom">rebuild_world.py</div><div class="quoi"><strong>La séquence complète, et l'ordre compte.</strong> Vide le niveau, importe relief et dix couches en une passe, pose le matériau, crée l'océan <em>avant</em> la zone d'eau, importe la carte des biomes, arme le <code>PCGWorldActor</code>, sème la végétation, place le point d'apparition.</div></div>
+  <div class="fiche"><div class="nom">import_world.py</div><div class="quoi">L'import du Landscape seul. N'assigne pas le matériau — un terrain fraîchement importé est blanc.</div></div>
+  <div class="fiche"><div class="nom">water_world.py</div><div class="quoi">Océan, zone d'eau adoptée, lacs en splines fermées, rivières avec largeur et profondeur par nœud.</div></div>
+  <div class="fiche"><div class="nom">vegetation.py</div><div class="quoi">Construit les graphes PCG depuis <code>vegetation_recipes.json</code>. Sept pas de grille, du tapis à 150 cm aux arbres épars à 1800.</div></div>
+  <div class="fiche"><div class="nom">foliage_lods.py</div><div class="quoi">Pose un groupe de LOD sur les maillages de plus de 400 triangles qui n'en ont pas. <strong>Jamais le groupe nommé <code>Foliage</code></strong> : sa définition est <code>NumLODs=1</code>, il n'en génère aucun.</div></div>
+  <div class="fiche"><div class="nom">rvt_setup.py</div><div class="quoi">Les deux textures virtuelles du pack Orasot. La transform d'un volume est un <em>coin</em> et une <em>taille</em>, pas un centre et une demi-portée.</div></div>
+  <div class="fiche"><div class="nom">uds_climate.py</div><div class="quoi">Matérialise les presets climatiques calculés hors éditeur en assets Unreal, et les vérifie case par case.</div></div>
+</div>
+</section>
+
+<!-- ========================================================= 04 -->
+<section id="climat">
+<h2><span class="num">04</span>Le système climatique</h2>
+<p>Le climat se construit en couches qui se superposent dans un ordre précis. Chaque formule est calée sur une mesure terrestre, donnée en regard.</p>
+
+<figure>
+  <div class="fig-boite" id="fig-zonal"></div>
+  <figcaption><b>Le profil zonal produit.</b> Treize bandes de latitude, mesurées sur le monde courant. La température suit le cosinus de la latitude ; la pluie culmine à la zone de convergence intertropicale et s'effondre dans les ceintures de subsidence vers 25–30°, exactement comme sur Terre.</figcaption>
+</figure>
+
+<h3>1 · Le profil zonal de température</h3>
+<p>L'énergie solaire reçue au sommet de l'atmosphère varie, en moyenne annuelle, à peu près comme le <strong>cosinus de la latitude</strong>. Un profil linéaire en cos est donc la forme de premier ordre — pas une approximation choisie au hasard.</p>
+<div class="formule">T(φ) = poleC + (equatorC − poleC) · cos(φ) ^ cosineExponent</div>
+
+<figure>
+  <div class="fig-boite" id="fig-profils"></div>
+  <figcaption><b>Quatre formes essayées contre le profil zonal réel.</b> La loi en sinus carré — le réflexe habituel — se trompe de 12 °C à 60°, assez pour couvrir de calotte glaciaire tout un hémisphère. Écart absolu moyen : sin² 7,02 °C · (φ/90)² 1,95 · (φ/90)^1,8 1,11 · <b>cos(φ) 0,84</b>.</figcaption>
+</figure>
+
+<h3>2 · L'altitude</h3>
+<div class="formule">T −= lapseRateCPerKm · max(altitude, 0) / 1000</div>
+<p>Le gradient adiabatique est <strong>multiplié par 4</strong> par rapport au réel (26 au lieu de 6,5 °C/km). C'est une exception assumée à la règle d'échelle : sans elle, un relief quatre fois plus bas perdrait tout rôle climatique et il n'y aurait ni étage alpin ni neige de montagne.</p>
+
+<h3>3 · La continentalité</h3>
+<p>Mesurée comme la distance à l'<strong>océan seul</strong> — ni lacs ni rivières : une rivière ne fait pas d'un intérieur continental une façade maritime.</p>
+<div class="formule">cont = 1 − exp(−distanceOcéan / oceanModerationRangeKm)</div>
+<p>Elle agit de deux façons opposées selon la latitude, ce qui est physiquement juste :</p>
+<ul>
+<li><strong>Aux hautes latitudes, elle refroidit.</strong> L'océan ne lisse pas seulement l'année, il la réchauffe : Iakoutsk, 62° N dans les terres, est à −8,8 °C ; Bergen, 60° N sur la côte, à +7,6 °C. Seize degrés pour deux degrés de latitude. Sans ce terme, la taïga et la toundra n'ont nulle part où exister.</li>
+<li><strong>Aux basses latitudes, l'aridité réchauffe.</strong> Ciel dégagé, donc plus d'insolation au sol, et pas d'évaporation pour en consommer une part en chaleur latente. Sans ce terme, nos déserts plafonnaient à 16,6 °C quand les relevés réels sont à 22–34.</li>
+</ul>
+<div class="formule">T −= continentalCoolingC · cont · smoothstep(25°, 60°, |φ|)   <span class="c">→ AVANT la pluie</span>
+T += aridityHeatC · aridité · cos(φ)                          <span class="c">→ APRES la pluie</span></div>
+
+<h3>4 · L'amplitude saisonnière</h3>
+<p>C'est elle qui alimente directement les températures d'hiver et d'été des presets UDS. Elle était fausse de deux façons à la fois.</p>
+<div class="formule">amp = ampEq + (ampPole − ampEq) · sin(φ) · (1 − oceanModerationFraction · (1 − cont))</div>
+
+<figure>
+  <div class="fig-boite" id="fig-amp"></div>
+  <figcaption><b>Huit stations réelles, deux modèles.</b> L'ancienne forme donnait 16 °C d'amplitude à Iakoutsk, qui en fait 57. Écart absolu moyen : <b>15,4 °C</b> pour la forme linéaire, <b>4,7 °C</b> pour la forme sinus.</figcaption>
+</figure>
+
+<p>Deux erreurs se cumulaient : l'amplitude croissait <em>linéairement</em> avec la latitude alors que le contraste saisonnier suit le <em>sinus</em> — projection de la déclinaison solaire ; et l'océan amortissait par <em>soustraction</em> alors qu'il amortit <em>proportionnellement</em>. La soustraction donnait des amplitudes négatives aux basses latitudes maritimes, qu'il fallait borner à 1.</p>
+
+<div class="note">
+  <span class="etiq">Le motif à retenir</span>
+  <p>Un <code>max(x, 1)</code> posé pour rattraper un résultat absurde est presque toujours le signe d'une <strong>mauvaise forme de fonction</strong>, pas d'une mauvaise valeur. Si aucun réglage ne satisfait deux mesures à la fois, changer le chiffre ne servira jamais.</p>
+</div>
+
+<h3>5 · Les précipitations</h3>
+<p>Un modèle d'advection : trois cellules de circulation par hémisphère donnent le champ de vent, l'humidité s'évapore au-dessus de l'eau, se concentre par convergence à la ZCIT, se condense au soulèvement orographique et s'assèche en zone de subsidence. Le résultat brut est ensuite mis à l'échelle.</p>
+<div class="formule">moyenne des pluies sur les terres  →  targetMeanLandMm (715 mm/an)
+en DEUX passes : l'ecretage a maxPrecipMm retire de l'eau
+et fait manquer la cible a la premiere.</div>
+<div class="note">
+  <span class="etiq">L'erreur de calibration la plus coûteuse trouvée à ce jour</span>
+  <p>Cette valeur de 715 mm était appliquée à la <strong>médiane</strong>, avec un commentaire qui la décrivait comme telle. Or 715 mm est la <strong>moyenne</strong> terrestre, et la distribution des pluies est très dissymétrique. Le monde était 70 % trop humide — moyenne mesurée 1217 mm — et portait 23,7 % de ses terres au-dessus de 2000 mm quand la Terre en a 7 à 8. Conséquence visible : trop de forêts, pas assez de prairies, de savanes ni de déserts.</p>
+</div>
+</section>
+
+<!-- ========================================================= 05 -->
+<section id="whittaker">
+<h2><span class="num">05</span>Le diagramme des biomes</h2>
+<p>La classification lit la bande de température, puis le seuil de pluie à l'intérieur de la bande. L'étagement altitudinal n'est pas une règle séparée : il tombe du gradient adiabatique. Un sommet tropical à 3000 m est à 7 °C, donc le diagramme y lit « forêt tempérée » — une forêt de montagne, sans une seule règle d'altitude.</p>
+
+<figure>
+  <div class="fig-boite" id="fig-whittaker"></div>
+  <figcaption><b>Notre diagramme de Whittaker, et les 23 climats réels posés dessus.</b> Les presets livrés par Ultra Dynamic Sky sont des relevés de villes réelles, chacun citant sa station et sa source. Chaque point est l'un d'eux, placé à sa température moyenne annuelle et son cumul de pluie. Un désert réel doit tomber dans une case désert, une forêt tropicale dans une case forêt tropicale — c'est le contrôle que <code>terre.py</code> automatise.</figcaption>
+</figure>
+
+<p>Quatre surcharges traitent ce que le couple température / pluie ne peut pas savoir :</p>
+<div class="tbl-boite"><table>
+<thead><tr><th>surcharge</th><th>critère</th><th>origine du critère</th></tr></thead>
+<tbody>
+<tr><td>Étage alpin</td><td>sous la limite des arbres <em>et</em> en altitude réelle</td><td>sans le second critère, toute la toundra de bord de mer basculerait en alpin</td></tr>
+<tr><td>Roche à nu</td><td>pente au-delà de l'angle de tenue</td><td>aucune terre ne reste sur une pente trop forte, quel que soit le climat</td></tr>
+<tr><td>Calotte glaciaire</td><td>mois le plus chaud sous 0 °C</td><td><strong>critère de Köppen EF</strong></td></tr>
+<tr><td>Estran, marais</td><td>proximité de l'eau, pente faible</td><td>géométrie, pas climat</td></tr>
+</tbody></table></div>
+</section>
+
+<!-- ========================================================= 06 -->
+<section id="echelle">
+<h2><span class="num">06</span>La règle d'échelle</h2>
+<p>Le monde est une <strong>maquette au 1/4</strong> d'un ancien monde de 32 km. Toute nouvelle valeur doit suivre cette règle, sans quoi une seule constante métrique en dur fausse le monde entier — ce qui est déjà arrivé.</p>
+<div class="tbl-boite"><table>
+<thead><tr><th>nature de la valeur</th><th class="n">facteur</th><th>exemples</th></tr></thead>
+<tbody>
+<tr><td><strong>Relatif</strong> — inchangé</td><td class="n">×1</td><td>fréquences en cycles par monde, distances en pixels de simulation, seuils normalisés par centile, angles, degrés de latitude, températures, millimètres de pluie</td></tr>
+<tr><td><strong>Métrique</strong></td><td class="n">÷4</td><td>altitudes, largeurs, rayons en kilomètres</td></tr>
+<tr><td><strong>Aire ou débit</strong></td><td class="n">÷16</td><td>surface minimale de lac, seuil de débit</td></tr>
+</tbody></table></div>
+<p>Deux exceptions assumées, décidées par le propriétaire du projet :</p>
+<ul>
+<li>le <strong>gradient adiabatique est multiplié par 4</strong>, pour que l'altitude garde son rôle climatique sur un relief quatre fois plus bas ;</li>
+<li><code>geometryExaggeration</code> est <strong>multipliée par 16</strong>, pour que les rivières gardent leur largeur réelle en mètres. Un monde de 8 km ne peut pas porter de fleuve — son plus grand bassin donnerait un chenal de 40 cm — mais l'échelle humaine, elle, ne rétrécit pas avec le monde : une rivière doit rester un obstacle et demander un pont.</li>
+</ul>
+<div class="note">
+  <span class="etiq">Le contrôle qui trouve ce que la lecture du code rate</span>
+  <p>Après toute mise à l'échelle, lancer <code>metrics.py --diff</code> contre l'ancien monde. C'est ce diff — et non la relecture du code — qui a trouvé un <code>+ 400.0</code> écrit en dur dans la tectonique : toutes les autres métriques collaient à moins d'un point, celle-là sautait de 4,7.</p>
+</div>
+</section>
+
+<!-- ========================================================= 07 -->
+<section id="unreal">
+<h2><span class="num">07</span>Comment ça s'imbrique dans Unreal</h2>
+<div class="tbl-boite"><table>
+<thead><tr><th>fichier produit</th><th>composant Unreal</th><th>ce qu'il faut savoir</th></tr></thead>
+<tbody>
+<tr><td><code>height_16bit.png</code></td><td>Landscape</td><td>16×16 composants de 127 quads, 4065 sommets, échelle 196,85 / 196,85 / 136,72. <strong>Ne jamais dépasser ~256 composants avec dix couches</strong> : au-delà, l'import des poids fait tomber le thread RHI.</td></tr>
+<tr><td><code>layer_*.png</code> ×10</td><td>Couches peintes</td><td>Importées en une seule passe avec le relief, sinon une fusion d'edit layers par couche.</td></tr>
+<tr><td><code>biome_index.png</code></td><td>Texture lue par PCG</td><td>Les identifiants de biome sur surface minérale sont <strong>décalés de 100</strong>. La carte dit donc deux choses : quel biome, et si le sol y est rocheux ou sableux.</td></tr>
+<tr><td><code>rivers.json</code>, <code>lakes.json</code></td><td>Water plugin</td><td>Lacs en splines fermées, rivières avec largeur et profondeur par nœud. <code>RiverWidth</code> est la largeur <em>totale</em>, contrairement à ce que dit son commentaire.</td></tr>
+<tr><td><code>spawn_point.json</code></td><td>PlayerStart</td><td>Choisi sur des critères mesurés : altitude, pente, distance à l'eau, biome.</td></tr>
+<tr><td><code>manifest.json</code></td><td>tous</td><td>Géométrie du Landscape, repères de latitude en centimètres, noms des couches, plages climatiques, statistiques.</td></tr>
+</tbody></table></div>
+
+<h3>Le semis de végétation</h3>
+<p>Le PCG lit la carte des biomes et sème en <strong>génération à l'exécution</strong>, jamais cuite : le monde complet représenterait une douzaine de millions d'instances.</p>
+<div class="formule">PCGSurfaceSampler → PCGSampleTexture (filtre Point) → PCGProjection → PCGStaticMeshSpawner</div>
+<ul>
+<li>Le filtre PCG des textures est <strong>bilinéaire par défaut</strong>, ce qui interpole des identifiants de biome et invente des biomes inexistants, sans la moindre erreur. Il faut <code>Point</code>.</li>
+<li>Semer d'abord <em>dans</em> la maille puis lire la texture au point — jamais l'inverse. Transformer une texture de tuile entière en points fabrique trois millions de points par maille de 256 m.</li>
+<li>Le déclencheur se pose <strong>avant</strong> le partitionnement, sinon les acteurs de partition sont écrits sur le disque.</li>
+</ul>
+
+<h3>Les matériaux</h3>
+<p>Le terrain utilise le maître du pack Orasot, augmenté d'une dixième couche. <strong>Un pack de terrain se consomme par son instance, jamais par son maître</strong> : la démo du pack surcharge 14 scalaires et 4 textures, et ces valeurs <em>sont</em> le rendu du pack. Deux textures virtuelles (couleur et hauteur) permettent au feuillage de prendre le ton du sol, à condition que le mode de passe de rendu soit <code>ALWAYS</code> — sans quoi le terrain proche paraît aplati.</p>
+</section>
+
+<!-- ========================================================= 08 -->
+<section id="uds">
+<h2><span class="num">08</span>Comment ça s'imbrique dans Ultra Dynamic Sky</h2>
+<p>UDS n'est pas qu'un ciel : il embarque son propre système de climat. Un <code>UDS_Climate_Preset</code> porte exactement ce que le générateur calcule déjà par pixel.</p>
+
+<figure>
+  <div class="fig-boite" id="fig-uds"></div>
+  <figcaption><b>Du pixel au preset.</b> Chaque case d'un preset UDS a une origine mesurée dans nos cartes. Trente et un presets au total : un par couple biome × hémisphère, celui du sud étant celui du nord avec les saisons échangées.</figcaption>
+</figure>
+
+<div class="note">
+  <span class="etiq">Trois pièges de lecture, corrigés en lisant les presets livrés plutôt qu'en raisonnant</span>
+  <p><code>Rainfall (mm)</code> est un cumul <strong>mensuel</strong>, pas saisonnier. <code>Snowfall (mm)</code> est un <strong>équivalent-eau</strong>, pas une hauteur de neige. Et l'écart diurne réel ne fait que <strong>4 à 9 °C</strong> — ce sont des moyennes haute et basse, pas des extrêmes.</p>
+</div>
+
+<h3>Deux hémisphères, une seule saison</h3>
+<p>UDS n'a qu'une saison globale, or le monde va d'un pôle à l'autre : quand c'est l'été au nord, c'est l'hiver au sud. Chaque biome présent dans les deux hémisphères reçoit donc <strong>deux presets</strong>, celui du sud étant celui du nord avec hiver/été et printemps/automne échangés.</p>
+
+<h3>Le soleil</h3>
+<div class="note">
+  <span class="etiq">Le réglage sans lequel la latitude ne sert à rien</span>
+  <p><code>Ultra_Dynamic_Sky.Latitude</code> est <strong>ignorée</strong> tant que <code>Simulate Real Sun</code> vaut <code>False</code> : UDS trace alors un arc simplifié dont l'élévation de midi vaut <code>90 − Sun Pitch</code>, identique à toutes les latitudes. Mesure : latitude 0 et latitude 47 donnaient toutes deux 60° à midi.</p>
+</div>
+<div class="tbl-boite"><table>
+<thead><tr><th class="n">latitude</th><th class="n">élévation de midi mesurée</th><th class="n">attendue</th><th></th></tr></thead>
+<tbody>
+<tr><td class="n">5°</td><td class="n">87,1°</td><td class="n">87,2°</td><td><span class="pastille p-ok">exact</span></td></tr>
+<tr><td class="n">47°</td><td class="n">45,4°</td><td class="n">45,2°</td><td><span class="pastille p-ok">exact</span></td></tr>
+<tr><td class="n">85°</td><td class="n">7,6°</td><td class="n">7,2°</td><td><span class="pastille p-ok">exact</span></td></tr>
+</tbody></table></div>
+
+<h3>La latitude n'est plus proportionnelle à Y</h3>
+<p>Depuis le passage à la carte équivalente-aire, la conversion demande un arc sinus :</p>
+<div class="formule">latitude = degrés( asin( Y / demiEtendueCm ) )</div>
+<p>Au point d'apparition (Y = 292 323 cm), la bonne valeur est <strong>+46,95°</strong> là où un produit linéaire aurait donné <strong>+65,77°</strong> — dix-neuf degrés d'erreur. C'est pourquoi le manifeste n'écrit plus de taux constant dans ce mode : mieux vaut une clé manquante qu'un chiffre faux.</p>
+
+<h3>Le pilotage à l'exécution</h3>
+<p>Un acteur <code>BP_WorldseedClimat</code> posé dans le niveau lit la position du joueur toutes les demi-secondes, en déduit la latitude et l'écrit dans UDS. La table <code>DT_WorldseedGrille</code> — 128 × 128 cellules de 62 m — donne le <strong>biome dominant dans un rayon de 200 m</strong>, et non le biome du pixel : un climat est une propriété régionale, et les taches de biome de ce monde ont une médiane sous 0,1 hectare. Lire le pixel ferait battre la météo à chaque pas.</p>
+</section>
+
+<!-- ========================================================= 09 -->
+<section id="terre">
+<h2><span class="num">09</span>Le réalisme terrestre recherché</h2>
+<p>Le critère de réussite posé par le propriétaire : <em>des climats comme on en trouve sur Terre, des biomes pareil, et l'hydrométrie qui en découle</em>, avec des <em>surfaces similaires à la Terre</em>. Deux instruments le mesurent, et ils ne se valent pas.</p>
+
+<h3>La correspondance latitude → Y, qui pèse plus que tout réglage</h3>
+<figure>
+  <div class="fig-boite" id="fig-latitude"></div>
+  <figcaption><b>Parts de surface par zone climatique.</b> En correspondance linéaire, le monde avait trois fois trop de surface polaire et un tiers de tropiques en moins, et aucun réglage de climat ne pouvait le rattraper. La carte fait désormais varier Y comme le sinus de la latitude — projection cylindrique équivalente de Lambert — ce qui reproduit exactement les parts d'une sphère.</figcaption>
+</figure>
+<p class="sous">Contrepartie assumée : la bande qui va du cercle polaire au pôle passe de 1042 à 330 m. <code>latitudeEqualAreaBlend</code> permet de revenir à mi-chemin.</p>
+
+<h3>Le bulletin — des critères sourcés, qui se lisent dans l'absolu</h3>
+<div class="tbl-boite"><table>
+<thead><tr><th>critère</th><th class="n">monde</th><th class="n">Terre</th><th>source</th></tr></thead>
+<tbody>
+<tr><td>Terres émergées</td><td class="n">29,2 %</td><td class="n">29,2 %</td><td>valeur physique établie</td></tr>
+<tr><td>Pluie moyenne sur les terres</td><td class="n">708 mm</td><td class="n">715 mm</td><td>valeur physique établie</td></tr>
+<tr><td>Terres au-dessus de 2000 mm</td><td class="n">9,0 %</td><td class="n">7,5 %</td><td>—</td></tr>
+<tr><td>Désert + semi-aride chauds</td><td class="n">14,6 %</td><td class="n">21,0 %</td><td>BWh 14,2 % — Peel, Finlayson &amp; McMahon 2007</td></tr>
+<tr><td>Surface tropicale (&lt; 23,4°)</td><td class="n">39,8 %</td><td class="n">39,8 %</td><td>géométrie d'une sphère : surface entre −L et +L = sin L</td></tr>
+<tr><td>Surface polaire (&gt; 66,6°)</td><td class="n">8,3 %</td><td class="n">8,3 %</td><td>idem</td></tr>
+</tbody></table></div>
+
+<h3>Les parts de biomes</h3>
+<figure>
+  <div class="fig-boite" id="fig-biomes"></div>
+  <figcaption><b>Composition du monde, et repères terrestres.</b> Les losanges marquent les ordres de grandeur terrestres pour les huit grands biomes. Savane, prairie, forêt tempérée et calotte sont au niveau ; la taïga et la toundra restent en retrait, ce que la section suivante explique.</figcaption>
+</figure>
+
+<h3>Le score — un instrument de comparaison, jamais de jugement</h3>
+<div class="note">
+  <span class="etiq">Pourquoi il plafonne vers 28–32 %</span>
+  <p>Deux raisons structurelles. Les terres étant fixées à 29,2 %, les parts de biomes sont un <strong>jeu à somme nulle</strong> : agrandir l'Antarctique retire de la savane. Et les huit biomes de référence ne couvrent que 62 % de nos terres — le reste va en roche nue, forêt tropicale sèche, steppe, plages et lacs — alors que la Terre compte sa roche désertique <em>dans</em> le BWh. Ce chiffre sert à départager deux réglages, pas à juger un monde.</p>
+</div>
+
+<details>
+<summary>Mesures rejetées, à ne pas retenter</summary>
+<div class="details-corps">
+<ul>
+<li><strong>Baisser <code>subsidenceFactor</code></strong> pour réduire la ceinture désertique : va à contresens, la part aride <em>monte</em>.</li>
+<li><strong>Relancer la convergence d'humidité</strong> pour remonter l'équateur : monte bien l'équateur de 1078 à 1720 mm, mais comme la moyenne est ancrée, tout le pourtour s'assèche en compensation — désert chaud 21,9 → 25,7 %, savane 15,4 → 10,7 %.</li>
+<li><strong>Classer la toundra par le critère de Köppen ET</strong> (mois le plus chaud sous 10 °C), qui est pourtant <em>le</em> critère de la limite des arbres : il détruit la taïga. Notre amplitude à 60° plafonne à 30 °C contre 38 sur Terre même après correction, donc « le mois le plus chaud » y reste trop froid.</li>
+<li><strong>Agrandir les continents</strong> pour créer des intérieurs continentaux : ils sont déjà aussi compacts que ceux de la Terre — indice de fragmentation 2,58 contre 2,60, et 89,5 % des terres dans trois masses contre 68 % sur Terre. Les agrandir <em>éloignerait</em> du réel.</li>
+</ul>
+</div>
+</details>
+</section>
+
+<!-- ========================================================= 10 -->
+<section id="pieges">
+<h2><span class="num">10</span>Pièges de mesure</h2>
+<p>Chacun a été payé comptant. Ils ont en commun de produire un résultat <em>plausible</em> plutôt qu'une erreur.</p>
+<div class="tbl-boite"><table>
+<thead><tr><th>ce qu'on croit mesurer</th><th>ce qui se passe vraiment</th></tr></thead>
+<tbody>
+<tr><td>Lire le soleil d'UDS après avoir écrit l'heure</td><td>UDS met le soleil à jour sur son <strong>tick d'éditeur</strong>. Écrire puis lire dans le même script rend l'état <em>précédent</em>. Écrire dans un appel, lire dans le suivant, viewport en temps réel.</td></tr>
+<tr><td>Charger un asset après avoir arrêté le PIE</td><td>La fermeture du PIE est <strong>asynchrone</strong> : <code>load_asset</code> rend <code>None</code> pendant la transition. Symptôme trompeur — 31 assets déclarés introuvables, tous présents à l'appel suivant.</td></tr>
+<tr><td>Inspecter un Blueprint pendant un PIE</td><td><code>list_variables</code> renvoie <strong>0</strong>. Toute l'introspection se fait PIE arrêté ; en PIE, passer par <code>call_method</code>.</td></tr>
+<tr><td>Juger l'exposition dans le viewport de l'éditeur</td><td>Le viewport a <strong>sa propre exposition</strong>. La même scène était sombre dans l'éditeur et correctement exposée en PIE.</td></tr>
+<tr><td>Juger la végétation dans le viewport de l'éditeur</td><td>Le semis PCG est en génération à l'exécution : sans source de génération il ne produit rien, et la source de viewport est capricieuse en 5.8. <strong>Juger la végétation en PIE.</strong></td></tr>
+<tr><td>Compter les composants d'herbe sur le Landscape</td><td>L'herbe de Landscape n'est <strong>pas exposée comme composant</strong>. La démo du pack, qui a pourtant un tapis visible, rapporte le même zéro. Valider toute métrique sur un cas témoin connu.</td></tr>
+<tr><td>Échantillonner le terrain sur le contour d'un masque</td><td>Le trait passe entre deux cellules et l'arrondi tombe une fois sur deux dans l'eau. Échantillonner en bilinéaire, le long des <strong>arêtes</strong> du polygone.</td></tr>
+<tr><td>Mesurer la continentalité par la distance à l'eau</td><td>Si l'on compte lacs et rivières, la médiane tombe à 100 m et les intérieurs disparaissent. Le modèle, lui, compte la distance à l'<strong>océan seul</strong>.</td></tr>
+</tbody></table></div>
+</section>
+
+<footer>
+  <p>Worldseed · monde de 8 km, graine 20260909 · simulation 2049, sortie 4065. Toutes les valeurs chiffrées de ce document sont des mesures prises sur le monde courant ou sur des références citées ; aucune n'est estimée.</p>
+</footer>
+
+  </main>
+</div>
+</div>
+
+<script>
+/* ====================================================== donnees mesurees */
+const D = {
+  zonal: [{lat:-83.1,t:-26.6,p:0,terre:100.0},{lat:-69.2,t:-11.3,p:4,terre:70.5},
+    {lat:-55.4,t:2.2,p:613,terre:9.4},{lat:-41.5,t:11.0,p:383,terre:21.2},
+    {lat:-27.7,t:21.5,p:361,terre:19.0},{lat:-13.8,t:24.9,p:1552,terre:25.7},
+    {lat:0.0,t:26.2,p:1702,terre:18.8},{lat:13.8,t:24.9,p:511,terre:23.9},
+    {lat:27.7,t:23.0,p:0,terre:40.1},{lat:41.5,t:11.6,p:401,terre:45.4},
+    {lat:55.4,t:0.3,p:523,terre:41.0},{lat:69.2,t:-7.8,p:333,terre:21.4},
+    {lat:83.1,t:-15.2,p:0,terre:0.0}],
+  biomes: [["Désert chaud",14.64,21],["Roche nue",12.08,null],["Calotte glaciaire",9.57,10],
+    ["Forêt tropicale humide",9.18,11],["Savane",8.60,13],["Forêt tempérée",7.15,9],
+    ["Forêt tropicale sèche",6.61,null],["Désert froid",6.54,null],["Taïga",5.58,10],
+    ["Prairie",4.83,8],["Plage",3.08,null],["Toundra",2.91,8],["Steppe",2.43,null],
+    ["Lac",2.29,null],["Alpin",2.11,null],["Rivière",1.47,null],
+    ["Forêt tempérée humide",0.91,null]],
+  couleurs: {"Désert chaud":"#D6BE7E","Roche nue":"#706C68","Calotte glaciaire":"#D8E2EC",
+    "Forêt tropicale humide":"#1E6E3A","Savane":"#C4AC5C","Forêt tempérée":"#468042",
+    "Forêt tropicale sèche":"#809846","Désert froid":"#B0B0A6","Taïga":"#2E543E",
+    "Prairie":"#96A85C","Plage":"#E2D4AC","Toundra":"#A6B098","Steppe":"#B2AC6C",
+    "Lac":"#2E74B5","Alpin":"#96928C","Rivière":"#56A4D6","Forêt tempérée humide":"#2A6836"},
+  /* bandes de Whittaker : [tMin, tMax, [[pMax, nom]...]] */
+  bandes: [
+    [-27,-5,[[120,"Désert froid"],[3000,"Toundra"]]],
+    [-5,5,[[150,"Désert froid"],[350,"Toundra"],[3000,"Taïga"]]],
+    [5,12,[[150,"Désert froid"],[400,"Steppe"],[1200,"Forêt tempérée"],[3000,"Forêt tempérée humide"]]],
+    [12,20,[[250,"Désert chaud"],[600,"Prairie"],[1500,"Forêt tempérée"],[3000,"Forêt tempérée humide"]]],
+    [20,33,[[300,"Désert chaud"],[900,"Savane"],[1500,"Forêt tropicale sèche"],[3000,"Forêt tropicale humide"]]]],
+  reels: [["Tropical_Savanna-Dry_Winter",28.1,818],["Polar_Ice_Cap",-16.1,197],
+    ["Oceanic",8.6,639],["Hot_Desert",25.8,20],["Cold_Desert",17.0,221],
+    ["Subarctic",2.5,1340],["Subarctic-Severe_Winter",-11.6,389],["Polar_Tundra",-8.4,1202],
+    ["Humid_Subtropical",14.0,673],["Humid_Subtropical-Dry_Winter",14.4,1364],
+    ["Mediterranean_Hot_Summer",17.0,420],["Mediterranean_Cool_Summer",13.2,809],
+    ["Mediterranean_Cold_Summer",7.2,467],["Hot_Semi-Arid",25.0,240],
+    ["Cold_Semi-Arid",6.1,610],["Tropical_Rainforest",27.4,1879],["Tropical_Monsoon",27.9,1758],
+    ["Tropical_Savanna-Dry_Summer",26.5,600],["Subtropical_Highland",16.5,1130],
+    ["Subtropical_Highland-Dry_Winter",14.1,1334],["Hot_Summer_Continental",11.6,1001],
+    ["Warm_Summer_Continental",6.5,1223],["Subpolar_Oceanic",6.6,962]],
+  stations: [["Singapour",1,2,1.0,3.3],["Lisbonne",39,12,5.2,12.3],["Téhéran",36,25,10.6,27.7],
+    ["Chicago",42,28,11.9,31.1],["Bergen",60,13,9.7,15.7],["Winnipeg",50,38,13.6,35.2],
+    ["Iakoutsk",62,57,16.1,40.1],["Vostok",78,36,19.5,44.1]],
+  profilTerre: [[0,26],[10,26.3],[15,25.5],[20,24.5],[30,20],[40,14.5],[45,12],[50,8.5],
+    [60,0],[70,-8],[75,-12],[80,-15],[90,-20]]
+};
+
+/* ====================================================== fabrique SVG */
+const NS = "http://www.w3.org/2000/svg";
+function E(n, a, p) { const e = document.createElementNS(NS, n);
+  for (const k in (a||{})) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; }
+function T(x, y, s, a, p) { const e = E("text", Object.assign({x:x, y:y, class:"sv-txt"}, a||{}), p);
+  e.textContent = s; return e; }
+function svg(hote, w, h) {
+  const s = E("svg", {viewBox:`0 0 ${w} ${h}`, width:w, height:h, role:"img"});
+  document.getElementById(hote).appendChild(s); return s;
+}
+
+/* ------------------------------------------------ 1. bande de latitude */
+(function(){
+  const W=980,H=132,M={g:44,d:14,h:16,b:34};
+  const s=svg("fig-bande",W,H), iw=W-M.g-M.d, ih=H-M.h-M.b;
+  const lat2x = l => M.g + (Math.sin(l*Math.PI/180)+1)/2*iw;   // equivalent-aire
+  const z=D.zonal, tmin=-30, tmax=30;
+  // barres de terres, coloriees par temperature
+  const pas=(lat2x(90)-lat2x(-90))/z.length;
+  z.forEach(d=>{
+    const x=lat2x(d.lat), hh=Math.max(2, d.terre/100*ih);
+    const u=(d.t-tmin)/(tmax-tmin);
+    const c = d.t<-5 ? "#D8E2EC" : d.t<5 ? "#A6B098" : d.t<12 ? "#2E543E"
+            : d.t<20 ? "#468042" : "#C4AC5C";
+    E("rect",{x:x-9,y:M.h+ih-hh,width:18,height:hh,fill:c,rx:1.5,
+      stroke:"var(--trait)","stroke-width":.5},s);
+  });
+  // courbe de temperature
+  let dd="";
+  z.forEach((d,i)=>{ const x=lat2x(d.lat), y=M.h+ih-(d.t-tmin)/(tmax-tmin)*ih;
+    dd += (i?" L":"M")+x.toFixed(1)+" "+y.toFixed(1); });
+  E("path",{d:dd,fill:"none",stroke:"var(--serie-t)","stroke-width":1.8,
+    "stroke-linejoin":"round"},s);
+  z.forEach(d=>{ const x=lat2x(d.lat), y=M.h+ih-(d.t-tmin)/(tmax-tmin)*ih;
+    E("circle",{cx:x,cy:y,r:2.4,fill:"var(--serie-t)"},s); });
+  // axes
+  E("line",{x1:M.g,y1:M.h+ih,x2:W-M.d,y2:M.h+ih,class:"sv-axe"},s);
+  [-90,-66.6,-23.4,0,23.4,66.6,90].forEach(l=>{
+    const x=lat2x(l);
+    E("line",{x1:x,y1:M.h,x2:x,y2:M.h+ih,class:"sv-grille"},s);
+    T(x,M.h+ih+14,(l>0?"+":"")+l.toFixed(0)+"°",{"text-anchor":"middle"},s);
+  });
+  T(M.g,M.h+ih+29,"pôle sud",{"text-anchor":"start"},s);
+  T(lat2x(0),M.h+ih+29,"équateur",{"text-anchor":"middle"},s);
+  T(W-M.d,M.h+ih+29,"pôle nord",{"text-anchor":"end"},s);
+  T(6,M.h+9,"terres %",{},s);
+  T(6,M.h+ih,"0",{},s);
+  const lg=document.createElement("div"); lg.className="legende";
+  lg.innerHTML='<span><i style="background:var(--serie-t)"></i>température moyenne</span>'+
+    '<span><i style="background:#D8E2EC"></i>&lt; −5 °C</span>'+
+    '<span><i style="background:#A6B098"></i>−5 à 5</span>'+
+    '<span><i style="background:#2E543E"></i>5 à 12</span>'+
+    '<span><i style="background:#468042"></i>12 à 20</span>'+
+    '<span><i style="background:#C4AC5C"></i>&gt; 20 °C</span>';
+  document.getElementById("fig-bande").appendChild(lg);
+})();
+
+/* ------------------------------------------------ 2. architecture */
+(function(){
+  const W=980,H=290;
+  const s=svg("fig-archi",W,H);
+  const col=[
+    {x:16,w:186,titre:"Tools/WorldGen",sous:"Python hors éditeur",c:"var(--accent)",
+     items:["tectonics · climate","erosion · hydrology","biomes · surfaces","export"]},
+    {x:250,w:216,titre:"Saved/WorldGen/<graine>",sous:"les fichiers échangés",c:"var(--sable)",
+     items:["height_16bit.png","layer_*.png ×10","biome_index.png","rivers · lakes.json",
+            "uds_climate.json","manifest.json"]},
+    {x:514,w:190,titre:"Tools/UE",sous:"Python dans l'éditeur",c:"var(--accent)",
+     items:["rebuild_world","water_world","vegetation · pcg","uds_climate · rvt"]},
+    {x:752,w:212,titre:"Le niveau",sous:"composants Unreal",c:"var(--taiga)",
+     items:["Landscape + 10 couches","WaterZone · lacs · rivières","PCG à l'exécution",
+            "Ultra Dynamic Sky","BP_WorldseedClimat"]}];
+  col.forEach((c,i)=>{
+    const h = 46 + c.items.length*21 + 10;
+    const y = (H-h)/2;
+    E("rect",{x:c.x,y:y,width:c.w,height:h,rx:4,fill:"var(--surface-2)",
+      stroke:c.c,"stroke-width":1.4},s);
+    E("rect",{x:c.x,y:y,width:c.w,height:3,rx:1.5,fill:c.c},s);
+    T(c.x+13,y+22,c.titre,{class:"sv-txt-fort"},s);
+    T(c.x+13,y+36,c.sous,{},s);
+    c.items.forEach((it,j)=>T(c.x+13,y+56+j*21,it,{},s));
+    if(i<col.length-1){
+      const xa=c.x+c.w+6, xb=col[i+1].x-6, ym=H/2;
+      E("line",{x1:xa,y1:ym,x2:xb-6,y2:ym,stroke:"var(--trait-fort)","stroke-width":1.4},s);
+      E("path",{d:`M${xb-7} ${ym-4} L${xb} ${ym} L${xb-7} ${ym+4} Z`,fill:"var(--trait-fort)"},s);
+    }
+  });
+  T(W/2,H-6,"aucune information ne remonte dans l'autre sens",
+    {"text-anchor":"middle"},s);
+})();
+
+/* ------------------------------------------------ 3. profil zonal */
+(function(){
+  const W=980,H=320,M={g:52,d:54,h:18,b:44};
+  const s=svg("fig-zonal",W,H), iw=W-M.g-M.d, ih=H-M.h-M.b;
+  const x=l=>M.g+(Math.sin(l*Math.PI/180)+1)/2*iw;
+  const yT=t=>M.h+ih-(t+30)/60*ih;
+  const yP=p=>M.h+ih-Math.min(p,2000)/2000*ih;
+  // grille
+  [-20,-10,0,10,20].forEach(t=>{
+    E("line",{x1:M.g,y1:yT(t),x2:W-M.d,y2:yT(t),class:"sv-grille"},s);
+    T(M.g-8,yT(t)+3.5,(t>0?"+":"")+t,{"text-anchor":"end"},s); });
+  [0,500,1000,1500,2000].forEach(p=>{
+    T(W-M.d+8,yP(p)+3.5,p,{"text-anchor":"start"},s); });
+  // aire de pluie
+  let a=`M${x(-90)} ${M.h+ih}`;
+  D.zonal.forEach(d=>a+=` L${x(d.lat).toFixed(1)} ${yP(d.p).toFixed(1)}`);
+  a+=` L${x(90)} ${M.h+ih} Z`;
+  E("path",{d:a,fill:"var(--serie-p)","fill-opacity":.18,
+    stroke:"var(--serie-p)","stroke-width":1.6,"stroke-linejoin":"round"},s);
+  // courbe de temperature
+  let c="";
+  D.zonal.forEach((d,i)=>c+=(i?" L":"M")+x(d.lat).toFixed(1)+" "+yT(d.t).toFixed(1));
+  E("path",{d:c,fill:"none",stroke:"var(--serie-t)","stroke-width":2.2,
+    "stroke-linejoin":"round"},s);
+  D.zonal.forEach(d=>{
+    E("circle",{cx:x(d.lat),cy:yT(d.t),r:3,fill:"var(--serie-t)"},s);
+    E("circle",{cx:x(d.lat),cy:yP(d.p),r:2.6,fill:"var(--serie-p)"},s); });
+  // reperes
+  [[-66.6,"cercle polaire"],[-23.4,"tropique"],[0,"équateur"],[23.4,"tropique"],
+   [66.6,"cercle polaire"]].forEach(([l,n])=>{
+    E("line",{x1:x(l),y1:M.h,x2:x(l),y2:M.h+ih,class:"sv-grille","stroke-dasharray":"3 3"},s);
+    T(x(l),M.h+ih+16,(l>0?"+":"")+l+"°",{"text-anchor":"middle"},s);
+    T(x(l),M.h+ih+29,n,{"text-anchor":"middle","font-size":"9"},s); });
+  E("line",{x1:M.g,y1:M.h+ih,x2:W-M.d,y2:M.h+ih,class:"sv-axe"},s);
+  T(M.g-8,M.h+10,"°C",{"text-anchor":"end",class:"sv-txt-fort"},s);
+  T(W-M.d+8,M.h+10,"mm/an",{"text-anchor":"start",class:"sv-txt-fort"},s);
+  const lg=document.createElement("div"); lg.className="legende";
+  lg.innerHTML='<span><i style="background:var(--serie-t)"></i>température moyenne annuelle</span>'+
+    '<span><i style="background:var(--serie-p)"></i>précipitations annuelles</span>';
+  document.getElementById("fig-zonal").appendChild(lg);
+})();
+
+/* ------------------------------------------------ 4. formes de profil */
+(function(){
+  const W=980,H=300,M={g:48,d:150,h:18,b:38};
+  const s=svg("fig-profils",W,H), iw=W-M.g-M.d, ih=H-M.h-M.b;
+  const x=l=>M.g+l/90*iw, y=t=>M.h+ih-(t+30)/60*ih;
+  const EQ=27,PO=-25,DT=EQ-PO;
+  const formes=[
+    {n:"sin²(φ)",  f:p=>EQ-DT*Math.pow(Math.sin(p*Math.PI/180),2), c:"#b0b0a6", e:"7,02"},
+    {n:"(φ/90)²",  f:p=>EQ-DT*Math.pow(p/90,2),                    c:"#c4ac5c", e:"1,95"},
+    {n:"(φ/90)^1,8",f:p=>EQ-DT*Math.pow(p/90,1.8),                 c:"#809846", e:"1,11"},
+    {n:"cos(φ)",   f:p=>PO+DT*Math.cos(p*Math.PI/180),             c:"var(--serie-t)", e:"0,84", fort:1}];
+  [-20,-10,0,10,20].forEach(t=>{
+    E("line",{x1:M.g,y1:y(t),x2:W-M.d,y2:y(t),class:"sv-grille"},s);
+    T(M.g-8,y(t)+3.5,(t>0?"+":"")+t,{"text-anchor":"end"},s); });
+  [0,15,30,45,60,75,90].forEach(l=>{
+    T(x(l),M.h+ih+15,l+"°",{"text-anchor":"middle"},s); });
+  formes.forEach(fo=>{
+    let d=""; for(let p=0;p<=90;p+=1.5) d+=(p?" L":"M")+x(p).toFixed(1)+" "+y(fo.f(p)).toFixed(1);
+    E("path",{d:d,fill:"none",stroke:fo.c,"stroke-width":fo.fort?2.6:1.5,
+      "stroke-dasharray":fo.fort?"":"4 3"},s); });
+  D.profilTerre.forEach(([l,t])=>E("circle",{cx:x(l),cy:y(t),r:3.4,
+    fill:"var(--surface)",stroke:"var(--texte)","stroke-width":1.6},s));
+  E("line",{x1:M.g,y1:M.h+ih,x2:W-M.d,y2:M.h+ih,class:"sv-axe"},s);
+  T(M.g-8,M.h+10,"°C",{"text-anchor":"end",class:"sv-txt-fort"},s);
+  T(W-M.d+34,M.h+ih+15,"latitude",{"text-anchor":"middle"},s);
+  // legende a droite, dans le viewBox
+  const lx=W-M.d+16; let ly=M.h+26;
+  T(lx,M.h+12,"écart moyen",{class:"sv-txt-fort"},s);
+  E("circle",{cx:lx+6,cy:ly-4,r:3.4,fill:"var(--surface)",stroke:"var(--texte)","stroke-width":1.6},s);
+  T(lx+18,ly,"profil réel",{},s); ly+=22;
+  formes.slice().reverse().forEach(fo=>{
+    E("line",{x1:lx,y1:ly-4,x2:lx+13,y2:ly-4,stroke:fo.c,"stroke-width":fo.fort?2.6:1.5,
+      "stroke-dasharray":fo.fort?"":"4 3"},s);
+    T(lx+18,ly,fo.n,{},s);
+    T(W-14,ly,fo.e+" °C",{"text-anchor":"end"},s);
+    ly+=22; });
+})();
+
+/* ------------------------------------------------ 5. amplitude */
+(function(){
+  const W=980,H=300,M={g:96,d:24,h:26,b:40};
+  const s=svg("fig-amp",W,H), iw=W-M.g-M.d, ih=H-M.h-M.b;
+  const n=D.stations.length, bw=iw/n;
+  const y=v=>M.h+ih-v/60*ih;
+  [0,10,20,30,40,50,60].forEach(v=>{
+    E("line",{x1:M.g,y1:y(v),x2:W-M.d,y2:y(v),class:"sv-grille"},s);
+    T(M.g-8,y(v)+3.5,v,{"text-anchor":"end"},s); });
+  D.stations.forEach(([nom,lat,reel,lin,sin],i)=>{
+    const cx=M.g+bw*i+bw/2;
+    // liaison reel -> modeles
+    E("line",{x1:cx,y1:y(Math.min(reel,lin,sin)),x2:cx,y2:y(Math.max(reel,lin,sin)),
+      stroke:"var(--grille)","stroke-width":1},s);
+    E("rect",{x:cx-19,y:y(lin)-1.5,width:16,height:3,fill:"#b0b0a6",rx:1.5},s);
+    E("rect",{x:cx+3,y:y(sin)-1.5,width:16,height:3,fill:"var(--serie-p)",rx:1.5},s);
+    E("circle",{cx:cx,cy:y(reel),r:4.4,fill:"var(--surface)",
+      stroke:"var(--serie-t)","stroke-width":2.2},s);
+    T(cx,M.h+ih+16,nom,{"text-anchor":"middle","font-size":"10"},s);
+    T(cx,M.h+ih+28,lat+"°",{"text-anchor":"middle","font-size":"9"},s); });
+  E("line",{x1:M.g,y1:M.h+ih,x2:W-M.d,y2:M.h+ih,class:"sv-axe"},s);
+  T(M.g-8,M.h+10,"°C",{"text-anchor":"end",class:"sv-txt-fort"},s);
+  T(M.g-92,M.h+10,"amplitude",{"text-anchor":"start",class:"sv-txt-fort"},s);
+  const lg=document.createElement("div"); lg.className="legende";
+  lg.innerHTML='<span><i style="background:var(--surface);border:2px solid var(--serie-t)"></i>mesure réelle</span>'+
+    '<span><i style="background:#b0b0a6"></i>forme linéaire — écart 15,4 °C</span>'+
+    '<span><i style="background:var(--serie-p)"></i>forme sinus — écart 4,7 °C</span>';
+  document.getElementById("fig-amp").appendChild(lg);
+})();
+
+/* ------------------------------------------------ 6. Whittaker */
+(function(){
+  const W=980,H=460,M={g:56,d:190,h:18,b:46};
+  const s=svg("fig-whittaker",W,H), iw=W-M.g-M.d, ih=H-M.h-M.b;
+  const PMAX=3000, TMIN=-27, TMAX=33;
+  const x=p=>M.g+Math.min(p,PMAX)/PMAX*iw;
+  const y=t=>M.h+ih-(t-TMIN)/(TMAX-TMIN)*ih;
+  const vus=new Set();
+  D.bandes.forEach(([t0,t1,cuts])=>{
+    let p0=0;
+    cuts.forEach(([p1,nom])=>{
+      E("rect",{x:x(p0),y:y(t1),width:x(p1)-x(p0),height:y(t0)-y(t1),
+        fill:D.couleurs[nom]||"#999","fill-opacity":.82,
+        stroke:"var(--surface)","stroke-width":1},s);
+      const lw=x(p1)-x(p0), lh=y(t0)-y(t1);
+      if(lw>74 && lh>18){
+        const sombre = ["Taïga","Forêt tropicale humide","Forêt tempérée humide",
+                        "Forêt tempérée","Roche nue"].includes(nom);
+        const e=T(x(p0)+lw/2, y(t1)+lh/2+3.5, nom,
+          {"text-anchor":"middle","font-size":"10.5"},s);
+        e.setAttribute("fill", sombre ? "#f2f6fa" : "#10171f");
+        e.removeAttribute("class");
+      }
+      vus.add(nom); p0=p1; }); });
+  // les 23 climats reels
+  D.reels.forEach(([nom,t,p])=>{
+    E("circle",{cx:x(p),cy:y(t),r:5.2,fill:"var(--surface)",
+      stroke:"var(--texte)","stroke-width":1.7,"fill-opacity":.92},s);
+    E("circle",{cx:x(p),cy:y(t),r:1.8,fill:"var(--texte)"},s); });
+  // axes
+  E("line",{x1:M.g,y1:M.h+ih,x2:M.g+iw,y2:M.h+ih,class:"sv-axe"},s);
+  E("line",{x1:M.g,y1:M.h,x2:M.g,y2:M.h+ih,class:"sv-axe"},s);
+  [0,500,1000,1500,2000,2500,3000].forEach(p=>{
+    T(x(p),M.h+ih+16,p,{"text-anchor":"middle"},s); });
+  T(M.g+iw/2,M.h+ih+34,"précipitations annuelles (mm)",
+    {"text-anchor":"middle",class:"sv-txt-fort"},s);
+  [-25,-20,-10,0,10,20,30].forEach(t=>{
+    T(M.g-8,y(t)+3.5,(t>0?"+":"")+t,{"text-anchor":"end"},s); });
+  T(M.g-8,M.h+10,"°C",{"text-anchor":"end",class:"sv-txt-fort"},s);
+  // legende des climats reels, a droite
+  const lx=M.g+iw+18;
+  T(lx,M.h+12,"23 climats réels",{class:"sv-txt-fort"},s);
+  T(lx,M.h+26,"relevés de villes, livrés",{},s);
+  T(lx,M.h+38,"avec Ultra Dynamic Sky",{},s);
+  const tri=D.reels.slice().sort((a,b)=>b[1]-a[1]);
+  tri.forEach((r,i)=>{
+    const yy=M.h+58+i*15.4;
+    E("circle",{cx:lx+5,cy:yy-3.6,r:3.4,fill:"var(--surface)",
+      stroke:"var(--texte)","stroke-width":1.4},s);
+    T(lx+15,yy,r[0].replace(/_/g," ").slice(0,24),{"font-size":"9.5"},s); });
+})();
+
+/* ------------------------------------------------ 7. latitude */
+(function(){
+  const W=980,H=210,M={g:126,d:20,h:30,b:34};
+  const s=svg("fig-latitude",W,H), iw=W-M.g-M.d;
+  const lignes=[
+    {n:"linéaire — abandonnée",v:[26.0,47.9,26.1]},
+    {n:"équivalente-aire",v:[39.8,52.0,8.3],fort:1},
+    {n:"sphère (Terre)",v:[39.8,52.0,8.3]}];
+  const cs=["#C4AC5C","#468042","#D8E2EC"];
+  const noms=["tropiques  < 23,4°","tempérées  23,4 – 66,6°","polaires  > 66,6°"];
+  lignes.forEach((l,i)=>{
+    const y=M.h+i*44, h=30; let px=M.g;
+    l.v.forEach((v,j)=>{
+      const w=v/100*iw;
+      E("rect",{x:px,y:y,width:w,height:h,fill:cs[j],"fill-opacity":l.fort?1:.55,
+        stroke:"var(--surface)","stroke-width":1.5},s);
+      if(w>44){ const e=T(px+w/2,y+h/2+4,v.toFixed(1)+" %",
+        {"text-anchor":"middle","font-size":"11"},s);
+        e.setAttribute("fill", j===1 ? "#f2f6fa" : "#10171f"); e.removeAttribute("class"); }
+      px+=w; });
+    const e=T(M.g-12,y+h/2+4,l.n,{"text-anchor":"end"},s);
+    if(l.fort){ e.setAttribute("class","sv-txt-fort"); }
+  });
+  noms.forEach((n,j)=>{
+    const cx=M.g+ (j===0?0: j===1? 39.8:91.8)/100*iw;
+    T(cx+4,M.h-10,n,{"font-size":"10"},s);
+    E("rect",{x:cx,y:M.h-22,width:9,height:9,fill:cs[j],rx:2},s);
+  });
+})();
+
+/* ------------------------------------------------ 8. biomes */
+(function(){
+  const W=980,H=440,M={g:180,d:80,h:26,b:32};
+  const s=svg("fig-biomes",W,H), iw=W-M.g-M.d;
+  const max=22, x=v=>M.g+v/max*iw;
+  [0,5,10,15,20].forEach(v=>{
+    E("line",{x1:x(v),y1:M.h-8,x2:x(v),y2:H-M.b+4,class:"sv-grille"},s);
+    T(x(v),H-M.b+18,v+" %",{"text-anchor":"middle"},s); });
+  D.biomes.forEach(([nom,part,terre],i)=>{
+    const y=M.h+i*22.6, h=14;
+    E("rect",{x:M.g,y:y,width:Math.max(x(part)-M.g,1.5),height:h,rx:2,
+      fill:D.couleurs[nom]||"#999",stroke:"var(--trait)","stroke-width":.6},s);
+    T(M.g-10,y+11,nom,{"text-anchor":"end","font-size":"11"},s);
+    T(x(part)+7,y+11,part.toFixed(2),{"font-size":"10"},s);
+    if(terre!==null){
+      const cx=x(terre), cy=y+h/2;
+      E("path",{d:`M${cx} ${cy-6.5} L${cx+5.5} ${cy} L${cx} ${cy+6.5} L${cx-5.5} ${cy} Z`,
+        fill:"none",stroke:"var(--texte)","stroke-width":1.6},s); }
+  });
+  E("line",{x1:M.g,y1:M.h-8,x2:M.g,y2:H-M.b+4,class:"sv-axe"},s);
+  const lg=document.createElement("div"); lg.className="legende";
+  lg.innerHTML='<span>barres — part des terres du monde courant</span>'+
+    '<span><i style="background:transparent;border:1.6px solid var(--texte);transform:rotate(45deg)"></i>ordre de grandeur terrestre</span>';
+  document.getElementById("fig-biomes").appendChild(lg);
+})();
+
+/* ------------------------------------------------ 9. UDS */
+(function(){
+  const W=980,H=270,M={h:22};
+  const s=svg("fig-uds",W,H);
+  const gauche=[
+    ["température moyenne annuelle","climate_temp.png"],
+    ["amplitude saisonnière","climate.seasonal_amplitude()"],
+    ["cumul annuel de pluie","climate_rain.png"],
+    ["continentalité","distance à l'océan"],
+    ["latitude","position Y → asin"]];
+  const droite=[
+    ["Winter / Summer Average High & Low Temp","moyenne ± amplitude/2 ± diurne/2"],
+    ["Cloudy Percentage","fonction croissante de la pluie mensuelle"],
+    ["Rainfall (mm) — mensuel","cumul annuel ÷ 12, modulé par la saison"],
+    ["Snowfall (mm) — équivalent-eau","part tombant sous le seuil de gel"],
+    ["Dust / Sand Present","aridité et chaleur du biome"]];
+  const gw=250, dw=392, gx=14, dx=W-dw-14, cx=W/2;
+  E("rect",{x:gx,y:M.h,width:gw,height:H-M.h-30,rx:4,fill:"var(--surface-2)",
+    stroke:"var(--accent)","stroke-width":1.4},s);
+  T(gx+13,M.h+20,"Ce que Worldseed mesure",{class:"sv-txt-fort"},s);
+  gauche.forEach((g,i)=>{
+    T(gx+13,M.h+44+i*34,g[0],{"font-size":"11"},s);
+    T(gx+13,M.h+57+i*34,g[1],{"font-size":"9.5"},s); });
+  E("rect",{x:dx,y:M.h,width:dw,height:H-M.h-30,rx:4,fill:"var(--surface-2)",
+    stroke:"var(--taiga)","stroke-width":1.4},s);
+  T(dx+13,M.h+20,"UDS_Climate_Preset — les 21 cases",{class:"sv-txt-fort"},s);
+  droite.forEach((d,i)=>{
+    T(dx+13,M.h+44+i*34,d[0],{"font-size":"11"},s);
+    T(dx+13,M.h+57+i*34,d[1],{"font-size":"9.5"},s); });
+  const xa=gx+gw+8, xb=dx-8, ym=(M.h+H-30)/2;
+  E("line",{x1:xa,y1:ym,x2:xb-7,y2:ym,stroke:"var(--trait-fort)","stroke-width":1.4},s);
+  E("path",{d:`M${xb-8} ${ym-4.5} L${xb} ${ym} L${xb-8} ${ym+4.5} Z`,fill:"var(--trait-fort)"},s);
+  T(cx,ym-10,"export_uds_climate.py",{"text-anchor":"middle","font-size":"10"},s);
+  T(cx,ym+20,"31 presets",{"text-anchor":"middle","font-size":"10"},s);
+  T(W/2,H-8,"un preset par couple biome × hémisphère — au sud, les saisons sont échangées",
+    {"text-anchor":"middle"},s);
+})();
+</script>
+
+</body>
+</html>

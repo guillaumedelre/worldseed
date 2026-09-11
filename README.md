@@ -166,7 +166,20 @@ divise par 16.
 
 ## Documentation
 
+- **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — la référence
+  complète. La chaîne étape par étape, le système climatique et ses formules,
+  son calage sur la Terre, son imbrication dans Unreal et Ultra Dynamic Sky, et
+  les pièges de mesure. Neuf schémas tracés sur des mesures réelles, dont le
+  diagramme de Whittaker du projet avec les 23 climats réels posés dessus.
+  Fichier autonome : il s'ouvre par un double-clic, sans serveur.
+  <br>*Version en ligne, identique :*
+  [claude.ai/code/artifact/a6dfe9c1…](https://claude.ai/code/artifact/a6dfe9c1-09eb-4548-b749-dd019a0aeadd)
 - **`CLAUDE.md`** — les pièges rencontrés et leur correctif, accumulés session
   après session. À lire avant de toucher au moteur : la plupart des impasses y
   sont déjà décrites, avec la mesure qui les a révélées.
 - **`ETAT_DES_LIEUX.md`** — état du projet et points ouverts.
+
+**Une réserve sur l'atlas.** Ses chiffres sont des mesures prises sur la graine
+`20260909`. Régénérer le monde avec une autre graine ou d'autres règles les rend
+caducs : ils décriraient un monde qui n'existe plus. Ils se refont en relisant
+`manifest.json` et `uds_presets_livres.json`, comme lors de la rédaction.
