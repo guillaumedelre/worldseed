@@ -97,6 +97,19 @@ nommée `Snow` dans le `LandscapeLayerBlend`. L'instance
 `MI_WorldseedLandscape`, elle, est versionnée : elle porte les 18 surcharges de
 l'auteur du pack, sans lesquelles le terrain ne ressemble à rien.
 
+Une fois le maître recréé, reposer son carrelage — ce réglage vit dans le
+graphe, donc hors du dépôt :
+
+```python
+import landscape_material; landscape_material.regler()
+```
+
+Sans lui, le sol d'herbe n'a aucun grain : de larges traînées vertes. Et cela
+se voit — mesure en prairie à hauteur d'œil, **51 % de la moitié basse du cadre
+est du sol nu**, 59,7 % dans les trois premiers mètres. Le script ne retaille
+que l'herbe : la roche resserrée fait apparaître un moiré hexagonal sur les
+pentes lointaines (vérifié par A/B).
+
 **Les matériaux greffés de la RVT.** Le terrain écrit sa couleur dans une
 Runtime Virtual Texture, mais seuls **38 des 142 maillages semés (27 %)**
 passaient par un matériau qui la relit : la même herbe verte était semée en

@@ -1796,3 +1796,48 @@ quasi blancs que le soleil transforme en eclats.** Et il n'existe AUCUN
 parametre expose pour retailler l'herbe, la roche ou la neige : seuls `Sand UV`
 et `SizeOfGravel` existent. Les retailler demanderait une chirurgie de graphe
 sur le maitre -- a n'engager que si un defaut visible le justifie.
+
+### Retailler le sol : l'herbe oui, la roche non (11 septembre 2026)
+
+**Le probleme, chiffre.** Sur la moitie basse d'une vue a hauteur d'oeil en
+prairie -- ce que le joueur a devant les pieds -- **51 % de la surface est du
+sol nu**, et **59,7 % dans les trois premiers metres**. La vegetation ne le
+cache pas. Or ce sol, a la valeur du pack, n'a aucun grain : de larges trainees
+vertes.
+
+**OU SE REGLE LE CARRELAGE, et ce qui n'y sert a rien.** Ni `Uv Scale`
+(essaye a 0,35), ni `LandscapeLayerCoords.MappingScale` (essaye a 16) ne
+pilotent le carrelage des couches, malgre leur nom. Ce sont les **12 noeuds
+`TextureCoordinate`**, tous a `UTiling = VTiling = 1`, chacun alimentant une
+famille de textures. Les modifier est une simple edition de propriete,
+reversible, sans recablage :
+
+    @(-4720,-1666) @(-4608,-1008) @(-4624,-800) @(-4960,-528)  les 4 HERBES
+    @(-6625,  976)                                             la ROCHE
+    @(-6574,   99) @(-5552, 1872)                              les GRAVIERS
+    @(-5504, 3056) @(-5822, 4226)                              le SABLE
+    @(-2928,  672)                          carte de HAUTEUR du gravier
+    @( 3948, 1760) @( 3964, 2064)           bruits de DISTRIBUTION des fleurs
+
+Les quatre noeuds d'herbe ne remontent a aucune texture depuis le materiau :
+leurs textures sont dans `MF_Grass`. On les reconnait en suivant leurs
+connexions jusqu'a l'appel de cette fonction.
+
+**NE PAS TOUCHER aux trois derniers** : la carte de hauteur du gravier sert au
+MELANGE des couches, et les deux bruits de distribution decident d'OU poussent
+les fleurs. Les retailler change le motif du monde, pas sa finesse.
+
+**RESULTAT : herbe a 4, tout le reste a 1.**
+- Herbe x4 : energie haute frequence **3,29 -> 4,41 (+34 %)**, aucun artefact.
+  (La periode d'autocorrelation, elle, reste a 100 cm : elle mesure le grand
+  motif de melange, pas le grain. Mauvaise metrique pour cette question.)
+- **Roche x4 : MOIRE HEXAGONAL tres visible sur les pentes lointaines.**
+  Verifie par A/B au meme cadrage : le motif apparait a 4, subsiste a 2,
+  disparait a 1. La roche reste donc a la valeur de l'auteur. Serrer le
+  carrelage monte la frequence spatiale, et les mip-maps d'un Landscape ne la
+  rattrapent pas a distance.
+- Graviers remis a 1 par prudence : petites surfaces, benefice nul, meme risque.
+
+**REGLE** : apres tout resserrement de carrelage, CONTROLER LES PENTES
+LOINTAINES, pas seulement le sol sous les pieds. Le gain est proche, le defaut
+est loin.
