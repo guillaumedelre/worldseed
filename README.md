@@ -11,6 +11,34 @@ toujours le même monde.
 
 ---
 
+## ⚠️ Ce dépôt ne suffit pas à ouvrir le projet
+
+**Trois packs payants sont nécessaires et ne sont pas — ne peuvent pas être —
+versionnés ici.** Les EULA de Fab et du Marketplace autorisent à intégrer un
+pack dans un *produit compilé*, jamais à en redistribuer les fichiers sources.
+Ce dépôt étant public, les y pousser serait une redistribution.
+
+| pack | rôle dans le projet | poids |
+|---|---|---|
+| **Orasot Bundle** | matériau de terrain à dix couches, rochers, arbres, falaises | 937 Mo |
+| **Ultra Dynamic Sky** | ciel, soleil physique, météo et système de climat | 545 Mo |
+| **Stylized PBR Nature** | végétation légère — `SM_Grass` 40 triangles, `SM_Bush` 64 | 393 Mo |
+
+Il faut les **acheter ou les récupérer dans votre bibliothèque Fab**, puis les
+installer dans `Content/` sous ces noms exacts :
+`Content/Orasot_Bundle/`, `Content/UltraDynamicSky/`, `Content/Stylized_PBR_Nature/`.
+Les chemins sont référencés en dur par les graphes PCG et les recettes de
+végétation : un nom de dossier différent casse toutes les références.
+
+Sans eux, le projet s'ouvre mais le terrain est blanc, la végétation absente et
+le ciel noir. **Ce n'est pas un défaut du dépôt, c'est une contrainte de
+licence.**
+
+S'ajoute un quatrième composant, gratuit celui-là : le plugin **VibeUE**, qui
+expose l'API Python utilisée par tout `Tools/UE/`.
+
+---
+
 ## Ce que ce dépôt contient, et ce qu'il ne contient pas
 
 | | suivi | pourquoi |
