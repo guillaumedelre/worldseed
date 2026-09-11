@@ -6,6 +6,9 @@
     "resolution": 4065,
     "simResolution": 2049,
     "latitudeSpanDeg": 180.0,
+    "_comment_latitude": "Correspondance entre la coordonnee Y et la latitude. 'linear' : la latitude varie proportionnellement a Y. 'equalArea' : Y varie comme le SINUS de la latitude, comme la projection cylindrique equivalente de Lambert, ce qui donne a chaque zone climatique la part de surface qu'elle occupe sur une sphere. LE CHOIX PESE PLUS LOURD QUE N'IMPORTE QUEL REGLAGE DE CLIMAT, parce qu'il fixe les parts de surface : en lineaire, tropiques 26,0 % et polaires 26,1 % ; en equivalent-aire, tropiques 39,8 % et polaires 8,3 %, soit exactement les valeurs terrestres. Le lineaire donnait donc TROIS FOIS trop de surface polaire et un tiers de tropiques en moins que la Terre, ce qu'aucune correction de precipitation ne pouvait rattraper. Contrepartie assumee par le proprietaire le 11 septembre 2026 : la bande qui va du cercle polaire au pole passe de 1042 a 330 metres. latitudeEqualAreaBlend melange les deux (0 = lineaire, 1 = sphere) si l'on veut un jour retrouver des calottes plus larges.",
+    "latitudeMapping": "equalArea",
+    "latitudeEqualAreaBlend": 1.0,
     "tropicDeg": 23.44,
     "polarCircleDeg": 66.56,
     "minElevationM": -300.0,
@@ -21,11 +24,15 @@
   },
   "tectonics": {
     "plateCount": 18,
-    "landRatio": 0.42,
+    "_comment_landRatio": "Part des terres emergees. Sur Terre : 0,292. Etait a 0,42 (43 % de terres en plus que la realite) jusqu'au 11 septembre 2026, ou le proprietaire a pose que les surfaces devaient ressembler a la Terre. COUT DE JEU ASSUME : sur un monde de 8 km, la surface praticable passe d'environ 13,4 a 9,3 km2, soit 30 % de moins. Revenir en arriere ne demande que cette ligne.",
+    "landRatio": 0.292,
     "northPole": "ocean",
     "southPole": "continent",
-    "poleForcingRadiusDeg": 14.0,
-    "poleForcingStrength": 0.75,
+    "_comment_poleForcing": "Rayon du forcage polaire, en DEGRES de latitude. Reference terrestre : l'Antarctique atteint 63 degres sud a la pointe de sa peninsule et environ 70 pour la masse principale, soit un rayon de 20 a 27 degres. Porte de 14 a 25 le 11 septembre 2026 EN CONSEQUENCE DU PASSAGE A LA CARTE EQUIVALENTE-AIRE : en correspondance lineaire, 14 degres delimitaient une bande de 622 m ; en equivalent-aire ils n'en font plus que 119, et le continent polaire, reduit a une frange, etait noye par le recalage du niveau marin -- calotte glaciaire DISPARUE du monde. A 25 degres la bande fait 375 m, soit 9,4 % d'un hemisphere, ce qui est la proportion antarctique.",
+    "_comment_poleRadius": "Rayons de forcage polaire, en DEGRES, DISTINCTS pour les deux poles. Reference terrestre : le continent antarctique s'etend du pole jusque vers 60-63 degres, d'ou 30 au sud ; l'ocean Arctique est borde de terres qui montent a 78-83 degres (Groenland, Svalbard, nord canadien), d'ou seulement 15 au nord. Avec le rayon unique de 25 essaye d'abord, le pole nord noyait tout au-dela de 65 degres : 3,1 % de terres entre 70 et 80, donc ni taiga ni toundra. poleForcingRadiusDeg reste lu en secours si l'un des deux manque.",
+    "poleForcingRadiusDegNorth": 15.0,
+    "poleForcingRadiusDegSouth": 30.0,
+    "poleForcingStrength": 0.85,
     "mountainHeightM": 325.0,
     "mountainWidthKm": 1.5,
     "riftDepthM": 80.0,
@@ -57,7 +64,11 @@
     "seasonalAmplitudePoleC": 22.0,
     "oceanModerationC": 6.0,
     "oceanModerationRangeKm": 0.75,
-    "latitudeExponent": 2.0
+    "_comment_latitudeExponent": "Exposant du profil zonal de temperature : T = equatorC - (equatorC - poleC) * (|lat| / 90)^k. Cale sur le profil zonal reel de la Terre (0 deg 26 C, 30 deg 20, 45 deg 12, 60 deg 0, 75 deg -12). Ecart absolu moyen mesure : k=2,0 -> 2,29 C ; k=1,9 -> 1,86 ; k=1,8 -> 1,47 ; k=1,7 -> 1,54. Retenu 1,8. Ce que corrige le changement : a 60 degres le modele donnait +3,9 C contre 0 sur Terre, ce qui interdisait a la taiga et a la toundra d'exister sur les continents boreaux.",
+    "latitudeExponent": 1.8,
+    "_comment_aridite": "Prime de chaleur d'un sol aride, en degres, appliquee APRES le calcul des precipitations (voir climate.generate). Un desert est plus chaud que sa latitude : ciel degage, donc plus d'insolation au sol, et pas d'evaporation pour en consommer une part en chaleur latente. Mise a l'echelle : unite RELATIVE, ne suit pas la division par 4. Mesure sur la graine 20260909 : sans prime, le desert chaud plafonnait a 16,6 C de moyenne quand les presets reels d'UDS sont a 22-34 ; a 8 C la mediane passe a 25,1 C et seulement 4,2 % des terres changent de biome (desert chaud 13,5 -> 14,5 %, savane 4,0 -> 5,0 %, forets inchangees). A 6 C : 23,6 C et 3,3 % des terres. A 10 C : 26,8 C et 6,2 %. Mettre 0 retire le terme.",
+    "aridityHeatC": 8.0,
+    "aridityRefMm": 600.0
   },
   "precipitation": {
     "evaporationRate": 0.02,
@@ -75,7 +86,8 @@
     "windJitter": 0.18,
     "smoothSigmaPx": 2.0,
     "cellsPerHemisphere": 3.0,
-    "targetMedianLandMm": 715.0,
+    "_comment_ancrage": "MOYENNE visee des precipitations sur les terres emergees, en mm/an. Sur Terre : environ 715. ATTENTION, ERREUR CORRIGEE LE 11 SEPTEMBRE 2026 : cette valeur etait appliquee a la MEDIANE, alors que 715 mm est la MOYENNE terrestre. Comme la distribution des pluies est tres dissymetrique, le monde etait 70 % trop humide (moyenne mesuree 1217 mm) et portait 23,7 % de ses terres au-dessus de 2000 mm quand la Terre en a 7 a 8 %. Consequence visible : trop de forets, pas assez de prairies, de savanes et de deserts. Unite RELATIVE : ne suit pas la division par 4 de la maquette.",
+    "targetMeanLandMm": 715.0,
     "polarFrontStrength": 0.45,
     "cellWobble": 0.3,
     "cellWobbleFrequency": 2.4
@@ -134,7 +146,8 @@
   },
   "biomes": {
     "treeLineTempC": 4.0,
-    "permanentIceTempC": -6.0,
+    "_comment_calotte": "Seuil de gel permanent, compare au mois le PLUS CHAUD. Le critere de Koppen pour la calotte glaciaire (classe EF) est : mois le plus chaud sous 0 degre. La valeur etait a -6, bien plus severe que le critere reel, ce qui rabotait la calotte. Mesure : -6 -> 0 fait passer la calotte de 3,4 a 6,2 % des terres (Terre : environ 10 %).",
+    "permanentIceTempC": 0.0,
     "bareRockSlopeDeg": 42.0,
     "alpineGravelSlopeDeg": 26.0,
     "_comment_plage": "Bande littorale. Sa largeur n'est pas fixe : elle vaut beachWidthM module par la pente (pleine sous beachSlopeFlatDeg, nulle au-dela de beachSlopeSteepDeg) et majoree de beachWindwardBonus sur les cotes au vent. beachElevationM plafonne l'altitude atteinte, dune comprise. Largeur et altitude divisees par 4 en passant de 32 a 8 km : en cellules de simulation la bande est exactement la meme (9,6 cellules), donc la part de plage sur les terres ne bouge pas. Mesure a 32 km sur la graine 20260909 : 150 m et 15 m donnaient 1,5 % des terres ; 40 m et 6 m n'en donnaient que 0,5 %.",
@@ -154,7 +167,8 @@
         ]
       },
       {
-        "tMax": 3.0,
+        "_comment_taiga": "Limite haute de la bande boreale. Le diagramme de Whittaker classique place la foret boreale entre -5 et +5 degres de moyenne annuelle ; la valeur etait a 3, ce qui reversait en foret temperee une large part des terres de 55 a 60 degres. Mesure : 3 -> 5 fait passer la taiga de 3,7 a 5,1 % des terres.",
+        "tMax": 5.0,
         "cuts": [
           [150.0, "desert_froid"],
           [350.0, "toundra"],

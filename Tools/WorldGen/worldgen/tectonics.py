@@ -201,9 +201,8 @@ def _force_poles(elevation: np.ndarray, geo: Geometry, tec: dict) -> np.ndarray:
 
     Terre : pole nord = ocean sous banquise, pole sud = continent sous calotte.
     """
-    radius = float(tec["poleForcingRadiusDeg"])
     strength = float(tec["poleForcingStrength"])
-    if radius <= 0.0 or strength <= 0.0:
+    if strength <= 0.0:
         return elevation
 
     lat = geo.latitude_grid().astype(np.float32)
@@ -213,6 +212,17 @@ def _force_poles(elevation: np.ndarray, geo: Geometry, tec: dict) -> np.ndarray:
     for pole, sign in (("northPole", +1.0), ("southPole", -1.0)):
         mode = tec[pole]
         if mode == "free":
+            continue
+        # LES DEUX POLES N'ONT PAS LE MEME RAYON SUR TERRE, et les confondre
+        # coutait cher. Le continent antarctique s'etend du pole jusque vers
+        # 60-63 degres, soit un rayon d'environ 30 ; l'ocean Arctique, lui, est
+        # borde de terres qui montent a 78-83 degres (Groenland, Svalbard, nord
+        # canadien), donc son rayon utile est plutot de 15. Avec un rayon unique
+        # de 25, le pole nord noyait tout au-dela de 65 degres et il ne restait
+        # que 3,1 % de terres entre 70 et 80 -- ni taiga ni toundra possibles.
+        cle = "poleForcingRadiusDeg" + ("North" if sign > 0 else "South")
+        radius = float(tec.get(cle, tec.get("poleForcingRadiusDeg", 0.0)))
+        if radius <= 0.0:
             continue
         # Poids 0 loin du pole, 1 au pole.
         signed_lat = lat * np.float32(sign)
@@ -256,6 +266,38 @@ def _force_ocean_border(elevation: np.ndarray, geo: Geometry, tec: dict) -> np.n
 
     # 0 au bord (pleine mer) -> 1 au dela de la marge (relief intact).
     w = noise.smoothstep(0.0, float(border_px), dist)
+
+    # UN POLE DECLARE CONTINENTAL N'EST PAS NOYE PAR LA CEINTURE. Sur une
+    # sphere, le haut et le bas de la carte ne sont pas des littoraux : c'est un
+    # POINT, le pole lui-meme. Y forcer de l'ocean n'a aucun sens quand le pole
+    # porte un continent -- l'Antarctique touche le pole sud.
+    #
+    # MESURE QUI A IMPOSE CE CORRECTIF (11 septembre 2026). Au passage a la
+    # carte equivalente-aire, la bande continentale polaire (375 m pour un rayon
+    # de 25 degres) est devenue exactement aussi large que la ceinture oceanique
+    # (oceanBorderKm = 0,375). Les deux regles se sont annulees : altitude
+    # mediane -183,8 m au pole sud, aucune terre au-dela de 70 degres, et la
+    # CALOTTE GLACIAIRE AVAIT DISPARU du monde. Sous la carte lineaire le defaut
+    # etait invisible : la bande polaire faisait 622 m, il en restait 250.
+    lat = geo.latitude_grid().astype(np.float32)
+    half = np.float32(geo.lat_span_deg * 0.5)
+    for pole, sign in (("northPole", np.float32(1.0)), ("southPole", np.float32(-1.0))):
+        if tec.get(pole) != "continent":
+            continue
+        cle = "poleForcingRadiusDeg" + ("North" if float(sign) > 0 else "South")
+        radius = float(tec.get(cle, tec.get("poleForcingRadiusDeg", 0.0)))
+        if radius <= 0.0:
+            continue
+        # L'exemption doit etre TOTALE des l'entree dans la zone polaire, pas
+        # progressive. Un premier essai suivait le meme degrade que le forcage
+        # lui-meme : a 75 degres le poids ne valait plus que 0,35, donc la
+        # ceinture noyait encore les deux tiers du terrain et il restait 0,1 %
+        # de terres entre 70 et 80 degres sud. La rampe se fait donc sur le
+        # TIERS EXTERIEUR du rayon, et vaut 1 au-dela.
+        entree = half - np.float32(radius)
+        w = np.maximum(w, noise.smoothstep(entree, entree + np.float32(radius / 3.0),
+                                           lat * sign))
+
     depth = np.float32(tec["oceanDepthM"])
     return (elevation * w + depth * (np.float32(1.0) - w)).astype(np.float32)
 

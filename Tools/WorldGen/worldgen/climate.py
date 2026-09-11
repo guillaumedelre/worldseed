@@ -306,19 +306,58 @@ def generate(rules: Rules, geo: Geometry, elevation_m: np.ndarray) -> ClimateRes
     if sigma > 0.0:
         precip_raw = ndimage.gaussian_filter(precip_raw, sigma).astype(np.float32)
 
-    # Mise a l'echelle en mm/an, ancree sur une valeur PHYSIQUE : la mediane des
-    # precipitations terrestres (~715 mm/an sur Terre).
+    # Mise a l'echelle en mm/an, ancree sur une valeur PHYSIQUE : la MOYENNE des
+    # precipitations sur les terres emergees, environ 715 mm/an sur Terre.
+    #
+    # ERREUR CORRIGEE LE 11 SEPTEMBRE 2026, ET ELLE COUTAIT CHER : cette valeur
+    # de 715 mm etait prise pour la MEDIANE. Or c'est la MOYENNE, et la
+    # distribution des pluies est tres dissymetrique (les deserts tassent la
+    # moitie basse, les tropiques etirent la haute). Ancrer la mediane sur une
+    # moyenne rendait donc le monde beaucoup trop humide : moyenne mesuree
+    # 1217 mm contre 715 sur Terre, soit +70 %, et 23,7 % des terres au-dessus
+    # de 2000 mm quand la Terre en a 7 a 8 %. D'ou trop de forets et pas assez
+    # de prairies, de savanes et de deserts.
     #
     # Surtout pas une normalisation par centile haut : elle se sabote elle-meme.
     # Augmenter l'evaporation ferait monter le pic equatorial, donc rabaisserait
     # tout le reste de la carte, et le monde deviendrait plus aride alors qu'on
     # vient d'y mettre plus d'eau.
-    land_vals = precip_raw[~is_water]
-    ref = float(np.median(land_vals)) if land_vals.size else float(np.median(precip_raw))
-    scale = float(prec["targetMedianLandMm"]) / max(ref, 1e-9)
-    precip_mm = np.clip(
-        precip_raw * np.float32(scale), 0.0, float(prec["maxPrecipMm"])
-    ).astype(np.float32)
+    cible = float(prec.get("targetMeanLandMm", prec.get("targetMedianLandMm", 715.0)))
+    plafond = float(prec["maxPrecipMm"])
+    sol = ~is_water
+    # Deux passes : l'ecretage au plafond retire de l'eau, donc la premiere mise
+    # a l'echelle manque la cible par le bas. La seconde la rattrape.
+    precip_mm = precip_raw.astype(np.float32)
+    for _ in range(2):
+        vals = precip_mm[sol]
+        ref = float(np.mean(vals)) if vals.size else float(np.mean(precip_mm))
+        precip_mm = np.clip(precip_mm * np.float32(cible / max(ref, 1e-9)),
+                            0.0, plafond).astype(np.float32)
+
+    # Prime de chaleur aride. Un desert est plus chaud que sa latitude : ciel
+    # degage, donc plus d'insolation atteint le sol, et pas d'evaporation pour
+    # en consommer une part en chaleur latente. Sans ce terme, la temperature
+    # ne connait que la latitude et l'altitude, et nos deserts chauds
+    # plafonnaient a 16,6 degres de moyenne quand un desert reel est a 22-34.
+    #
+    # LE TERME EST APPLIQUE APRES LES PRECIPITATIONS, ET C'EST VOULU. L'ordre
+    # est d'abord causal -- c'est la secheresse qui rechauffe, pas l'inverse --
+    # mais il a aussi une consequence pratique qui vaut d'etre dite : la pluie
+    # pilote l'erosion, donc le relief. Calculer la prime avant la pluie ferait
+    # bouger le terrain, les rivieres et les lacs a chaque reglage de cette
+    # seule valeur. Ici, regler `aridityHeatC` ne deplace que les biomes.
+    chaleur = np.float32(temp_rules.get("aridityHeatC", 0.0))
+    if chaleur > 0.0:
+        ref_mm = np.float32(max(float(temp_rules.get("aridityRefMm", 600.0)), 1e-3))
+        aridite = np.clip(np.float32(1.0) - precip_mm / ref_mm, 0.0, 1.0)
+        # L'effet suit l'energie solaire recue, donc le cosinus de la latitude :
+        # un desert polaire est sec mais ne recoit rien a amplifier.
+        ensoleillement = np.clip(
+            np.cos(np.radians(geo.latitude_grid().astype(np.float32))), 0.0, 1.0)
+        prime = (chaleur * aridite * ensoleillement).astype(np.float32)
+        temp_mean = (temp_mean + prime).astype(np.float32)
+        temp_min = (temp_min + prime).astype(np.float32)
+        temp_max = (temp_max + prime).astype(np.float32)
 
     return ClimateResult(
         temp_mean_c=temp_mean,

@@ -305,6 +305,17 @@ def run(
         "tempMin": float(clim.temp_mean_c.min()),
         "tempMax": float(clim.temp_mean_c.max()),
         "precipMedian": float(np.median(clim.precip_mm[land])) if land.any() else 0.0,
+        # La MOYENNE est la grandeur ancree sur la Terre (~715 mm/an), pas la
+        # mediane : voir climate.generate. Les deux sont relevees pour que leur
+        # ecart -- la dissymetrie de la distribution -- reste sous les yeux.
+        "precipMeanLand": float(np.mean(clim.precip_mm[land])) if land.any() else 0.0,
+        "precipWetPct": float((clim.precip_mm[land] > 2000.0).mean() * 100.0) if land.any() else 0.0,
+        "precipAridPct": float((clim.precip_mm[land] < 250.0).mean() * 100.0) if land.any() else 0.0,
+        # Parts de SURFACE des zones climatiques. Elles ne dependent que de la
+        # correspondance Y -> latitude (world.latitudeMapping), pas du climat.
+        # Reference, geometrie d'une sphere : tropiques 39,8 %, polaires 8,3 %.
+        "tropicalPct": float(np.mean(np.abs(geo.latitude_deg()) < geo.tropic_deg) * 100.0),
+        "polarPct": float(np.mean(np.abs(geo.latitude_deg()) > geo.polar_circle_deg) * 100.0),
         "walkablePct": float((biome.slope_deg[land] < 25.0).mean() * 100.0) if land.any() else 0.0,
         "biomeCount": len(biome.counts),
         "biomeShare": biome.counts,

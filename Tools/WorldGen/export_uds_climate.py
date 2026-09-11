@@ -75,11 +75,20 @@ def _facteur_saisonnier(lat: float, u: dict, tropique: float) -> dict:
         et ete sec, le regime mediterraneen.
     Ailleurs, pas de modulation : le generateur ne calcule qu'un cumul annuel et
     inventer une saisonnalite serait de l'ornement.
+
+    ERREUR CORRIGEE : la premiere version faisait culminer l'effet ZCIT A
+    L'EQUATEUR. C'est l'inverse du reel. L'equateur est humide toute l'annee
+    parce que la ZCIT y passe DEUX FOIS par an ; la saison seche marquee est
+    vers 10 a 20 degres, ou elle ne passe qu'une fois. Consequence du bug : la
+    savane et la foret tropicale seche n'avaient pas de saison seche, et le
+    controle de proximite les faisait tomber sur Tropical_Rainforest au lieu de
+    Tropical_Savanna. Le poids suit donc un demi-sinus, nul a l'equateur comme
+    au tropique et maximal a mi-chemin.
     """
     a = abs(lat)
     f = dict((s, 1.0) for s in SAISONS)
     if a <= tropique:
-        poids = 1.0 - a / max(tropique, 1e-6)
+        poids = float(np.sin(np.pi * a / max(tropique, 1e-6)))
         f["Summer"] = 1.0 + (u["itczSummerFactor"] - 1.0) * poids
         f["Winter"] = 1.0 + (u["itczWinterFactor"] - 1.0) * poids
     elif u["mediterraneanLatMinDeg"] <= a <= u["mediterraneanLatMaxDeg"]:
@@ -234,8 +243,15 @@ def run(dossier: Path, regles: Path) -> dict:
         "_comment": ("Genere par export_uds_climate.py. `grid` est indexee [ligne][colonne] avec "
                      "ligne 0 = pole SUD (Y monde = -halfExtentCm) et colonne 0 = X monde minimal, "
                      "comme la carte des biomes du generateur."),
+        # La latitude se recalcule cote jeu depuis Y. En 'linear' c'est un simple
+        # produit ; en 'equalArea' il faut passer par un arc sinus :
+        #     lat = degrees(asin(Y / halfExtentCm)) * spanDeg / 180
+        # On transmet donc la CORRESPONDANCE, pas un taux constant qui serait
+        # faux de plus de 40 degres pres des poles.
         "world": {"sizeKm": taille_km, "halfExtentCm": demi_cm,
-                  "degreesPerMetre": man["latitude"]["degreesPerMetre"]},
+                  "latitudeMapping": str(r["world"].get("latitudeMapping", "linear")),
+                  "latitudeEqualAreaBlend": float(r["world"].get("latitudeEqualAreaBlend", 1.0)),
+                  "latitudeSpanDeg": float(r["world"]["latitudeSpanDeg"])},
         "labels": labels,
         "presetsParBiome": table,
         "presets": presets,
@@ -246,6 +262,15 @@ def run(dossier: Path, regles: Path) -> dict:
     }
     chemin = dossier / "uds_climate.json"
     chemin.write_text(json.dumps(sortie, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    # Meme grille en CSV : c'est le seul format qu'Unreal importe nativement en
+    # DataTable, donc le seul moyen simple de rendre la grille lisible depuis un
+    # Blueprint. Une ligne de la grille = une ligne de table, les identifiants
+    # separes par des tirets (la virgule est le separateur du CSV).
+    csv = ["---,Cellules"]
+    for gy, ligne in enumerate(grille):
+        csv.append("L{:04d},{}".format(gy, "-".join(str(v) for v in ligne)))
+    (dossier / "uds_biome_grid.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
     print("\n{} presets, grille {}x{} a {:.0f} m/cellule (dominante sur {:.0f} m de rayon)".format(
         len(presets), n_grille, n_grille,
         2.0 * demi_cm / n_grille / 100.0, float(u["dominantRadiusM"])))

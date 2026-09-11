@@ -386,10 +386,21 @@ def build_manifest(rules: Rules, geo_out, stats: dict) -> dict:
             "worldPartitionGridSize": int(rules.get("export.worldPartitionGridSize", 8)),
         },
         "latitude": {
-            "degreesPerMetre": (float(w["latitudeSpanDeg"]) * 0.5) / (geo_out.half_size_m),
+            # `degreesPerMetre` n'a de sens QUE si la correspondance est
+            # lineaire. En 'equalArea', la latitude varie comme l'arc sinus de
+            # Y et aucune constante ne peut la decrire : un consommateur qui
+            # multiplierait Y par un taux fixe se tromperait de plus de 40
+            # degres pres des poles. Il est donc omis dans ce cas, pour que
+            # l'erreur soit une cle manquante et non un chiffre faux.
+            "mapping": str(w.get("latitudeMapping", "linear")),
+            "equalAreaBlend": float(w.get("latitudeEqualAreaBlend", 1.0)),
+            "spanDeg": float(w["latitudeSpanDeg"]),
+            "halfExtentM": float(geo_out.half_size_m),
             "tropicDeg": float(w["tropicDeg"]),
             "polarCircleDeg": float(w["polarCircleDeg"]),
             "landmarksY_cm": {k: round(v * 100.0, 1) for k, v in geo_out.landmarks().items()},
+            **({"degreesPerMetre": (float(w["latitudeSpanDeg"]) * 0.5) / geo_out.half_size_m}
+               if str(w.get("latitudeMapping", "linear")) != "equalArea" else {}),
         },
         "layers": rules["surfaces"]["layerAssetNames"],
         "layerFiles": [f"layer_{name}.png" for name in rules["surfaces"]["layers"]],

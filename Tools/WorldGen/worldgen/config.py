@@ -31,6 +31,14 @@ class Geometry:
     lat_span_deg: float
     tropic_deg: float
     polar_circle_deg: float
+    # "linear" : la latitude varie proportionnellement a Y.
+    # "equalArea" : Y varie comme le SINUS de la latitude, ce qui donne a chaque
+    #   zone climatique la part de surface qu'elle a sur une sphere.
+    # Voir latitude_deg() pour ce que ce choix change, et de combien.
+    latitude_mapping: str = "linear"
+    # Melange entre les deux, 0 = lineaire, 1 = equivalent-aire. Sert a garder
+    # des calottes praticables tout en se rapprochant des proportions reelles.
+    latitude_equal_area_blend: float = 1.0
 
     @property
     def meters_per_pixel(self) -> float:
@@ -44,17 +52,52 @@ class Geometry:
         """Coordonnee monde, en metres, de chaque ligne/colonne (-half .. +half)."""
         return np.linspace(-self.half_size_m, self.half_size_m, self.n, dtype=np.float64)
 
+    def _melange(self) -> float:
+        if self.latitude_mapping != "equalArea":
+            return 0.0
+        return min(max(float(self.latitude_equal_area_blend), 0.0), 1.0)
+
     def latitude_deg(self) -> np.ndarray:
-        """Latitude (deg) de chaque LIGNE. j=0 -> pole sud, j=n-1 -> pole nord."""
-        return self.axis_m() / self.half_size_m * (self.lat_span_deg * 0.5)
+        """Latitude (deg) de chaque LIGNE. j=0 -> pole sud, j=n-1 -> pole nord.
+
+        DEUX CORRESPONDANCES POSSIBLES, et le choix pese plus lourd que n'importe
+        quel reglage de climat, parce qu'il fixe la PART DE SURFACE de chaque
+        zone climatique :
+
+          lineaire    tropiques 26,0 %   temperees 47,9 %   polaires 26,0 %
+          equal-area  tropiques 39,8 %   temperees 52,0 %   polaires  8,3 %
+          sphere      tropiques 39,8 %   temperees 52,0 %   polaires  8,3 %
+
+        La correspondance lineaire donne donc TROIS FOIS trop de surface polaire
+        et un tiers de tropiques en moins que la Terre. Sur une sphere, la
+        surface entre -L et +L vaut sin(L) : c'est la projection cylindrique
+        equivalente de Lambert.
+
+        Contrepartie de gameplay, a assumer : en equivalent-aire, la bande qui
+        va du cercle polaire au pole passe d'environ 1040 a 330 metres sur un
+        monde de 8 km. D'ou le melange reglable.
+        """
+        y = self.axis_m() / self.half_size_m               # -1 .. +1
+        m = self._melange()
+        if m > 0.0:
+            y = (1.0 - m) * y + m * (np.arcsin(np.clip(y, -1.0, 1.0)) / (np.pi * 0.5))
+        return y * (self.lat_span_deg * 0.5)
 
     def latitude_grid(self) -> np.ndarray:
         """Carte 2D de la latitude, meme forme que le terrain."""
         return np.repeat(self.latitude_deg()[:, None], self.n, axis=1)
 
     def y_of_latitude(self, lat_deg: float) -> float:
-        """Coordonnee Y monde (m) d'une latitude donnee."""
-        return lat_deg / (self.lat_span_deg * 0.5) * self.half_size_m
+        """Coordonnee Y monde (m) d'une latitude donnee. Inverse de latitude_deg."""
+        u = lat_deg / (self.lat_span_deg * 0.5)            # -1 .. +1
+        m = self._melange()
+        if m <= 0.0:
+            return u * self.half_size_m
+        # Pas de forme fermee quand on melange : on inverse numeriquement sur une
+        # fonction strictement croissante, donc sans ambiguite.
+        grille = np.linspace(-1.0, 1.0, 4001)
+        image = (1.0 - m) * grille + m * (np.arcsin(grille) / (np.pi * 0.5))
+        return float(np.interp(u, image, grille)) * self.half_size_m
 
     def row_of_latitude(self, lat_deg: float) -> int:
         y = self.y_of_latitude(lat_deg)
@@ -75,7 +118,9 @@ class Geometry:
         }
 
     def rescaled(self, n: int) -> "Geometry":
-        return Geometry(self.size_m, n, self.lat_span_deg, self.tropic_deg, self.polar_circle_deg)
+        return Geometry(self.size_m, n, self.lat_span_deg, self.tropic_deg,
+                        self.polar_circle_deg, self.latitude_mapping,
+                        self.latitude_equal_area_blend)
 
 
 class Rules:
@@ -143,6 +188,8 @@ class Rules:
             lat_span_deg=float(w["latitudeSpanDeg"]),
             tropic_deg=float(w["tropicDeg"]),
             polar_circle_deg=float(w["polarCircleDeg"]),
+            latitude_mapping=str(w.get("latitudeMapping", "linear")),
+            latitude_equal_area_blend=float(w.get("latitudeEqualAreaBlend", 1.0)),
         )
 
     @property
@@ -154,6 +201,8 @@ class Rules:
             lat_span_deg=float(w["latitudeSpanDeg"]),
             tropic_deg=float(w["tropicDeg"]),
             polar_circle_deg=float(w["polarCircleDeg"]),
+            latitude_mapping=str(w.get("latitudeMapping", "linear")),
+            latitude_equal_area_blend=float(w.get("latitudeEqualAreaBlend", 1.0)),
         )
 
     def rng(self, stream: str = "") -> np.random.Generator:

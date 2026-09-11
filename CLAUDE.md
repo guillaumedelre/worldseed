@@ -995,3 +995,116 @@ suffit pas toujours ; passer par le paquet de l'acteur :
 `unreal.EditorLoadingAndSavingUtils.save_packages([acteur.get_outermost()], False)`,
 qui rend True et tient au rechargement. Symptome si on l'oublie : le pion apparait
 hors du monde et tombe dans la mer.
+
+### Ultra Dynamic Sky : le pack COMPILE maintenant (11 septembre 2026)
+
+**La note du 9 septembre plus haut est PERIMEE.** Elle disait que 34 des 85
+Blueprints d'UDS etaient en erreur et que la scene restait noire. Le pack
+reimporte donne **87 Blueprints sur 87 en `BS_UP_TO_DATE`**, et l'acteur
+instancie bien ses **56 composants** (Sun, Moon, SkyAtmosphere, HeightFog,
+VolumetricCloud, deux SkyLight). Ne pas rouvrir ce constat d'echec.
+
+- **UDS embarque son propre systeme de CLIMAT, pas seulement un ciel.** Un
+  `UDS_Climate_Preset` porte 4 saisons x (temperature moyenne haute, moyenne
+  basse, pourcentage de ciel couvert, pluie mensuelle, neige mensuelle) +
+  poussiere. Les 23 presets livres sont des RELEVES DE VILLES REELLES, chacun
+  citant sa station et sa source weatherspark : c'est une reference terrestre
+  utilisable telle quelle (`Tools/WorldGen/terre.py` s'en sert).
+- **Trois pieges de lecture de ces presets, tous payes en les lisant plutot
+  qu'en raisonnant de tete** : `Rainfall (mm)` est un cumul **MENSUEL**, pas
+  saisonnier (Tropical_Rainforest 145 a 184) ; `Snowfall (mm)` est un
+  **EQUIVALENT-EAU**, pas une hauteur de neige (Oceanic porte 36,2 mm de pluie
+  ET 45,5 mm de neige le meme mois) ; l'ecart diurne reel ne fait que **4 a
+  9 degres**, ce sont des MOYENNES haute et basse, pas des extremes.
+- **`Weather_Override_Volume` n'est PAS pilotable depuis Python.** Le volume se
+  connecte bien a UDW (reference `UDW` valide, `Local Weather State` cree), mais
+  son `Total Sphere Bounds` reste fige a la valeur par defaut (400 m) : c'est le
+  *construction script* qui la recalcule depuis la spline, et il ne peut pas
+  etre relance depuis Python (`rerun_construction_scripts` non expose ; ni un
+  `set_actor_location`, ni un `set_editor_property` ne le declenchent). Comme
+  `Filter Local Weather Actors by Proximity` s'appuie sur ce rayon,
+  `Player is In Volume` reste False meme au centre exact du volume. Ces volumes
+  doivent etre traces a la main dans l'editeur, ou pas du tout.
+- **`BlueprintService.list_variables` renvoie 0 pendant un PIE.** Toute
+  l'introspection Blueprint doit se faire PIE arrete. En PIE, passer par
+  `acteur.call_method("Nom De La Fonction", (args,))`, qui marche.
+- **Le viewport de l'editeur ne juge PAS l'exposition du jeu** : il a la sienne
+  (`exposure_ev100` dans `ViewportService.get_viewport_info()`). La meme scene
+  etait sombre et bleutee dans l'editeur et correctement exposee en PIE. Juger
+  l'exposition en PIE, comme la vegetation.
+- **UDS et une exposition verrouillee s'excluent.** `Worldseed_PostProcess` ne
+  portait QUE trois surcharges, toutes d'exposition (min = max = -1, bias 0).
+  C'etait le bon choix avec un soleil fixe ; des qu'un cycle jour/nuit tourne,
+  c'est lui qui rend la nuit totalement noire. UDS a son propre pilotage
+  (`Apply Exposure Settings`, histogramme, plage -10 a +20, et des biais par
+  moment de la journee). Surcharges desactivees, exposition rendue a UDS.
+- **UDS remplace les cinq acteurs d'eclairage manuels** (`Worldseed_SunLight`,
+  `_SkyLight`, `_Atmosphere`, `_Fog`). Ils sont NEUTRALISES, pas supprimes :
+  visibilite de leurs composants a False, ce qui se defait en une ligne. Ne pas
+  les detruire -- la suppression d'un acteur World Partition est ecrite sur le
+  disque immediatement.
+- **Changer de carte avec `load_level` pendant que le proprietaire travaille
+  declenche une boite de dialogue de sauvegarde chez lui.** Verifier
+  `LevelEditorSubsystem.get_current_level()` AVANT d'editer quoi que ce soit :
+  la carte ouverte n'est pas forcement `L_Worldseed` (elle etait sur
+  `/Game/ThirdPerson/Lvl_ThirdPerson`).
+
+### 715 mm n'est pas une mediane, c'est une moyenne (11 septembre 2026)
+
+**La plus grosse erreur de calibration trouvee a ce jour, et elle se cachait
+dans un commentaire juste.** `climate.generate` mettait les precipitations a
+l'echelle en ancrant leur **mediane** sur 715 mm/an, avec ce commentaire :
+"ancree sur une valeur PHYSIQUE : la mediane des precipitations terrestres". Or
+**715 mm est la MOYENNE terrestre, pas la mediane**, et la distribution des
+pluies est tres dissymetrique : les deserts tassent la moitie basse, les
+tropiques etirent la haute.
+
+Mesure sur la graine 20260909, avant correction :
+
+| | monde | Terre |
+|---|---|---|
+| pluie moyenne sur les terres | **1217 mm** | ~715 mm |
+| pluie mediane | 690 mm | -- |
+| terres au-dessus de 2000 mm | **23,7 %** | 7 a 8 % |
+
+Le monde etait donc **70 % trop humide en moyenne**, ce qui se voyait dans les
+biomes : trop de forets (foret temperee humide a 15,3 % des terres), pas assez
+de savane (4,0 %), de prairie ni de desert. Corrige en ancrant la MOYENNE
+(`precipitation.targetMeanLandMm`), en deux passes parce que l'ecretage a
+`maxPrecipMm` retire de l'eau et fait manquer la cible a la premiere.
+
+**Regle a retenir : quand une constante physique sert d'ancrage, verifier de
+QUELLE statistique il s'agit.** Moyenne, mediane et mode d'une distribution
+dissymetrique n'ont rien a voir, et le code ne peut pas s'en apercevoir.
+
+**Trois metriques ajoutees au manifeste pour que ca ne se reproduise pas** :
+`precipMeanLand`, `precipWetPct` (part des terres au-dessus de 2000 mm) et
+`precipAridPct` (sous 250 mm). L'ecart entre `precipMeanLand` et `precipMedian`
+est la dissymetrie, et elle reste desormais sous les yeux.
+
+### Un desert est plus chaud que sa latitude (11 septembre 2026)
+
+Le generateur ne connaissait que la latitude et l'altitude : nos deserts chauds
+plafonnaient a **16,6 C** de moyenne quand les relevés reels d'UDS sont a 22-34.
+Il manquait la prime d'aridite -- ciel degage, donc plus d'insolation au sol, et
+pas d'evaporation pour en consommer une part en chaleur latente
+(`temperature.aridityHeatC`, 8 C).
+
+**Le terme est applique APRES le calcul des precipitations, et c'est le point
+d'ingenierie a retenir.** L'ordre est d'abord causal (c'est la secheresse qui
+rechauffe), mais il a surtout une consequence pratique : la pluie pilote
+l'erosion, donc le relief. Calculer la prime AVANT la pluie ferait bouger le
+terrain, les rivieres et les lacs a chaque reglage de cette seule valeur. Dans
+le bon ordre, regler `aridityHeatC` ne deplace QUE les biomes. Mesure : 8 C
+porte le desert chaud a 25,1 C et ne fait changer de biome qu'a **4,2 % des
+terres**, forets inchangees.
+
+### La ZCIT ne culmine pas a l'equateur (11 septembre 2026)
+
+Erreur commise puis corrigee dans `export_uds_climate.py` : la modulation
+saisonniere de la pluie faisait culminer l'effet de ZCIT **a l'equateur**. C'est
+l'inverse du reel. L'equateur est humide toute l'annee parce que la ZCIT y passe
+**deux fois** par an ; la saison seche marquee est vers **10 a 20 degres**, ou
+elle ne passe qu'une fois -- c'est ce qui definit la savane. Le poids suit
+desormais un demi-sinus, nul a l'equateur comme au tropique, maximal a
+mi-chemin.
