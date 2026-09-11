@@ -1108,3 +1108,80 @@ l'inverse du reel. L'equateur est humide toute l'annee parce que la ZCIT y passe
 elle ne passe qu'une fois -- c'est ce qui definit la savane. Le poids suit
 desormais un demi-sinus, nul a l'equateur comme au tropique, maximal a
 mi-chemin.
+
+### Quand un reglage resiste, c'est souvent la FORME qui est fausse (11 septembre 2026)
+
+Trois defauts de climat trouves le meme jour, et aucun des trois ne se corrigeait
+en changeant un nombre. C'est le motif a retenir : **si aucune valeur d'un
+parametre ne satisfait a la fois deux mesures, c'est la fonction qui est
+mauvaise, pas la valeur.**
+
+- **Le profil zonal de temperature.** Il etait en `(lat/90)^k`. L'energie solaire
+  recue varie en moyenne annuelle a peu pres comme **cos(latitude)** : c'est la
+  forme de premier ordre. Ecart absolu moyen au profil zonal reel : `sin^2` 7,02 C
+  (le reflexe habituel, et le pire), `(lat/90)^2` 1,95, `(lat/90)^1,8` 1,11,
+  **`cos(lat)` 0,84**.
+- **L'amplitude saisonniere**, fausse DEUX fois a la fois : elle croissait
+  lineairement avec la latitude alors que le contraste saisonnier suit le
+  **sinus** de la latitude, et l'ocean amortissait par **soustraction** alors
+  qu'il amortit **proportionnellement**. Symptome qui aurait du alerter : la
+  soustraction donnait des amplitudes NEGATIVES aux basses latitudes maritimes,
+  qu'il fallait borner a 1. **Un `max(x, 1)` pose pour rattraper un resultat
+  absurde est presque toujours le signe d'une mauvaise forme.** Ecart sur huit
+  stations reelles : lineaire 22/6 **15,4 C** (16 C d'amplitude a Iakoutsk, qui
+  en fait 57) contre **4,7 C** en sinus amorti proportionnellement.
+- **Le forcage du continent polaire.** Il montait en smoothstep sur TOUT son
+  rayon, donc a mi-chemin il ne remontait le fond oceanique qu'a mi-hauteur : le
+  continent n'emergeait qu'au pole meme. Un continent est un **plateau avec un
+  littoral**, pas un degrade : la rampe ne doit occuper que le tiers exterieur.
+  Calotte glaciaire 5,6 -> 9,6 % des terres.
+
+**Deux constantes qui n'avaient jamais ete calees**, et qui ne se voyaient pas
+parce que le code etait juste :
+- `oceanModerationRangeKm` = 0,75 km, **cinq fois trop grand**. Sur Terre le
+  passage maritime -> continental se fait sur 300 a 800 km, soit 0,06 a 0,16 km
+  rapporte a un monde 5000 fois plus petit. La continentalite plafonnait donc a
+  0,16 de mediane au lieu d'environ 0,6, et **les interieurs continentaux
+  n'existaient pas climatiquement** : ni taiga ni toundra possibles.
+- La continentalite ne jouait que sur l'AMPLITUDE, **jamais sur la moyenne**.
+  Aux hautes latitudes l'ocean ne lisse pas seulement l'annee, il la rechauffe
+  (Iakoutsk -8,8 C contre Bergen +7,6 C, 16 degres pour deux degres de latitude).
+
+**ORDRE DES TERMES : une regle d'ingenierie qui vaut d'etre rappelee.** La pluie
+pilote l'erosion, donc le relief. Un terme de temperature place AVANT le calcul
+des precipitations fait donc bouger le terrain, les rivieres et les lacs a chaque
+reglage ; place APRES, il ne deplace que les biomes. On choisit selon la
+causalite reelle : la prime d'aridite vient APRES (c'est la secheresse qui
+rechauffe), le refroidissement continental vient AVANT (un air plus froid porte
+moins de vapeur, la pluie doit le voir).
+
+**Ne jamais recopier une formule dans deux fichiers.** `export_uds_climate.py`
+recalculait l'amplitude saisonniere de son cote ; a la premiere correction de
+forme, les presets Ultra Dynamic Sky auraient garde l'ancienne. Extraite en
+`climate.seasonal_amplitude`, publique a dessein.
+
+**Le score de `terre.py` COMPARE, il ne juge pas.** L'ecart absolu moyen aux huit
+grands biomes terrestres plafonne vers 28-32 % quel que soit le reglage, pour
+deux raisons structurelles : les terres etant fixees a 29,2 %, les parts de
+biomes sont un jeu a SOMME NULLE (agrandir l'Antarctique retire de la savane) ;
+et nos huit biomes de reference ne couvrent que 62 % de nos terres, le reste
+allant a "roche nue", "foret tropicale seche", steppe, plages et lacs, alors que
+la Terre compte sa roche desertique DANS le BWh. Utiliser ce chiffre pour
+departager deux reglages, jamais pour juger un monde dans l'absolu. Le
+**bulletin** de `terre.py`, lui, ne repose que sur des criteres sources et se
+lit dans l'absolu.
+
+**Mesurer avant d'accuser, meme soi-meme.** J'ai attribue l'absence de taiga a
+des continents trop petits. Mesure : indice de fragmentation (rayon du disque
+equivalent divise par la distance maximale a l'ocean) **2,58 chez nous contre
+2,60 sur Terre**, et nos trois plus grandes masses portent 89,5 % des terres
+contre 68 % sur Terre. Nos continents sont deja plus concentres que ceux de la
+Terre ; les agrandir aurait ete une regression. La cause etait l'amplitude
+saisonniere.
+
+**Critere reel refuse a dessein** : classer la toundra par le critere de Koppen
+ET (mois le plus chaud sous 10 C), qui est pourtant LE critere de la limite des
+arbres, detruit la taiga ici (0,1 a 6 % des terres contre 10 attendus). Notre
+amplitude a 60 degres plafonne a 30 C contre 38 sur Terre meme apres correction,
+donc "le mois le plus chaud" reste trop froid pour que ce critere morde. Ne pas
+le retenter sans avoir d'abord rapproche l'amplitude du reel.
