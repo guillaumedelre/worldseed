@@ -109,8 +109,52 @@ def repair_below_sea_level(src: Path) -> int:
     return n
 
 
+# Couches de peinture qui donnent une surface MINERALE : rien n'y pousse au sol.
+# `Biom 4 Gravel` n'en fait PAS partie : c'est le sol boueux du marais et des
+# berges, ou la vegetation basse est au contraire chez elle.
+COUCHES_MINERALES = ("Snow", "Stone", "Gravel", "DesertSand")
+
+# Decalage applique a l'identifiant de biome sur une surface minerale. Les
+# identifiants vont de 0 a 18 ; 100 a 118 designent donc "meme biome, mais le
+# sol y est peint en roche, neige ou sable".
+DECALAGE_MINERAL = 100
+
+
+def masque_mineral(src: Path) -> "np.ndarray":
+    """Ou la surface PEINTE est minerale, quelle que soit la classification.
+
+    POURQUOI CE MASQUE EXISTE. Le semis PCG lit la carte des BIOMES, alors que le
+    sol affiche les dix COUCHES PEINTES. Or `surfaces.build` ecrase la recette du
+    biome par la roche de pente (a partir de 22 degres) et par la neige : dans un
+    biome de foret, un versant raide est peint en pierre tout en restant "foret"
+    sur la carte des biomes. Le PCG y semait donc un tapis d'herbe sur de la
+    roche. Mesure sur la graine 20260909 : **39,6 % du tapis** tombait sur une
+    surface peinte en mineral, et jusqu'a 99,9 % en Alpin.
+
+    Un filtre de PENTE ne convient pas : a 22 degres il retirerait 65 % du tapis
+    sur ce monde montagneux, tout en laissant 7 % d'herbe sur du sable plat.
+    C'est la surface peinte, et elle seule, qui dit ou l'herbe est credible.
+    """
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    noms = manifest["layers"]
+    fichiers = manifest["layerFiles"]
+    pile = np.stack([np.asarray(Image.open(src / f)) for f in fichiers])
+    dominante = pile.argmax(axis=0)
+    del pile
+    indices = [i for i, n in enumerate(noms) if n in COUCHES_MINERALES]
+    return np.isin(dominante, indices)
+
+
 def cut_tiles(src: Path, tiles_per_side: int | None = None) -> list[Path]:
-    """Decoupe la carte des biomes comme tile_world.py decoupe le relief."""
+    """Decoupe la carte des biomes comme tile_world.py decoupe le relief.
+
+    ATTENTION, la carte ecrite dans `tiles/` N'EST PAS une copie de
+    `biome_index.png` : les pixels dont la surface peinte est minerale y portent
+    l'identifiant du biome DECALE DE 100 (voir `masque_mineral`). C'est la carte
+    que lit le PCG, et elle dit deux choses a la fois : quel biome, et si le sol
+    y est mineral. Le graphe de vegetation s'en sert pour refuser le tapis
+    d'herbe sur la roche sans priver le versant de ses arbres.
+    """
     from tile_world import tiles_needed
     if tiles_per_side is None:
         tiles_per_side = tiles_needed(src)
@@ -128,6 +172,11 @@ def cut_tiles(src: Path, tiles_per_side: int | None = None) -> list[Path]:
             arr.shape, full_n, full_n))
     if arr.dtype != np.uint8:
         raise SystemExit("biome_index.png doit etre en 8 bits, pas {}".format(arr.dtype))
+
+    mineral = masque_mineral(src)
+    arr = np.where(mineral, arr.astype(np.uint16) + DECALAGE_MINERAL, arr).astype(np.uint8)
+    print("SURFACE: {:.1f} % des pixels sont peints en mineral -> identifiant decale de {}".format(
+        100.0 * mineral.mean(), DECALAGE_MINERAL))
 
     root = src / "tiles"
     if not root.is_dir():
@@ -159,9 +208,13 @@ def verify_tiles(src: Path, tiles_per_side: int | None = None) -> None:
     if tiles_per_side == 1:
         a = np.asarray(Image.open(root / "x0_y0" / "biome_index.png"))
         plein = np.asarray(Image.open(src / "biome_index.png"))
-        if not np.array_equal(a, plein):
+        # La tuile porte le decalage mineral : on le retire avant de comparer.
+        sans = np.where(a >= DECALAGE_MINERAL, a.astype(np.int16) - DECALAGE_MINERAL, a)
+        if not np.array_equal(sans.astype(np.uint8), plein):
             raise SystemExit("la tuile de biomes unique ne reproduit pas la carte pleine")
-        print("TUILE UNIQUE de biomes identique a la carte pleine : True ({}x{})".format(*a.shape))
+        n_min = int((a >= DECALAGE_MINERAL).sum())
+        print("TUILE UNIQUE de biomes conforme ({}x{}), dont {} pixels mineraux "
+              "({:.1f} %)".format(a.shape[0], a.shape[1], n_min, 100.0 * n_min / a.size))
         return
     a = np.asarray(Image.open(root / "x0_y0" / "biome_index.png"))
     b = np.asarray(Image.open(root / "x1_y0" / "biome_index.png"))

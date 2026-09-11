@@ -903,3 +903,45 @@ d'herbe du monde vient du semis PCG, qui remplit ce role et se regle depuis
 retoucher les `ConstAlpha`, et ne pas rendre les poids peints plus purs pour
 franchir le `Floor` : cela changerait le rendu du terrain entier pour un gain
 que le PCG apporte deja.
+
+### De l'herbe sur la roche : la carte des biomes n'est pas la carte des surfaces (11 septembre 2026)
+
+Signale : de l'herbe pousse sur des textures de roche et de sable.
+
+**La cause.** Le semis PCG lit `biome_index.png`, la carte des BIOMES. Le sol,
+lui, affiche les dix COUCHES PEINTES. Or `surfaces.build` ECRASE la recette du
+biome par la roche de pente (des 22 degres, `slopeRockStartDeg`) et par la neige :
+dans un biome de foret, un versant raide est peint en pierre tout en restant
+"foret" sur la carte des biomes. Les deux cartes divergent donc par construction,
+et le PCG semait un tapis d'herbe sur de la roche.
+
+Mesure sur la graine 20260909 : **39,6 % du tapis** tombait sur une surface peinte
+en mineral. Par biome : **Alpin 99,9 %**, **Desert froid 100 %**, Toundra 64,9 %,
+forets 24 a 32 %.
+
+**LA SOLUTION EVIDENTE EST MAUVAISE.** Un filtre de PENTE a 22 degres retirerait
+**65 % du tapis** sur ce monde montagneux -- il deshabillerait le monde entier --
+tout en laissant 7 % d'herbe sur du sable PLAT, que la pente ne voit pas. Ce
+n'est pas la pente qui dit ou l'herbe est credible, c'est la surface peinte.
+
+**Ce qui a ete fait.** `export_biome_texture.masque_mineral` calcule la couche
+DOMINANTE de chaque pixel ; la ou elle est `Snow`, `Stone`, `Gravel` ou
+`DesertSand`, la carte ecrite dans `tiles/` porte l'identifiant du biome
+**decale de 100**. La carte lue par le PCG dit donc deux choses a la fois : quel
+biome, et si le sol y est mineral. Dans le graphe, chaque biome occupe deux
+bandes de densite : le TAPIS ne prend que `id`, les arbres et le sous-bois
+prennent `id` ET `id + 100` -- un versant raide reste boise meme quand la roche
+affleure entre les troncs. Resultat : **-39,6 % de tapis, exactement les pixels
+fautifs**, 111 FPS, verdict PASS.
+
+`Biom 4 Gravel` n'est VOLONTAIREMENT pas compte comme mineral : c'est le sol
+boueux du marais et des berges, ou la vegetation basse est chez elle.
+
+**ATTENTION** : `MINERAL_ID_OFFSET` dans `Tools/UE/vegetation.py` et
+`DECALAGE_MINERAL` dans `Tools/WorldGen/export_biome_texture.py` doivent rester
+egaux. C'est le seul lien entre la carte et le graphe, et rien ne le verifie.
+
+**Reste ouvert** : la COULEUR de l'herbe ne s'adapte pas au biome. Le meme
+`SM_Grass` vert est seme en savane comme en foret tropicale. Le pack teinte son
+feuillage par la couleur du terrain, via une Runtime Virtual Texture -- chemin
+deja tente et abandonne (voir plus haut : herbe bleue puis noire, terrain aplati).

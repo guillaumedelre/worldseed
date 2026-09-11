@@ -51,6 +51,11 @@ TILE_TEXTURE_DIR = "/Game/Worldseed/PCG/Biomes"
 
 # Niveau de la mer, en centimetres monde : l'ocean est pose a Z = 0. Sert de
 # plancher au semis, voir le filtre dans build_graph.
+# Decalage d'identifiant marquant une surface peinte en mineral, pose par
+# Tools/WorldGen/export_biome_texture.py. Les deux valeurs DOIVENT rester
+# egales : c'est le seul lien entre la carte et le graphe.
+MINERAL_ID_OFFSET = 100
+
 SEA_LEVEL_CM = 0.0
 
 _log: list[str] = []
@@ -297,6 +302,28 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             graph.add_edge(source, sortie, filt, _pin(filt))
 
             lo, hi = layer["scale"]
+            # SURFACE MINERALE. La carte lue par le PCG porte l'identifiant
+            # DECALE DE 100 la ou le sol est peint en roche, neige ou sable
+            # (export_biome_texture.masque_mineral). Un biome occupe donc DEUX
+            # bandes : `id` sur sol vivant, `id + 100` sur sol mineral.
+            #
+            # Le TAPIS ne prend que la premiere : de l'herbe sur un eboulis ou
+            # sur du sable ne trompe personne. Mesure sur la graine 20260909
+            # avant correction : 39,6 % du tapis tombait sur du mineral, et
+            # jusqu'a 99,9 % en Alpin.
+            #
+            # Les arbres et le sous-bois prennent les DEUX : un versant raide
+            # reste boise meme quand la roche affleure entre les troncs. On leur
+            # ajoute donc un second filtre, branche sur le meme noeud de
+            # transformation -- PCG reunit les deux entrees.
+            filtres = [filt]
+            if layer.get("name") != "tapis":
+                idm = biome_id + MINERAL_ID_OFFSET
+                f2, f2s = graph.add_node_of_type(unreal.PCGDensityFilterSettings)
+                f2s.set_editor_property("lower_bound", (idm - 0.5) / 255.0)
+                f2s.set_editor_property("upper_bound", (idm + 0.5) / 255.0)
+                graph.add_edge(source, sortie, f2, _pin(f2))
+                filtres.append(f2)
             xf, xs = graph.add_node_of_type(unreal.PCGTransformPointsSettings)
             xs.set_editor_property("absolute_scale", True)
             xs.set_editor_property("uniform_scale", True)
@@ -307,7 +334,8 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             xs.set_editor_property("absolute_rotation", True)
             xs.set_editor_property("rotation_min", unreal.Rotator(0.0, 0.0, 0.0))
             xs.set_editor_property("rotation_max", unreal.Rotator(0.0, 0.0, 360.0))
-            graph.add_edge(filt, "Out", xf, "In")
+            for f in filtres:
+                graph.add_edge(f, "Out", xf, "In")
 
             spawn, sp = graph.add_node_of_type(unreal.PCGStaticMeshSpawnerSettings)
             selector = sp.get_editor_property("mesh_selector_parameters")
