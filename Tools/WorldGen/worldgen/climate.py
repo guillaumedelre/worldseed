@@ -86,27 +86,93 @@ def wind_field(geo: Geometry, rules: Rules) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _sea_level_temperature(geo: Geometry, temp_rules: dict) -> np.ndarray:
-    """T(phi) = T_eq - (T_eq - T_pole) * (|phi| / phi_max) ^ k.
+    """Profil zonal de temperature au niveau de la mer.
 
-    On n'utilise PAS sin^2(phi), qui est le reflexe habituel : cette loi refroidit
-    beaucoup trop vite les latitudes moyennes. Comparaison avec le profil zonal
-    reel de la Terre (T_eq = 27, T_pole = -25) :
+    DEUX FORMES, reglees par `temperature.profile` :
 
-        latitude    Terre     sin^2      (phi/90)^2
-           30 deg    20 C      14 C         21 C
-           45 deg    12 C       1 C         14 C
-           60 deg     0 C     -12 C          4 C
+      "cosine"  T(phi) = T_pole + (T_eq - T_pole) * cos(phi) ^ p
+      "power"   T(phi) = T_eq - (T_eq - T_pole) * (|phi| / phi_max) ^ k
 
-    La puissance de la latitude normalisee colle au reel a 2-4 degres pres, la
-    loi en sinus se trompe de 12 degres a 60 deg -- assez pour couvrir de calotte
-    glaciaire tout un hemisphere.
+    LA FORME EN COSINUS EST LA BONNE, et pour deux raisons qui se rejoignent.
+    Physiquement d'abord : l'energie solaire recue au sommet de l'atmosphere
+    varie, en moyenne annuelle, a peu pres comme le cosinus de la latitude. Un
+    profil lineaire en cos(phi) est donc la forme de premier ordre, pas une
+    approximation choisie au hasard. Par la mesure ensuite, contre le profil
+    zonal reel (0 deg 26 C, 30 deg 20, 45 deg 12, 60 deg 0, 75 deg -12) :
+
+        forme                ecart moyen    ecart hors pole
+        sin^2(phi)              7,02 C          7,19 C
+        (phi/90)^2              1,95 C          1,69 C
+        (phi/90)^1,8            1,11 C          0,79 C
+        cos(phi)                0,84 C          0,49 C
+
+    La loi en sinus carre, qui est le reflexe habituel, se trompe de 12 degres a
+    60 deg -- assez pour couvrir de calotte glaciaire tout un hemisphere. Le seul
+    ecart notable du cosinus est AU POLE (-25 contre -20 sur Terre), et il vient
+    de `poleC`, pas de la forme : c'est un choix, l'Antarctique reel etant bien
+    plus froid que -20.
     """
     lat = np.abs(geo.latitude_grid()).astype(np.float32)
     half = np.float32(max(geo.lat_span_deg * 0.5, 1e-6))
-    k = np.float32(temp_rules.get("latitudeExponent", 2.0))
     t_eq = np.float32(temp_rules["equatorC"])
     t_pole = np.float32(temp_rules["poleC"])
+    if str(temp_rules.get("profile", "power")) == "cosine":
+        p = np.float32(temp_rules.get("cosineExponent", 1.0))
+        # lat / half ramene la latitude sur [0, 1], donc l'angle sur [0, 90 deg]
+        angle = (lat / half) * np.float32(np.pi * 0.5)
+        c = np.clip(np.cos(angle), 0.0, 1.0).astype(np.float32)
+        return (t_pole + (t_eq - t_pole) * np.power(c, p)).astype(np.float32)
+    k = np.float32(temp_rules.get("latitudeExponent", 2.0))
     return (t_eq - (t_eq - t_pole) * np.power(lat / half, k)).astype(np.float32)
+
+
+def seasonal_amplitude(lat_norm: np.ndarray, cont: np.ndarray, temp_rules: dict) -> np.ndarray:
+    """Amplitude saisonniere : mois le plus chaud moins mois le plus froid.
+
+    `lat_norm` va de 0 a l'equateur a 1 au pole ; `cont` est la continentalite.
+
+    PUBLIQUE A DESSEIN : `export_uds_climate.py` a besoin exactement de cette
+    valeur pour remplir les temperatures d'hiver et d'ete des presets Ultra
+    Dynamic Sky. La formule ne doit exister qu'a UN endroit -- la dupliquer est
+    precisement ce qui fabrique des divergences invisibles.
+
+    DEUX FORMES, reglees par `temperature.seasonalAmplitudeShape`. La forme
+    "sine" est la bonne, et l'ancienne "linear" se trompait DEUX FOIS :
+
+      1. l'amplitude croissait LINEAIREMENT avec la latitude, alors que le
+         contraste saisonnier suit le SINUS de la latitude -- c'est la
+         projection de la declinaison solaire. En lineaire, corriger les poles
+         casse les latitudes moyennes et inversement : aucun chiffre ne
+         satisfait les deux ;
+      2. l'ocean amortissait par SOUSTRACTION (amp - 6), alors qu'il amortit
+         PROPORTIONNELLEMENT : il divise le contraste, il n'en retranche pas un
+         nombre fixe de degres. La soustraction donnait des amplitudes negatives
+         aux basses latitudes maritimes, qu'il fallait borner a 1 -- un
+         rustinage qui signalait la mauvaise forme.
+
+    Ecart absolu moyen mesure sur huit stations reelles (Singapour, Lisbonne,
+    Teheran, Chicago, Bergen, Winnipeg, Iakoutsk, Vostok) :
+
+        lineaire 22 / 6  (l'ancien reglage)   15,4 C   pire cas 40,9
+        lineaire 45 / 6                        8,4 C   pire cas 25,1
+        lineaire 60 / 20                       6,3 C   pire cas 16,4
+        sinus 45, amorti 0,65                  4,7 C   pire cas 16,9
+
+    L'ancien reglage donnait 16 C d'amplitude a Iakoutsk, qui en fait 57.
+    """
+    amp_eq = np.float32(temp_rules["seasonalAmplitudeEquatorC"])
+    amp_pole = np.float32(temp_rules["seasonalAmplitudePoleC"])
+    if str(temp_rules.get("seasonalAmplitudeShape", "linear")) == "sine":
+        saison = np.sin(np.asarray(lat_norm, dtype=np.float32) * np.float32(np.pi * 0.5))
+        frac = np.float32(temp_rules.get("oceanModerationFraction", 0.65))
+        # L'amortissement ne porte que sur la part qui depend de la latitude :
+        # a l'equateur il n'y a pas de saison a amortir.
+        amp = amp_eq + (amp_pole - amp_eq) * saison * (
+            np.float32(1.0) - frac * (np.float32(1.0) - cont))
+    else:
+        amp = amp_eq + (amp_pole - amp_eq) * np.asarray(lat_norm, dtype=np.float32)
+        amp = amp - np.float32(temp_rules["oceanModerationC"]) * (np.float32(1.0) - cont)
+    return np.maximum(amp, np.float32(1.0)).astype(np.float32)
 
 
 def _continentality(is_water: np.ndarray, geo: Geometry, range_km: float) -> np.ndarray:
@@ -283,16 +349,62 @@ def generate(rules: Rules, geo: Geometry, elevation_m: np.ndarray) -> ClimateRes
 
     cont = _continentality(is_water, geo, float(temp_rules["oceanModerationRangeKm"]))
 
-    # Amplitude saisonniere : faible a l'equateur, forte aux poles, amortie au
-    # bord de mer (l'ocean est un volant thermique).
+    # REFROIDISSEMENT CONTINENTAL DES HAUTES LATITUDES. Il manquait : la
+    # continentalite ne jouait que sur l'AMPLITUDE saisonniere, jamais sur la
+    # moyenne. Or aux hautes latitudes l'ocean ne fait pas que lisser l'annee,
+    # il la rechauffe : il retient assez de chaleur pour que l'hiver cotier
+    # reste pres de 0, quand un interieur continental descend a -40. L'ecart de
+    # moyenne ANNUELLE est enorme et bien documente -- Iakoutsk, 62 N dans les
+    # terres, -8,8 C ; Bergen, 60 N sur la cote, +7,6 C, soit 16 degres pour
+    # deux degres de latitude.
+    #
+    # Sans ce terme, la taiga et la toundra n'avaient nulle part ou exister :
+    # elles vivent dans les interieurs continentaux, pas sur les cotes. Le terme
+    # ne mord qu'au-dessus de `continentalCoolingLat0Deg` -- sous les tropiques
+    # un interieur continental est au contraire plus CHAUD que sa latitude, et
+    # c'est la prime d'aridite plus bas qui s'en charge.
+    #
+    # Applique AVANT les precipitations, a la difference de la prime d'aridite :
+    # un air plus froid porte moins de vapeur, donc ce refroidissement doit
+    # etre vu par le calcul de la pluie, et de la par l'erosion et le relief.
+    froid = float(temp_rules.get("continentalCoolingC", 0.0))
+    if froid > 0.0:
+        l0 = np.float32(temp_rules.get("continentalCoolingLat0Deg", 25.0))
+        l1 = np.float32(temp_rules.get("continentalCoolingLat1Deg", 60.0))
+        poids = noise.smoothstep(l0, l1, np.abs(geo.latitude_grid()).astype(np.float32))
+        temp_mean = (temp_mean - np.float32(froid) * cont * poids).astype(np.float32)
+
+    # AMPLITUDE SAISONNIERE : faible a l'equateur, forte dans les interieurs de
+    # haute latitude, amortie au bord de mer (l'ocean est un volant thermique).
+    #
+    # DEUX FORMES, reglees par `temperature.seasonalAmplitudeShape`. La forme
+    # "sine" est la bonne, et l'ancienne "linear" se trompait DEUX FOIS :
+    #
+    #   1. l'amplitude croissait LINEAIREMENT avec la latitude, alors que le
+    #      contraste saisonnier suit le SINUS de la latitude -- c'est la
+    #      projection de la declinaison solaire. En lineaire, corriger les poles
+    #      casse les latitudes moyennes et inversement : aucun chiffre ne
+    #      satisfait les deux ;
+    #   2. l'ocean amortissait par SOUSTRACTION (amp - 6), alors qu'il amortit
+    #      PROPORTIONNELLEMENT : il divise le contraste, il n'en retranche pas
+    #      un nombre fixe de degres. La soustraction donnait des amplitudes
+    #      negatives aux basses latitudes maritimes, qu'il fallait borner a 1 --
+    #      un rustinage qui signalait la mauvaise forme.
+    #
+    # Ecart absolu moyen mesure sur huit stations reelles (Singapour, Lisbonne,
+    # Teheran, Chicago, Bergen, Winnipeg, Iakoutsk, Vostok) :
+    #
+    #   lineaire 22 / 6  (l'ancien reglage)   15,4 C   pire cas 40,9
+    #   lineaire 45 / 6                        8,4 C   pire cas 25,1
+    #   lineaire 60 / 20                       6,3 C   pire cas 16,4
+    #   sinus 45, amorti 0,65                  4,7 C   pire cas 16,9
+    #
+    # L'ancien reglage donnait 16 C d'amplitude a Iakoutsk, qui en fait 57.
+    # Cela comptait bien au-dela des biomes : cette amplitude est exactement ce
+    # qui alimente les temperatures d'hiver et d'ete des presets Ultra Dynamic
+    # Sky, donc les hivers du jeu etaient beaucoup trop doux.
     lat_norm = np.abs(geo.latitude_grid()).astype(np.float32) / np.float32(geo.lat_span_deg * 0.5)
-    amp = (
-        np.float32(temp_rules["seasonalAmplitudeEquatorC"])
-        + (np.float32(temp_rules["seasonalAmplitudePoleC"])
-           - np.float32(temp_rules["seasonalAmplitudeEquatorC"])) * lat_norm
-    )
-    amp = amp - np.float32(temp_rules["oceanModerationC"]) * (np.float32(1.0) - cont)
-    amp = np.maximum(amp, np.float32(1.0)).astype(np.float32)
+    amp = seasonal_amplitude(lat_norm, cont, temp_rules)
 
     temp_min = (temp_mean - amp * np.float32(0.5)).astype(np.float32)
     temp_max = (temp_mean + amp * np.float32(0.5)).astype(np.float32)

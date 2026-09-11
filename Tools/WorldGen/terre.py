@@ -194,6 +194,44 @@ def run(dossier: Path) -> None:
     bulletin(dossier)
     controle_1(livres, r["biomes"]["whittakerBands"])
     controle_2(dossier, livres)
+    score(dossier)
+
+
+
+
+# --------------------------------------------------------------------- score
+# Ajout du 11 septembre 2026 : un CHIFFRE UNIQUE pour arbitrer entre deux
+# reglages. Sans lui, comparer deux mondes revient a peser huit ecarts a l'oeil
+# et a se convaincre de ce qu'on esperait. Les references ci-dessous sont des
+# ordres de grandeur largement admis pour les grands biomes terrestres, en part
+# des terres emergees ; elles sont moins solides que les six criteres du
+# bulletin, d'ou leur presence ici et non la-haut.
+BIOMES_TERRE = {
+    "Calotte glaciaire": 10.0,   # Antarctique 14 M km2 + Groenland 1,8, sur 149
+    "Toundra": 8.0,
+    "Taïga": 10.0,
+    "Forêt tempérée": 9.0,
+    "Prairie": 8.0,
+    "Savane": 13.0,
+    "Désert chaud": 21.0,        # BWh 14,2 (Peel 2007) + BSh environ 7
+    "Forêt tropicale humide": 11.0,
+}
+
+
+def score(dossier: Path) -> float:
+    man = json.loads((dossier / "manifest.json").read_text(encoding="utf-8"))
+    parts = man["stats"]["biomeShare"]
+    print("\n=== ECART AUX GRANDS BIOMES TERRESTRES ===")
+    print("{:<26}{:>8}{:>8}{:>9}".format("biome", "monde", "Terre", "ecart"))
+    ecarts = []
+    for nom, cible in sorted(BIOMES_TERRE.items(), key=lambda kv: -kv[1]):
+        v = parts.get(nom, 0.0)
+        e = (v - cible) / cible * 100.0
+        ecarts.append(abs(e))
+        print("{:<26}{:>8.2f}{:>8.1f}{:>8.0f} %".format(nom, v, cible, e))
+    m = float(np.mean(ecarts))
+    print("-> ecart absolu moyen : {:.1f} %  (plus petit = plus terrestre)".format(m))
+    return m
 
 
 if __name__ == "__main__":

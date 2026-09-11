@@ -39,6 +39,9 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from worldgen import climate as climate_mod  # noqa: E402
+
 RACINE = Path(__file__).resolve().parent.parent.parent
 DEFAUT = RACINE / "Saved" / "WorldGen" / "20260909"
 
@@ -194,13 +197,17 @@ def run(dossier: Path, regles: Path) -> dict:
     lat_ligne = (np.arange(n, dtype=np.float32) / (n - 1) * 2.0 - 1.0) * demi_span
     lat = np.repeat(lat_ligne[:, None], n, axis=1)
 
-    est_eau = np.isin(idx, np.array(sorted(SANS_CLIMAT)))
-    cont = continentalite(est_eau, m_par_px, float(temp_r["oceanModerationRangeKm"]))
-    # amplitude saisonniere : formule EXACTE de climate.generate
-    amp = (temp_r["seasonalAmplitudeEquatorC"]
-           + (temp_r["seasonalAmplitudePoleC"] - temp_r["seasonalAmplitudeEquatorC"])
-           * (np.abs(lat) / demi_span))
-    amp = np.maximum(amp - temp_r["oceanModerationC"] * (1.0 - cont), 1.0)
+    # La continentalite se mesure a la distance a l'OCEAN, pas a l'eau en
+    # general : un lac ou une riviere ne fait pas d'un interieur continental une
+    # facade maritime. On repart donc de l'altitude, comme climate.generate.
+    est_ocean = np.array(Image.open(dossier / "height_16bit.png")).astype(np.float32)
+    mn, mx = float(r["world"]["minElevationM"]), float(r["world"]["maxElevationM"])
+    est_ocean = (mn + est_ocean / 65535.0 * (mx - mn)) <= 0.0
+    cont = continentalite(est_ocean, m_par_px, float(temp_r["oceanModerationRangeKm"]))
+    # Amplitude saisonniere : on APPELLE la fonction du generateur au lieu de
+    # recopier sa formule. C'est la seule facon d'etre sur que les temperatures
+    # d'hiver et d'ete des presets UDS soient celles du monde.
+    amp = climate_mod.seasonal_amplitude(np.abs(lat) / demi_span, cont, temp_r)
 
     labels = man["biomes"]["labels"]
     presets, table = {}, {}

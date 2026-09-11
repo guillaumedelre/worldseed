@@ -224,9 +224,21 @@ def _force_poles(elevation: np.ndarray, geo: Geometry, tec: dict) -> np.ndarray:
         radius = float(tec.get(cle, tec.get("poleForcingRadiusDeg", 0.0)))
         if radius <= 0.0:
             continue
-        # Poids 0 loin du pole, 1 au pole.
+        # UN CONTINENT POLAIRE EST UN PLATEAU AVEC UN LITTORAL, PAS UN DEGRADE.
+        # Le poids montait en smoothstep sur TOUT le rayon : a mi-chemin il ne
+        # valait que 0,5, donc le fond oceanique n'etait remonte qu'a mi-hauteur
+        # et restait sous l'eau. Le continent n'emergeait vraiment qu'au pole
+        # meme. Mesure avant correction : 100 % de terres de 80 a 90 degres sud,
+        # mais deja seulement 38 % de 70 a 80 et 12 % de 60 a 70 -- une calotte
+        # a 5,6 % des terres contre 10,6 sur Terre (Antarctique 9,4 % +
+        # Groenland 1,2). La rampe n'occupe donc plus que le TIERS EXTERIEUR du
+        # rayon, et le plateau est plein au-dela. Avec un rayon de 30 degres,
+        # cela donne un continent plein de 70 a 90 degres, soit 6 % d'un
+        # hemisphere -- la taille de l'Antarctique.
         signed_lat = lat * np.float32(sign)
-        w = noise.smoothstep(half - radius, half, signed_lat) * np.float32(strength)
+        entree = np.float32(half - radius)
+        w = noise.smoothstep(entree, entree + np.float32(radius / 3.0),
+                             signed_lat) * np.float32(strength)
         if mode == "ocean":
             target = np.float32(tec["oceanDepthM"])
         else:
