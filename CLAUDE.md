@@ -1299,3 +1299,42 @@ sur les 5 acteurs de terrain**. `rvt_setup.poser()` est desormais appele par
 sur un asset est perdu a la reconstruction. Verifier apres chaque `rebuild()`
 que `runtime_virtual_textures` n'est pas vide, au meme titre que le materiau de
 terrain -- qui, lui, est deja repose par `landscape()`.
+
+### Un acteur qui gere le monde entier ne doit pas etre spatialement charge (11 septembre 2026)
+
+`BP_WorldseedClimat`, pose a l'origine pour piloter Ultra Dynamic Sky, etait
+**absent du PIE**. Cause : `is_spatially_loaded` vaut **True** par defaut, donc
+World Partition le diffuse par distance -- l'acteur etait a Y = 0, le pion a
+2,9 km, et il n'a jamais ete instancie. Aucune erreur, aucun avertissement : il
+n'existe simplement pas.
+
+Les acteurs d'UDS, eux, se declarent **`is_spatially_loaded = False`** dans leur
+propre construction, ce qui explique qu'ils soient toujours la. Tout acteur de
+GESTION doit faire pareil. A poser sur le DEFAUT DE CLASSE du Blueprint
+(`BlueprintService.set_property(bp, "bIsSpatiallyLoaded", "false")`), pas
+seulement sur l'instance, sinon la prochaine instance repose le probleme.
+
+**Piege de diagnostic** : chercher l'acteur par son libelle dans le monde de PIE
+rend une liste vide, ce qui ressemble a « l'acteur n'a pas ete cree » alors
+qu'il existe bel et bien dans le niveau. Verifier
+`is_spatially_loaded` AVANT de soupconner la creation.
+
+### build_graph : les executions cablees ne prouvent rien sur les DONNEES
+
+Le meme acteur compilait sans erreur et ne faisait rien : ses references etaient
+a `None` et la latitude ne bougeait pas. `build_graph` avait rapporte
+**18 noeuds sur 18 et 17 liaisons sur 17**, tout en vert -- parce que les
+17 liaisons demandees avaient bien ete faites. J'en avais simplement oublie
+TROIS : la sortie de chaque `Cast` vers son `Set`, et l'arc sinus vers la
+latitude. Un rapport vert ne dit rien des liaisons qu'on n'a pas demandees.
+
+**Ne pas deviner les noms de broches.** Ceux-la portent des espaces :
+`AsUltra Dynamic Sky`, `AsUltra Dynamic Weather`. Les lire avec
+`get_node_pins`, dont les champs utiles sont `pin_name`, `pin_type`, `is_input`
+et `is_connected` -- il n'y a PAS de champ `direction`. L'etoile de
+`is_connected` sur chaque broche montre d'un coup d'oeil ce qui pend dans le
+vide.
+
+**Le controle qui tranche** : ne pas se fier a la compilation, faire bouger une
+entree et mesurer la sortie. Ici, teleporter le pion a deux latitudes et lire
+`UDS.Latitude` : -30,00 attendu / -30,00 lu, puis +71,81 / +71,81.
