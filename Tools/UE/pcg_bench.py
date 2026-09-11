@@ -410,6 +410,21 @@ TILES_DIR = r"D:\UE\Worldseed\Saved\WorldGen\20260909\tiles"
 TILE_TEXTURE_DIR = "/Game/Worldseed/PCG/Biomes"
 
 
+def tuiles_presentes(racine: str) -> list:
+    """Les tuiles reellement ecrites par tile_world.py, dans l'ordre.
+
+    Ne JAMAIS coder en dur la liste des quatre tuiles : le monde de 8 km n'en a
+    qu'une (4065 sommets = 256 composants, donc un seul Landscape), celui de
+    32 km en avait quatre. Le nombre suit la resolution.
+    """
+    import os
+    if not os.path.isdir(racine):
+        return []
+    noms = [n for n in sorted(os.listdir(racine))
+            if n.startswith("x") and "_y" in n and os.path.isdir(os.path.join(racine, n))]
+    return noms
+
+
 def import_world_biome_tiles(tiles: list[str] | None = None,
                              force: bool = False) -> dict:
     """Importe les 4 cartes de biomes du monde, une par tuile de Landscape.
@@ -420,7 +435,7 @@ def import_world_biome_tiles(tiles: list[str] | None = None,
     un semis de vegetation se contenterait de la moitie de la resolution (le
     cache de BiomeCore, lui, travaille a 800 cm).
     """
-    tiles = tiles or ["x0_y0", "x1_y0", "x0_y1", "x1_y1"]
+    tiles = tiles or tuiles_presentes(TILES_DIR)
     out = {}
     for tile in tiles:
         png = os.path.join(TILES_DIR, tile, "biome_index.png")

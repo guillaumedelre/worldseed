@@ -220,7 +220,15 @@ def _force_poles(elevation: np.ndarray, geo: Geometry, tec: dict) -> np.ndarray:
         if mode == "ocean":
             target = np.float32(tec["oceanDepthM"])
         else:
-            target = np.float32(tec["continentBaseM"]) + np.float32(400.0)
+            # Un pole continental est un PLATEAU, pas une simple terre emergee :
+            # l'Antarctique culmine a 2 000 m sous sa calotte. D'ou une prime
+            # d'altitude au-dessus du socle continental ordinaire. Cette valeur
+            # est METRIQUE, donc liee a l'echelle du monde : elle etait ecrite en
+            # dur (400 m) et n'a pas suivi le passage de 32 a 8 km, ce qui a
+            # pousse le pole sud a 430 m au lieu de 130 et fait passer la calotte
+            # de 7,1 a 11,9 % des terres. Voir world._comment_echelle.
+            target = (np.float32(tec["continentBaseM"])
+                      + np.float32(tec.get("poleContinentBonusM", 400.0)))
         out = out * (np.float32(1.0) - w) + target * w
 
     return out.astype(np.float32)

@@ -56,6 +56,21 @@ SEA_LEVEL_CM = 0.0
 _log: list[str] = []
 
 
+def tuiles_presentes(racine: str) -> list:
+    """Les tuiles reellement ecrites par tile_world.py, dans l'ordre.
+
+    Ne JAMAIS coder en dur la liste des quatre tuiles : le monde de 8 km n'en a
+    qu'une (4065 sommets = 256 composants, donc un seul Landscape), celui de
+    32 km en avait quatre. Le nombre suit la resolution.
+    """
+    import os
+    if not os.path.isdir(racine):
+        return []
+    noms = [n for n in sorted(os.listdir(racine))
+            if n.startswith("x") and "_y" in n and os.path.isdir(os.path.join(racine, n))]
+    return noms
+
+
 def log(kind: str, message: str) -> None:
     line = "{}: {}".format(kind, message)
     _log.append(line)
@@ -484,7 +499,7 @@ def build_world(tiles: list[str] | None = None,
     l'execution gere ses propres mailles, transitoires, sans ce reglage.
     """
     _log.clear()
-    tiles = tiles or ["x0_y0", "x1_y0", "x0_y1", "x1_y1"]
+    tiles = tiles or tuiles_presentes(TILES_DIR)
     made = {}
     for tile in tiles:
         texture = unreal.EditorAssetLibrary.load_asset(

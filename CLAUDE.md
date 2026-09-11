@@ -583,3 +583,116 @@ manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
   "The Editor is currently in a play mode". Appeler `editor_request_end_play()` d'abord.
 
 <!-- END VibeUE -->
+
+<!-- Section propre au projet Worldseed. Placee APRES le marqueur de fin VibeUE
+     a dessein : tout ce qui precede est regenere par VibeUE.GenerateAgentConfig
+     et serait efface. Ne pas deplacer au-dessus. -->
+
+## A. Comment travailler avec le proprietaire du projet
+
+**Regle posee par le proprietaire le 11 septembre 2026, elle prime sur le style
+laconique demande en section 10.**
+
+Le proprietaire du projet est **debutant sur Unreal Engine 5.8**. Il connait son
+domaine et decide, mais il n'a pas les reflexes du moteur. Quand il demande
+quelque chose :
+
+1. **Se documenter AVANT de proposer.** Ne jamais repondre de memoire sur une API,
+   un plugin, un reglage ou un comportement du moteur. Verifier dans l'ordre :
+   `discover_python_class` / `discover_python_function`, les skills VibeUE
+   (`ListSkills` puis `GetSkills`), la source du moteur sous
+   `engineSource.path`, puis `deep_research` en dernier recours. Citer d'ou vient
+   la reponse.
+2. **Agir en professeur, pas en executant.** Dire ce qu'on fait ET pourquoi c'est
+   la bonne facon de faire dans Unreal, en nommant les notions du moteur qui sont
+   en jeu. Une reponse juste mais opaque ne sert a rien a quelqu'un qui apprend.
+3. **Quand il y a plusieurs facons de faire, les presenter TOUTES**, chacune avec
+   ses **pour** et ses **contres**, puis **recommander** l'une d'elles en disant
+   pourquoi. Utiliser `AskUserQuestion` pour que le choix soit explicite. Ne
+   jamais trancher en silence un arbitrage qui engage le rendu, la jouabilite ou
+   le cout.
+4. **Ne pas cacher un echec ni une incertitude.** Si une piste a ete abandonnee,
+   dire laquelle et pourquoi, pour qu'elle ne soit pas retentee.
+
+Ce que cette regle ne change pas : pas de bavardage, pas de repetition, pas de
+flatterie. Etre pedagogue, c'est etre clair, pas etre long.
+
+## B. Pieges rencontres au passage du monde a 8 km (11 septembre 2026)
+
+*(Note : la section 11 plus haut est DANS le bloc regenere par
+`VibeUE.GenerateAgentConfig` et serait effacee par une regeneration. Tout nouveau
+contenu propre au projet va desormais ici, apres le marqueur `END VibeUE`. La
+section 11 gagnerait a etre deplacee ici un jour.)*
+
+### Mise a l'echelle du generateur
+
+- **Une constante metrique en dur suffit a fausser un monde entier.**
+  `tectonics.py` portait `target = continentBaseM + 400.0` : cette prime
+  d'altitude du pole continental n'a pas suivi la division par 4, le pole sud est
+  monte a 430 m au lieu de 130, et la calotte glaciaire est passee de 7,1 a
+  11,9 % des terres. **C'est le diff de `metrics.py` qui l'a trouvee**, pas la
+  lecture du code : toutes les autres metriques collaient a moins d'un point,
+  celle-la sautait de 4,7. Sortie dans `tectonics.poleContinentBonusM`. Second
+  cas du meme genre : le fondu cotier du detail dans `export.py`
+  (`smoothstep(-20, 40)`), sorti dans `world.detailCoastFadeStartM/FullM`.
+  **Apres toute mise a l'echelle, lancer `metrics.py --diff` contre l'ancien
+  monde : c'est le seul controle qui voit ce genre d'erreur.**
+- **Reduire la resolution de sortie impose de retirer une octave de detail.**
+  A 8129 pixels la 6e octave de `detailFrequency` = 160 tombait a 1,6 pixel ; a
+  4065 elle tomberait a 0,8, soit sous Nyquist, donc de l'aliasing pur.
+
+### Unreal : World Partition et sauvegarde
+
+- **La suppression d'un acteur World Partition est ecrite sur le disque
+  IMMEDIATEMENT**, un fichier `.uasset` en moins par acteur sous
+  `Content/__ExternalActors__`. `save_dirty_packages` renvoie alors `True` en
+  0,0 s sans rien avoir a faire, ce qui fait croire a tort que rien n'a ete
+  sauve. Le controle qui tranche : recharger le niveau et recompter
+  `get_actor_descs()`.
+- **`PCGWorldActor` peut peser des GIGA-OCTETS a lui seul.** Avec
+  `landscape_cache_object.serialization_mode = AlwaysSerialize` (obligatoire pour
+  la generation PCG a l'execution), le cache de paysage est ecrit dans SON paquet
+  d'acteur externe : **2,6 Go mesures pour 1024 composants**, soit 97 % du poids
+  du niveau. Le supprimer libere tout, et il se recree par
+  `spawn_actor_from_class(unreal.PCGWorldActor, ...)` -- contrairement a
+  `WaterZone`, qui rend `None`.
+- **Un `PCGWorldActor` NEUF arrive desarme** : `serialization_mode` a
+  `NeverSerialize` et `enable_world_partition_generation_sources` a **False**.
+  Resultat en PIE : aucune instance, et **pas une seule ligne `LogPCG` dans le
+  journal** -- le planificateur n'a meme pas demarre. Poser les deux a la main.
+
+### Unreal : l'eau
+
+- **`WaterZone` ne se spawne pas depuis Python** (`spawn_actor_from_class` rend
+  `None`). C'est le plugin Water qui la cree lui-meme des le premier corps d'eau
+  d'un niveau qui n'en a pas, dimensionnee sur les bornes du monde. On l'ADOPTE :
+  renommer, elargir, monter `render_target_resolution`. `zone_extent` est la
+  largeur TOTALE, pas la demi-portee.
+- **`RiverWidth` est la largeur TOTALE en centimetres**, alors que le commentaire
+  de `WaterSplineMetadata.h` dit "from center in each direction". Le maillage
+  tranche : `WaterBodyRiverComponent.cpp:111` fait `RiverWidth.Eval(Key) / 2`.
+  Suivre le commentaire donne des rivieres deux fois trop larges.
+- **`UWaterSplineMetadata` n'a pas de wrapper Python** : son `dir()` est vide et
+  `get_editor_property("river_width")` echoue, mais
+  `get_editor_property("RiverWidth")` -- le nom C++ EXACT -- marche. L'objet
+  lui-meme est un `UPROPERTY(Instanced)` prive, atteignable seulement par
+  `unreal.load_object(None, acteur.get_path_name() + ".WaterSplineMetadata")`.
+  En pratique, preferer les setters exposes du composant :
+  `set_river_width_at_spline_input_key` / `set_river_depth_at_spline_input_key`.
+- **L'eau du monde se rejoue avec `Tools/UE/water_world.py`.** Le script de la
+  premiere session n'avait pas ete conserve et tout a ete a retrouver.
+
+### Unreal : divers
+
+- **`import_world.py` n'assigne PAS le materiau de Landscape.** Un Landscape
+  fraichement importe est blanc. Poser
+  `landscape_material = /Game/Worldseed/Materials/M_WorldseedLandscape` sur
+  l'acteur Landscape (0,5 s, les proxies suivent).
+- **`LandscapeService.get_height_in_region` prend le LABEL de l'acteur (str)**,
+  pas l'acteur lui-meme, sans quoi : "Cannot nativize 'Landscape' as 'String'".
+- **`capture_image` capture le viewport ACTIF, qui n'est pas forcement la
+  perspective.** Une disposition `FourPanes2x2` avec le panneau `top`/`unlit`
+  actif rend une carte a plat, sans relief ni ciel, et on croit a un probleme de
+  rendu. `unreal.ViewportService.get_viewport_info()` donne l'etat ;
+  `set_viewport_layout("OnePane")` + `set_viewport_type("perspective")` +
+  `set_view_mode("lit")` remettent les choses en place.

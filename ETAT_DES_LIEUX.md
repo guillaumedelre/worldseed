@@ -22,8 +22,31 @@ Un monde procédural pour un RPG sous Unreal Engine 5.8. Deux moitiés bien sép
 Le monde est entièrement déterminé par `Tools/WorldGen/rules/world_rules.json` et la
 graine. Même graine + mêmes règles = même monde, au bit près.
 
-**Paramètres de référence** : graine 20260909, 32 km de côté, simulation 2049²,
-sortie 8129², soit 3,94 m/pixel.
+**Paramètres de référence** : graine 20260909, **8 km de côté**, simulation 2049²,
+sortie 4065², soit **1,97 m/pixel**.
+
+> **11 septembre 2026 — le monde est passé de 32 km à 8 km.** C'est une *maquette
+> au 1/4* : même graine, même carte, en réduction. Le générateur étant presque
+> entièrement exprimé en unités relatives (fréquences en cycles par monde,
+> distances en pixels de simulation, seuils normalisés par centile), il a suffi
+> de diviser par 4 ce qui est **métrique** et par 16 ce qui est une **aire** ou un
+> **débit**. La règle complète vit dans `world._comment_echelle`, et le diff de
+> `metrics.py` entre les deux mondes le confirme : forêt tempérée humide 12,71 %
+> → 12,65 % des terres, roche nue 12,48 % → 11,91 %, Stone dominant 31,6 % →
+> 29,9 %.
+>
+> Deux exceptions **assumées**, décidées par le propriétaire du projet :
+> `temperature.lapseRateCPerKm` est **multiplié** par 4 (6,5 → 26 °C/km) pour que
+> l'altitude garde son rôle climatique sur un relief quatre fois plus bas, et
+> `hydrology.geometryExaggeration` est multipliée par 16 (500 → 8000) pour que
+> les rivières gardent leur largeur réelle — l'échelle humaine, elle, ne
+> rétrécit pas avec le monde. Mesure : 36,1 m de large avant, 37,0 m après.
+>
+> Conséquence heureuse : **4065² = 256 composants**, soit un Landscape unique.
+> Le tuilage 2×2 imposé par le plafond D3D12 disparaît, et avec lui les
+> 4 textures de biomes et les listes de tuiles du PCG.
+>
+> L'ancien monde de 32 km est conservé sous `Saved/WorldGen/20260909_32km`.
 
 ---
 
@@ -36,10 +59,13 @@ sortie 8129², soit 3,94 m/pixel.
 | `Tools/WorldGen/metrics.py` | relevé et **diff** de non-régression |
 | `Tools/WorldGen/diag_hydro.py` | banc de diagnostic hydrologique, sans resimuler |
 | `Tools/WorldGen/diag_climat.py` | idem pour les précipitations |
-| `Tools/WorldGen/tile_world.py` | découpe la sortie en 4 tuiles importables |
+| `Tools/WorldGen/tile_world.py` | découpe la sortie en tuiles importables (**une seule** à 8 km ; le nombre est déduit de la résolution) |
 | `Tools/WorldGen/tune_coast.py` | banc de réglage de la forme du littoral |
-| `Tools/UE/import_world.py` | import dans Unreal |
+| `Tools/UE/rebuild_world.py` | **la chaîne complète côté Unreal** : vider, relief, matériau, eau, biomes, végétation, apparition |
+| `Tools/UE/import_world.py` | import du Landscape (ne pose PAS le matériau) |
+| `Tools/UE/water_world.py` | océan, lacs et rivières à partir de `lakes.json` / `rivers.json` |
 | `Saved/WorldGen/20260909/` | la sortie courante (PNG, JSON, rapport HTML) |
+| `Saved/WorldGen/20260909_32km/` | l'ancien monde de 32 km, conservé pour comparaison |
 | `Saved/WorldGen/releves/` | relevés figés : `reference.json`, `final.json` |
 | `Saved/VibeUE/Captures/` | captures d'écran de la session |
 
@@ -96,27 +122,43 @@ Quatre causes, toutes trouvées par la mesure et non par la lecture du code :
 
 ### Décisions de conception à ne pas défaire sans en parler
 
-- **Exagération hydraulique assumée.** Un monde de 32 km ne peut pas porter de fleuve :
-  son plus grand bassin fait quelques dizaines de km², soit 0,65 m³/s, ce qui donne
-  physiquement un chenal de 1,6 m. Les coefficients `widthCoefA` = 2,0 et
-  `depthCoefB` = 0,3 sont désormais les **vraies** valeurs physiques, et le grossissement
-  passe par `geometryExaggeration` = 500, qui multiplie le **débit apparent** servant à la
-  géométrie — largeur et profondeur restent donc dans leur proportion naturelle. Le débit
-  exporté reste le vrai. Mettre ce paramètre à 1 rend le générateur strictement physique.
+- **Exagération hydraulique assumée.** Un monde de 8 km ne peut pas porter de fleuve :
+  son plus grand bassin fait quelques km², soit 0,043 m³/s, ce qui donne physiquement un
+  chenal de 40 cm. Les coefficients `widthCoefA` = 2,0 et `depthCoefB` = 0,3 sont les
+  **vraies** valeurs physiques, et le grossissement passe par `geometryExaggeration`
+  = 8000, qui multiplie le **débit apparent** servant à la géométrie — largeur et
+  profondeur restent donc dans leur proportion naturelle. Le débit exporté reste le vrai.
+  Mettre ce paramètre à 1 rend le générateur strictement physique.
 - **Un Landscape ne doit pas dépasser ~256 composants s'il porte dix couches.** Au-delà,
-  l'import des poids fait tomber le thread RHI (plafond D3D12 non configurable). D'où le
-  tuilage en 2×2. Détail complet dans `CLAUDE.md` §11.
-- **Le critère de lac est volontairement sévère** (`minLakeDepthM` 2 m,
-  `minLakeAreaHa` 150) : il ne laisse que 5 grands lacs. Le desserrer fait remonter la
-  part des lacs au-dessus de la cible de 5 %.
+  l'import des poids fait tomber le thread RHI (plafond D3D12 non configurable). À 8 km
+  la sortie 4065² tombe **pile** sur 256 : un seul Landscape, aucun tuilage.
+  `tile_world.py` déduit désormais le nombre de tuiles de la résolution.
+  Détail complet dans `CLAUDE.md` §11.
+- **Le critère de lac est volontairement sévère** (`minLakeDepthM` 0,5 m,
+  `minLakeAreaHa` 9,375 — soit les seuils de 32 km divisés par 4 et par 16) : il ne
+  laisse que quelques grands lacs. Le desserrer fait remonter la part des lacs au-dessus
+  de la cible de 5 %.
+- **La règle de mise à l'échelle est écrite dans `world._comment_echelle`.** Tout nouveau
+  réglage doit la respecter. Et **après toute mise à l'échelle, lancer
+  `metrics.py --diff` contre l'ancien monde** : c'est le seul contrôle qui voit une
+  constante métrique oubliée en dur dans le code. C'est ainsi qu'a été trouvé le
+  `+ 400.0` de `tectonics.py`, qui poussait le pôle sud à 430 m au lieu de 130 et faisait
+  passer la calotte glaciaire de 7,1 à 11,9 % des terres.
 
 ### Le monde actuel en chiffres
 
-Terres 38,1 %, eau 61,9 %. Relief −1033 à +1502 m. 45 rivières, toutes à l'océan, la
-principale de 11,2 km portant 0,65 m³/s pour 36 m de large. 5 lacs, 2138 ha.
+Terres 38,5 %, eau 61,5 %. Relief −258 à +376 m. 45 rivières, toutes à l'océan, la
+principale de 2,81 km portant 0,041 m³/s pour 36,1 m de large. 5 lacs, 134 ha.
 
 Biomes majeurs, en part des terres : forêt tempérée humide 12,7 %, roche nue 12,4 %,
 désert chaud 11,9 %, forêt tropicale humide 9,3 %, forêt tempérée 9,1 %, toundra 7,8 %.
+
+**La preuve que c'est bien le même monde**, `metrics.py --diff` entre 32 km et 8 km :
+**15 métriques bougent sur 200**, et toutes comme la construction l'exige —
+altitude max 1502,0 → 375,5 m (**exactement ÷4**), plus long cours d'eau 11 230,9 →
+2 807,7 m (**÷4**), aire des lacs 2 137,5 → 133,6 ha (**÷16**), débit max 0,650 →
+0,0406 m³/s (**÷16**). La largeur maximale des rivières, 36,1 m, n'apparaît même pas
+dans le diff : elle est **identique**.
 
 Couches de peinture dominantes : Stone 31,6 %, Grass 17,8 %, Snow 12,1 %,
 DesertSand 11,6 %, Biom Grass 5 8,3 %.
@@ -131,20 +173,42 @@ fichier, et non les couches, qui doit piloter la végétation.
 ## 4. Le monde dans Unreal : état
 
 Niveau `/Game/Worldseed/Maps/L_Worldseed`, World Partition. **À jour** : il contient le
-monde d'après les quatre corrections.
+monde de 8 km.
 
-- **4 Landscapes** de 4065² sommets, 16×16 = 256 composants chacun, 16 proxies au total.
-  Les coutures entre tuiles sont exactes (écart mesuré 0,0000 cm).
+**Tout se refait en un appel**, depuis l'éditeur :
+
+```python
+import sys, importlib
+sys.path.insert(0, r"D:\UE\Worldseed\Tools\UE")
+import rebuild_world; importlib.reload(rebuild_world)
+print(rebuild_world.rebuild(r"D:\UE\Worldseed\Saved\WorldGen\20260909"))
+```
+
+- **1 seul Landscape** de 4065² sommets, 16×16 = 256 composants, 4 proxies. Plus aucune
+  couture à vérifier. Contrôle mesuré : le Landscape rend 6916,20 cm là où la heightmap
+  annonce 6916,80 — **0,6 cm d'écart**.
 - **Matériau** `/Game/Worldseed/Materials/M_WorldseedLandscape`, dupliqué du maître
-  Orasot, auquel a été ajoutée la 10ᵉ couche `Snow`. Les 10 couches sont vérifiées
-  exactes à leur pixel de poids maximal sur les quatre tuiles.
-- **Eau** : 1 `WaterBodyOcean` à Z = 0, 5 `WaterBodyLake` (splines linéaires, chacun à son
-  niveau), 45 `WaterBodyRiver` avec largeur et profondeur réelles par nœud, 1 `WaterZone`
-  de 34 km. **`affects_landscape` est à `False` sur les 51 corps d'eau** : sans cela ils
-  creuseraient le relief importé.
+  Orasot, auquel a été ajoutée la 10ᵉ couche `Snow`. **`import_world.py` ne le pose
+  pas** : un Landscape fraîchement importé est blanc. `rebuild_world.landscape()` s'en
+  charge.
+- **Eau** : 1 `WaterBodyOcean` à Z = 0, 4 `WaterBodyLake` (splines fermées et linéaires,
+  chacun à son niveau, de 40,8 à 129,2 m), 48 `WaterBodyRiver` avec largeur et profondeur
+  par nœud, 1 `WaterZone` de 8,5 km à 4096 texels. **`affects_landscape` est à `False`
+  sur les 53 corps d'eau** : sans cela ils creuseraient le relief importé.
+  Tout est rejouable par `Tools/UE/water_world.py`.
+  - **Le rideau d'eau au bord des lacs s'est beaucoup amélioré tout seul** : la zone
+    passe de 8,3 à **2,08 m par texel**, et la plage de hauteurs d'eau de 0–545 m à
+    0–129 m. Soit environ 17 fois moins de marche à franchir par texel.
+- **Végétation PCG** : 1 `PCGVolume` `Worldseed_Vegetation_x0_y0`, graphe de 104 nœuds
+  et 32 couches, en **génération à l'exécution**. Vérifié en PIE : les acteurs de
+  partition sont dépilés d'un pool transitoire, rien n'est écrit sur le disque.
+- **`PCGWorldActor`** : posé à la main et **armé**. Un acteur neuf arrive avec
+  `enable_world_partition_generation_sources = False` et un cache de paysage en
+  `NeverSerialize` — et alors le PIE ne produit rien, sans une seule ligne `LogPCG`.
 - **Éclairage** : soleil directionnel mobile lié à l'atmosphère, SkyLight en capture temps
   réel, SkyAtmosphere, brouillard. Le niveau avait été créé vide, sans aucune lumière.
-- **`Worldseed_PlayerStart`** posé en forêt tempérée humide. Sans lui, le PIE fait
+- **`Worldseed_PlayerStart`** posé en forêt tempérée humide, sur un critère **mesuré**
+  (biome, altitude, pente sous 8°, distance à l'eau) et non à l'œil. Sans lui, le PIE fait
   apparaître le pion à l'origine du monde, c'est-à-dire en pleine mer.
 - **Herbe de Landscape** : cinq types dans `/Game/Worldseed/Landscape/`
   (`GT_Worldseed_Grass`, `_Flower_1`, `_Flower_2`, `_Flower_3`, `_Fern`), tous dupliqués
@@ -171,30 +235,22 @@ couches. Obtenir un vrai tapis demande de **remettre ces entrées à l'échelle 
 graphe du matériau**, ce qui touche au rendu du terrain. Le propriétaire du projet devait
 donner son accord avant que j'y aille ; la question est restée ouverte.
 
-### 5.2 La végétation PCG — le gros morceau, entièrement à faire
+### 5.2 La végétation PCG — faite, et vérifiée en exécution
 
-Rien n'existe : **zéro graphe PCG** dans le projet. À ne pas confondre avec l'herbe de
-Landscape traitée ci-dessus : ce sont deux systèmes complémentaires, pas deux options.
+**Résolu.** Un graphe `PCG_Vegetation_x0_y0` (104 nœuds, 32 couches) et un `PCGVolume`
+en génération à l'exécution. Le chemin retenu est le **natif** :
+`PCGSurfaceSampler` (bornée par la maille) → `PCGSampleTexture` sur `biome_index.png`
+en filtrage `Point` → `PCGProjection` sur le Landscape → `PCGStaticMeshSpawner`.
 
-| | Herbe de Landscape | PCG |
-|---|---|---|
-| Émis par | le matériau du terrain | un graphe PCG |
-| Piloté par | les 10 couches de peinture | les données qu'on veut, dont les 19 biomes |
-| Pour quoi | brins, fleurs, cailloux | arbres, buissons, rochers |
-| Coût | très faible, aucun acteur | plus élevé, instances gérées |
+Ce n'est **pas** `PCGBiomeCore` / `PCGBiomeSample`, le pack de biomes expérimental
+d'Epic : il a été monté entièrement puis abandonné (aucune instance produite,
+`GetAttributeFromPointIndex : index 0 hors limites` dans `LocalBiomeCore`, et il
+apparie les biomes par **couleur** et non par identifiant). Il est expérimental, en
+v0.2, sans aucune API C++ ni garantie entre versions du moteur. Voir `CLAUDE.md` §11.
 
-Le point technique à trancher en premier : **le PCG doit lire `biome_index.png`**, pas les
-couches de peinture, qui n'en distinguent que dix et confondent des biomes (la plage et
-le désert chaud ont toutes deux `DesertSand` pour couche dominante — constaté en jeu, ils
-sont visuellement identiques). Cela veut dire importer la carte des biomes comme texture
-et l'échantillonner dans le graphe.
-
-**Assets disponibles** : 253 meshes de décor — 81 rochers, 67 arbres, 24 buissons,
-22 champignons, 18 falaises, plus fougères et fleurs. De quoi peupler correctement forêt
-tempérée, forêt tempérée humide, forêt tropicale (bambou), désert chaud, roche nue et
-alpin. **Manques réels** si l'on veut des silhouettes distinctes : taïga (deux conifères
-seulement), toundra (rien de spécifique), savane (pas d'acacia), marais (pas de
-végétation palustre) — ensemble 15 % des terres, traitables par emprunt en attendant.
+Ce qui reste ouvert sur la végétation : les **silhouettes manquantes**. Taïga (deux
+conifères seulement), toundra (rien de spécifique), savane (pas d'acacia), marais (pas
+de végétation palustre) — ensemble 15 % des terres, traitées par emprunt en attendant.
 
 ### 5.3 Points ouverts, plus petits
 

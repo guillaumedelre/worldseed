@@ -2,6 +2,9 @@
 
     python tile_world.py [dossier] [tuiles_par_cote]
 
+Sans argument, le nombre de tuiles est DEDUIT de la resolution : assez de tuiles
+pour qu'aucun Landscape ne depasse 256 composants.
+
 POURQUOI : un Landscape unique de 8129x8129 fait 1024 composants ; avec dix
 couches de peinture (donc trois textures de poids par composant) l'import
 depasse le plafond du gestionnaire de residence D3D12 du moteur
@@ -13,6 +16,11 @@ Le decoupage est exact : 8129 = 2 x 4064 + 1, donc deux tuiles de 4065 pixels
 qui PARTAGENT leur colonne (ou ligne) de bord. Aucun reechantillonnage, aucune
 interpolation : les altitudes de la couture sont les memes des deux cotes, et
 l'encodage 16 bits est recopie tel quel.
+
+DEPUIS LE MONDE DE 8 KM, une seule tuile suffit : la sortie 4065 fait pile
+256 composants, donc un Landscape unique et aucune couture. On continue
+neanmoins a produire `tiles/x0_y0`, parce que tout l'outillage aval s'adresse a
+une tuile et a son manifeste ; le decoupage est alors une copie conforme.
 """
 
 from __future__ import annotations
@@ -32,6 +40,30 @@ def tile_config(tile_n: int) -> dict:
     """Configuration Landscape d'une tuile de tile_n sommets de cote."""
     from worldgen.config import landscape_config_for
     return landscape_config_for(tile_n)
+
+
+MAX_COMPOSANTS_PAR_TUILE = 256
+
+
+def tiles_needed(src: Path) -> int:
+    """Le moins de tuiles possible, sans depasser 256 composants par Landscape.
+
+    C'est le plafond mesure : au-dela, l'import des dix couches de poids fait
+    tomber le thread RHI (voir l'en-tete). A 4065 sommets on est pile a 256,
+    donc une seule tuile ; a 8129 il en faut quatre.
+    """
+    from worldgen.config import landscape_config_for
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    quads = int(manifest["world"]["resolution"]) - 1
+    n = 1
+    while n <= quads:
+        if quads % n == 0:
+            cfg = landscape_config_for(quads // n + 1)
+            if cfg["component_count_x"] * cfg["component_count_y"] <= MAX_COMPOSANTS_PAR_TUILE:
+                return n
+        n += 1
+    raise SystemExit("aucun decoupage ne tient sous {} composants".format(
+        MAX_COMPOSANTS_PAR_TUILE))
 
 
 def cut(src: Path, tiles_per_side: int = 2) -> list[Path]:
@@ -98,6 +130,18 @@ def cut(src: Path, tiles_per_side: int = 2) -> list[Path]:
 def verify(src: Path, tiles_per_side: int = 2) -> None:
     """La couture doit etre identique des deux cotes, au bit pres."""
     root = src / "tiles"
+    if tiles_per_side == 1:
+        # Le monde de 8 km tient en UN Landscape de 256 composants : il n'y a
+        # aucune couture a verifier. On decoupe quand meme en une tuile unique,
+        # parce que tout l'outillage aval (vegetation.py, pcg_bench.py,
+        # export_biome_texture.py) s'adresse a `tiles/x0_y0` et a son manifeste
+        # de tuile. Le "decoupage" est alors une copie conforme.
+        a = np.asarray(Image.open(root / "x0_y0" / "height_16bit.png"))
+        plein = np.asarray(Image.open(src / "height_16bit.png"))
+        if not np.array_equal(a, plein):
+            raise SystemExit("la tuile unique ne reproduit pas la sortie pleine")
+        print("TUILE UNIQUE identique a la sortie pleine : True ({}x{})".format(*a.shape))
+        return
     a = np.asarray(Image.open(root / "x0_y0" / "height_16bit.png"))
     b = np.asarray(Image.open(root / "x1_y0" / "height_16bit.png"))
     same = np.array_equal(a[:, -1], b[:, 0])
@@ -114,6 +158,10 @@ if __name__ == "__main__":
     sys.path.insert(0, str(here))
     src = Path(sys.argv[1]) if len(sys.argv) > 1 else \
         here.parent.parent / "Saved" / "WorldGen" / "20260909"
-    n = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+    if len(sys.argv) > 2:
+        n = int(sys.argv[2])
+    else:
+        n = tiles_needed(src)
+        print("TUILES: {0}x{0} deduit de la resolution".format(n))
     cut(src, n)
     verify(src, n)

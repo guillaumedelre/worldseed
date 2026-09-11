@@ -3,7 +3,7 @@
     python export_biome_texture.py [dossier] [--bench-only|--tiles-only]
 
 POURQUOI : tile_world.py ne decoupe que le relief et les dix couches de peinture.
-La carte des biomes n'existe qu'en 8129x8129 non tuile, alors que c'est ELLE qui
+La carte des biomes n'existe qu'en pleine resolution non tuilee, alors que c'est ELLE qui
 doit piloter le PCG : les couches de peinture n'en distinguent que dix et
 confondent des biomes (la plage et le desert chaud ont toutes deux DesertSand
 pour couche dominante, et sont visuellement identiques en jeu).
@@ -36,14 +36,17 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-# Centre du banc d'essai, en pixels de la sortie 8129.
-# Choisi par balayage : c'est la fenetre de 2 km qui porte le plus de Plage au
-# contact du Desert chaud (le couple que les couches de peinture confondent),
-# avec en prime un littoral, une riviere et deux forets. Neuf biomes au-dessus
-# de 1 %, ce qui teste vraiment l'echantillonnage d'identifiants.
-BENCH_CENTRE_ROW = 6096
-BENCH_CENTRE_COL = 7620
-BENCH_SIZE_PX = 512          # 512 x 3,937 m = 2016 m
+# Centre du banc d'essai, en FRACTION de la carte -- pas en pixels.
+# Choisi par balayage sur la sortie 8129 du monde de 32 km : c'est la fenetre qui
+# porte le plus de Plage au contact du Desert chaud (le couple que les couches de
+# peinture confondent), avec en prime un littoral, une riviere et deux forets.
+# Neuf biomes au-dessus de 1 %, ce qui teste vraiment l'echantillonnage
+# d'identifiants. Exprime en fraction, le point reste le MEME endroit du monde
+# quelle que soit la resolution : le monde de 8 km est la meme carte en
+# reduction, donc la fenetre y porte les memes biomes.
+BENCH_CENTRE_ROW_FRAC = 6096 / 8128.0     # 0,75
+BENCH_CENTRE_COL_FRAC = 7620 / 8128.0     # 0,9375
+BENCH_SIZE_PX = 512
 
 
 def _world_origin(manifest: dict) -> tuple[float, float, float]:
@@ -106,8 +109,11 @@ def repair_below_sea_level(src: Path) -> int:
     return n
 
 
-def cut_tiles(src: Path, tiles_per_side: int = 2) -> list[Path]:
+def cut_tiles(src: Path, tiles_per_side: int | None = None) -> list[Path]:
     """Decoupe la carte des biomes comme tile_world.py decoupe le relief."""
+    from tile_world import tiles_needed
+    if tiles_per_side is None:
+        tiles_per_side = tiles_needed(src)
     manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
     full_n = int(manifest["world"]["resolution"])
     quads = full_n - 1
@@ -144,9 +150,19 @@ def cut_tiles(src: Path, tiles_per_side: int = 2) -> list[Path]:
     return written
 
 
-def verify_tiles(src: Path, tiles_per_side: int = 2) -> None:
+def verify_tiles(src: Path, tiles_per_side: int | None = None) -> None:
     """La couture doit etre identique des deux cotes, au bit pres."""
+    from tile_world import tiles_needed
+    if tiles_per_side is None:
+        tiles_per_side = tiles_needed(src)
     root = src / "tiles"
+    if tiles_per_side == 1:
+        a = np.asarray(Image.open(root / "x0_y0" / "biome_index.png"))
+        plein = np.asarray(Image.open(src / "biome_index.png"))
+        if not np.array_equal(a, plein):
+            raise SystemExit("la tuile de biomes unique ne reproduit pas la carte pleine")
+        print("TUILE UNIQUE de biomes identique a la carte pleine : True ({}x{})".format(*a.shape))
+        return
     a = np.asarray(Image.open(root / "x0_y0" / "biome_index.png"))
     b = np.asarray(Image.open(root / "x1_y0" / "biome_index.png"))
     c = np.asarray(Image.open(root / "x0_y1" / "biome_index.png"))
@@ -194,18 +210,24 @@ def _make_probes(sub: np.ndarray, origin_x: float, origin_y: float,
 
 
 def cut_bench(src: Path) -> Path:
-    """Extrait la fenetre de 2 km du banc d'essai PCG."""
+    """Extrait la fenetre du banc d'essai PCG, autour d'un point fixe du monde."""
     manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
     labels = manifest["biomes"]["labels"]
     x0_cm, y0_cm, cm_px = _world_origin(manifest)
 
     arr = np.asarray(Image.open(src / "biome_index.png"))
-    n = BENCH_SIZE_PX
-    row0 = BENCH_CENTRE_ROW - n // 2
-    col0 = BENCH_CENTRE_COL - n // 2
-    if row0 < 0 or col0 < 0 or row0 + n > arr.shape[0] or col0 + n > arr.shape[1]:
-        raise SystemExit("la fenetre du banc sort de la carte")
+    n = min(BENCH_SIZE_PX, arr.shape[0], arr.shape[1])
+    quads = arr.shape[0] - 1
+    # Le centre est une fraction du monde, pas un pixel : il designe le meme
+    # endroit a 8129 comme a 4065. On le ramene ensuite dans la carte, sans quoi
+    # un point proche du bord ferait sortir la fenetre.
+    row0 = int(round(BENCH_CENTRE_ROW_FRAC * quads)) - n // 2
+    col0 = int(round(BENCH_CENTRE_COL_FRAC * quads)) - n // 2
+    row0 = max(0, min(row0, arr.shape[0] - n))
+    col0 = max(0, min(col0, arr.shape[1] - n))
     sub = arr[row0:row0 + n, col0:col0 + n]
+    print("BANC: fenetre {0}x{0} px = {1:.0f} m, coin ({2}, {3})".format(
+        n, n * cm_px / 100.0, row0, col0))
 
     out_dir = src / "bench"
     out_dir.mkdir(exist_ok=True)
@@ -323,8 +345,11 @@ def biomecore_palette(n_biomes: int = 19) -> list[tuple[int, int, int]]:
     return lattice[:n_biomes]
 
 
-def cut_biomecore(src: Path, tiles_per_side: int = 2) -> Path:
+def cut_biomecore(src: Path, tiles_per_side: int | None = None) -> Path:
     """Ecrit la carte des biomes en couleurs BiomeCore : tuiles + fenetre du banc."""
+    from tile_world import tiles_needed
+    if tiles_per_side is None:
+        tiles_per_side = tiles_needed(src)
     manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
     labels = manifest["biomes"]["labels"]
     ids = manifest["biomes"]["ids"]
@@ -352,8 +377,10 @@ def cut_biomecore(src: Path, tiles_per_side: int = 2) -> Path:
 
     bench = src / "bench"
     bench.mkdir(exist_ok=True)
-    n = BENCH_SIZE_PX
-    row0, col0 = BENCH_CENTRE_ROW - n // 2, BENCH_CENTRE_COL - n // 2
+    n = min(BENCH_SIZE_PX, rgb.shape[0], rgb.shape[1])
+    quads = rgb.shape[0] - 1
+    row0 = max(0, min(int(round(BENCH_CENTRE_ROW_FRAC * quads)) - n // 2, rgb.shape[0] - n))
+    col0 = max(0, min(int(round(BENCH_CENTRE_COL_FRAC * quads)) - n // 2, rgb.shape[1] - n))
     out = bench / "biome_bench_biomecore.png"
     Image.fromarray(rgb[row0:row0 + n, col0:col0 + n]).save(out, optimize=True)
     print("CREATED: {}  ({}x{})".format(out, n, n))

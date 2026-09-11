@@ -2,17 +2,20 @@
   "_comment": "Worldseed - regles de generation. Tout est editable ici; aucun seuil n'est en dur dans le code.",
   "seed": 20260909,
   "world": {
-    "sizeKm": 32.0,
-    "resolution": 8129,
+    "sizeKm": 8.0,
+    "resolution": 4065,
     "simResolution": 2049,
     "latitudeSpanDeg": 180.0,
     "tropicDeg": 23.44,
     "polarCircleDeg": 66.56,
-    "minElevationM": -1200.0,
-    "maxElevationM": 1600.0,
-    "detailAmplitudeM": 85.0,
-    "detailOctaves": 6,
-    "detailFrequency": 160.0
+    "minElevationM": -300.0,
+    "maxElevationM": 400.0,
+    "detailAmplitudeM": 21.25,
+    "detailOctaves": 5,
+    "detailFrequency": 160.0,
+    "detailCoastFadeStartM": -5.0,
+    "detailCoastFadeFullM": 10.0,
+    "_comment_echelle": "MONDE DE 8 KM, MAQUETTE AU 1/4 DE L'ANCIEN MONDE DE 32 KM. Regle de mise a l'echelle, a respecter pour tout nouveau reglage : ce qui est RELATIF ne change pas (frequences en cycles par monde, distances en pixels de simulation, seuils normalises par centile, angles, degres de latitude, temperatures, millimetres de pluie) ; ce qui est METRIQUE se divise par 4 (altitudes, largeurs, rayons en km) ; ce qui est une AIRE ou un DEBIT se divise par 16. simResolution reste a 2049, ce qui garde le climat et le reseau hydrographique identiques en forme : la carte est la meme, en reduction. Deux exceptions assumees, decidees par le proprietaire du projet : le gradient adiabatique est MULTIPLIE par 4 pour que l'altitude garde son role climatique sur un relief quatre fois plus bas, et hydrology.geometryExaggeration est multipliee par 16 pour que les rivieres gardent leur largeur reelle en metres -- l'echelle humaine, elle, ne retrecit pas avec le monde."
   },
   "tectonics": {
     "plateCount": 18,
@@ -21,36 +24,37 @@
     "southPole": "continent",
     "poleForcingRadiusDeg": 14.0,
     "poleForcingStrength": 0.75,
-    "mountainHeightM": 1300.0,
-    "mountainWidthKm": 6.0,
-    "riftDepthM": 320.0,
-    "oceanDepthM": -800.0,
-    "continentBaseM": 120.0,
+    "mountainHeightM": 325.0,
+    "mountainWidthKm": 1.5,
+    "riftDepthM": 80.0,
+    "oceanDepthM": -200.0,
+    "continentBaseM": 30.0,
     "octaves": 8,
     "lacunarity": 2.0,
     "gain": 0.5,
     "baseFrequency": 6.0,
     "warpStrength": 0.35,
     "warpFrequency": 1.4,
-    "oceanBorderKm": 1.5,
-    "detailAmplitudeContinentM": 340.0,
-    "detailAmplitudeOceanM": 130.0,
-    "shelfWidthKm": 1.4,
+    "oceanBorderKm": 0.375,
+    "detailAmplitudeContinentM": 85.0,
+    "detailAmplitudeOceanM": 32.5,
+    "shelfWidthKm": 0.35,
     "plateWarpStrength": 0.14,
     "plateWarpFrequency": 2.2,
-    "continentSmoothKm": 1.8,
+    "continentSmoothKm": 0.45,
     "coastNoiseAmount": 0.42,
     "coastNoiseFrequency": 5.5,
-    "ridgedMix": 0.45
+    "ridgedMix": 0.45,
+    "poleContinentBonusM": 100.0
   },
   "temperature": {
     "equatorC": 27.0,
     "poleC": -25.0,
-    "lapseRateCPerKm": 6.5,
+    "lapseRateCPerKm": 26.0,
     "seasonalAmplitudeEquatorC": 3.0,
     "seasonalAmplitudePoleC": 22.0,
     "oceanModerationC": 6.0,
-    "oceanModerationRangeKm": 3.0,
+    "oceanModerationRangeKm": 0.75,
     "latitudeExponent": 2.0
   },
   "precipitation": {
@@ -77,10 +81,10 @@
   "erosion": {
     "iterations": 60,
     "flowUpdateEvery": 5,
-    "incisionRateM": 1.0,
+    "incisionRateM": 0.25,
     "areaExponent": 0.5,
     "slopeExponent": 1.0,
-    "maxIncisionPerStepM": 6.0,
+    "maxIncisionPerStepM": 1.5,
     "depositionRate": 0.25,
     "talusAngleDeg": 34.0,
     "thermalIterationsPerStep": 1,
@@ -88,15 +92,15 @@
     "hillslopeIterations": 2
   },
   "hydrology": {
-    "riverDischargeThreshold": 0.004,
-    "_comment_fillEpsilonM": "Pente infinitesimale ajoutee dans les cuvettes comblees pour qu'elles restent traversables par l'ecoulement. Doit rester tres inferieure au relief local : 1e-5 a 1e-3 m. Trop grand, elle hisse des cellules au-dessus de leurs voisines et casse des pentes valides.",
-    "fillEpsilonM": 0.0001,
+    "riverDischargeThreshold": 0.00025,
+    "_comment_fillEpsilonM": "Pente infinitesimale ajoutee dans les cuvettes comblees pour qu'elles restent traversables par l'ecoulement. Doit rester tres inferieure au relief local : 1e-6 a 2e-4 m sur un monde de 700 m d'amplitude. Trop grande, elle hisse des cellules au-dessus de leurs voisines et casse des pentes valides. Le routage epsilon est calcule en float64 a dessein (slope_filled_epsilon), donc une valeur aussi petite ne disparait pas a l'arrondi.",
+    "fillEpsilonM": 2.5e-05,
     "minStrahlerOrder": 2,
     "maxRiverActors": 60,
-    "minRiverLengthM": 900.0,
-    "_comment_lac": "Criteres du VRAI lac, evalues par cuvette entiere : profondeur sous le point de deversement et surface. En dessous, la cuvette est un artefact de comblement et reste de la terre. Mesure sur la graine 20260909 : 25 ha laissent 7,8 % des terres en lac, 100 ha 6,5 %, 150 ha environ 4,5 %. La Terre est a environ 2 %. Monter ce seuil reduit fortement le NOMBRE de lacs : 150 ha n'en laisse que trois, tous grands.",
-    "minLakeDepthM": 2.0,
-    "minLakeAreaHa": 150.0,
+    "minRiverLengthM": 225.0,
+    "_comment_lac": "Criteres du VRAI lac, evalues par cuvette entiere : profondeur sous le point de deversement et surface. En dessous, la cuvette est un artefact de comblement et reste de la terre. Seuils divises par 4 (profondeur) et par 16 (surface) en passant de 32 a 8 km, ce qui laisse la part des lacs inchangee. Mesure sur la graine 20260909 a 32 km : 25 ha laissaient 7,8 % des terres en lac, 100 ha 6,5 %, 150 ha environ 4,5 % ; a 8 km les seuils equivalents sont 1,6 ha, 6,25 ha et 9,375 ha. La Terre est a environ 2 %.",
+    "minLakeDepthM": 0.5,
+    "minLakeAreaHa": 9.375,
     "_comment_endoreisme": "Sous ce cumul annuel, un bassin ferme est plausible : l'evaporation consomme l'apport avant qu'il ne deborde (mer d'Aral, lac Tchad). Au-dessus, un bassin qui ne deverse pas signale une erreur de routage. Plage utile : 150 a 400 mm.",
     "aridPrecipThresholdMm": 250.0,
     "maxLakeActors": 40,
@@ -105,25 +109,25 @@
     "widthExponent": 0.5,
     "maxRiverWidthM": 48.0,
     "minRiverDepthM": 0.4,
-    "_comment_exageration": "CHOIX DE GAMEPLAY, PAS DE PHYSIQUE. Un monde de 32 km ne peut pas porter de fleuve : son plus grand bassin fait quelques dizaines de km2, soit environ 0,4 m3/s, ce qui donne un chenal de 1,3 m -- juste, mais invisible a 3,94 m/pixel. On multiplie donc le debit APPARENT servant a la geometrie, ce qui grossit largeur ET profondeur dans leur proportion physique. Le debit exporte reste le vrai. 1 = strictement physique ; 500 donne des rivieres de 10 a 30 m, franchissables du regard et lisibles en jeu.",
-    "geometryExaggeration": 500.0,
+    "_comment_exageration": "CHOIX DE GAMEPLAY, PAS DE PHYSIQUE. Un monde de 8 km ne peut pas porter de fleuve : son plus grand bassin fait quelques km2, soit environ 0,04 m3/s, ce qui donne un chenal de 40 cm. On multiplie donc le debit APPARENT servant a la geometrie, ce qui grossit largeur ET profondeur dans leur proportion physique. Le debit exporte reste le vrai. 1 = strictement physique. 8000 redonne exactement les largeurs du monde de 32 km a 500 (bassins 16 fois plus petits, exageration 16 fois plus forte), soit 10 a 36 m : une riviere reste un obstacle et demande un pont.",
+    "geometryExaggeration": 8000.0,
     "minRiverWidthM": 1.0,
     "depthCoefB": 0.3,
     "depthExponent": 0.4,
-    "simplifyToleranceM": 20.0,
+    "simplifyToleranceM": 5.0,
     "maxPointsPerRiver": 120,
     "riparianCells": 2,
     "runoffCoefficient": 0.35,
-    "maxPointSpacingM": 160.0
+    "maxPointSpacingM": 40.0
   },
   "biomes": {
     "treeLineTempC": 4.0,
     "permanentIceTempC": -6.0,
     "bareRockSlopeDeg": 42.0,
     "alpineGravelSlopeDeg": 26.0,
-    "_comment_plage": "Bande littorale. Sa largeur n'est pas fixe : elle vaut beachWidthM module par la pente (pleine sous beachSlopeFlatDeg, nulle au-dela de beachSlopeSteepDeg) et majoree de beachWindwardBonus sur les cotes au vent. beachElevationM plafonne l'altitude atteinte, dune comprise. Mesure sur la graine 20260909 : 150 m et 15 m donnent 1,5 % des terres ; 40 m et 6 m n'en donnaient que 0,5 %.",
-    "beachElevationM": 15.0,
-    "beachWidthM": 150.0,
+    "_comment_plage": "Bande littorale. Sa largeur n'est pas fixe : elle vaut beachWidthM module par la pente (pleine sous beachSlopeFlatDeg, nulle au-dela de beachSlopeSteepDeg) et majoree de beachWindwardBonus sur les cotes au vent. beachElevationM plafonne l'altitude atteinte, dune comprise. Largeur et altitude divisees par 4 en passant de 32 a 8 km : en cellules de simulation la bande est exactement la meme (9,6 cellules), donc la part de plage sur les terres ne bouge pas. Mesure a 32 km sur la graine 20260909 : 150 m et 15 m donnaient 1,5 % des terres ; 40 m et 6 m n'en donnaient que 0,5 %.",
+    "beachElevationM": 3.75,
+    "beachWidthM": 37.5,
     "beachSlopeFlatDeg": 8.0,
     "beachSlopeSteepDeg": 30.0,
     "beachWindwardBonus": 0.6,
@@ -133,94 +137,43 @@
       {
         "tMax": -5.0,
         "cuts": [
-          [
-            120.0,
-            "desert_froid"
-          ],
-          [
-            1000000.0,
-            "toundra"
-          ]
+          [120.0, "desert_froid"],
+          [1000000.0, "toundra"]
         ]
       },
       {
         "tMax": 3.0,
         "cuts": [
-          [
-            150.0,
-            "desert_froid"
-          ],
-          [
-            350.0,
-            "toundra"
-          ],
-          [
-            1000000.0,
-            "taiga"
-          ]
+          [150.0, "desert_froid"],
+          [350.0, "toundra"],
+          [1000000.0, "taiga"]
         ]
       },
       {
         "tMax": 12.0,
         "cuts": [
-          [
-            150.0,
-            "desert_froid"
-          ],
-          [
-            400.0,
-            "steppe"
-          ],
-          [
-            1200.0,
-            "foret_temperee"
-          ],
-          [
-            1000000.0,
-            "foret_temperee_humide"
-          ]
+          [150.0, "desert_froid"],
+          [400.0, "steppe"],
+          [1200.0, "foret_temperee"],
+          [1000000.0, "foret_temperee_humide"]
         ]
       },
       {
         "tMax": 20.0,
         "cuts": [
-          [
-            250.0,
-            "desert_chaud"
-          ],
-          [
-            600.0,
-            "prairie"
-          ],
-          [
-            1500.0,
-            "foret_temperee"
-          ],
-          [
-            1000000.0,
-            "foret_temperee_humide"
-          ]
+          [250.0, "desert_chaud"],
+          [600.0, "prairie"],
+          [1500.0, "foret_temperee"],
+          [1000000.0, "foret_temperee_humide"]
         ]
       },
       {
         "tMax": 99.0,
         "cuts": [
-          [
-            300.0,
-            "desert_chaud"
-          ],
-          [
-            900.0,
-            "savane"
-          ],
-          [
-            2000.0,
-            "foret_tropicale_seche"
-          ],
-          [
-            1000000.0,
-            "foret_tropicale_humide"
-          ]
+          [300.0, "desert_chaud"],
+          [900.0, "savane"],
+          [2000.0, "foret_tropicale_seche"],
+          [1000000.0, "foret_tropicale_humide"]
         ]
       }
     ],
@@ -267,359 +220,52 @@
       "18": "Marais"
     },
     "debugColors": {
-      "0": [
-        24,
-        62,
-        122
-      ],
-      "1": [
-        46,
-        116,
-        181
-      ],
-      "2": [
-        86,
-        164,
-        214
-      ],
-      "3": [
-        242,
-        246,
-        250
-      ],
-      "4": [
-        166,
-        176,
-        152
-      ],
-      "5": [
-        46,
-        84,
-        62
-      ],
-      "6": [
-        70,
-        128,
-        66
-      ],
-      "7": [
-        42,
-        104,
-        54
-      ],
-      "8": [
-        150,
-        168,
-        92
-      ],
-      "9": [
-        178,
-        172,
-        108
-      ],
-      "10": [
-        176,
-        176,
-        166
-      ],
-      "11": [
-        214,
-        190,
-        126
-      ],
-      "12": [
-        196,
-        172,
-        92
-      ],
-      "13": [
-        128,
-        152,
-        70
-      ],
-      "14": [
-        30,
-        110,
-        58
-      ],
-      "15": [
-        150,
-        146,
-        140
-      ],
-      "16": [
-        112,
-        108,
-        104
-      ],
-      "17": [
-        226,
-        212,
-        172
-      ],
-      "18": [
-        96,
-        118,
-        84
-      ]
+      "0": [24, 62, 122],
+      "1": [46, 116, 181],
+      "2": [86, 164, 214],
+      "3": [242, 246, 250],
+      "4": [166, 176, 152],
+      "5": [46, 84, 62],
+      "6": [70, 128, 66],
+      "7": [42, 104, 54],
+      "8": [150, 168, 92],
+      "9": [178, 172, 108],
+      "10": [176, 176, 166],
+      "11": [214, 190, 126],
+      "12": [196, 172, 92],
+      "13": [128, 152, 70],
+      "14": [30, 110, 58],
+      "15": [150, 146, 140],
+      "16": [112, 108, 104],
+      "17": [226, 212, 172],
+      "18": [96, 118, 84]
     },
-    "alpineMinElevationM": 850.0
+    "alpineMinElevationM": 212.5
   },
   "surfaces": {
     "_comment": "Ordre des 10 couches du materiau M_WorldseedLandscape. Chaque biome est une recette de melange.",
-    "layers": [
-      "Snow",
-      "Stone",
-      "Gravel",
-      "DesertSand",
-      "BiomGrass5",
-      "Grass",
-      "GrassBiom2",
-      "GrassBiom3",
-      "GrassBiom4",
-      "Biom4Gravel"
-    ],
-    "layerAssetNames": [
-      "Snow",
-      "Stone",
-      "Gravel",
-      "DesertSand",
-      "Biom Grass 5",
-      "Grass",
-      "Grass Biom 2",
-      "Grass Biom 3",
-      "Grass Biom 4",
-      "Biom 4 Gravel"
-    ],
+    "layers": ["Snow", "Stone", "Gravel", "DesertSand", "BiomGrass5", "Grass", "GrassBiom2", "GrassBiom3", "GrassBiom4", "Biom4Gravel"],
+    "layerAssetNames": ["Snow", "Stone", "Gravel", "DesertSand", "Biom Grass 5", "Grass", "Grass Biom 2", "Grass Biom 3", "Grass Biom 4", "Biom 4 Gravel"],
     "recipes": {
-      "0": [
-        0.0,
-        0.1,
-        0.2,
-        0.7,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "1": [
-        0.0,
-        0.05,
-        0.25,
-        0.2,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.5
-      ],
-      "2": [
-        0.0,
-        0.1,
-        0.55,
-        0.2,
-        0.0,
-        0.05,
-        0.0,
-        0.0,
-        0.0,
-        0.1
-      ],
-      "3": [
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "4": [
-        0.28,
-        0.1,
-        0.22,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.3,
-        0.1,
-        0.0
-      ],
-      "5": [
-        0.06,
-        0.05,
-        0.1,
-        0.0,
-        0.0,
-        0.05,
-        0.0,
-        0.04,
-        0.55,
-        0.15
-      ],
-      "6": [
-        0.0,
-        0.05,
-        0.08,
-        0.0,
-        0.02,
-        0.65,
-        0.0,
-        0.1,
-        0.05,
-        0.05
-      ],
-      "7": [
-        0.0,
-        0.04,
-        0.06,
-        0.0,
-        0.0,
-        0.5,
-        0.2,
-        0.06,
-        0.06,
-        0.08
-      ],
-      "8": [
-        0.0,
-        0.04,
-        0.1,
-        0.04,
-        0.22,
-        0.6,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "9": [
-        0.0,
-        0.08,
-        0.18,
-        0.14,
-        0.48,
-        0.12,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "10": [
-        0.1,
-        0.26,
-        0.4,
-        0.16,
-        0.08,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "11": [
-        0.0,
-        0.08,
-        0.14,
-        0.72,
-        0.06,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "12": [
-        0.0,
-        0.05,
-        0.1,
-        0.28,
-        0.52,
-        0.05,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "13": [
-        0.0,
-        0.05,
-        0.08,
-        0.1,
-        0.3,
-        0.2,
-        0.22,
-        0.05,
-        0.0,
-        0.0
-      ],
-      "14": [
-        0.0,
-        0.03,
-        0.05,
-        0.0,
-        0.0,
-        0.1,
-        0.7,
-        0.04,
-        0.04,
-        0.04
-      ],
-      "15": [
-        0.22,
-        0.3,
-        0.38,
-        0.0,
-        0.04,
-        0.06,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "16": [
-        0.0,
-        0.72,
-        0.26,
-        0.02,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "17": [
-        0.0,
-        0.04,
-        0.1,
-        0.84,
-        0.02,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "18": [
-        0.0,
-        0.02,
-        0.06,
-        0.02,
-        0.0,
-        0.2,
-        0.1,
-        0.05,
-        0.05,
-        0.5
-      ]
+      "0": [0.0, 0.1, 0.2, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "1": [0.0, 0.05, 0.25, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+      "2": [0.0, 0.1, 0.55, 0.2, 0.0, 0.05, 0.0, 0.0, 0.0, 0.1],
+      "3": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "4": [0.28, 0.1, 0.22, 0.0, 0.0, 0.0, 0.0, 0.3, 0.1, 0.0],
+      "5": [0.06, 0.05, 0.1, 0.0, 0.0, 0.05, 0.0, 0.04, 0.55, 0.15],
+      "6": [0.0, 0.05, 0.08, 0.0, 0.02, 0.65, 0.0, 0.1, 0.05, 0.05],
+      "7": [0.0, 0.04, 0.06, 0.0, 0.0, 0.5, 0.2, 0.06, 0.06, 0.08],
+      "8": [0.0, 0.04, 0.1, 0.04, 0.22, 0.6, 0.0, 0.0, 0.0, 0.0],
+      "9": [0.0, 0.08, 0.18, 0.14, 0.48, 0.12, 0.0, 0.0, 0.0, 0.0],
+      "10": [0.1, 0.26, 0.4, 0.16, 0.08, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "11": [0.0, 0.08, 0.14, 0.72, 0.06, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "12": [0.0, 0.05, 0.1, 0.28, 0.52, 0.05, 0.0, 0.0, 0.0, 0.0],
+      "13": [0.0, 0.05, 0.08, 0.1, 0.3, 0.2, 0.22, 0.05, 0.0, 0.0],
+      "14": [0.0, 0.03, 0.05, 0.0, 0.0, 0.1, 0.7, 0.04, 0.04, 0.04],
+      "15": [0.22, 0.3, 0.38, 0.0, 0.04, 0.06, 0.0, 0.0, 0.0, 0.0],
+      "16": [0.0, 0.72, 0.26, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "17": [0.0, 0.04, 0.1, 0.84, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "18": [0.0, 0.02, 0.06, 0.02, 0.0, 0.2, 0.1, 0.05, 0.05, 0.5]
     },
     "slopeRockStartDeg": 22.0,
     "slopeRockFullDeg": 40.0,

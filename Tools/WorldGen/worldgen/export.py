@@ -71,7 +71,14 @@ def upsample_heightmap(dem: np.ndarray, out_n: int, rules: Rules) -> np.ndarray:
     slope = np.sqrt(dx * dx + dy * dy)
     ref = float(np.percentile(slope, 92.0))
     mask = np.float32(1.0) - noise.smoothstep(0.0, max(ref, 1e-6), slope)
-    mask *= noise.smoothstep(-20.0, 40.0, big)
+    # Le detail ne monte qu'au-dessus du trait de cote, en fondu : sous l'eau il
+    # hérisserait les petits fonds, et pile sur la plage il ferait osciller le
+    # littoral. Ces deux altitudes sont METRIQUES, donc liees a l'echelle du monde
+    # -- seul seuil en dur qui restait dans le code. Sur la maquette au 1/4 (8 km)
+    # elles valent -5 et +10 m la ou le monde de 32 km utilisait -20 et +40.
+    fade_bas = float(rules.get("world.detailCoastFadeStartM", -20.0))
+    fade_haut = float(rules.get("world.detailCoastFadeFullM", 40.0))
+    mask *= noise.smoothstep(fade_bas, fade_haut, big)
     return caler((big + detail * np.float32(amp) * mask).astype(np.float32))
 
 
