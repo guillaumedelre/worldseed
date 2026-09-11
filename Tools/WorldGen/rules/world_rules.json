@@ -159,7 +159,8 @@
     "treeLineTempC": 4.0,
     "_comment_calotte": "Seuil de gel permanent, compare au mois le PLUS CHAUD. Le critere de Koppen pour la calotte glaciaire (classe EF) est : mois le plus chaud sous 0 degre. La valeur etait a -6, bien plus severe que le critere reel, ce qui rabotait la calotte. Mesure : -6 -> 0 fait passer la calotte de 3,4 a 6,2 % des terres (Terre : environ 10 %).",
     "permanentIceTempC": 0.0,
-    "bareRockSlopeDeg": 42.0,
+    "_comment_bareRockSlopeDeg": "Pente au-dela de laquelle un versant est de la ROCHE NUE. Portee de 42 a 55 degres le 11 septembre 2026. MOTIF : a 42 degres la roche nue etait le DEUXIEME biome du monde -- 12,6 % des terres -- parce que ce monde est tres accidente : sa pente MEDIANE sur les terres vaut 30,6 degres et 22,8 % des terres depassent 40. Un versant boise a 45 degres reste une foret ; la roche a nu se reserve aux parois. Mesure a pleine resolution : roche nue 12,56 -> 3,52 %, toundra 2,91 -> 4,47 %, taiga 5,58 -> 6,14 %, ecart absolu moyen aux huit grands biomes terrestres 31,6 -> 24,3 %. NE TOUCHE PAS AU RELIEF : height_16bit.png est identique a l octet pres, donc rivieres et lacs sont inchanges.",
+    "bareRockSlopeDeg": 55.0,
     "alpineGravelSlopeDeg": 26.0,
     "_comment_plage": "Bande littorale. Sa largeur n'est pas fixe : elle vaut beachWidthM module par la pente (pleine sous beachSlopeFlatDeg, nulle au-dela de beachSlopeSteepDeg) et majoree de beachWindwardBonus sur les cotes au vent. beachElevationM plafonne l'altitude atteinte, dune comprise. Largeur et altitude divisees par 4 en passant de 32 a 8 km : en cellules de simulation la bande est exactement la meme (9,6 cellules), donc la part de plage sur les terres ne bouge pas. Mesure a 32 km sur la graine 20260909 : 150 m et 15 m donnaient 1,5 % des terres ; 40 m et 6 m n'en donnaient que 0,5 %.",
     "beachElevationM": 3.75,
@@ -171,9 +172,10 @@
     "marshMinPrecipMm": 900.0,
     "whittakerBands": [
       {
+        "_comment_desert_froid": "Seuil du DESERT FROID abaisse de 120 a 50 mm (bande 0) et de 150 a 60 mm (bande 1) le 11 septembre 2026. Sur Terre l Arctique siberien recoit 200 a 300 mm et c est de la TOUNDRA, pas un desert ; a 120 mm le desert froid prenait 17,5 % de la bande la plus froide. La bande 2 (5 a 12 degres) garde son seuil de 150 : un desert froid a 7 degres, c est le Gobi.",
         "tMax": -5.0,
         "cuts": [
-          [120.0, "desert_froid"],
+          [50.0, "desert_froid"],
           [1000000.0, "toundra"]
         ]
       },
@@ -181,7 +183,7 @@
         "_comment_taiga": "Limite haute de la bande boreale. Le diagramme de Whittaker classique place la foret boreale entre -5 et +5 degres de moyenne annuelle ; la valeur etait a 3, ce qui reversait en foret temperee une large part des terres de 55 a 60 degres. Mesure : 3 -> 5 fait passer la taiga de 3,7 a 5,1 % des terres.",
         "tMax": 5.0,
         "cuts": [
-          [150.0, "desert_froid"],
+          [60.0, "desert_froid"],
           [350.0, "toundra"],
           [1000000.0, "taiga"]
         ]

@@ -1879,3 +1879,69 @@ travail, et ne pas l'oublier en comptant la densite de vegetation.
 le retaillage de l'herbe), la moitie de la surface est couverte, et le fil de
 rendu est le goulot a 8,6 ms sur un budget de 16,67 : chaque instance s'y paie,
 alors que l'herbe du Landscape est gratuite.
+
+### Biomes froids : le coupable n'etait pas le climat (11 septembre 2026)
+
+**CE QUE JE CHERCHAIS** : toundra a 2,91 % des terres contre 8 sur Terre, taiga
+5,58 contre 10. **CE QUE J'AI TROUVE** : le froid ne manque pas. **30,6 % des
+terres sont deja sous 5 degres**, quand la Terre porte 28 % de biomes froids.
+Les temperatures et la repartition des terres en latitude sont bonnes (29,3 %
+des terres au-dela de 50 degres, comparable a la Terre).
+
+**LE VRAI COUPABLE : LA ROCHE NUE, DEUXIEME BIOME DU MONDE A 12,6 % DES
+TERRES.** Le seuil `bareRockSlopeDeg` valait 42 degres sur un monde dont la
+pente MEDIANE sur les terres est de **30,6 degres**, et dont 22,8 % des terres
+depassent 40. Porte a 55 -- un versant boise a 45 degres reste une foret --, la
+roche nue tombe a 3,52 % et rend neuf points de terres a TOUS les biomes.
+
+Mesure a pleine resolution, avec les seuils de desert froid abaisses :
+
+    biome                avant   apres   Terre
+    toundra               2,91    4,47     8,0
+    taiga                 5,58    6,14    10,0
+    foret tropicale hum.  9,18   10,91    11,0
+    desert chaud         14,64   15,82    21,0
+    savane                8,60    9,15    13,0
+    ecart absolu moyen   31,6 %  24,3 %
+
+**UNE REGLE DE BIOMES NE TOUCHE PAS AU RELIEF, UNE REGLE DE PLUIE SI.** Verifie
+a l'octet pres : apres regeneration complete, `height_16bit.png` a la MEME
+empreinte SHA-256. Rivieres, lacs et point d'apparition sont inchanges, seules
+la carte des biomes et les couches peintes bougent. A l'inverse,
+`saturationScaleC` deplace 0,56 % des pixels de relief jusqu'a 11 m, parce que
+la pluie pilote l'erosion. **Verifier de quel cote de l'erosion tombe un
+reglage avant d'annoncer son cout.**
+
+**LA SECHERESSE POLAIRE RESTE OUVERTE, et c'est un manque du MODELE.**
+
+    latitude    nous    Terre (ordre)
+    60-70 deg   170 mm    ~500 mm
+    70-80 deg    11 mm    ~250 mm
+    80-90 deg     0 mm    ~150 mm
+
+Essaye et NON retenu : `saturationScaleC` 16 -> 24 porte 60-70 a 297 mm et
+l'ecart moyen a 20,5 %, mais s'eloigne de Clausius-Clapeyron (echelle theorique
+10/ln2 = 14,4 degres). C'est un pansement sur un mecanisme absent -- aucun
+transport d'humidite par les tempetes vers les poles -- et il change le relief.
+Sans effet mesurable : `polarFrontStrength` (0,45 -> 0,70) et `subsidenceFactor`
+(0,75 -> 0,60), moins de 0,2 point chacun.
+
+**BANC DE CALIBRATION** : `python -m worldgen --preview` tourne en **50 s**
+(simulation 1025, erosion allegee) et suffit a departager des reglages de
+biomes. Une passe pleine resolution prend 4 min 45. Comparer les previews entre
+eux, jamais un preview a une pleine resolution.
+
+**RAPPEL SUR LE SCORE** : nos 16 categories contre 8 de reference. Apres
+correction les huit couvrent 68 % de nos terres ; le reste est en foret
+tropicale seche, desert froid, steppe, plage, alpin. Un ecart moyen de 24 % ne
+veut donc pas dire "24 % faux" -- il sert a COMPARER deux reglages.
+
+### Chaque `rebuild()` fabriquait un PCGWorldActor de trop (11 septembre 2026)
+
+`rebuild_world.pcg_world_actor()` posait et armait un acteur, puis
+`vegetation.build_world()` creait le volume de vegetation -- et PCG fabriquait
+alors SON PROPRE `PCGWorldActor`, desarme. Le niveau finissait avec deux
+acteurs ; PCG n'en interroge qu'un, et quand c'est le desarme qui repond **le
+semis ne produit plus une seule instance, ni en editeur ni en PIE**, sans le
+moindre message. Corrige : la fonction detruit desormais les surnumeraires en
+gardant celui qui est deja arme, et `rebuild()` la rappelle APRES le semis.

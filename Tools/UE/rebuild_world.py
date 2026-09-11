@@ -164,9 +164,32 @@ def pcg_world_actor(viewport_source: bool = False):
     marche en generation a l'execution -- et il a un prix : le cache est ecrit
     dans le paquet d'acteur externe de ce PCGWorldActor. Mesure : 2,6 Go pour
     1024 composants, donc de l'ordre de 650 Mo pour 256.
+
+    UN SEUL DOIT SURVIVRE, et c'est la raison d'etre du menage ci-dessous. PCG
+    fabrique lui-meme un `PCGWorldActor` quand un composant en reclame un --
+    donc apres `vegetation.build_world()`, alors qu'on venait d'en poser un. Le
+    niveau se retrouve avec DEUX acteurs, dont le neuf arrive DESARME
+    (`NeverSerialize`, sources World Partition a False). PCG n'en interroge
+    qu'un : si c'est le desarme qui repond, **le semis ne produit plus une
+    seule instance, ni en editeur ni en PIE**, sans le moindre message. Paye
+    comptant le 11 septembre 2026.
     """
     sub = _acteurs()
     deja = [a for a in sub.get_all_level_actors() if isinstance(a, unreal.PCGWorldActor)]
+    if len(deja) > 1:
+        # On garde celui qui est deja arme s'il y en a un : son cache de paysage
+        # est peut-etre deja serialise, et le recalculer coute cher.
+        def arme(x):
+            c = x.get_editor_property("landscape_cache_object")
+            return (x.get_editor_property("enable_world_partition_generation_sources")
+                    and c is not None
+                    and c.get_editor_property("serialization_mode")
+                    == unreal.PCGLandscapeCacheSerializationMode.ALWAYS_SERIALIZE)
+        garde = next((x for x in deja if arme(x)), deja[0])
+        surplus = [x for x in deja if x is not garde]
+        sub.destroy_actors(surplus)
+        log("DELETED", "{} PCGWorldActor en trop (un seul doit rester)".format(len(surplus)))
+        deja = [garde]
     a = deja[0] if deja else sub.spawn_actor_from_class(unreal.PCGWorldActor,
                                                         unreal.Vector(0, 0, 0))
     if a is None:
@@ -253,6 +276,10 @@ def rebuild(out_dir: str, with_vegetation: bool = True) -> dict:
     pcg_world_actor()
     if with_vegetation:
         vegetation.build_world(tiles=[TUILE])
+        # SECOND PASSAGE, ET IL EST NECESSAIRE : creer le volume de vegetation
+        # fait apparaitre un SECOND `PCGWorldActor`, desarme, qui peut repondre
+        # a la place du notre et rendre le semis totalement muet.
+        pcg_world_actor()
 
     player_start(out_dir)
     unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
