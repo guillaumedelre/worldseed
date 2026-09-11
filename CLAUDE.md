@@ -1841,3 +1841,41 @@ les fleurs. Les retailler change le motif du monde, pas sa finesse.
 **REGLE** : apres tout resserrement de carrelage, CONTROLER LES PENTES
 LOINTAINES, pas seulement le sol sous les pieds. Le gain est proche, le defaut
 est loin.
+
+### Couverture du sol, mesuree proprement (11 septembre 2026)
+
+**METHODE, car la precedente etait faussee.** Mesurer "le sol nu" par la
+douceur locale de l'image ne vaut RIEN des qu'on retouche la texture du
+terrain : rendre le sol plus fin le rend moins lisse, et le compteur baisse
+sans qu'un brin d'herbe ait pousse. La mesure juste est un A/B :
+
+1. `Animate Time of Day` est deja a False, mais **`Cloud Speed` vaut 0,35** :
+   les nuages defilent entre deux sessions et polluent tout. Le mettre a 0.
+2. PIE A, semis actif -> capture. PIE B, `vegetation.set_runtime_enabled(...,
+   False)` -> capture, meme `PlayerStart`.
+3. Difference A-B au-dessus du bruit residuel (estime sur le CIEL, ou il n'y a
+   aucune vegetation) = couverture du semis PCG.
+4. Dans B, separer l'herbe du Landscape du sol par la couleur, avec un seuil
+   CALIBRE sur des echantillons reels : un brin mesure **G-R = +28**, le sol nu
+   **-3**. Couper a +12.
+
+**RESULTAT en prairie, a hauteur d'oeil :**
+
+                          sous l'horizon   3 premiers metres
+    semis PCG                   16,3 %          15,6 %
+    herbe du Landscape          39,6 %          30,5 %
+    total couvert               55,9 %          46,1 %
+    sol nu                      44,1 %          53,9 %
+
+**L'HERBE DU LANDSCAPE MARCHE, et couvre 2,5 fois plus que le semis PCG.** La
+note plus haut ("la porte est fermee par construction" via le `Floor()` de
+`LandscapeGrassOutput`) est dementie par l'observation : semis eteint, le sol
+reste couvert de brins denses jusqu'a l'horizon, sans une fleur ni un arbre.
+Elle ne coute AUCUNE instance. Cela ne change rien a la decision du
+proprietaire de ne pas y toucher -- mais il faut savoir qu'elle fait le gros du
+travail, et ne pas l'oublier en comptant la densite de vegetation.
+
+**DECISION : on ne densifie pas.** Le sol nu restant a desormais du grain (voir
+le retaillage de l'herbe), la moitie de la surface est couverte, et le fil de
+rendu est le goulot a 8,6 ms sur un budget de 16,67 : chaque instance s'y paie,
+alors que l'herbe du Landscape est gratuite.
