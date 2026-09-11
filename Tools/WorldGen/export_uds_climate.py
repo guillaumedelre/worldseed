@@ -229,7 +229,15 @@ def run(dossier: Path, regles: Path) -> dict:
             p = preset_du_biome(t_moy, a_moy, p_an, c_moy, l_moy, u, tropique)
             if hemi == "S":
                 p = _echange_hemisphere(p)
-            nom = "CP_Worldseed_{:02d}_{}".format(bid, hemi)
+            # PAS DE ZERO DE REMPLISSAGE, et c'est un choix, pas un oubli.
+            # L'acteur de pilotage reconstruit ce nom a l'execution, en
+            # Blueprint, qui n'a aucun moyen simple de formater un entier sur
+            # deux chiffres : il faudrait une branche et deux concatenations de
+            # plus dans un chemin appele toutes les demi-secondes. Ici le nom
+            # s'ecrit "CP_Worldseed_" + id + "_" + hemisphere, et rien d'autre.
+            # Cout : le navigateur de contenu trie CP_Worldseed_10 avant
+            # CP_Worldseed_3. C'est le seul inconvenient, et il est cosmetique.
+            nom = "CP_Worldseed_{:d}_{}".format(bid, hemi)
             p["Data Source"] = (
                 "Worldseed graine {} - {} ({}) : mediane de {} pixels, T {:.1f} C, "
                 "amplitude saisonniere {:.1f} C, pluie {:.0f} mm/an, continentalite {:.2f}".format(

@@ -1338,3 +1338,54 @@ vide.
 **Le controle qui tranche** : ne pas se fier a la compilation, faire bouger une
 entree et mesurer la sortie. Ici, teleporter le pion a deux latitudes et lire
 `UDS.Latitude` : -30,00 attendu / -30,00 lu, puis +71,81 / +71,81.
+
+### Piloter UDS depuis le biome : ce qui marche, et les impasses (11 septembre 2026)
+
+`BP_WorldseedClimat` lit la position du joueur toutes les demi-secondes, en
+deduit la latitude par arc sinus, l'ecrit dans UDS, lit le biome dominant dans
+une grille 128x128 et applique le preset climatique correspondant. Verifie en
+conditions reelles : au point d'apparition, biome lu 6 contre 6 attendu ; au
+pole sud, biome 3 (calotte) et latitude -77,16 contre -77,16.
+
+**LA PREUVE QUE L'INVERSION D'HEMISPHERE MARCHE** : au pole SUD, UDS annonce un
+« ete » a -41,8 C et un « hiver » a -8,7 C. L'ete y est plus froid que l'hiver,
+et c'est exactement ce qu'on veut -- le preset austral porte ses saisons
+echangees, donc quand UDS dit « ete » (ete boreal), c'est l'hiver austral.
+
+**IMPASSE : la DataTable.** `GetDataTableRow` n'est PAS constructible depuis
+Python -- c'est un `K2Node_GetDataTableRow` sans cle de spawner, et
+`discover_nodes` ne remonte que `GetDataTableRowStruct`, qui ne sert a rien ici.
+La table `DT_WorldseedGrille` a donc ete abandonnee au profit d'UNE CHAINE de
+39 120 caracteres stockee en variable, decoupee en deux temps :
+`ParseIntoArray(";")` une seule fois au BeginPlay, puis `ParseIntoArray("-")`
+sur la seule ligne utile a chaque mise a jour.
+
+**PAS DE ZERO DE REMPLISSAGE DANS LES NOMS D'ASSETS qu'un Blueprint doit
+reconstruire.** Blueprint n'a aucun moyen simple de formater un entier sur deux
+chiffres : il faudrait une branche et deux concatenations de plus dans un chemin
+appele toutes les demi-secondes. Les presets sont donc `CP_Worldseed_6_N` et non
+`CP_Worldseed_06_N`. Cout : le navigateur trie 10 avant 3, et c'est tout.
+
+**`MakeSoftObjectPath` ne se branche PAS sur `LoadAsset_Blocking`** : le premier
+rend un `FSoftObjectPath`, le second attend un `TSoftObjectPtr`. Il faut
+`Conv_SoftObjPathToSoftObjRef` entre les deux. Et le chemin doit etre complet,
+avec le nom d'objet apres le point : `/Game/.../CP_Worldseed_6_N.CP_Worldseed_6_N`.
+
+**LES TEMPERATURES D'UDW SONT EN FAHRENHEIT** par defaut (`Temperature Scale`).
+Lire 64,6 et croire a un bug alors que c'est 18,1 C fait perdre du temps.
+
+**Trois methodes d'introspection qui MENTENT, et il faut les connaitre :**
+- `get_variable_info(...).default_value` rend une chaine VIDE pour une valeur
+  longue, alors que la valeur est bien posee. Verifier avec
+  `get_property(bp, nom)`, qui dit vrai -- teste jusqu'a 39 120 caracteres.
+- `does_asset_exist` rend **False** pendant un PIE pour un asset qui existe.
+  Comme `list_variables`, qui rend 0. Toute verification d'assets se fait PIE
+  arrete.
+- `get_node_pins(...).default_value` rend vide pour les broches de CLASSE et
+  d'OBJET, meme renseignees. L'audit des broches non connectees remonte donc des
+  faux positifs sur `ActorClass` et sur les `self`.
+
+**Une variable creee par `add_member_variable` n'est PAS editable sur
+l'instance** : `set_editor_property` sur l'acteur pose echoue avec « cannot be
+edited on instances ». Passer par le defaut de CLASSE
+(`set_variable_default_value`).
