@@ -15,6 +15,11 @@
     "  scale    : [min, max], tire au hasard, uniforme sur les trois axes.",
     "  cull     : [debut, fin] en cm, distances de disparition de l'instance.",
     "             C'EST LE LEVIER DE PERFORMANCE principal du tapis : 50 a 80 m",
+    "  ombre    : false retire la contribution de la couche a l'occlusion par",
+    "             champs de distance. NE PAS s'en servir pour couper l'ombre",
+    "             portee : essaye sur le tapis, le resultat a l'image est que",
+    "             les plantes ne touchent plus le sol et flottent. Et la mesure",
+    "             ne le justifiait pas (114-120 FPS ombres comprises).",
     "             suffisent pour un brin d'herbe, et rien ne sert de le garder",
     "             au-dela.",
     "",
@@ -29,10 +34,6 @@
     "Stylized_PBR_Nature, les deux maillages les plus legers du projet -- et qui",
     "n'etaient pas utilises. Le buisson d'Orasot en fait 1308 pour un role",
     "identique au sol.",
-    "  ombre    : false pour qu'une couche ne projette AUCUNE ombre portee. Le",
-    "             tapis est dans ce cas : des milliers de brins projetant chacun",
-    "             leur ombre coutent tres cher pour un resultat que l'oeil ne",
-    "             distingue pas d'un sol simplement assombri. Defaut : true.",
     "",
     "Les identifiants 0 (ocean), 1 (lac) et 2 (riviere) n'ont pas de recette :",
     "ce ne sont pas des biomes terrestres."
@@ -112,8 +113,7 @@
               "PBF:SM_Clover",
               3
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "bois_mort",
@@ -212,8 +212,7 @@
               "LPF:SM_Env_plant_5",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "coniferes",
@@ -352,8 +351,7 @@
               "SFL:SM_Damdelion",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "feuillus",
@@ -500,8 +498,7 @@
               "SFL:SM_Ivy",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "feuillus_denses",
@@ -652,8 +649,7 @@
               "SFL:SM_Damdelion",
               2
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "arbres_isoles",
@@ -752,8 +748,7 @@
               "PBF:SM_Clover",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "buissons",
@@ -832,8 +827,7 @@
               "PBF:SM_Grass",
               2
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "bois_mort",
@@ -1011,8 +1005,7 @@
               "SFL:SM_Wheat",
               4
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "arbres_isoles",
@@ -1099,8 +1092,7 @@
               "RED:SM_Plant_1",
               2
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "arbres",
@@ -1215,8 +1207,7 @@
               "GRN:SM_Flower_2",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "bambous",
@@ -1319,8 +1310,7 @@
               "PBF:SM_Clover",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "coniferes_epars",
@@ -1565,8 +1555,7 @@
               "RED:SM_Plant_2",
               1
             ]
-          ],
-          "ombre": false
+          ]
         },
         {
           "name": "bois_noye",

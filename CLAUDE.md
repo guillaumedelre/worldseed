@@ -386,7 +386,8 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
   v0.2, `EnabledByDefault: false`) : les activer dans le `.uproject` suffit, aucun rebuild.
   Quasi tout est du contenu Blueprint/PCG (un seul `.h`, module vide) : aucune API C++, aucune
   garantie de compatibilite entre versions moteur.
-
+
+
 ### PCGBiomeCore : ce qui a ete compris, et ou ca coince (9 septembre 2026)
 
 - **BiomeCore reconnait les biomes par COULEUR, pas par identifiant.** Chaque `BiomeDefinition`
@@ -419,7 +420,8 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
 - **Une texture 4065x4065 s'importe sans redimensionnement** (`power_of_two_mode = NONE`) et
   reste exacte : 0 ecart sur 16 524 225 texels, 19 biomes presents. Compter 66 Mo par tuile en
   B8G8R8A8 non compresse, 264 Mo pour le monde.
-
+
+
 ### Semis de vegetation PCG a l'echelle du monde (9 septembre 2026)
 
 - **La densite survit intacte a `PCGProjection` sur le Landscape.** Mesure : apres projection,
@@ -452,7 +454,8 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
 - **Cout du monde complet** : environ 12,9 millions d'instances pour les 16 biomes terrestres aux
   pas de 900 / 1400 / 3000 / 6000 cm, soit 292 fois le banc de 2 km (44 117 instances). Cuire
   n'est pas envisageable.
-
+
+
 ### Generation PCG a l'execution : la configuration qui marche (9 septembre 2026)
 
 Reglee, verifiee en PIE, 1073 instances sur 1073 dans un biome autorise par leur recette.
@@ -489,7 +492,8 @@ Quatre points, tous payes comptant :
   que le planificateur tournait bien et que le probleme etait ailleurs. La source de generation
   en editeur est `PCGWorldActor.treat_editor_viewport_as_generation_source` ; en PIE, le pion
   suffit via `enable_world_partition_generation_sources`.
-
+
+
 ### PCG : ne jamais transformer une grande texture en points (9 septembre 2026)
 
 - **`ConvertToPointData` sur une surface de texture couvrant toute une tuile est une faute
@@ -527,7 +531,8 @@ des tableaux de references objet incompatibles avec eux-memes - la signature d'u
 correspond pas a cette version du moteur. Les 823 assets sont pourtant bien presents : il ne
 manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
 (`Worldseed_SunLight` / `_SkyLight` / `_Atmosphere` / `_Fog`) a ete restaure.
-
+
+
 ### Vegetation semee sous l'eau : un desaccord de reechantillonnage (9 septembre 2026)
 
 - **Symptome** : herbe et arbres sous la surface de l'ocean, jusqu'a -12 m.
@@ -552,7 +557,8 @@ manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
   ignore `$Position.Z` et `set_point_property` ne prend pas. Un filtre de hauteur pose ainsi
   retombe silencieusement sur `$Density` et ne filtre rien. Corriger la DONNEE en amont plutot
   que d'essayer de filtrer dans le graphe.
-
+
+
 ### Eau : rideau vertical au bord des lacs, plaques sur les falaises (10 septembre 2026)
 
 - **Cause** : toute l'eau d'un niveau passe par la `WaterZone` qui la couvre, laquelle encode la
@@ -779,11 +785,28 @@ controles du rapport ne regarde cet ajustement** : un lac dont l'eau s'arrete a
   `ISMComponentDescriptor.h`) : `cast_shadow`, `cast_contact_shadow`,
   `affect_distance_field_lighting`, `cast_far_shadow`,
   `world_position_offset_disable_distance`. Une faute de frappe passe inapercue
-  jusqu'a l'execution. A forte densite, couper les champs de distance et les
-  ombres de contact partout, et l'ombre portee sur le tapis (`"ombre": false`
-  dans la recette).
+  jusqu'a l'execution.
+- **NE PAS couper l'ombre portee du foliage "par precaution".** Fait une fois,
+  au passage a 6 200 instances a l'hectare : ombre portee du tapis et ombres de
+  contact coupees, sans mesure prealable. Verdict a l'image, immediat et sans
+  appel -- **les plantes ne touchent plus le sol, elles flottent**. Et la coupe
+  ne se justifiait pas : 105 FPS AVEC les ombres contre 114 sans, soit 0,7 ms de
+  rendu, pour un budget de 16,67. **Une ombre se paie avant de se couper.**
+  Ce qui reste coupe ne se voit pas : `cast_far_shadow` ne concerne que la
+  cascade lointaine, au-dela de la distance ou l'instance a deja disparu par
+  `instance_end_cull_distance`.
 - **Verifier une densite en mesurant, pas a l'oeil.** Apres x16 :
   `PerformanceService.frame_timing()` donne 114-120 FPS, borne RENDER THREAD a
   8,8 ms pour un budget de 16,67, verdict PASS. C'est le nombre d'objets dessines
   qui limite, pas le GPU (6,6 ms) : les leviers utiles sont donc les distances de
   coupe et les LOD, pas la resolution d'ecran.
+
+- **Le pool de streaming de textures d'UE vaut 1000 Mo par defaut**, une valeur
+  de 2008. Des que la vegetation dense a ete posee, le viewport a affiche en
+  rouge `POOL DE CHARGEMENT DYNAMIQUE DE TEXTURE SUR LE BUDGET 741,562 MiB` : la
+  scene en demandait environ 1742. **Le moteur ne plante pas, il RETROGRADE les
+  mip-maps** -- les textures deviennent floues et on cherche la cause ailleurs.
+  La carte de cette machine a 24 Go de VRAM (`AdapterRAM` de WMI plafonne a 4 Go
+  et ment : lire `HardwareInformation.qwMemorySize` dans le registre). Pool porte
+  a 4000 Mo dans `Config/DefaultEngine.ini`. Prend effet sans redemarrer :
+  `r.Streaming.PoolSize 4000` en console.

@@ -328,32 +328,31 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
                 desc.set_editor_property("world_position_offset_disable_distance",
                                          int(start_cull))
 
-                # ECLAIRAGE. Le semis est passe de 304 a environ 6 200 instances
-                # a l'hectare : ce qui etait negligeable a l'unite devient le
-                # premier poste de cout. Trois reglages, du moins douloureux au
-                # plus visible.
+                # ECLAIRAGE.
                 #
                 # ATTENTION, `FPCGSoftISMComponentDescriptor` est une struct dont
                 # `dir()` ne montre RIEN : ces champs n'existent que par leur nom
                 # (voir ISMComponentDescriptor.h). Une faute de frappe passe donc
                 # inapercue jusqu'a l'execution.
                 #
-                # 1. Les champs de distance ne servent a rien pour un brin
-                #    d'herbe et coutent a chaque instance.
-                desc.set_editor_property("affect_distance_field_lighting", False)
-                # 2. Les ombres de contact sont un trace par pixel : hors de
-                #    question a cette densite.
-                desc.set_editor_property("cast_contact_shadow", False)
-                # 3. L'ombre portee elle-meme, reglable PAR COUCHE. Le tapis
-                #    n'en projette pas : des milliers de brins projetant chacun
-                #    leur ombre dynamique coutent tres cher pour un resultat que
-                #    l'oeil ne distingue pas d'un sol simplement assombri.
+                # CE QUI A ETE ESSAYE ET RETIRE. En passant le semis de 304 a
+                # 6 200 instances a l'hectare, l'ombre portee du tapis et les
+                # ombres de contact avaient ete coupees "par precaution". Verdict
+                # a l'image, sans appel : les plantes ne touchaient plus le sol,
+                # elles flottaient. Et la mesure ne justifiait pas la coupe --
+                # 114 a 120 FPS avec, pour un budget de 16,67 ms. On ne coupe pas
+                # une ombre sans l'avoir payee.
+                #
+                # Ce qui reste coupe ne se voit PAS :
+                # - `cast_far_shadow` ne concerne que la cascade d'ombres
+                #   lointaines, au-dela de la distance ou l'instance disparait
+                #   deja par `instance_end_cull_distance` ;
+                # - les champs de distance ne servent qu'a l'occlusion ambiante
+                #   a grande echelle, ou un brin d'herbe ne pese rien, et ils
+                #   coutent une representation par maillage.
+                desc.set_editor_property("cast_far_shadow", False)
                 if not layer.get("ombre", True):
-                    desc.set_editor_property("cast_shadow", False)
-                else:
-                    # Les grands elements gardent leur ombre, mais pas au loin :
-                    # la cascade d'ombres lointaines est un cout pur ici.
-                    desc.set_editor_property("cast_far_shadow", False)
+                    desc.set_editor_property("affect_distance_field_lighting", False)
                 overrides = rvt_free_materials(mesh)
                 if overrides:
                     desc.set_editor_property("override_materials", overrides)
