@@ -107,24 +107,41 @@ def _switch(mat, name: str) -> bool:
         return False
 
 
+def rvt_disponible() -> bool:
+    """Le niveau porte-t-il une Runtime Virtual Texture utilisable ?
+
+    Un `RuntimeVirtualTextureVolume` avec une texture valide suffit : c'est lui
+    qui fait exister la RVT dans le monde. Le cablage complet (le Landscape qui
+    ECRIT dedans, et `virtual_texture_render_pass_type = ALWAYS`) est pose par
+    `Tools/UE/rvt_setup.py`.
+    """
+    sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for a in sub.get_all_level_actors():
+        if isinstance(a, unreal.RuntimeVirtualTextureVolume):
+            c = a.get_component_by_class(unreal.RuntimeVirtualTextureComponent)
+            if c is not None and c.get_editor_property("virtual_texture") is not None:
+                return True
+    return False
+
+
 def rvt_free_materials(mesh) -> list:
-    """Materiaux du maillage, avec le sample de RVT neutralise si besoin.
+    """Materiaux du maillage, avec le sample de RVT neutralise SI ELLE MANQUE.
 
-    POURQUOI. Les packs `Stylized_Landscape_5_Bioms` (palmiers, bambous,
-    rochers de desert, falaises) passent par `M_Assets_MasterMat`, dont le
-    switch statique `UseRVT` echantillonne une Runtime Virtual Texture. Sans
-    `RuntimeVirtualTextureVolume` dans le niveau, l'echantillonnage rend du vide
-    et le maillage s'affiche en BLEU PUR - constate en jeu sur les rochers du
-    desert. Creer la RVT a deja ete tente et abandonne (la texture restait vide
-    et le terrain proche s'aplatissait).
+    POURQUOI CE CONTOURNEMENT EXISTE. Les packs `Stylized_Landscape_5_Bioms`
+    (palmiers, bambous, rochers de desert, falaises) passent par
+    `M_Assets_MasterMat`, dont le switch statique `UseRVT` echantillonne une
+    Runtime Virtual Texture. Sans `RuntimeVirtualTextureVolume` dans le niveau,
+    l'echantillonnage rend du vide et le maillage s'affiche en BLEU PUR.
 
-    Comme la contribution est gardee par un switch STATIQUE, il n'y a aucune
-    chirurgie de graphe a faire : on duplique l'instance de materiau chez nous,
-    switch a false, et on la pose en override sur l'instance semee. Le bundle
-    achete n'est jamais modifie.
+    POURQUOI IL EST CONDITIONNEL. Neutraliser la RVT, c'est renoncer a ce que le
+    pack prevoit : le feuillage teinte par la couleur du terrain sous lui. Des
+    que la RVT est correctement posee, ce contournement devient nuisible -- on le
+    coupe alors de lui-meme, sans avoir a le desactiver a la main.
 
     Rend une liste vide si aucun emplacement n'a besoin d'etre corrige.
     """
+    if rvt_disponible():
+        return []
     slots = list(mesh.get_editor_property("static_materials"))
     out, needed = [], False
     for slot in slots:

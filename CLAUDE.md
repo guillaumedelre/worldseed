@@ -945,3 +945,53 @@ egaux. C'est le seul lien entre la carte et le graphe, et rien ne le verifie.
 `SM_Grass` vert est seme en savane comme en foret tropicale. Le pack teinte son
 feuillage par la couleur du terrain, via une Runtime Virtual Texture -- chemin
 deja tente et abandonne (voir plus haut : herbe bleue puis noire, terrain aplati).
+
+### La Runtime Virtual Texture marche : ce qui avait fait echouer la premiere fois (11 septembre 2026)
+
+Le pack Orasot livre DEUX textures virtuelles, dans
+`Stylized_Landscape_5_Bioms/Global/RVT/` :
+`RVT_Landscape_Material` (BaseColor + Normal + Specular, YCoCg) et
+`RVT_Landscape_Height` (WorldHeight). Le Landscape y ECRIT ; le feuillage les
+RELIT et s'accorde au sol. C'est ce qui donne aux rendus du pack leur coherence.
+Sa fiche Fab le demande d'ailleurs en toutes lettres.
+
+**LE COUPABLE : `virtual_texture_render_pass_type`.** Laisse a son defaut, le
+Landscape ne se dessine plus dans la passe principale mais DEPUIS la RVT : le
+terrain proche perd sa geometrie fine et parait aplati. La session precedente
+avait vu cet aplatissement, conclu que la RVT etait en cause et fait marche
+arriere. **Il faut `ALWAYS`** : le terrain se dessine normalement ET alimente la
+RVT. Avec ce reglage, aucun aplatissement -- verifie a l'image.
+
+**Le montage complet est dans `Tools/UE/rvt_setup.py`**, releve sur la carte de
+demo du pack. Deux points qui se ratent :
+- **La transform d'un `RuntimeVirtualTextureVolume` est un COIN + une TAILLE**,
+  pas un centre et une demi-portee. Verifie sur la demo : volume a
+  (-101600, -101600, -25600), echelle 204800, pour un terrain allant de -101600
+  a +101600.
+- Les RVT doivent etre posees sur l'acteur `Landscape` ET sur **chaque proxy**
+  World Partition, avec `virtual_texture_num_lods = 6`.
+
+Ne PAS utiliser `unreal.RuntimeVirtualTextureService.create_rvt_volume` : il cree
+des `Actor` generiques a l'origine et a l'echelle 1.
+
+**Consequence sur le semis.** `vegetation.rvt_free_materials` dupliquait 15
+instances de materiau avec `UseRVT = false`, pour eviter le bleu pur des rochers
+de desert. Ce contournement est desormais CONDITIONNEL : `vegetation.rvt_disponible()`
+regarde si le niveau porte un volume de RVT valide, et le contournement s'efface
+de lui-meme. Plus aucun override n'est pose.
+
+**PIEGE ANNEXE, paye deux fois : `treat_editor_viewport_as_generation_source` est
+capricieux en 5.8.** La generation PCG autour de la camera de l'editeur s'arrete
+apres une reconstruction du graphe et ne repart pas, meme en bougeant la camera --
+`pcg.RuntimeGeneration.EnableDebugging 1` ne montre alors AUCUN `GENERATE`. En
+PIE, ou la source est le pion, elle repart immediatement. **Le viewport de
+l'editeur n'est pas une reference : juger la vegetation en PIE.** Le journal
+signale d'ailleurs que `enable_world_partition_generation_sources` est deprecie
+en 5.8 au profit de `UPCGGenSourceComponent`.
+
+**PIEGE ANNEXE 2 : le `PlayerStart` revient a sa position d'avant apres un
+rechargement de niveau.** Vu trois fois. `save_dirty_packages(True, True)` ne
+suffit pas toujours ; passer par le paquet de l'acteur :
+`unreal.EditorLoadingAndSavingUtils.save_packages([acteur.get_outermost()], False)`,
+qui rend True et tient au rechargement. Symptome si on l'oublie : le pion apparait
+hors du monde et tombe dans la mer.
