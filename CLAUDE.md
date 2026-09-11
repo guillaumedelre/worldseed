@@ -1750,3 +1750,49 @@ valeurs-la se recalent sur la taille reelle du terrain.
 le materiau melange sans doute une texture de detail rapprochee. `Uv Scale`
 (essaye a 0,35) n'y change rien et a ete remis a la valeur de l'auteur. A
 reprendre en cherchant la chaine de detail proche dans le maitre du pack.
+
+### Le sable scintillait : `T_Sand_Glitter` et un `Boost` de 580 (11 septembre 2026, suite)
+
+**CORRECTION D'UNE NOTE FAUSSE PLUS HAUT.** Le tableau de la section "Un pack de
+terrain se consomme par son INSTANCE" decrit `Boost` comme la "densite de
+l'herbe de Landscape". **C'est faux.** Mesure : le materiau ne contient qu'UN
+noeud nomme `Boost`, avec UNE seule utilisation -- un `Multiply` dans la chaine
+EMISSIVE de la couche `DesertSand`. Il n'a aucun lien avec
+`LandscapeGrassOutput`, qui est alimente par des `Add`/`Subtract` sans rapport.
+
+**La chaine complete, remontee depuis `.EmissiveColor` du
+`MakeMaterialAttributes` de DesertSand :**
+
+    TextureSample T_Sand_Glitter -> Multiply(Boost) -> ... -> DotProduct
+      avec CameraVectorWS et Noise Rot Speed / Noise Offset
+
+Autrement dit : **le sable du pack porte une texture de PAILLETTES emissives,
+dependante de l'angle de vue.** C'est voulu par Orasot, et discret sur leur
+petite carte de demo. Avec `Boost = 579,9` -- la valeur de leur instance --
+sur nos 8 km, cela donne un ciel etoile en plein desert. Ramene a **5,0**, il
+reste un scintillement fin au ras du sol, credible pour du sable.
+
+**Ce qui a ete elimine en chemin, et qu'il est inutile de retenter :**
+- ce n'est PAS DLWE_V3 : `Apply Snow/Dust` mis a False n'y change rien ;
+- ce n'est PAS le bloom : `ShowFlag.Bloom 0` supprime le symptome, mais ni le
+  seuil (1 puis 8) ni l'intensite (0,675 -> 0,15) ne traitent la cause ; les
+  valeurs par defaut ont ete rendues ;
+- ce n'est PAS `Roughness Intensity`, ni `SandStrenght`, ni `Uv Scale`
+  (essaye a 0,35), ni `LandscapeLayerCoords.MappingScale` (essaye a 16) --
+  **aucun de ces deux derniers ne pilote le carrelage des couches**, contrairement
+  a ce que leur nom laisse croire.
+
+**LE CARRELAGE DES AUTRES COUCHES, mesure par autocorrelation sur des vues
+zenithales prises a 6 m :**
+
+    herbe (foret tropicale)   periode 100 cm
+    sable avant correction    periode ~105 cm   (deduit : 26 x 2,0 / 0,495)
+    sable apres (Sand UV 2,0) periode  26 cm
+    neige (calotte)           aucune repetition nette
+
+Les autres couches sont donc etirees exactement comme l'etait le sable. **Si
+cela ne se voit que sur le sable, c'est que lui seul porte une texture a grains
+quasi blancs que le soleil transforme en eclats.** Et il n'existe AUCUN
+parametre expose pour retailler l'herbe, la roche ou la neige : seuls `Sand UV`
+et `SizeOfGravel` existent. Les retailler demanderait une chirurgie de graphe
+sur le maitre -- a n'engager que si un defaut visible le justifie.
