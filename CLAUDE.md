@@ -857,3 +857,41 @@ sur les proxies et produisent **0 instance**. Les cinq entrees de
 `LandscapeGrassOutput` sont des chaines `Add`/`Subtract` : quand le terme
 soustrait depasse le premier, le resultat est negatif et rien ne pousse. C'est la
 chirurgie de graphe signalee au §5.1 de ETAT_DES_LIEUX, toujours a arbitrer.
+
+### La vegetation ne pousse pas DANS L'EDITEUR, et c'est normal (11 septembre 2026)
+
+Signale : « il faut que l'herbe pousse ». Le viewport de l'editeur montrait un sol
+nu, alors que le PIE, lui, etait couvert de vegetation.
+
+**Ce n'etait pas une panne.** Le semis PCG est en `GenerateAtRuntime` : il ne
+produit rien tant qu'aucune SOURCE DE GENERATION ne le reclame. En jeu, le pion
+en tient lieu. Dans l'editeur, il faut poser
+`PCGWorldActor.treat_editor_viewport_as_generation_source = True` -- coupe a
+dessein pendant les reconstructions, pour que l'editeur ne seme pas autour de la
+camera pendant le menage, et jamais rallume ensuite. Une fois rallume, la camera
+de l'editeur devient la source et le monde se garnit. Mesure : 8,9 Go de memoire
+et 87 FPS avec la vegetation dense generee autour du point de vue.
+
+**LE PIEGE DE MESURE, ET IL M'A COUTE UNE HEURE.** Pour savoir si l'herbe de
+Landscape poussait, j'ai compte les
+`HierarchicalInstancedStaticMeshComponent` portes par le Landscape et ses
+proxies : **0**. J'en ai conclu a un defaut du materiau et je suis parti
+demonter la chaine `LandscapeGrassOutput`. **La demo du pack, qui a pourtant un
+tapis d'herbe visible, rapporte exactement le meme 0** : l'herbe de Landscape
+n'est PAS exposee comme composant de l'acteur. Le compteur ne mesurait rien.
+**Sur un systeme dont on ne connait pas la representation interne, valider la
+metrique sur un cas TEMOIN connu avant d'en tirer la moindre conclusion.**
+
+**Ce qui reste vrai et utile de cette fouille**, pour qui voudra un jour le tapis
+d'herbe emis par le materiau (en plus du semis PCG) :
+- les cinq entrees de `LandscapeGrassOutput` valent
+  `Lerp(poidsCouche, Floor(poidsCouche), Alpha)` avec Alpha a 0,8 ou 1,0.
+  `Floor(p)` vaut 0 sauf si le poids vaut EXACTEMENT 1,0. Le pack peint ses
+  couches a 100 % sur de grandes zones ; notre generateur melange partout
+  (dominante a 0,62 en mediane, jamais 1,0). La porte est donc fermee par
+  construction ;
+- toutes soustraient aussi une couche `RemoveFoliage`, que le generateur ne
+  peint pas. Elle n'est pas allouee sur le Landscape et son `PreviewWeight` vaut
+  0, donc elle ne retranche rien : ce n'est PAS le coupable ;
+- mettre les six `ConstAlpha` a 0 n'a eu aucun effet visible. Essai annule, les
+  valeurs de l'auteur ont ete remises.
