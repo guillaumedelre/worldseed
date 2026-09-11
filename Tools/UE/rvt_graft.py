@@ -311,6 +311,164 @@ def greffer(cibles=None):
     return {"greffes": faits, "log": list(_log)}
 
 
+# ------------------------------------------------------------------ le vent
+#
+# `Foliage_Wind_Movement` est livre par Ultra Dynamic Sky. Contrairement au
+# `SimpleGrassWind` du moteur -- amplitude fixe, aveugle a la meteo -- il est
+# pilote par l'etat de vent d'UDW : une bourrasque d'orage couche reellement
+# l'herbe. Une seule sortie, `World Position Offset`, et trois classes de
+# mouvement independantes :
+#   Small   l'herbe et les feuilles qui fremissent
+#   Medium  les branches et les grappes
+#   Large   le balancement de l'arbre entier
+#
+# UNE SEULE de ses 28 entrees n'a PAS de valeur par defaut : `Small Movement
+# Mask`. Sans elle, le materiau ne compile pas -- meme piege que `Apply
+# Snow/Dust` sur DLWE_V3. On lui donne un masque de HAUTEUR, calcule a partir
+# du meme `Z - hauteur du sol` que la greffe de RVT : immobile au pied, plein
+# mouvement au sommet. C'est ce qu'on attend d'un brin d'herbe comme d'un
+# houppier.
+#
+# LES ROCHERS ET LES PROPS N'EN RECOIVENT PAS : un rocher qui ondule se voit
+# immediatement. Ils restent hors de cette table.
+FN_VENT = "/Game/UltraDynamicSky/Materials/Weather/Foliage_Wind_Movement"
+P_HAUTEUR_VENT = "Hauteur du vent"
+
+VENT = {
+    # suffixe        : (small, medium, large, hauteur du masque en cm)
+    "FoliagePBF":     (True,  False, False, 120.0),   # herbe, trefle
+    "FleurSFL":       (True,  False, False, 120.0),   # fleurs
+    "FleurGlobal":    (True,  False, False, 120.0),
+    "MasterLPF":      (True,  True,  False, 400.0),   # buissons, feuillages bas
+    "MasterLPF2F":    (True,  True,  False, 400.0),
+    "FeuilleGlobal":  (True,  True,  True,  800.0),   # feuilles d'arbres
+    "FeuilleSFL":     (True,  True,  True,  800.0),
+    "TroncPBF":       (False, True,  True,  800.0),   # un tronc ne fremit pas
+    "EcorceSFL":      (False, True,  True,  800.0),
+}
+
+
+def greffer_vent(suffixes=None):
+    """Branche le vent d'UDS sur la sortie WorldPositionOffset des maitres greffes.
+
+    REMPLACE ce qui s'y trouve. Mesure avant intervention : 7 des 11 maitres
+    n'avaient AUCUN vent -- les arbres ne bougeaient pas -- et les deux qui en
+    avaient passaient par `SimpleGrassWind`, sans lien avec la meteo.
+
+    Idempotent par constat, comme la greffe de RVT : un materiau qui porte deja
+    l'appel de fonction est laisse tel quel.
+    """
+    _log.clear()
+    if not unreal.EditorAssetLibrary.does_asset_exist(FN_VENT):
+        log("ERROR", "fonction de vent introuvable : {}".format(FN_VENT))
+        return {"vents": 0, "log": list(_log)}
+    faits = 0
+    for suffixe in (suffixes or list(VENT)):
+        small, medium, large, hauteur = VENT[suffixe]
+        dst = "{}/M_Worldseed{}".format(DEST, suffixe)
+        if not unreal.EditorAssetLibrary.does_asset_exist(dst):
+            log("ERROR", "{} n'existe pas : lancer greffer() d'abord".format(dst))
+            continue
+        avant = _graphe(dst)
+        if any((e.get("function_path") or "").endswith("Foliage_Wind_Movement")
+               for e in avant["expressions"]):
+            log("SKIPPED", "{} porte deja le vent".format(dst.rsplit("/", 1)[-1]))
+            continue
+
+        # Le `Subtract` de la greffe de RVT tient deja `Z - hauteur du sol`.
+        # On le retrouve par le parametre de fondu : c'est lui qui alimente le
+        # `Divide`, dont l'entree A est le Subtract cherche.
+        ex = {e["id"]: e for e in avant["expressions"]}
+        fondu = next((e for e in avant["expressions"]
+                      if (e.get("parameter_name") or "") == P_FONDU), None)
+        if fondu is None:
+            log("ERROR", "{} ne porte pas la greffe de RVT".format(dst))
+            continue
+        div = next((c["target_id"] for c in avant["connections"]
+                    if c["source_id"] == fondu["id"]), None)
+        soustr = next((c["source_id"] for c in avant["connections"]
+                       if c["target_id"] == div and c["target_input"] == "A"), None)
+        if soustr is None or ex.get(soustr, {}).get("class") != "Subtract":
+            log("ERROR", "{} : chaine de hauteur introuvable".format(dst))
+            continue
+
+        classes = ["ScalarParameter", "Divide", "Clamp", "MaterialFunctionCall",
+                   "StaticBool", "StaticBool", "StaticBool"]
+        xs = [-1600, -1450, -1300, -1000, -1300, -1300, -1300]
+        ys = [-1700, -1750, -1750, -1700, -1850, -1900, -1950]
+        descs = []
+        for c, x, y in zip(classes, xs, ys):
+            d = unreal.BatchCreateDescriptor()
+            d.set_editor_property("class_name", c)
+            d.set_editor_property("pos_x", x)
+            d.set_editor_property("pos_y", y)
+            if c == "MaterialFunctionCall":
+                d.set_editor_property("function_path", FN_VENT)
+            descs.append(d)
+        if len(unreal.MaterialNodeService.batch_create_specialized(dst, descs)) != len(classes):
+            log("ERROR", "creation des noeuds de vent incomplete sur {}".format(dst))
+            continue
+
+        apres = _graphe(dst)
+        connus = {e["id"] for e in avant["expressions"]}
+        neufs = {}
+        for e in apres["expressions"]:
+            if e["id"] not in connus:
+                neufs.setdefault(e["class"], []).append(e)
+        try:
+            scal = neufs["ScalarParameter"][0]
+            divv = neufs["Divide"][0]
+            borne = neufs["Clamp"][0]
+            fn = neufs["MaterialFunctionCall"][0]
+            b1, b2, b3 = neufs["StaticBool"]
+        except (KeyError, ValueError) as err:
+            log("ERROR", "noeuds de vent inattendus sur {} : {}".format(dst, err))
+            continue
+
+        n = unreal.MaterialNodeService.batch_set_properties(
+            dst,
+            [scal["id"], scal["id"], b1["id"], b2["id"], b3["id"]],
+            ["ParameterName", "DefaultValue", "Value", "Value", "Value"],
+            [P_HAUTEUR_VENT, "{:.6f}".format(hauteur),
+             str(bool(small)), str(bool(medium)), str(bool(large))])
+        if n != 5:
+            log("ERROR", "{} proprietes de vent sur 5 ({})".format(n, dst))
+            continue
+
+        # Rappel : une broche d'entree UNIQUE se designe par la chaine VIDE.
+        c = unreal.MaterialNodeService.batch_connect_expressions(
+            dst,
+            [soustr, scal["id"], divv["id"], borne["id"], b1["id"], b2["id"], b3["id"]],
+            ["", "", "", "", "", "", ""],
+            [divv["id"], divv["id"], borne["id"], fn["id"], fn["id"], fn["id"], fn["id"]],
+            ["A", "B", "", "Small Movement Mask",
+             "Apply Small Movement (Grass / Leaves)",
+             "Apply Medium Movement (Branches / Clusters)",
+             "Apply Large Movement (Whole Tree Sway)"])
+        if c != 7:
+            log("ERROR", "{} connexions de vent sur 7 ({})".format(c, dst))
+            continue
+
+        mat = unreal.EditorAssetLibrary.load_asset(dst)
+        objets = list(unreal.MaterialEditingLibrary.get_material_expressions(mat))
+        appel = None
+        for o in objets:
+            if isinstance(o, unreal.MaterialExpressionMaterialFunctionCall):
+                f = o.get_editor_property("material_function")
+                if f is not None and f.get_name() == "Foliage_Wind_Movement":
+                    appel = o
+        if appel is None or not unreal.MaterialEditingLibrary.connect_material_property(
+                appel, "World Position Offset", unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET):
+            log("ERROR", "WorldPositionOffset non rebranchee sur {}".format(dst))
+            continue
+        unreal.MaterialEditingLibrary.recompile_material(mat)
+        unreal.EditorAssetLibrary.save_asset(dst)
+        faits += 1
+        log("MODIFIED", "{} : vent S={} M={} L={}, masque sur {:.0f} cm".format(
+            dst.rsplit("/", 1)[-1], small, medium, large, hauteur))
+    return {"vents": faits, "log": list(_log)}
+
+
 def regler(cibles=None):
     """Reporte `teinte` et `fondu` de CIBLES sur les maitres deja greffes.
 

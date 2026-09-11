@@ -108,9 +108,15 @@ utilisent réellement :
 ```python
 import sys; sys.path.insert(0, r"<racine>/Tools/UE")
 import rvt_graft
-rvt_graft.greffer()     # les 11 maitres
-rvt_graft.rediriger()   # les instances + la table lue par le semis
+rvt_graft.greffer()       # les 11 maitres : la teinte par le sol
+rvt_graft.greffer_vent()  # le vent d'UDS sur les 9 maitres de feuillage
+rvt_graft.rediriger()     # les instances + la table lue par le semis
 ```
+
+⚠️ **Traiter par un ou deux matériaux à la fois.** Recompiler neuf gros
+matériaux d'affilée a fait tomber l'éditeur deux fois — `EXCEPTION_ACCESS_VIOLATION`
+dans `D3D12RHI`. Les fonctions sont idempotentes : elles se relancent sans
+risque, et prennent une liste de suffixes en argument.
 
 Les deux sont idempotents. **`rediriger()` n'est pas optionnel** : greffer un
 maître ne change rien tant que les maillages pointent vers les instances du

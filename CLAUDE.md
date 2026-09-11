@@ -1628,3 +1628,91 @@ qui change alors est teinte ; ce qui ne change pas ne passe pas par ce materiau.
 **`delete_asset` marche tant que le materiau n'a pas ete recompile ni ouvert.**
 Les 11 copies ratees se sont supprimees sans difficulte, alors que la copie
 recompilee de la veille resistait a tout. Supprimer AVANT de recompiler.
+
+### Le vent d'UDS sur la vegetation, et le crash qu'il provoque (11 septembre 2026)
+
+`Foliage_Wind_Movement` (`/Game/UltraDynamicSky/Materials/Weather/`) est le vent
+d'Ultra Dynamic Sky : contrairement au `SimpleGrassWind` du moteur, amplitude
+fixe et aveugle a la meteo, il est pilote par l'etat de vent d'UDW. Releve avant
+intervention : **7 des 11 maitres greffes n'avaient AUCUN vent** -- les arbres ne
+bougeaient pas -- et les deux qui en avaient passaient par `SimpleGrassWind`.
+
+- Une seule sortie, `World Position Offset`. Trois classes de mouvement
+  independantes, exposees en parametres : `Apply Small Movement` (herbe,
+  feuilles), `Medium` (branches), `Large` (balancement de l'arbre entier).
+- **UNE SEULE de ses 28 entrees n'a pas de valeur par defaut : `Small Movement
+  Mask`.** Sans elle le materiau ne compile pas -- meme piege que `Apply
+  Snow/Dust` sur DLWE_V3. On lui donne `saturate((Z - hauteur du sol) / "Hauteur
+  du vent")`, reutilisant la chaine de hauteur deja posee par la greffe de RVT :
+  immobile au pied, plein mouvement au sommet.
+- **Les rochers et les props n'en recoivent pas** : un rocher qui ondule se voit
+  immediatement. `rvt_graft.VENT` ne les liste pas.
+
+**LE CRASH, DEUX FOIS DE SUITE, ET SA CAUSE EXACTE.** Greffer le vent sur neuf
+materiaux a fait tomber l'editeur : `EXCEPTION_ACCESS_VIOLATION` dans
+`UnrealEditor-D3D12RHI`, "Crash in runnable thread Background Worker". Le fil
+d'Ariane du journal nomme la passe fautive :
+
+    ParallelDraw -> RenderVelocities(Opaque) -> Scene
+
+precede de `LogD3D12RHI: Waited for PSO creation for 100.000000ms` et d'une
+douzaine de `LogShaderCompilers: Cancelled job ... with pending SubmitJob call`.
+
+**Un materiau qui porte un WorldPositionOffset devient ECRIVAIN DE VELOCITE.**
+Nos ~400 000 instances en ont toutes gagne un d'un coup, et la creation des
+etats de pipeline correspondants a fait tomber le RHI. La documentation d'Epic
+decrit exactement ce cas (`RendererSettings.h:972`) : *"That performance cost is
+higher if many objects are using World Position Offset. A forest of trees for
+example."* Remede, pose dans `Config/DefaultEngine.ini` :
+
+    r.Velocity.EnableVertexDeformation=0      ; defaut 2 = Auto
+
+Ce qu'on perd : le flou de mouvement et le TSR ne suivent plus le fremissement
+du feuillage -- invisible sur un monde stylise. Apres ce reglage : aucun crash,
+**117 FPS contre 115 avant le vent**, rendu 8,6 ms contre 8,7. Le vent ne coute
+rien de mesurable.
+
+**NE PAS RECOMPILER HUIT GROS MATERIAUX D'AFFILEE.** Le premier, traite seul,
+etait passe sans incident ; la serie a tue l'editeur. Traiter par un ou deux, et
+couper `treat_editor_viewport_as_generation_source` pendant l'operation. Corollaire
+utile : `delete_asset` marche tant qu'un materiau n'a pas ete recompile ni
+ouvert -- les 11 copies ratees se sont supprimees sans resistance, la copie
+recompilee de la veille resistait a tout.
+
+**RIEN N'EST PERDU QUAND L'EDITEUR TOMBE EN PLEINE BOUCLE** : chaque materiau
+est sauve a la fin de son tour. Les dates des `.uasset` disent exactement ou la
+boucle s'est arretee -- les lire AVANT de tout refaire.
+
+### Un second PCGWorldActor desarme tue tout le semis, en silence (11 septembre 2026)
+
+Symptome : **zero instance de vegetation**, ni dans l'editeur ni en PIE, alors
+que le graphe, le volume et les recettes sont corrects. Le niveau portait DEUX
+`PCGWorldActor` :
+
+    ...C00003   sourcesWP = False   cache = NeverSerialize   <- desarme
+    ...B80003   sourcesWP = True    cache = AlwaysSerialize   <- correct
+
+PCG n'en interroge qu'un, et c'est le desarme qui repondait. Un `PCGWorldActor`
+NEUF arrive ainsi (deja note plus haut) ; ce qui est nouveau, c'est qu'un
+DOUBLON suffit a masquer celui qui est bien regle. Le supprimer a immediatement
+ramene la foret complete. **Compter les `PCGWorldActor` doit etre le premier
+reflexe devant un semis muet.**
+
+**PIEGE DE LECTURE ASSOCIE** : sans instances PCG, ce qu'on voit au sol n'est PAS
+le tapis mais l'HERBE DU LANDSCAPE, emise par le materiau de terrain. Elle ne
+recoit aucune de nos greffes, donc elle ne bouge pas et ne se teinte pas -- et on
+en conclut a tort que la greffe ne marche pas. Verifier par
+`get_components_by_class(InstancedStaticMeshComponent)` : zero instance = ce
+n'est pas le semis qu'on regarde.
+
+**MESURER LE VENT, ET AVEC QUEL TEMOIN.** Comparer deux images successives ne
+vaut que si le temoin est vraiment immobile : le personnage a une animation
+d'attente (25,1 % de pixels modifies) et les nuages defilent. Temoins valables :
+une geometrie non greffee dans le MEME cadre. Mesure de validation, deux images
+consecutives en PIE :
+
+    sous-bois (petit + moyen)        21,2 %
+    houppier (petit+moyen+grand)     15,0 %
+    herbe au sol (petit seul)        12,2 %
+    tronc de bambou, sans vent        4,1 %
+    nenuphars et eau, temoin          3,5 %
