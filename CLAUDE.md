@@ -1483,3 +1483,91 @@ Pistes non explorees, dans l'ordre :
 
 Une sauvegarde du materiau d'avant insertion existe :
 `M_WorldseedLandscape_SauvegardeAvantDLWE` (exclue du depot, comme l'original).
+
+### La RVT teinte le feuillage : ce qu'elle couvre, et la greffe (11 septembre 2026)
+
+**Le constat de depart.** Le terrain ECRIT sa couleur dans une Runtime Virtual
+Texture ; un materiau de feuillage peut la RELIRE et prendre le ton du sol.
+Sur les 142 maillages du semis, **38 seulement (27 %)** passent par un materiau
+qui l'echantillonne : `M_Assets_MasterMat`, sa variante masquee,
+`M_Master_Cliff_Mat` et le `M_Grass` de `Stylized_Landscape_5_Bioms`. Les 104
+autres l'ignorent, dont tous les arbres et buissons. C'est pourquoi un A/B
+"avec / sans RVT" ne montre presque rien : les trois quarts de ce qu'on voit ne
+la lisent pas.
+
+**La teinte, elle, est spectaculaire.** Meme maillage, meme materiau, part de
+pixels verts dans la touffe : **0,0 % en desert chaud, 100 % en foret tropicale
+humide**. En vue zenithale l'herbe d'Orasot DISPARAIT dans le sable, on ne voit
+plus que son ombre, tandis que l'herbe non teintee ressort en vert etranger.
+
+**DEUX MATERIAUX PEUVENT PORTER LE MEME NOM. Comparer des CHEMINS, jamais des
+`get_name()`.** C'est l'erreur qui a coute le plus de temps ce jour-la :
+  /Game/Orasot_Bundle/LowPolyForestVol2/Materials/M_Grass         MASQUE, feuillage deux faces
+  /Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/M_Grass   OPAQUE, echantillonne la RVT
+Ayant compare les noms, j'ai conclu que les deux herbes partageaient un parent
+et que seules les surcharges d'instance differaient -- donc qu'il suffisait
+d'imposer `MI_Grass` au maillage a 4 triangles. Resultat a l'image : un CARRE
+PLEIN couleur sable. Ce maillage n'est que deux quads croises, sa silhouette
+vient d'un masque alpha ; le materiau qui teinte est opaque parce que la
+silhouette de l'herbe d'Orasot vient de sa GEOMETRIE (360 triangles).
+
+**Piege de mesure du meme coup** : en vue ZENITHALE, un quad opaque couleur
+sable pose a plat est indiscernable du sol. La mesure "18,1 % de vert -> 0,0 %"
+semblait prouver une teinte parfaite ; elle mesurait une bache. **Juger une
+silhouette CONTRE LE CIEL, de cote, jamais a la verticale.**
+
+**Un echantillonnage de RVT peut etre cache dans une fonction de materiau.**
+`M_Assets_MasterMat` ne contient AUCUN `RuntimeVirtualTextureSample` au premier
+niveau de son graphe : il appelle `MF_RVT`. Un balayage qui ne regarde que
+`export_material_graph` le classe a tort comme ignorant la RVT. Descendre dans
+les `MaterialFunctionCall` via `export_function_graph`.
+
+**`MF_RVT` fait mieux que notre greffe, et pourquoi on ne l'a pas prise.** Elle
+melange couleur, speculaire, rugosite ET normale, avec un masque calcule sur la
+hauteur du monde -- ce qui ANCRE l'objet dans le sol au lieu de le repeindre.
+Mais elle travaille en ATTRIBUTS DE MATERIAU (`use_material_attributes`), et
+aucune de nos cibles n'est cablee ainsi. `Tools/UE/rvt_graft.py` se contente
+donc d'un `Lerp(couleur d'origine, couleur du sol, "Teinte RVT")` sur la seule
+`BaseColor`, **en laissant toutes les autres sorties intactes -- en particulier
+`OpacityMask`, sans quoi la silhouette disparait**. Dosage mesure en savane :
+0,00 -> 45,7 % de vert, 0,85 -> 2,5 %, 1,00 -> 1,1 %. Retenu : 0,85.
+
+**`delete_asset` sur un materiau rend `False` sans lever d'erreur**, meme quand
+le registre ne signale AUCUN referenceur, et ni `close_all_editors_for_asset`,
+ni `collect_garbage`, ni `delete_loaded_asset` n'y changent rien.
+`duplicate_asset` rend alors l'asset deja present et la greffe se pose PAR-DESSUS
+la precedente : deux echantillonneurs, deux Lerp chaines, teinte appliquee deux
+fois. **Rendre un script d'installation idempotent par CONSTAT, pas par
+destruction** : s'il trouve une greffe saine, il n'y touche pas.
+
+**Retrouver l'OBJET d'une expression a partir de l'identifiant exporte.** Les
+identifiants de `export_material_graph` sont des ADRESSES
+(`MaterialExpressionLinearInterpolate_000001FB...`) ; `get_name()` rend un tout
+autre nom (`MaterialExpressionLinearInterpolate_0`), et les entrees (`A`, `B`)
+sont protegees en lecture. L'astuce qui marche : poser une valeur reconnaissable
+sur une propriete LISIBLE via `batch_set_properties(id, "ConstAlpha", "0.123456")`,
+puis chercher l'objet dont `const_alpha` vaut cette valeur.
+
+**Le tapis d'herbe pese 67 % de toutes les instances du semis** (72 % en foret),
+alors qu'il ne represente qu'une couche sur huit. C'est donc lui qui decide du
+cout comme du rendu : toute question de densite ou de materiau commence par lui.
+Il est desormais en TROIS couches -- `tapis` (petite touffe a 4 triangles,
+greffee), `tapis_haut` (herbe d'Orasot, 360 triangles et 3 LOD, 10 % des
+instances) et `tapis_accents` (fleurs, ble, lierre, a leur densite d'origine).
+Bilan mesure sur les 12 biomes : **-2 % d'instances, -14 % de triangles**.
+
+**`vegetation.py` testait `layer["name"] != "tapis"`** pour exclure le sol
+mineral. Avec trois couches, le test doit porter sur le PREFIXE, sinon
+`tapis_haut` seme de l'herbe sur les eboulis.
+
+**`unreal.Rotator(a, b, c)` prend (ROLL, PITCH, YAW)**, pas (pitch, yaw, roll).
+Se tromper fait viser le ciel et on croit a un probleme de rendu.
+
+**`get_all_level_actors()` rend une liste VIDE pendant un PIE.** Compter les
+instances du semis en PIE par ce chemin donne 0 et ne prouve rien.
+
+**Les toolsets natifs d'Epic ne sont pas enregistres dans ce build** :
+`vibeue.exec_tool("EditorToolset.EditorAppToolset", ...)` echoue sur "Toolset not
+found", seuls les services `VibeUE.*` sont la. Pour le PIE, passer par
+`unreal.LevelEditorSubsystem` : `editor_request_begin_play()` (avec un pion, donc
+une source de generation PCG) et non `editor_play_simulate()`, qui n'en cree pas.

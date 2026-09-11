@@ -30,10 +30,47 @@
     "Les biomes NUS (desert, plage, roche nue, calotte, toundra, alpin, desert",
     "froid) gardent le pas large : un desert dense n'est plus un desert.",
     "",
-    "Le tapis s'appuie sur PBF:SM_Grass (40 triangles) et PBF:SM_Clover (72) de",
-    "Stylized_PBR_Nature, les deux maillages les plus legers du projet -- et qui",
-    "n'etaient pas utilises. Le buisson d'Orasot en fait 1308 pour un role",
-    "identique au sol.",
+    "LE TAPIS EST EN TROIS COUCHES depuis le 11 septembre 2026, et la raison est",
+    "la Runtime Virtual Texture. Le terrain ECRIT sa couleur dans une RVT ; le",
+    "materiau M_Grass la RELIT et teinte le brin a la couleur du sol. Mesure : la",
+    "meme herbe rend 0,0 % de pixels verts en desert et 100 % en foret tropicale.",
+    "Or le tapis pesait 67 % de toutes les instances et 37 de ses 39 maillages",
+    "ignoraient la RVT : l'herbe restait verte partout. D'ou le remplacement.",
+    "",
+    "  tapis         LPF:SM_Env_Grass_small -- 4 triangles, dix fois moins que",
+    "                les 40 de PBF:SM_Grass. Base 39 cm, d ou une echelle 2,6-5,9",
+    "                qui rend les 101 a 230 cm de l ancien tapis.",
+    "  tapis_haut    GLO:SM_Grass d Orasot -- 360 triangles mais 3 LOD, pour la",
+    "                silhouette. 10 % des instances de la masse.",
+    "  tapis_accents les fleurs, le ble et le lierre, a leur densite d origine.",
+    "",
+    "Bilan mesure sur les 12 biomes : -2 % d instances, -14 % de triangles.",
+    "",
+    "POURQUOI DES PAS PAR BIOME (tapis_ras_175, tapis_haut_500...). La part",
+    "d accents va de 0 % (toundra, desert froid, alpin) a 35 % (prairie) : un pas",
+    "uniforme quadruplerait ou supprimerait les fleurs selon le biome. Les pas",
+    "sont donc calcules puis NOMMES PAR LEUR VALEUR -- deux biomes qui tombent sur",
+    "la meme valeur partagent le nom, donc la meme branche de decimation du graphe.",
+    "",
+    "materiaux_forces : materiau impose a un maillage, par reference. Il pointe",
+    "le petit maillage du tapis vers MI_WorldseedGrassRas, notre copie greffee de",
+    "la Runtime Virtual Texture -- voir Tools/UE/rvt_graft.py, qui la refabrique.",
+    "Ces copies vivent sous /Game/Worldseed/PCG/Materials/, exclu de git : elles",
+    "DERIVENT d un pack payant.",
+    "",
+    "ATTENTION, piege paye comptant : il existe DEUX materiaux nommes M_Grass.",
+    "  LowPolyForestVol2/Materials/M_Grass          MASQUE, feuillage deux faces",
+    "  Stylized_Landscape_5_Bioms/Global/M_Grass    OPAQUE, echantillonne la RVT",
+    "Le petit maillage n est que deux quads croises : sa silhouette vient d un",
+    "masque alpha. Lui imposer le materiau OPAQUE le transforme en carre plein",
+    "couleur sable. Celle de l herbe d Orasot vient de sa GEOMETRIE (360 tris).",
+    "Comparer des CHEMINS, jamais des noms.",
+    "",
+    "Teinte mesuree apres greffe, part de vert dans la touffe :",
+    "                  desert   foret tropicale",
+    "  avant            51,4 %   100 %",
+    "  apres             0,0 %   100 %",
+    "  herbe d Orasot    0,0 %   100 %",
     "",
     "Les identifiants 0 (ocean), 1 (lac) et 2 (riviere) n'ont pas de recette :",
     "ce ne sont pas des biomes terrestres."
@@ -47,7 +84,8 @@
     "GRN": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/StaticMeshes",
     "RED": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/StaticMeshes",
     "PBF": "/Game/Stylized_PBR_Nature/Foliage/Assets",
-    "PBR": "/Game/Stylized_PBR_Nature/Rocks/Assets"
+    "PBR": "/Game/Stylized_PBR_Nature/Rocks/Assets",
+    "GLO": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/StaticMeshes"
   },
   "spacings": {
     "tapis": 150,
@@ -56,7 +94,22 @@
     "sousbois_clair": 600,
     "arbres_denses": 800,
     "arbres_epars": 1800,
-    "rares": 4000
+    "rares": 4000,
+    "tapis_ras_425": 425,
+    "tapis_haut_1275": 1275,
+    "tapis_ras_175": 175,
+    "tapis_haut_500": 500,
+    "tapis_accents_475": 475,
+    "tapis_accents_400": 400,
+    "tapis_ras_200": 200,
+    "tapis_haut_575": 575,
+    "tapis_accents_250": 250,
+    "tapis_ras_500": 500,
+    "tapis_haut_1525": 1525,
+    "tapis_accents_725": 725,
+    "tapis_haut_525": 525,
+    "tapis_accents_375": 375,
+    "tapis_accents_325": 325
   },
   "biomes": {
     "calotte": {
@@ -95,10 +148,10 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis_clair",
+          "spacing": "tapis_ras_425",
           "scale": [
-            0.7,
-            1.6
+            2.6,
+            5.9
           ],
           "cull": [
             5000,
@@ -106,12 +159,26 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              4
-            ],
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_1275",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
             [
-              "PBF:SM_Clover",
-              3
+              "GLO:SM_Grass",
+              1
             ]
           ]
         },
@@ -190,7 +257,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_175",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_500",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_475",
           "scale": [
             0.7,
             1.6
@@ -200,14 +303,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              6
-            ],
-            [
-              "PBF:SM_Clover",
-              3
-            ],
             [
               "LPF:SM_Env_plant_5",
               1
@@ -325,7 +420,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_175",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_500",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_400",
           "scale": [
             0.7,
             1.6
@@ -335,14 +466,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
-              "PBF:SM_Clover",
-              4
-            ],
             [
               "SFL:SM_Flower",
               1
@@ -472,7 +595,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_175",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_500",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_400",
           "scale": [
             0.7,
             1.6
@@ -482,14 +641,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
-              "PBF:SM_Clover",
-              5
-            ],
             [
               "LPF:SM_Env_plant_2",
               1
@@ -611,7 +762,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_200",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_575",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_250",
           "scale": [
             0.7,
             1.6
@@ -621,14 +808,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              10
-            ],
-            [
-              "PBF:SM_Clover",
-              5
-            ],
             [
               "SFL:SM_Flower",
               2
@@ -726,7 +905,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis_clair",
+          "spacing": "tapis_ras_500",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_1525",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_725",
           "scale": [
             0.7,
             1.6
@@ -737,16 +952,8 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
               "SFL:SM_Wheat",
               4
-            ],
-            [
-              "PBF:SM_Clover",
-              1
             ]
           ]
         },
@@ -813,10 +1020,10 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis_clair",
+          "spacing": "tapis_ras_425",
           "scale": [
-            0.7,
-            1.6
+            2.6,
+            5.9
           ],
           "cull": [
             5000,
@@ -824,8 +1031,26 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              2
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_1275",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
             ]
           ]
         },
@@ -987,7 +1212,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis_clair",
+          "spacing": "tapis_ras_500",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_1525",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_725",
           "scale": [
             0.7,
             1.6
@@ -997,10 +1258,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              9
-            ],
             [
               "SFL:SM_Wheat",
               4
@@ -1070,7 +1327,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_175",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_525",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_375",
           "scale": [
             0.7,
             1.6
@@ -1080,14 +1373,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
-              "PBF:SM_Clover",
-              2
-            ],
             [
               "RED:SM_Plant_1",
               2
@@ -1181,7 +1466,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_175",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_525",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_375",
           "scale": [
             0.7,
             1.6
@@ -1191,14 +1512,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              6
-            ],
-            [
-              "PBF:SM_Clover",
-              4
-            ],
             [
               "GRN:SM_Flower_1",
               1
@@ -1292,10 +1605,10 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis_clair",
+          "spacing": "tapis_ras_425",
           "scale": [
-            0.7,
-            1.6
+            2.6,
+            5.9
           ],
           "cull": [
             5000,
@@ -1303,11 +1616,25 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              3
-            ],
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_1275",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
             [
-              "PBF:SM_Clover",
+              "GLO:SM_Grass",
               1
             ]
           ]
@@ -1529,7 +1856,43 @@
       "layers": [
         {
           "name": "tapis",
-          "spacing": "tapis",
+          "spacing": "tapis_ras_175",
+          "scale": [
+            2.6,
+            5.9
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "tapis_haut_525",
+          "scale": [
+            0.7,
+            1.6
+          ],
+          "cull": [
+            7500,
+            12000
+          ],
+          "meshes": [
+            [
+              "GLO:SM_Grass",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "tapis_accents",
+          "spacing": "tapis_accents_325",
           "scale": [
             0.7,
             1.6
@@ -1539,14 +1902,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              6
-            ],
-            [
-              "PBF:SM_Clover",
-              5
-            ],
             [
               "SFL:SM_Ivy_2",
               2
@@ -1619,5 +1974,8 @@
         }
       ]
     }
+  },
+  "materiaux_forces": {
+    "LPF:SM_Env_Grass_small": "/Game/Worldseed/PCG/Materials/MI_WorldseedGrassRas"
   }
 }

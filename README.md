@@ -85,13 +85,33 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install numpy scipy pillow
 ```
 
-### 3. Le matériau de terrain
+### 3. Les matériaux dérivés
 
-Dans l'éditeur : dupliquer `M_LandscapeMasterMaterial` du pack Orasot en
+Deux jeux de matériaux dérivent des packs et ne peuvent donc pas être
+versionnés. Ils se refont en quelques minutes.
+
+**Le matériau de terrain.** Dans l'éditeur : dupliquer
+`M_LandscapeMasterMaterial` du pack Orasot en
 `/Game/Worldseed/Materials/M_WorldseedLandscape`, y ajouter une dixième couche
 nommée `Snow` dans le `LandscapeLayerBlend`. L'instance
 `MI_WorldseedLandscape`, elle, est versionnée : elle porte les 18 surcharges de
 l'auteur du pack, sans lesquelles le terrain ne ressemble à rien.
+
+**Les matériaux greffés de la RVT.** Le terrain écrit sa couleur dans une
+Runtime Virtual Texture, mais seuls **38 des 142 maillages semés (27 %)**
+passent par un matériau qui la relit. Le tapis d'herbe, qui pèse 67 % des
+instances, n'en faisait pas partie : la même herbe verte était semée en savane
+comme en forêt tropicale. `rvt_graft.py` copie les matériaux concernés sous
+`/Game/Worldseed/PCG/Materials/` et y insère l'échantillonnage :
+
+```python
+import sys; sys.path.insert(0, r"<racine>/Tools/UE")
+import rvt_graft; rvt_graft.greffer()
+```
+
+Il est idempotent — relancé, il constate et ne refait rien. Mesure après
+greffe, part de vert dans une touffe du tapis : **51,4 % → 0,0 % en désert**,
+100 % en forêt tropicale dans les deux cas.
 
 ### 4. Engendrer le monde
 

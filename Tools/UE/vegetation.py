@@ -171,6 +171,40 @@ def rvt_free_materials(mesh) -> list:
     return out if needed else []
 
 
+def materiau_force(ref: str, mesh, rec: dict) -> list:
+    """Materiau impose a un maillage par `materiaux_forces` de la recette.
+
+    POURQUOI CELA EXISTE, et c'est la meme lecon que le materiau de terrain :
+    UN PACK SE CONSOMME PAR SON INSTANCE, JAMAIS PAR SON MAITRE.
+
+    `LPF:SM_Env_Grass_small` (4 triangles) et `GLO:SM_Grass` d'Orasot (360)
+    ont le MEME materiau parent, `M_Grass`, dont le graphe lit la Runtime
+    Virtual Texture du terrain pour teinter l'herbe a la couleur du sol. Et
+    pourtant seule celle d'Orasot se teinte : la teinte est allumee par les
+    SURCHARGES de l'instance -- `MI_Grass` pousse `Color Variation 1` a 10,3 et
+    `Bottom Color Power` a 1,15 -- que `MI_Grass_Inst`, livre avec le petit
+    maillage, ne porte pas.
+
+    Mesure de la bascule sur un temoin pose en plein desert, vue zenithale :
+    18,1 % de pixels verts avec `MI_Grass_Inst`, 0,0 % avec `MI_Grass`, le
+    temoin de controle restant a 16 %. Autrement dit l'herbe disparait dans le
+    sable, exactement comme le pack le prevoit.
+
+    Rend une liste vide si la recette n'impose rien pour ce maillage.
+    """
+    chemin = (rec.get("materiaux_forces") or {}).get(ref)
+    if not chemin:
+        return []
+    mat = _mat_cache.get(chemin)
+    if mat is None:
+        mat = unreal.EditorAssetLibrary.load_asset(chemin)
+        if mat is None:
+            log("ERROR", "materiau impose introuvable : {}".format(chemin))
+            return []
+        _mat_cache[chemin] = mat
+    return [mat] * len(mesh.get_editor_property("static_materials"))
+
+
 def _pin(node, out: bool = False) -> str:
     ps = node.get_editor_property("output_pins" if out else "input_pins")
     return str(ps[0].get_editor_property("properties").get_editor_property("label"))
@@ -333,8 +367,14 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             # reste boise meme quand la roche affleure entre les troncs. On leur
             # ajoute donc un second filtre, branche sur le meme noeud de
             # transformation -- PCG reunit les deux entrees.
+            # Depuis le 11 septembre 2026 le tapis est en TROIS couches --
+            # `tapis` (la petite touffe teintee par la RVT), `tapis_haut`
+            # (celle d'Orasot) et `tapis_accents` (fleurs, ble, lierre). Le
+            # test porte donc sur le PREFIXE : les trois doivent rester hors du
+            # sol mineral, pas seulement la premiere. Tester l'egalite avec
+            # "tapis" laisserait `tapis_haut` semer de l'herbe sur les eboulis.
             filtres = [filt]
-            if layer.get("name") != "tapis":
+            if not str(layer.get("name", "")).startswith("tapis"):
                 idm = biome_id + MINERAL_ID_OFFSET
                 f2, f2s = graph.add_node_of_type(unreal.PCGDensityFilterSettings)
                 f2s.set_editor_property("lower_bound", (idm - 0.5) / 255.0)
@@ -398,7 +438,9 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
                 desc.set_editor_property("cast_far_shadow", False)
                 if not layer.get("ombre", True):
                     desc.set_editor_property("affect_distance_field_lighting", False)
-                overrides = rvt_free_materials(mesh)
+                # Un materiau impose par la recette prime sur le contournement
+                # "RVT absente" : c'est un choix delibere, pas un rattrapage.
+                overrides = materiau_force(ref, mesh, rec) or rvt_free_materials(mesh)
                 if overrides:
                     desc.set_editor_property("override_materials", overrides)
                 entry.set_editor_property("descriptor", desc)

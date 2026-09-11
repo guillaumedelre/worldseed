@@ -63,8 +63,18 @@ __pycache__/
 # 444 Mo. Il s'installe separement -- voir README.md.
 Plugins/
 
-# INSTANCES DE MATERIAUX DU PACK, exclues pour deux raisons qui se cumulent :
-# elles derivent de materiaux payants, et elles sont REGENERABLES par
-# `vegetation.rvt_free_materials()`. Elles sont d'ailleurs inutilisees depuis
-# que la Runtime Virtual Texture fonctionne : plus aucun override n'est pose.
+# MATERIAUX DERIVES DU PACK, exclus pour deux raisons qui se cumulent : ils
+# DERIVENT de materiaux payants (les redistribuer violerait l'EULA), et ils sont
+# entierement REGENERABLES par script. Deux familles y vivent :
+#
+#   M_Worldseed* / MI_Worldseed*   copies GREFFEES de la Runtime Virtual
+#                                  Texture, refaites par `Tools/UE/rvt_graft.py`.
+#                                  Sans elles le tapis d'herbe reste vert en
+#                                  plein desert ; le semis les reclame via
+#                                  `materiaux_forces` des recettes.
+#   *_NoRVT                        contournement historique de `vegetation.
+#                                  rvt_free_materials()`, pose seulement quand
+#                                  aucune RVT n'est presente dans le niveau.
+#
+# Voir README.md, etape "Les materiaux derives".
 Content/Worldseed/PCG/Materials/
