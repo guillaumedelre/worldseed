@@ -1,24 +1,68 @@
-# Artefacts de compilation et caches Unreal
+# Worldseed - ce que git ne suit pas.
+#
+# PRINCIPE : ce depot suit le GENERATEUR, la CONFIGURATION et NOTRE CONTENU.
+# Il ne suit ni les caches d'Unreal, ni les sorties regenerables, ni les packs
+# achetes. Le monde entier se reconstruit depuis la graine inscrite dans
+# `Tools/WorldGen/rules/world_rules.json` -- voir README.md.
+
+# ----------------------------------------------- artefacts et caches d'Unreal
+# Regeneres a chaque compilation ou ouverture. Ne jamais versionner : ils
+# pesent ici 5,5 Go a eux seuls et changent a chaque lancement.
 Binaries/
 Intermediate/
 DerivedDataCache/
 Saved/
 .vs/
+.idea/
 *.stackdump
+*.VC.db
+*.opensdf
+*.sdf
+*.suo
 
-# Contenu binaire : bundles achetes (Orasot, UltraDynamicSky) et monde genere.
-# Exclu volontairement : ce depot suit le GENERATEUR et la configuration, pas
-# les assets, qui pesent plusieurs Go et se regenerent depuis la graine.
-Content/
+# ----------------------------------------------- contenu d'Unreal
+# On exclut tout Content/, puis on REOUVRE ce qui nous appartient.
+# L'ordre compte : une exception ne peut pas reouvrir un dossier deja exclu par
+# un motif de repertoire, d'ou `Content/*` et non `Content/`.
+Content/*
+!Content/Worldseed/
 
-# Environnement Python du generateur
+# PACKS ACHETES, exclus par licence autant que par poids (1,9 Go).
+# Les EULA de Fab et du Marketplace autorisent a integrer un pack dans un
+# PRODUIT COMPILE, pas a en redistribuer les fichiers sources. Ce depot est
+# public : les y pousser serait une redistribution.
+#   Orasot_Bundle 937 Mo · UltraDynamicSky 545 Mo · Stylized_PBR_Nature 393 Mo
+# Ils se reinstallent depuis la bibliotheque Fab du proprietaire.
+
+# DERIVE D'UN PACK, meme raison : ce materiau est une copie du maitre d'Orasot
+# (M_LandscapeMasterMaterial) augmentee d'une dixieme couche. Le README dit
+# comment le recreer en une etape.
+Content/Worldseed/Materials/M_WorldseedLandscape.uasset
+
+# ACTEURS WORLD PARTITION : 363 Mo, dont 202 pour les quatre proxies de
+# terrain. Entierement regeneres par `rebuild_world.rebuild()`.
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
+
+# ----------------------------------------------- sorties regenerables
+# Le monde produit par le generateur (2,2 Go) vit sous Saved/, deja exclu.
+# Les exports vers d'autres moteurs (1,1 Go) suivent la meme regle : on garde
+# les scripts, pas leur sortie.
+/Export/
+
+# ----------------------------------------------- outillage local
 Tools/WorldGen/.venv/
 __pycache__/
 *.pyc
+*.bak
 
-# Le plugin VibeUE possede son propre depot git.
+# ----------------------------------------------- plugins tiers
+# VibeUE possede son propre depot (github.com/kevinpbuckley/VibeUE) et pese
+# 444 Mo. Il s'installe separement -- voir README.md.
 Plugins/
 
-# Exports vers d autres moteurs : gros binaires regenerables (1,1 Go pour Godot),
-# meme raison que Content/ -- on garde les scripts, pas leur sortie.
-/Export/
+# INSTANCES DE MATERIAUX DU PACK, exclues pour deux raisons qui se cumulent :
+# elles derivent de materiaux payants, et elles sont REGENERABLES par
+# `vegetation.rvt_free_materials()`. Elles sont d'ailleurs inutilisees depuis
+# que la Runtime Virtual Texture fonctionne : plus aucun override n'est pose.
+Content/Worldseed/PCG/Materials/
