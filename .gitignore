@@ -67,14 +67,21 @@ Plugins/
 # DERIVENT de materiaux payants (les redistribuer violerait l'EULA), et ils sont
 # entierement REGENERABLES par script. Deux familles y vivent :
 #
-#   M_Worldseed* / MI_Worldseed*   copies GREFFEES de la Runtime Virtual
-#                                  Texture, refaites par `Tools/UE/rvt_graft.py`.
-#                                  Sans elles le tapis d'herbe reste vert en
-#                                  plein desert ; le semis les reclame via
-#                                  `materiaux_forces` des recettes.
+#   M_Worldseed*                   les 11 MAITRES greffes de la Runtime Virtual
+#                                  Texture, refaits par `rvt_graft.greffer()`.
+#   MI_Wsd_*                       les ~55 INSTANCES reparentees a ces maitres,
+#                                  refaites par `rvt_graft.rediriger()`. Greffer
+#                                  le maitre ne suffit pas : nos maillages
+#                                  pointent vers les instances du pack.
 #   *_NoRVT                        contournement historique de `vegetation.
 #                                  rvt_free_materials()`, pose seulement quand
 #                                  aucune RVT n'est presente dans le niveau.
 #
 # Voir README.md, etape "Les materiaux derives".
 Content/Worldseed/PCG/Materials/
+
+# TABLE DE REDIRECTION des materiaux greffes : elle ne contient que des
+# CHEMINS, mais ils designent des assets exclus ci-dessus. La versionner ferait
+# pointer un clone vers des materiaux absents. Elle se refait en une commande :
+# `rvt_graft.rediriger()`. Voir README.md.
+Tools/UE/materiaux_greffes.json

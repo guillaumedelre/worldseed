@@ -1571,3 +1571,60 @@ instances du semis en PIE par ce chemin donne 0 et ne prouve rien.
 found", seuls les services `VibeUE.*` sont la. Pour le PIE, passer par
 `unreal.LevelEditorSubsystem` : `editor_request_begin_play()` (avec un pion, donc
 une source de generation PCG) et non `editor_play_simulate()`, qui n'en cree pas.
+
+### Greffer la RVT sur les onze autres maitres (11 septembre 2026, suite)
+
+**GREFFER LE MAITRE NE SUFFIT PAS.** Nos maillages ne pointent pas vers les
+maitres du pack mais vers ses INSTANCES, qui portent textures et reglages.
+`rvt_graft.rediriger()` copie donc chaque chaine d'instances rencontree dans les
+recettes et reparente le haut de la chaine au maitre greffe : 11 maitres, mais
+**55 instances** et 191 entrees de maillage sur 216 dans le graphe PCG.
+`vegetation.overrides_greffe()` pose les overrides EMPLACEMENT PAR EMPLACEMENT,
+parce qu'un maillage a plusieurs sections peut meler un materiau greffe (les
+feuilles) et un materiau qui ne l'est pas (le tronc).
+
+**LE FONDU EN HAUTEUR N'EST PAS UN RAFFINEMENT, C'EST LA CONDITION.** Teinter un
+objet ENTIER a la couleur du sol ne vaut que pour un couvre-sol ; applique a un
+arbre, cela le peint en terre. D'ou, comme dans `MF_RVT` :
+
+    hauteur = WorldPosition.Z - RVT_Landscape_Height.WorldHeight
+    alpha   = "Teinte RVT" * saturate(1 - hauteur / "Hauteur fondu RVT")
+
+Le fondu se regle sur la TAILLE de ce que le materiau habille : 180 cm pour
+l'herbe, 200 pour un tronc, 400 pour une cime. **Un fondu trop court ne teinte
+que la base** -- mesure en savane : a 90 cm sur une herbe de 74 a 170 cm, le
+sommet du brin restait vert, tres visible de pres et invisible de loin.
+
+**`batch_connect_expressions` : une broche d'entree UNIQUE se designe par la
+chaine VIDE, pas par son nom.** `OneMinus`, `Clamp` et `ComponentMask` annoncent
+leur entree sous le nom "Input" dans `export_material_graph`, mais passer
+"Input" echoue EN SILENCE -- le retour dit "9 connexions sur 12" sans preciser
+lesquelles. Les broches nommees (`A`, `B`, `Alpha`) se passent bien par leur
+nom. Corollaire : `WorldPosition` expose deja une sortie `Z`, inutile de lui
+coller un `ComponentMask`.
+
+**Un maillage a 4 triangles ne s'agrandit pas.** `SM_Env_Grass_small` (39 cm,
+4 triangles) semblait le tapis ideal : dix fois plus leger que les 40 triangles
+de `PBF:SM_Grass`. Mis a l'echelle pour retrouver la hauteur d'un brin (2,6 a
+5,9, soit 101 a 230 cm), il ne lit plus comme une touffe mais comme un PIEU --
+deux quads croises ne survivent pas a l'agrandissement, et le proprietaire l'a
+signale immediatement : « on perd le look de l'herbe ». Ramene a sa taille
+naturelle il redevient correct mais ne couvre plus rien. **Ecarte.** La bonne
+reponse etait de greffer `M_Foliage_Master`, materiau de l'herbe d'origine :
+on garde le maillage qui a le bon aspect ET on gagne la teinte, a cout
+identique. Le tapis est donc revenu a sa forme d'une seule couche.
+
+**Hauteur de l'herbe** : echelle ramenee de 0,7-1,6 a **0,55-1,15**, soit 58 a
+122 cm pour un personnage de 180. A 74-170 cm elle arrivait a l'epaule.
+
+**NE PAS CONCLURE D'UNE SILHOUETTE VERTE QU'UNE TEINTE NE MARCHE PAS.** Une
+heure passee a soupconner la redirection parce qu'un eventail de lames vertes
+restait vert au premier plan en savane, alors que tout le reste virait au
+creme : c'etaient les PALMES d'un `SM_PalmTree_Small`, a trois metres du sol,
+donc hors du fondu -- exactement le comportement voulu. Le controle qui aurait
+du venir en premier : pousser `Teinte RVT` a 1,0 et le fondu a 100 000 cm. Ce
+qui change alors est teinte ; ce qui ne change pas ne passe pas par ce materiau.
+
+**`delete_asset` marche tant que le materiau n'a pas ete recompile ni ouvert.**
+Les 11 copies ratees se sont supprimees sans difficulte, alors que la copie
+recompilee de la veille resistait a tout. Supprimer AVANT de recompiler.

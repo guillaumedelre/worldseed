@@ -99,19 +99,35 @@ l'auteur du pack, sans lesquelles le terrain ne ressemble à rien.
 
 **Les matériaux greffés de la RVT.** Le terrain écrit sa couleur dans une
 Runtime Virtual Texture, mais seuls **38 des 142 maillages semés (27 %)**
-passent par un matériau qui la relit. Le tapis d'herbe, qui pèse 67 % des
-instances, n'en faisait pas partie : la même herbe verte était semée en savane
-comme en forêt tropicale. `rvt_graft.py` copie les matériaux concernés sous
-`/Game/Worldseed/PCG/Materials/` et y insère l'échantillonnage :
+passaient par un matériau qui la relit : la même herbe verte était semée en
+savane comme en forêt tropicale. `rvt_graft.py` copie les **11 matériaux
+maîtres** concernés sous `/Game/Worldseed/PCG/Materials/`, y insère
+l'échantillonnage, puis reparente les **~55 instances** que nos maillages
+utilisent réellement :
 
 ```python
 import sys; sys.path.insert(0, r"<racine>/Tools/UE")
-import rvt_graft; rvt_graft.greffer()
+import rvt_graft
+rvt_graft.greffer()     # les 11 maitres
+rvt_graft.rediriger()   # les instances + la table lue par le semis
 ```
 
-Il est idempotent — relancé, il constate et ne refait rien. Mesure après
-greffe, part de vert dans une touffe du tapis : **51,4 % → 0,0 % en désert**,
-100 % en forêt tropicale dans les deux cas.
+Les deux sont idempotents. **`rediriger()` n'est pas optionnel** : greffer un
+maître ne change rien tant que les maillages pointent vers les instances du
+pack. Il écrit `Tools/UE/materiaux_greffes.json`, que `vegetation.py` relit
+pour poser les redirections emplacement par emplacement — 191 entrées de
+maillage sur 216 dans le graphe PCG.
+
+La greffe mélange la couleur du sol dans la couleur de base, **dosée par un
+fondu en hauteur** : au ras du sol la plante prend le ton du terrain, au-delà
+de `Hauteur fondu RVT` centimètres elle garde le sien. C'est ce qui permet de
+teindre une touffe d'herbe sans peindre un arbre en terre. Les deux valeurs se
+règlent par matériau dans `CIBLES`, et `rvt_graft.regler()` les reporte sans
+refaire la greffe.
+
+Mesure sur le feuillage d'une savane, part de pixels verts : **24,6 % → 11,5 %**
+en portant la teinte de 0,75 à 0,85. Performance inchangée : 115 images par
+seconde, verdict PASS.
 
 ### 4. Engendrer le monde
 

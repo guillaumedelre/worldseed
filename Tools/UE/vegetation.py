@@ -171,6 +171,65 @@ def rvt_free_materials(mesh) -> list:
     return out if needed else []
 
 
+GREFFES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "materiaux_greffes.json")
+_greffes: dict | None = None
+
+
+def materiaux_greffes() -> dict:
+    """Table 'materiau du pack -> copie greffee', ecrite par `rvt_graft.rediriger()`.
+
+    Absente, elle vaut table vide : le semis retombe alors sur les materiaux du
+    pack, sans teinte par le sol. C'est un manque de rendu, pas une panne.
+    """
+    global _greffes
+    if _greffes is None:
+        try:
+            with open(GREFFES, encoding="utf-8") as f:
+                _greffes = json.load(f)
+        except (FileNotFoundError, ValueError):
+            _greffes = {}
+            log("SKIPPED", "pas de table de materiaux greffes : {}".format(GREFFES))
+    return _greffes
+
+
+def overrides_greffe(mesh) -> list:
+    """Redirige les materiaux d'un maillage vers leurs copies greffees.
+
+    EMPLACEMENT PAR EMPLACEMENT, et c'est necessaire : un maillage a plusieurs
+    sections peut meler un materiau greffe (les feuilles) et un materiau qui ne
+    l'est pas (le tronc). Un override est une LISTE alignee sur les
+    emplacements ; y mettre un seul materiau les repeindrait tous.
+
+    Rend une liste vide si aucun emplacement n'est concerne -- ne jamais poser
+    d'override inutile, il empeche le partage d'instances entre composants.
+    """
+    table = materiaux_greffes()
+    if not table:
+        return []
+    out, besoin = [], False
+    for slot in mesh.get_editor_property("static_materials"):
+        mat = slot.get_editor_property("material_interface")
+        if mat is None:
+            out.append(None)
+            continue
+        neuf = table.get(mat.get_path_name().split(".")[0])
+        if not neuf:
+            out.append(mat)
+            continue
+        copie = _mat_cache.get(neuf)
+        if copie is None:
+            copie = unreal.EditorAssetLibrary.load_asset(neuf)
+            if copie is None:
+                log("ERROR", "materiau greffe introuvable : {}".format(neuf))
+                out.append(mat)
+                continue
+            _mat_cache[neuf] = copie
+        besoin = True
+        out.append(copie)
+    return out if besoin else []
+
+
 def materiau_force(ref: str, mesh, rec: dict) -> list:
     """Materiau impose a un maillage par `materiaux_forces` de la recette.
 
@@ -438,9 +497,13 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
                 desc.set_editor_property("cast_far_shadow", False)
                 if not layer.get("ombre", True):
                     desc.set_editor_property("affect_distance_field_lighting", False)
-                # Un materiau impose par la recette prime sur le contournement
-                # "RVT absente" : c'est un choix delibere, pas un rattrapage.
-                overrides = materiau_force(ref, mesh, rec) or rvt_free_materials(mesh)
+                # Ordre de priorite : un materiau IMPOSE par la recette prime
+                # sur la redirection automatique vers les copies greffees, qui
+                # prime elle-meme sur le contournement "RVT absente". Les deux
+                # premiers sont des choix deliberes, le dernier un rattrapage.
+                overrides = (materiau_force(ref, mesh, rec)
+                             or overrides_greffe(mesh)
+                             or rvt_free_materials(mesh))
                 if overrides:
                     desc.set_editor_property("override_materials", overrides)
                 entry.set_editor_property("descriptor", desc)
