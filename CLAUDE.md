@@ -1716,3 +1716,37 @@ consecutives en PIE :
     herbe au sol (petit seul)        12,2 %
     tronc de bambou, sans vent        4,1 %
     nenuphars et eau, temoin          3,5 %
+
+### Le sable scintillait : une valeur du pack calee sur une carte de demo (11 septembre 2026)
+
+Signale : des points blancs tres marques sur le sable du desert, visibles sur
+toutes les captures. Ils ressemblaient a des paillettes lumineuses avec halo.
+
+**Ce que la recherche a etabli, dans l'ordre :**
+- en `unlit` ils DISPARAISSENT, ne laissant que de fins grains blancs : ce ne
+  sont donc pas des taches de la texture mais un phenomene d'ECLAIRAGE ;
+- `ShowFlag.Bloom 0` les supprime entierement : c'est le bloom qui transforme
+  chaque grain en pastille ;
+- **mais le bloom n'etait que le revelateur.** Ni son seuil (`bloom_threshold`,
+  essaye a 1 puis 8) ni son intensite (0,675 -> 0,15) ne traitent la cause ; ni
+  `Roughness Intensity`, ni `Uv Scale`.
+
+**LA CAUSE : `Sand UV` valait 0,495, la valeur de l'instance du pack -- calee
+pour la petite carte de demo d'Orasot. Sur nos 8 km, la texture de sable est
+etiree a un point tel que ses grains de quartz deviennent des TACHES de
+plusieurs dizaines de centimetres, que le bloom fait ensuite exploser.** Porte a
+**2,0**, le sable redevient une dune a grain fin, sans une seule etincelle a
+moyenne et longue distance. Bloom rendu a ses valeurs par defaut : inutile d'y
+toucher.
+
+**C'est le meme piege que la constante metrique en dur de `tectonics.py`, dans
+l'autre sens : une valeur d'auteur JUSTE devient fausse quand on change
+l'echelle du monde.** Le reflexe "recopier l'instance du pack" reste bon pour
+tout ce qui est couleur, force ou seuil ; il ne l'est PAS pour ce qui est une
+FREQUENCE SPATIALE -- carrelage, taille de grain, echelle de bruit. Ces
+valeurs-la se recalent sur la taille reelle du terrain.
+
+**RESTE OUVERT** : les etincelles persistent dans les dix premiers metres, la ou
+le materiau melange sans doute une texture de detail rapprochee. `Uv Scale`
+(essaye a 0,35) n'y change rien et a ete remis a la valeur de l'auteur. A
+reprendre en cherchant la chaine de detail proche dans le maitre du pack.
