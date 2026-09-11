@@ -42,6 +42,7 @@ import import_world
 import water_world
 import pcg_bench
 import vegetation
+import rvt_setup
 
 MAP = "/Game/Worldseed/Maps/L_Worldseed"
 LANDSCAPE_MATERIAL = "/Game/Worldseed/Materials/M_WorldseedLandscape"
@@ -232,6 +233,14 @@ def rebuild(out_dir: str, with_vegetation: bool = True) -> dict:
 
     eau = water_world.build(out_dir)
     log("CREATED", "eau : {} lacs, {} rivieres".format(eau["lacs"], eau["rivieres"]))
+
+    # LA RVT SE REPOSE A CHAQUE RECONSTRUCTION, ET C'EST OBLIGATOIRE.
+    # `clear()` detruit le Landscape et ses proxies ; `landscape()` les recree
+    # NEUFS, donc sans aucune texture virtuelle. Les deux volumes, eux, sont des
+    # acteurs distincts et survivent : rien ne signale le probleme, et le
+    # feuillage cesse simplement de prendre le ton du sol. Mesure apres un
+    # re-import : 2 volumes presents, 0 texture sur les 5 acteurs de terrain.
+    rvt_setup.poser()
 
     pcg_bench.import_world_biome_tiles(tiles=[TUILE], force=True)
     pcg_world_actor()

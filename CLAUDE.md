@@ -1214,3 +1214,21 @@ et latitude 47 donnaient toutes deux 60 degres a midi. Il faut poser
   produit lineaire aurait donne **+65,77** -- 19 degres d'erreur. Le manifeste
   n'ecrit donc plus `degreesPerMetre` dans ce mode : mieux vaut une cle
   manquante qu'un chiffre faux.
+
+### Une reconstruction du monde EFFACE la Runtime Virtual Texture (11 septembre 2026)
+
+`rebuild_world.clear()` detruit le Landscape et ses proxies ; `landscape()` les
+recree **NEUFS**, donc avec `runtime_virtual_textures` vide. Les deux
+`RuntimeVirtualTextureVolume`, eux, sont des acteurs distincts et survivent
+intacts. **Rien ne signale le probleme** : aucune alerte, aucun journal. Le
+feuillage cesse simplement de prendre le ton du sol, et les maillages qui
+passent par `M_Assets_MasterMat` peuvent redevenir bleu vif.
+
+Mesure apres le re-import du monde recalibre : 2 volumes presents, **0 texture
+sur les 5 acteurs de terrain**. `rvt_setup.poser()` est desormais appele par
+`rebuild_world.rebuild()`, juste apres l'import du relief.
+
+**Regle generale a en tirer** : tout reglage pose sur l'ACTEUR Landscape et non
+sur un asset est perdu a la reconstruction. Verifier apres chaque `rebuild()`
+que `runtime_virtual_textures` n'est pas vide, au meme titre que le materiau de
+terrain -- qui, lui, est deja repose par `landscape()`.
