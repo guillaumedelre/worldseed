@@ -291,5 +291,26 @@
     "writeDebugBiomeColor": true,
     "writeReport": true,
     "reportMaxPx": 1100
+  },
+  "uds": {
+    "_comment": "Branchement Ultra Dynamic Sky. Valeurs calees sur les presets LIVRES par UDS (chaque preset cite sa ville reelle et sa source weatherspark). ATTENTION ECHELLE : ce sont des unites RELATIVES (degres, pourcentages, mm de pluie, degres de latitude) - elles ne suivent PAS la division par 4 de la maquette au 1/4. Seul dominantRadiusM est metrique.",
+    "diurnalBaseC": 4.0,
+    "diurnalContinentalC": 3.0,
+    "diurnalAridC": 2.0,
+    "aridPrecipRefMm": 1000.0,
+    "cloudyFloorPct": 15.0,
+    "cloudySpanPct": 78.0,
+    "cloudyPrecipScaleMm": 60.0,
+    "snowThresholdC": 2.0,
+    "snowBandC": 4.0,
+    "itczSummerFactor": 1.8,
+    "itczWinterFactor": 0.2,
+    "mediterraneanWinterFactor": 1.5,
+    "mediterraneanSummerFactor": 0.5,
+    "mediterraneanLatMinDeg": 30.0,
+    "mediterraneanLatMaxDeg": 45.0,
+    "dustPrecipMaxMm": 250.0,
+    "gridResolution": 128,
+    "dominantRadiusM": 200.0
   }
 }
