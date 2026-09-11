@@ -327,6 +327,33 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
                 # voit pas : on l'eteint la ou l'instance commence a disparaitre.
                 desc.set_editor_property("world_position_offset_disable_distance",
                                          int(start_cull))
+
+                # ECLAIRAGE. Le semis est passe de 304 a environ 6 200 instances
+                # a l'hectare : ce qui etait negligeable a l'unite devient le
+                # premier poste de cout. Trois reglages, du moins douloureux au
+                # plus visible.
+                #
+                # ATTENTION, `FPCGSoftISMComponentDescriptor` est une struct dont
+                # `dir()` ne montre RIEN : ces champs n'existent que par leur nom
+                # (voir ISMComponentDescriptor.h). Une faute de frappe passe donc
+                # inapercue jusqu'a l'execution.
+                #
+                # 1. Les champs de distance ne servent a rien pour un brin
+                #    d'herbe et coutent a chaque instance.
+                desc.set_editor_property("affect_distance_field_lighting", False)
+                # 2. Les ombres de contact sont un trace par pixel : hors de
+                #    question a cette densite.
+                desc.set_editor_property("cast_contact_shadow", False)
+                # 3. L'ombre portee elle-meme, reglable PAR COUCHE. Le tapis
+                #    n'en projette pas : des milliers de brins projetant chacun
+                #    leur ombre dynamique coutent tres cher pour un resultat que
+                #    l'oeil ne distingue pas d'un sol simplement assombri.
+                if not layer.get("ombre", True):
+                    desc.set_editor_property("cast_shadow", False)
+                else:
+                    # Les grands elements gardent leur ombre, mais pas au loin :
+                    # la cascade d'ombres lointaines est un cout pur ici.
+                    desc.set_editor_property("cast_far_shadow", False)
                 overrides = rvt_free_materials(mesh)
                 if overrides:
                     desc.set_editor_property("override_materials", overrides)

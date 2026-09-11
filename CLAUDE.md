@@ -748,3 +748,42 @@ controles du rapport ne regarde cet ajustement** : un lac dont l'eau s'arrete a
   terrain de l'axe n'est pas la meme chose que la comparer au fond du lit.
   Echantillonner en BILINEAIRE, et le long des ARETES du polygone -- c'est entre
   deux sommets qu'un polygone grossier coupe a travers le lac.
+
+### Densite du foliage et LOD (11 septembre 2026)
+
+- **`Stylized_PBR_Nature` etait sous-employe, et mal.** 23 citations sur 171
+  (13 %), et surtout ses deux maillages les plus utiles n'etaient PAS utilises :
+  `SM_Grass` (**40 triangles**) et `SM_Bush` (**64**) -- les plus legers du
+  projet, quand le buisson equivalent d'Orasot en fait **1308**, soit vingt fois
+  plus pour le meme role au sol. Les 14 `FoliageType` livres par le pack sont
+  ignores, ce qui est normal pour PCG (il passe par des descripteurs ISM), mais
+  les reglages de l'auteur sont alors a recopier a la main.
+- **La densite ne se lit pas dans le graphe PCG mais dans les PAS DE GRILLE.**
+  La couche la plus fine etait a 600 cm, soit **304 instances a l'hectare** : le
+  sol se voyait partout entre les plantes. Une couche `tapis` a 150 cm et un
+  sous-bois resserre a 250 cm portent une foret a **6 201/ha** (x16). Les biomes
+  NUS gardent volontairement le pas large -- un desert dense n'est plus un
+  desert (desert chaud 315/ha, roche nue 284/ha, inchanges).
+- **Le groupe de LOD nomme `Foliage` NE GENERE AUCUN LOD.** Sa definition dans
+  `BaseEngine.ini` est `NumLODs=1` : il suppose des LOD faits a la main. Le
+  choisir pour du feuillage est exactement le mauvais reflexe. Les groupes qui
+  reduisent sont `SmallProp`, `LargeProp`, `Deco` (4 crans, 50 % de triangles
+  par cran) et `HighDetail` (6 crans). Mesure sur `SM_Common_Tree_01` en
+  `LargeProp` : 1798 -> 899 -> 450 -> 225 triangles.
+  `Tools/UE/foliage_lods.py` pose le groupe sur les maillages de plus de 400
+  triangles qui n'en ont pas -- **42 maillages sur 141**, sans toucher a ceux qui
+  ont deja des LOD faits a la main, ni aux petits, pour lesquels le levier est la
+  distance de coupe et non le LOD.
+- **`FPCGSoftISMComponentDescriptor` est une struct dont `dir()` ne montre
+  RIEN.** Ses champs n'existent que par leur nom exact (voir
+  `ISMComponentDescriptor.h`) : `cast_shadow`, `cast_contact_shadow`,
+  `affect_distance_field_lighting`, `cast_far_shadow`,
+  `world_position_offset_disable_distance`. Une faute de frappe passe inapercue
+  jusqu'a l'execution. A forte densite, couper les champs de distance et les
+  ombres de contact partout, et l'ombre portee sur le tapis (`"ombre": false`
+  dans la recette).
+- **Verifier une densite en mesurant, pas a l'oeil.** Apres x16 :
+  `PerformanceService.frame_timing()` donne 114-120 FPS, borne RENDER THREAD a
+  8,8 ms pour un budget de 16,67, verdict PASS. C'est le nombre d'objets dessines
+  qui limite, pas le GPU (6,6 ms) : les leviers utiles sont donc les distances de
+  coupe et les LOD, pas la resolution d'ecran.
