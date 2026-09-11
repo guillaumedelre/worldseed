@@ -623,6 +623,73 @@ quelque chose :
 Ce que cette regle ne change pas : pas de bavardage, pas de repetition, pas de
 flatterie. Etre pedagogue, c'est etre clair, pas etre long.
 
+## A bis. Convention de commit : Conventional Commits
+
+**Regle posee par le proprietaire le 11 septembre 2026.** Tout commit de ce
+depot suit la specification Conventional Commits 1.0.0.
+
+```
+<type>(<portee>): <description>
+
+<corps : le POURQUOI et la MESURE>
+
+<pied : references, co-auteurs>
+```
+
+**La ligne de sujet** : type obligatoire, portee recommandee, description a
+l'imperatif, en minuscules, sans point final, 72 caracteres au plus. Elle doit
+completer la phrase « ce commit va... ».
+
+| type | quand l'employer |
+|---|---|
+| `feat` | une capacite nouvelle : un outil, une etape de la chaine, un acteur |
+| `fix` | un defaut corrige, y compris une valeur de reglage fausse |
+| `perf` | le rendu ou la generation vont plus vite, a resultat egal |
+| `refactor` | le comportement ne change pas, la structure si |
+| `docs` | README, CLAUDE.md, atlas, commentaires de regles |
+| `build` | dependances, .gitignore, .gitattributes, Git LFS, configuration du moteur |
+| `chore` | menage, suppression d'assets perimes, outillage annexe |
+| `test` | controles et diagnostics |
+| `revert` | annulation d'un commit precedent |
+
+**Portees usuelles du projet** : `worldgen`, `climate`, `tectonics`, `erosion`,
+`hydrology`, `biomes`, `surfaces`, `export` cote generateur ; `landscape`,
+`water`, `pcg`, `vegetation`, `uds`, `rvt`, `material` cote editeur ; `rules`
+pour `world_rules.json`, `docs`, `git`.
+
+**LE POINT D'EXCLAMATION A UN SENS PRECIS ICI.** Dans un projet de rendu, la
+rupture n'est pas une signature d'API : c'est **un changement qui oblige a
+refaire quelque chose de long**. On marque donc `type(portee)!:` et on ajoute un
+pied `BREAKING CHANGE:` des qu'un commit :
+
+- force a **regenerer le monde** (toute regle qui entre dans le climat avant les
+  precipitations, dans la tectonique ou dans l'erosion) ;
+- force a **reimporter dans l'editeur** (relief, couches peintes, carte des
+  biomes, recettes de vegetation) ;
+- change le **format d'un fichier echange** entre le generateur et l'editeur
+  (`manifest.json`, `uds_climate.json`, les tuiles).
+
+Le pied doit dire quoi relancer. Exemple :
+
+```
+fix(climate)!: ancrer la pluie sur la moyenne et non sur la mediane
+
+715 mm est la MOYENNE terrestre, pas la mediane, et la distribution des pluies
+est tres dissymetrique. Le monde etait 70 % trop humide -- moyenne mesuree
+1217 mm -- et portait 23,7 % de ses terres au-dessus de 2000 mm quand la Terre
+en a 7 a 8. Consequence visible : trop de forets, pas assez de prairies.
+
+BREAKING CHANGE: le monde doit etre regenere, puis re-tuile et reimporte.
+Relancer `python -m worldgen`, `tile_world.py`, puis `rebuild_world.rebuild()`.
+```
+
+**CE QUE LA CONVENTION NE CHANGE PAS, ET QUI COMPTE PLUS QU'ELLE.** Elle
+normalise la ligne de sujet ; elle n'autorise pas a raccourcir le corps. Les
+messages de ce depot expliquent le POURQUOI et citent la MESURE qui a tranche,
+y compris les pistes essayees puis rejetees pour qu'on ne les retente pas.
+C'est la partie qui a de la valeur six mois plus tard : un sujet bien forme au
+dessus d'un corps vide est une regression, pas un progres.
+
 ## B. Pieges rencontres au passage du monde a 8 km (11 septembre 2026)
 
 *(Note : la section 11 plus haut est DANS le bloc regenere par
