@@ -895,3 +895,11 @@ d'herbe emis par le materiau (en plus du semis PCG) :
   0, donc elle ne retranche rien : ce n'est PAS le coupable ;
 - mettre les six `ConstAlpha` a 0 n'a eu aucun effet visible. Essai annule, les
   valeurs de l'auteur ont ete remises.
+
+**DECISION DU PROPRIETAIRE DU PROJET, 11 septembre 2026 : on n'y touche pas.**
+Cette porte fermee est un CHOIX de l'auteur du pack, pas un defaut. Le tapis
+d'herbe du monde vient du semis PCG, qui remplit ce role et se regle depuis
+`vegetation_recipes.json`. Ne pas rouvrir `LandscapeGrassOutput`, ne pas
+retoucher les `ConstAlpha`, et ne pas rendre les poids peints plus purs pour
+franchir le `Floor` : cela changerait le rendu du terrain entier pour un gain
+que le PCG apporte deja.
