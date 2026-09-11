@@ -15,7 +15,9 @@
     "detailFrequency": 160.0,
     "detailCoastFadeStartM": -5.0,
     "detailCoastFadeFullM": 10.0,
-    "_comment_echelle": "MONDE DE 8 KM, MAQUETTE AU 1/4 DE L'ANCIEN MONDE DE 32 KM. Regle de mise a l'echelle, a respecter pour tout nouveau reglage : ce qui est RELATIF ne change pas (frequences en cycles par monde, distances en pixels de simulation, seuils normalises par centile, angles, degres de latitude, temperatures, millimetres de pluie) ; ce qui est METRIQUE se divise par 4 (altitudes, largeurs, rayons en km) ; ce qui est une AIRE ou un DEBIT se divise par 16. simResolution reste a 2049, ce qui garde le climat et le reseau hydrographique identiques en forme : la carte est la meme, en reduction. Deux exceptions assumees, decidees par le proprietaire du projet : le gradient adiabatique est MULTIPLIE par 4 pour que l'altitude garde son role climatique sur un relief quatre fois plus bas, et hydrology.geometryExaggeration est multipliee par 16 pour que les rivieres gardent leur largeur reelle en metres -- l'echelle humaine, elle, ne retrecit pas avec le monde."
+    "_comment_echelle": "MONDE DE 8 KM, MAQUETTE AU 1/4 DE L'ANCIEN MONDE DE 32 KM. Regle de mise a l'echelle, a respecter pour tout nouveau reglage : ce qui est RELATIF ne change pas (frequences en cycles par monde, distances en pixels de simulation, seuils normalises par centile, angles, degres de latitude, temperatures, millimetres de pluie) ; ce qui est METRIQUE se divise par 4 (altitudes, largeurs, rayons en km) ; ce qui est une AIRE ou un DEBIT se divise par 16. simResolution reste a 2049, ce qui garde le climat et le reseau hydrographique identiques en forme : la carte est la meme, en reduction. Deux exceptions assumees, decidees par le proprietaire du projet : le gradient adiabatique est MULTIPLIE par 4 pour que l'altitude garde son role climatique sur un relief quatre fois plus bas, et hydrology.geometryExaggeration est multipliee par 16 pour que les rivieres gardent leur largeur reelle en metres -- l'echelle humaine, elle, ne retrecit pas avec le monde.",
+    "detailLakeFadeM": 60.0,
+    "detailRiverFadeM": 30.0
   },
   "tectonics": {
     "plateCount": 18,
@@ -118,7 +120,17 @@
     "maxPointsPerRiver": 120,
     "riparianCells": 2,
     "runoffCoefficient": 0.35,
-    "maxPointSpacingM": 40.0
+    "maxPointSpacingM": 40.0,
+    "_comment_trait_de_cote": "TRAIT DE COTE DES LACS. Le contour est trace sur le relief de SORTIE (celui qu'Unreal affiche, detail fractal compris), puis accroche a la berge. POURQUOI : l'ancien contour triait les cellules de bord PAR ANGLE autour du centre, ce qui ne marche que pour une forme en etoile ; des qu'un lac a un bras ou une baie, le polygone zigzaguait a travers le lac. Mesure sur la graine 20260909 : 42 a 69 % du perimetre surplombait un sol situe plus d'un metre SOUS la surface, avec des murs d'eau verticaux jusqu'a 26 m. Apres correction : 1,5 a 5,8 %, mur maximal 4 a 7 m et uniquement sur les deversoirs, ou une chute est physiquement normale. shorelineSearchCells borne la recherche autour de la cuvette : au-dela, la zone inondee descend l'exutoire et emporte une langue d'eau dans la vallee aval. shorelineBankStepsCells et shorelineBankMarginM font grandir le polygone vers la berge UNIQUEMENT par des cellules au-dessus de l'eau ; une marge trop large le fait fuir par les cols (mesure : 20 m de marge fait remonter le defaut de 5 a 27 %). shorelineSnapCells est la distance maximale dont un point est tire jusqu'a la berge.",
+    "shorelineSearchCells": 8,
+    "shorelineBankStepsCells": 2,
+    "shorelineBankMarginM": 2.0,
+    "shorelineSnapCells": 8,
+    "maxPointsPerLake": 300,
+    "riverSmoothPoints": 1,
+    "_comment_lit_des_rivieres": "Le lit des rivieres est echantillonne sur le relief de SORTIE (celui qu'Unreal affiche), pas sur celui de la simulation : le detail fractal est ajoute APRES l'hydrologie, et un lit cale sur la simulation se retrouve tantot enterre, tantot suspendu. Mesure sur la graine 20260909 avant correction, sur 1226 noeuds : 46,4 % enterres de plus d'un metre (jusqu'a -21,7 m) et 22,8 % flottants de plus d'un metre (jusqu'a +8,2 m, soit un mur d'eau). La vraie cause est en amont : le detail deposait jusqu'a 21 m de bosses dans le fond de vallee, au point qu'un cours d'eau REMONTAIT de 18,8 m en cumule (mediane), un quart de sa descente. C'est world.detailRiverFadeM qui l'efface le long du couloir. riverSmoothPoints (1 = desactive) etait une moyenne glissante le long du cours : ABANDONNEE, car sur une cascade elle etale la marche et suspend l'eau dans le vide -- mesure, un cours d'eau descendant 224 m en 451 m voyait son lit flotter a +70 m. La decroissance monotone vers l'aval, elle, reste imposee.",
+    "riverMaxRisePerPointM": 0.5,
+    "riverMaxSinkM": 1.0
   },
   "biomes": {
     "treeLineTempC": 4.0,

@@ -696,3 +696,55 @@ section 11 gagnerait a etre deplacee ici un jour.)*
   rendu. `unreal.ViewportService.get_viewport_info()` donne l'etat ;
   `set_viewport_layout("OnePane")` + `set_viewport_type("perspective")` +
   `set_view_mode("lit")` remettent les choses en place.
+
+### L'eau et le relief final : quatre defauts, une seule cause (11 septembre 2026)
+
+**La cause commune.** Les lacs et les rivieres sont calcules a la resolution de
+SIMULATION. Unreal, lui, affiche le relief de SORTIE, qui recoit jusqu'a
+`world.detailAmplitudeM` de detail fractal APRES l'hydrologie. Les deux reliefs
+divergent donc exactement de l'amplitude du detail, et toute geometrie d'eau
+calee sur le premier flotte ou s'enterre dans le second. **Aucun des seize
+controles du rapport ne regarde cet ajustement** : un lac dont l'eau s'arrete a
+20 m de la berge les passe tous. D'ou `Tools/WorldGen/diag_eau.py`.
+
+- **Le contour des lacs etait trie PAR ANGLE autour du centre de gravite.** Cela
+  ne marche que pour une forme en etoile : des qu'un lac a un bras ou une baie,
+  un meme rayon coupe le bord plusieurs fois, le tri entremele les points proches
+  et lointains, et le polygone zigzague a travers le lac. Signature chiffree : un
+  perimetre de 5359 m pour un lac de 66 ha, la ou un disque en ferait 2900.
+  Mesure : **42 a 69 % du perimetre surplombait un sol situe plus d'un metre sous
+  la surface**, avec des murs verticaux jusqu'a 26 m. Remplace par un suivi de
+  contour (marching squares) puis un accrochage de chaque point a la berge
+  (`hydrology.lake_shoreline`). Apres : 0,3 a 3,5 %, p95 sous 0,5 m.
+- **Ne jamais tronquer une polyligne par `linspace`.** C'est ce que faisait la
+  decimation a 64 points : elle jette des sommets au hasard et coupe des baies en
+  deux. Douglas-Peucker a tolerance croissante garde les points qui portent la
+  forme (`hydrology._reduire`).
+- **Le fondu du detail ne connaissait que le niveau ZERO.** Un lac perche a 136 m
+  recevait donc le bruit a pleine amplitude : son isoligne de niveau etait brisee
+  en **179 morceaux**. Corrige par `export.lake_level_field`, qui donne a chaque
+  cellule le niveau d'eau LOCAL ; le fondu se fait sur `big - niveau`.
+- **Le detail bosselait le fond des vallees.** Sur le relief final, un cours d'eau
+  REMONTAIT de 18,8 m en cumule (mediane), un quart de sa descente totale, pour
+  une amplitude de detail de 21,25 m -- le rapport est la preuve. Comme la surface
+  d'eau est forcee a decroitre, chaque bosse enterrait tout le troncon aval :
+  46,4 % des noeuds sous terre, jusqu'a 21,7 m, et 22,8 % suspendus au-dessus du
+  vide. Corrige par `export.river_corridor_damping` (le detail s'efface dans le
+  couloir de la riviere) plus un profil borne des deux cotes : la surface ne
+  remonte pas de plus de `riverMaxRisePerPointM` et ne passe pas plus de
+  `riverMaxSinkM` sous le sol. Apres : **0 % suspendu, enterrement plafonne a
+  1,00 m**.
+
+**Deux pieges de methode, payes comptant :**
+
+- **Une moyenne glissante ne franchit pas une marche.** Premier remede essaye sur
+  le lit des rivieres : sur une cascade descendant 224 m en 451 m, elle a etale la
+  falaise sur 200 m et suspendu l'eau a **+70 m** dans le vide. Abandonnee
+  (`riverSmoothPoints` = 1). La bonne reponse etait en amont : ne pas deposer le
+  bruit dans la vallee.
+- **Mesurer le mur au bon endroit.** Echantillonner le terrain SUR le contour d'un
+  masque donne une valeur fausse : le trait passe entre deux cellules et l'arrondi
+  tombe une fois sur deux dans l'eau. Et pour une riviere, comparer l'eau au
+  terrain de l'axe n'est pas la meme chose que la comparer au fond du lit.
+  Echantillonner en BILINEAIRE, et le long des ARETES du polygone -- c'est entre
+  deux sommets qu'un polygone grossier coupe a travers le lac.

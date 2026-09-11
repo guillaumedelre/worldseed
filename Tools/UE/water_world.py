@@ -153,7 +153,15 @@ def ocean(manifest: dict):
 
 
 def lakes(out_dir: str) -> list:
-    """Un WaterBodyLake par lac, sa spline suivant le contour de la cuvette."""
+    """Un WaterBodyLake par lac, sa spline suivant le TRAIT DE COTE.
+
+    Le contour vient de `lakes.json`, ou il est trace par le generateur sur le
+    relief de SORTIE puis accroche a la berge (`hydrology.lake_shoreline`). Il
+    compte donc quelques centaines de points, la ou l'ancien en avait 64 ranges
+    par angle autour du centre -- un polygone qui zigzaguait a travers le lac et
+    laissait l'eau se terminer en mur vertical sur 42 a 69 % de son perimetre.
+    Ne pas le decimer ici : chaque point porte un morceau de rivage.
+    """
     donnees = _charge_json(out_dir, "lakes.json")["lakes"]
     faits = []
     for i, lac in enumerate(donnees):

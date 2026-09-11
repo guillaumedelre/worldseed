@@ -262,9 +262,35 @@ def run(
     _log(verbose, "surfaces : {} couches".format(weights_layers.shape[2]), started)
 
     # 9. export ----------------------------------------------------------------
+    # Le relief de SORTIE est calcule ICI et non plus a l'ecriture : le trait de
+    # cote des lacs doit etre trace sur le relief que voit Unreal, detail fractal
+    # compris. Calcule avant le detail, il ne tombe plus sur la ligne de rivage
+    # et l'eau se termine en mur vertical au-dessus du sol.
+    # Le niveau d'eau local (0 en mer, le niveau propre a chaque lac dans sa
+    # cuvette) dit au detail fractal ou s'effacer : sans lui, un lac perche a
+    # 136 m recoit le bruit a pleine amplitude et ses berges se herissent.
+    niveau_eau = export_mod.lake_level_field(
+        lakes, biome.lake_mask, geo, geo_out,
+        portee_m=float(rules.get("world.detailLakeFadeM", 60.0)))
+    # Meme raison pour les rivieres : le detail depose des bosses dans le fond
+    # de vallee que l'ecoulement vient de creuser, et comme la surface d'eau doit
+    # decroitre vers l'aval, chaque bosse enterre tout le troncon qui suit.
+    amorti = export_mod.river_corridor_damping(
+        biome.river_mask, geo, geo_out,
+        portee_m=float(rules.get("world.detailRiverFadeM", 30.0)))
+    big_dem = export_mod.upsample_heightmap(dem, geo_out.n, rules,
+                                            water_level=niveau_eau,
+                                            detail_damp=amorti)
+    del niveau_eau, amorti
+    _log(verbose, "relief de sortie {0}x{0} : detail fractal ajoute, efface au bord de l'eau".format(
+        geo_out.n), started)
+
     rivers_json = export_mod.rivers_to_json(rivers, dem, geo,
-                                            precip_mm=clim.precip_mm)
-    lakes_json = export_mod.lakes_to_json(lakes, geo)
+                                            precip_mm=clim.precip_mm,
+                                            geo_out=geo_out, dem_out=big_dem, hyd=hyd)
+    lakes_json = export_mod.lakes_to_json(
+        lakes, geo, geo_out=geo_out, dem_out=big_dem,
+        lake_mask=biome.lake_mask, hyd=hyd)
     zonal = _zonal_profile(geo, dem, clim.temp_mean_c, clim.precip_mm)
 
     land = dem > 0.0
@@ -306,7 +332,8 @@ def run(
 
     if write_outputs:
         _write_all(rules, geo, geo_out, out_dir, dem, clim, biome,
-                   weights_layers, rivers_json, lakes_json, manifest, verbose, started)
+                   weights_layers, rivers_json, lakes_json, manifest, verbose, started,
+                   big_dem=big_dem)
         report_mod.write(report_path, rules, geo, dem, clim.temp_mean_c,
                          clim.precip_mm, biome.index, rivers_json, lakes_json, stats)
         _log(verbose, "rapport ecrit : {}".format(report_path), started)
@@ -322,10 +349,12 @@ def run(
 
 
 def _write_all(rules, geo, geo_out, out_dir, dem, clim, biome, weights_layers,
-               rivers_json, lakes_json, manifest, verbose, started) -> None:
+               rivers_json, lakes_json, manifest, verbose, started,
+               big_dem=None) -> None:
     out_n = geo_out.n
 
-    big_dem = export_mod.upsample_heightmap(dem, out_n, rules)
+    if big_dem is None:
+        big_dem = export_mod.upsample_heightmap(dem, out_n, rules)
     export_mod.write_heightmap_png(
         big_dem, out_dir / "height_16bit.png",
         float(rules.get("world.minElevationM")), float(rules.get("world.maxElevationM")),

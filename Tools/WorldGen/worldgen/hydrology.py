@@ -50,6 +50,10 @@ class Lake:
     area_ha: float = 0.0
     surface_m: float = 0.0
     centroid_px: tuple[float, float] = (0.0, 0.0)
+    # Point INTERIEUR sur, pour amorcer un remplissage : la cellule la plus
+    # profonde. Le centre de gravite, lui, tombe hors du lac des que la cuvette
+    # est en croissant ou en fer a cheval.
+    seed_px: tuple[int, int] = (0, 0)
     bbox_px: tuple[int, int, int, int] = (0, 0, 0, 0)
     outline_px: list[tuple[float, float]] = field(default_factory=list)
 
@@ -748,12 +752,15 @@ def extract_lakes(flow: FlowState, dem: np.ndarray, geo, hyd: dict) -> list[Lake
         sub = labels[sl] == lab
         surface = float(np.median(flow.filled_m[sl][sub]))
         cj, ci = ndimage.center_of_mass(sub)
+        prof = np.where(sub, flow.lake_depth_m[sl], -np.inf)
+        dj, di = np.unravel_index(int(np.argmax(prof)), prof.shape)
         lakes.append(
             Lake(
                 cells=int(sub.sum()),
                 area_ha=float(sub.sum()) * cell_ha,
                 surface_m=surface,
                 centroid_px=(float(cj) + sl[0].start, float(ci) + sl[1].start),
+                seed_px=(int(dj) + sl[0].start, int(di) + sl[1].start),
                 bbox_px=(sl[0].start, sl[1].start, sl[0].stop, sl[1].stop),
                 outline_px=_outline(sub, sl[0].start, sl[1].start),
             )
@@ -815,18 +822,147 @@ def _simplify(
     return [tuple(p) for p in arr[keep]]
 
 
+def _reduire(poly: np.ndarray, max_points: int, tol0: float = 0.5) -> np.ndarray:
+    """Douglas-Peucker a tolerance CROISSANTE jusqu'a tenir dans le quota.
+
+    Ne jamais tronquer une polyligne par `linspace` : cela jette des sommets au
+    hasard et peut couper une baie en deux. Douglas-Peucker, lui, garde les
+    points qui portent la forme et supprime ceux qui ne disent rien.
+    """
+    from skimage import measure
+    if len(poly) <= max_points:
+        return poly
+    tol = tol0
+    for _ in range(40):
+        p = measure.approximate_polygon(poly, tolerance=tol)
+        if len(p) <= max_points:
+            return p
+        tol *= 1.3
+    return p
+
+
 def _outline(mask: np.ndarray, off_j: int, off_i: int, max_points: int = 64) -> list[tuple[float, float]]:
-    """Contour grossier d'un lac, suffisant pour dimensionner un WaterBodyLake."""
-    eroded = ndimage.binary_erosion(mask, border_value=0)
-    border = mask & ~eroded
-    js, iss = np.nonzero(border)
-    if js.size == 0:
-        js, iss = np.nonzero(mask)
+    """Contour ORDONNE de la cuvette, a la resolution de simulation.
+
+    POURQUOI PAS LA VERSION PRECEDENTE. Elle prenait les cellules de bord et les
+    triait PAR ANGLE autour du centre de gravite. Cela ne marche que pour une
+    forme en etoile : des qu'un lac a un bras ou une baie, un meme rayon coupe le
+    bord plusieurs fois, le tri entremele les points proches et lointains, et le
+    polygone zigzague a travers le lac. Mesure sur la graine 20260909 : un
+    perimetre de 5359 m pour un lac de 66 ha (un disque en ferait 2900), et
+    42 a 69 % du trace passant au-dessus d'une eau plus profonde que la surface
+    -- c'est-a-dire un MUR D'EAU vertical vu depuis la berge.
+
+    Le suivi de contour (marching squares) rend une polyligne fermee, ordonnee et
+    sans croisement, quelle que soit la forme.
+    """
+    from skimage import measure
+    if not mask.any():
+        return []
+    # Le pad d'une cellule ferme les contours des cuvettes qui touchent le bord
+    # de la fenetre ; on le retire ensuite des coordonnees.
+    champ = np.pad(mask.astype(np.float32), 1)
+    contours = measure.find_contours(champ, 0.5)
+    if not contours:
+        return []
+    c = max(contours, key=len) - 1.0
+    c = _reduire(c, max_points)
+    return [(float(r + off_j), float(i + off_i)) for r, i in c]
+
+
+def lake_shoreline(
+    dem_out: np.ndarray,
+    basin_out: np.ndarray,
+    seed_rc: tuple[int, int],
+    surface_m: float,
+    hyd: dict,
+) -> list[tuple[float, float]]:
+    """Trait de cote d'un lac, trace SUR LE RELIEF FINAL et accroche a la berge.
+
+    POURQUOI SUR LE RELIEF FINAL. La cuvette est calculee a la resolution de
+    simulation, mais Unreal affiche le relief de SORTIE, qui a recu du detail
+    fractal (jusqu'a `world.detailAmplitudeM`). Un trait de cote calcule avant le
+    detail ne tombe plus sur la ligne d'eau apres.
+
+    QUATRE ETAPES, chacune payee par une mesure :
+
+    1. La region inondee est la composante de `dem <= surface` qui contient la
+       graine, BORNEE au voisinage de la cuvette. Sans cette borne, la region
+       descend l'exutoire et emporte une langue d'eau dans la vallee aval.
+    2. Les ilots emerges que le detail fractal a fait apparaitre sont noyes
+       (`binary_fill_holes`), sinon le contour eclate en dizaines de morceaux :
+       179 contours mesures pour un seul lac.
+    3. La region grandit vers la BERGE, c'est-a-dire uniquement vers les cellules
+       AU-DESSUS du niveau de l'eau. A l'exutoire, l'aval est plus bas : la
+       croissance s'y arrete d'elle-meme, comme elle doit. Une dilatation
+       uniforme, elle, etire l'eau par-dessus la cascade.
+    4. Chaque point du contour encore sous l'eau est TIRE jusqu'a la cellule de
+       berge la plus proche, au niveau exact de la surface. La ou aucune berge
+       n'existe a portee, c'est un vrai deversoir et le point reste.
+
+    Mesure sur la graine 20260909, part du perimetre surplombant le sol de plus
+    d'un metre : 42-69 % avant, 1,5-5,8 % apres ; pire mur 26 m avant, 4-7 m
+    apres, et uniquement sur les deversoirs.
+    """
+    from skimage import measure
+
+    n = dem_out.shape[0]
+    marches = int(hyd.get("shorelineBankStepsCells", 2))
+    marge = float(hyd.get("shorelineBankMarginM", 2.0))
+    rayon = int(hyd.get("shorelineSnapCells", 8))
+    voisinage = int(hyd.get("shorelineSearchCells", 8))
+    max_points = int(hyd.get("maxPointsPerLake", 300))
+
+    # Fenetre de travail : la cuvette elargie, pour ne pas balayer tout le monde.
+    js, iss = np.nonzero(basin_out)
     if js.size == 0:
         return []
-    cj, ci = js.mean(), iss.mean()
-    ang = np.arctan2(js - cj, iss - ci)
-    keep = np.argsort(ang)
-    if keep.size > max_points:
-        keep = keep[np.linspace(0, keep.size - 1, max_points).astype(int)]
-    return [(float(js[k] + off_j), float(iss[k] + off_i)) for k in keep]
+    marge_px = voisinage + marches + rayon + 4
+    r0 = max(0, int(js.min()) - marge_px); r1 = min(n, int(js.max()) + marge_px + 1)
+    c0 = max(0, int(iss.min()) - marge_px); c1 = min(n, int(iss.max()) + marge_px + 1)
+    dem = dem_out[r0:r1, c0:c1]
+    cuv = basin_out[r0:r1, c0:c1]
+    sr, sc = int(seed_rc[0]) - r0, int(seed_rc[1]) - c0
+
+    # 1. region inondee, bornee au voisinage de la cuvette
+    zone = ndimage.binary_dilation(cuv, iterations=voisinage)
+    etiq, _ = ndimage.label(zone & (dem <= np.float32(surface_m)))
+    e = 0
+    if 0 <= sr < etiq.shape[0] and 0 <= sc < etiq.shape[1]:
+        e = int(etiq[sr, sc])
+    if e == 0:
+        v = etiq[cuv]
+        v = v[v > 0]
+        if v.size == 0:
+            return []
+        e = int(np.bincount(v).argmax())
+    region = ndimage.binary_fill_holes(etiq == e)          # 2. ilots noyes
+
+    # 3. croissance vers la berge seulement
+    berge = (dem >= np.float32(surface_m - 0.01)) & (dem <= np.float32(surface_m + marge))
+    for _ in range(marches):
+        region = region | (ndimage.binary_dilation(region, iterations=1) & berge)
+    region = ndimage.binary_fill_holes(region)
+
+    contours = measure.find_contours(np.pad(region.astype(np.float32), 1), 0.5)
+    if not contours:
+        return []
+    trace = max(contours, key=len) - 1.0
+
+    # 4. accrochage a la berge
+    sous = dem < np.float32(surface_m)
+    dist, idx = ndimage.distance_transform_edt(sous, return_indices=True)
+    h, w = dem.shape
+    for k, (rr, cc) in enumerate(trace):
+        ri = int(np.clip(round(rr), 0, h - 1))
+        ci = int(np.clip(round(cc), 0, w - 1))
+        if sous[ri, ci] and dist[ri, ci] <= rayon:
+            trace[k] = (idx[0][ri, ci], idx[1][ri, ci])
+    # L'accrochage empile des points sur la meme cellule : Douglas-Peucker s'y
+    # perdrait. On retire les doublons consecutifs.
+    garde = np.ones(len(trace), dtype=bool)
+    if len(trace) > 1:
+        garde[1:] = np.hypot(*(np.diff(trace, axis=0).T)) > 1e-6
+    trace = _reduire(trace[garde], max_points)
+
+    return [(float(r + r0), float(c + c0)) for r, c in trace]

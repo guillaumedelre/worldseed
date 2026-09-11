@@ -59,6 +59,8 @@ sortie 4065², soit **1,97 m/pixel**.
 | `Tools/WorldGen/metrics.py` | relevé et **diff** de non-régression |
 | `Tools/WorldGen/diag_hydro.py` | banc de diagnostic hydrologique, sans resimuler |
 | `Tools/WorldGen/diag_climat.py` | idem pour les précipitations |
+| `Tools/WorldGen/diag_eau.py` | **l'eau colle-t-elle au relief que voit Unreal ?** (murs d'eau, rivières enterrées) |
+| `Tools/WorldGen/spawn_point.py` | choisit le point d'apparition sur des critères mesurés |
 | `Tools/WorldGen/tile_world.py` | découpe la sortie en tuiles importables (**une seule** à 8 km ; le nombre est déduit de la résolution) |
 | `Tools/WorldGen/tune_coast.py` | banc de réglage de la forme du littoral |
 | `Tools/UE/rebuild_world.py` | **la chaîne complète côté Unreal** : vider, relief, matériau, eau, biomes, végétation, apparition |
@@ -198,7 +200,17 @@ print(rebuild_world.rebuild(r"D:\UE\Worldseed\Saved\WorldGen\20260909"))
   Tout est rejouable par `Tools/UE/water_world.py`.
   - **Le rideau d'eau au bord des lacs s'est beaucoup amélioré tout seul** : la zone
     passe de 8,3 à **2,08 m par texel**, et la plage de hauteurs d'eau de 0–545 m à
-    0–129 m. Soit environ 17 fois moins de marche à franchir par texel.
+    0–136 m. Soit environ 17 fois moins de marche à franchir par texel.
+  - **Et le mur d'eau proprement dit a été corrigé à la source** (11 sept. 2026).
+    Le contour des lacs était trié *par angle autour du centre* : sur un lac qui
+    n'est pas en étoile, le polygone zigzague à travers l'eau. Mesure : **42 à
+    69 % du périmètre** surplombait un sol situé plus d'un mètre sous la surface,
+    murs jusqu'à 26 m. Le contour est désormais tracé par suivi de contour sur le
+    relief **de sortie** puis accroché à la berge → **0,3 à 3,5 %**, p95 sous
+    0,5 m, le reste tombant sur les déversoirs, où une chute est normale.
+    Les rivières souffraient du même défaut (46,4 % enterrées, 22,8 % suspendues)
+    → **0 % suspendues, enterrement plafonné à 1,00 m**.
+    Contrôle : `python diag_eau.py`.
 - **Végétation PCG** : 1 `PCGVolume` `Worldseed_Vegetation_x0_y0`, graphe de 104 nœuds
   et 32 couches, en **génération à l'exécution**. Vérifié en PIE : les acteurs de
   partition sont dépilés d'un pool transitoire, rien n'est écrit sur le disque.
