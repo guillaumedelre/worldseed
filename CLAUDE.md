@@ -810,3 +810,50 @@ controles du rapport ne regarde cet ajustement** : un lac dont l'eau s'arrete a
   et ment : lire `HardwareInformation.qwMemorySize` dans le registre). Pool porte
   a 4000 Mo dans `Config/DefaultEngine.ini`. Prend effet sans redemarrer :
   `r.Streaming.PoolSize 4000` en console.
+
+### Un pack de terrain se consomme par son INSTANCE, jamais par son maitre (11 septembre 2026)
+
+**Le defaut le plus couteux de la session, et le plus banal.** Le materiau du
+Landscape, `M_WorldseedLandscape`, avait ete obtenu en dupliquant le MAITRE du
+pack Orasot (`M_LandscapeMasterMaterial`) pour y ajouter une 10e couche `Snow`.
+Il portait donc les valeurs PAR DEFAUT du maitre. Or la demo du pack n'utilise
+jamais le maitre : elle utilise `MI_LandscapeMasterMaterial`, une **instance**
+qui surcharge **14 scalaires et 4 textures**. Ces valeurs SONT le rendu du pack ;
+le maitre seul ne ressemble a rien.
+
+Ecarts mesures entre notre defaut et l'instance de l'auteur :
+
+| parametre | notre defaut | instance du pack | effet |
+|---|---|---|---|
+| `Uv Scale` | 0,200 | **0,112** | carrelage du sol, textures delavees |
+| `Boost` | **0,0** | **579,9** | densite de l'herbe de Landscape |
+| `Sand UV` | 0,200 | 0,495 | carrelage du sable |
+| `Slope Vertex Offset` | **0,0** | 0,168 | seuil d'apparition de la roche |
+| `Slope Vertex Hardness` | 1,0 | 0,5005 | durete de la transition vers la roche |
+| `Noise Offset` | 0,0 | 0,176 | bruit de variation |
+
+Avec `Slope Offset = 0` et `Hardness = 1`, la roche pale envahissait presque tout
+le relief -- d'ou un monde blanchatre qu'on prenait pour de la neige alors que la
+couche `Snow` valait 0 partout. **Le reflexe qui sauve : avant d'accuser les
+poids peints, comparer les parametres de son materiau avec l'INSTANCE livree par
+le pack** (`MaterialInstanceConstant.scalar_parameter_values`).
+
+Corrige en creant `MI_WorldseedLandscape`, instance de notre maitre, dans
+laquelle les 18 surcharges de l'auteur ont ete recopiees telles quelles.
+
+**Deux autres reglages venaient de la demo, pas du materiau :**
+
+- **Il n'y avait AUCUN `PostProcessVolume`.** La demo du pack en a un, INFINI
+  (`unbound`), avec l'auto-exposition **verrouillee** : `auto_exposure_min_brightness`
+  et `max_brightness` tous deux a **-1,0**, bias 0. Sans lui, l'auto-exposition
+  histogramme court librement, s'adapte au ciel et delave tout le sol. C'est ce
+  qui donnait a toutes les captures leur aspect surexpose et bleuatre. La fiche
+  Fab du pack le dit d'ailleurs en premiere ligne.
+- **SkyLight a 1,0 au lieu de 3,0.** Le soleil, lui, etait deja bon (5,0 lux
+  contre 4,99 dans la demo) : inutile de le toucher.
+
+**Ce qui reste ouvert : l'herbe de Landscape.** 16 composants d'herbe existent
+sur les proxies et produisent **0 instance**. Les cinq entrees de
+`LandscapeGrassOutput` sont des chaines `Add`/`Subtract` : quand le terme
+soustrait depasse le premier, le resultat est negatif et rien ne pousse. C'est la
+chirurgie de graphe signalee au §5.1 de ETAT_DES_LIEUX, toujours a arbitrer.
