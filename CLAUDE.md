@@ -1185,3 +1185,32 @@ arbres, detruit la taiga ici (0,1 a 6 % des terres contre 10 attendus). Notre
 amplitude a 60 degres plafonne a 30 C contre 38 sur Terre meme apres correction,
 donc "le mois le plus chaud" reste trop froid pour que ce critere morde. Ne pas
 le retenter sans avoir d'abord rapproche l'amplitude du reel.
+
+### UDS : le soleil ignore la latitude tant que `Simulate Real Sun` est a False (11 septembre 2026)
+
+`Ultra_Dynamic_Sky.Latitude` ne sert A RIEN par defaut. UDS trace alors un arc
+solaire simplifie, dont l'elevation de midi vaut `90 - Sun Pitch` (30 par
+defaut, donc 60 degres), IDENTIQUE a toutes les latitudes. Mesure : latitude 0
+et latitude 47 donnaient toutes deux 60 degres a midi. Il faut poser
+**`Simulate Real Sun = True`**, apres quoi le soleil devient exact :
+
+    latitude  5 deg -> 87,1 deg a midi   (attendu 87,2)
+    latitude 47 deg -> 45,4 deg          (attendu 45,2)
+    latitude 85 deg ->  7,6 deg          (attendu  7,2)
+
+- **PIEGE DE MESURE : UDS met le soleil a jour sur son TICK d'editeur, pas au
+  moment ou l'on ecrit la propriete.** Ecrire `Time of Day` puis lire la rotation
+  du composant `Sun` DANS LE MEME SCRIPT rend l'etat PRECEDENT. Il faut ecrire
+  dans un appel et lire dans le suivant, et le viewport doit etre en temps reel
+  (`ViewportService.set_realtime(True)`). Premiere serie de mesures entierement
+  faussee par ce decalage.
+- **NE PAS enchainer `editor_request_end_play()` et un chargement d'asset dans
+  le meme script** : la fermeture du PIE est asynchrone, et `load_asset` rend
+  None pendant la transition. Symptome trompeur : 31 assets d'un coup declares
+  introuvables, alors que `does_asset_exist` les voit tous a l'appel suivant.
+- **La latitude n'est plus proportionnelle a Y** depuis le passage a la carte
+  equivalente-aire : `lat = degres(asin(Y / demiEtendue))`. Au point
+  d'apparition (Y = 292 323 cm), la bonne valeur est **+46,95 deg** la ou un
+  produit lineaire aurait donne **+65,77** -- 19 degres d'erreur. Le manifeste
+  n'ecrit donc plus `degreesPerMetre` dans ce mode : mieux vaut une cle
+  manquante qu'un chiffre faux.
