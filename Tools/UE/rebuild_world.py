@@ -45,7 +45,14 @@ import vegetation
 import rvt_setup
 
 MAP = "/Game/Worldseed/Maps/L_Worldseed"
-LANDSCAPE_MATERIAL = "/Game/Worldseed/Materials/M_WorldseedLandscape"
+# L'INSTANCE, PAS LE MAITRE. Un pack de terrain se consomme par son instance :
+# la demo d'Orasot surcharge 14 scalaires et 4 textures, et ces valeurs SONT le
+# rendu du pack. Mesure du 11 septembre 2026 : 10 des 14 scalaires different
+# entre les deux -- Uv Scale 0,200 contre 0,112 (carrelage et textures delavees),
+# Boost 0,0 contre 579,9 (densite de l'herbe de Landscape), Slope Vertex Offset
+# 0,0 contre 0,168 (la roche pale envahit les versants). Ce fichier assignait le
+# MAITRE, donc chaque reconstruction annulait la correction.
+LANDSCAPE_MATERIAL = "/Game/Worldseed/Materials/MI_WorldseedLandscape"
 TUILE = "x0_y0"
 
 _log: list[str] = []

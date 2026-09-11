@@ -37,7 +37,9 @@ Content/*
 # DERIVE D'UN PACK, meme raison : ce materiau est une copie du maitre d'Orasot
 # (M_LandscapeMasterMaterial) augmentee d'une dixieme couche. Le README dit
 # comment le recreer en une etape.
-Content/Worldseed/Materials/M_WorldseedLandscape.uasset
+# Le motif couvre AUSSI les sauvegardes et variantes (_SauvegardeAvantDLWE,
+# _Essai...) : ce sont autant de copies du graphe du pack.
+Content/Worldseed/Materials/M_WorldseedLandscape*.uasset
 
 # ACTEURS WORLD PARTITION : 363 Mo, dont 202 pour les quatre proxies de
 # terrain. Entierement regeneres par `rebuild_world.rebuild()`.

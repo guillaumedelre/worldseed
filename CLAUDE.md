@@ -1422,3 +1422,64 @@ verifiee sur une image a 19 h, pas sur la transition en mouvement.
 **Rappel de methode** : cette exposition ne se juge qu'en PIE. Le viewport de
 l'editeur a la sienne (`exposure_ev100` dans `ViewportService.get_viewport_info()`)
 et rend la meme scene sombre ou delavee sans rapport avec le jeu.
+
+### Le terrain utilisait le MAITRE et non l'INSTANCE (11 septembre 2026)
+
+**Regression silencieuse, presente depuis le re-import.** `rebuild_world.py`
+assignait `M_WorldseedLandscape` -- le MAITRE -- alors que le rendu du pack tient
+dans son INSTANCE. Mesure : **10 des 14 scalaires different** entre les deux.
+
+| parametre            | maitre (utilise) | instance (voulu) | effet                          |
+|----------------------|------------------|------------------|--------------------------------|
+| `Uv Scale`           | 0,200            | **0,112**        | carrelage, textures delavees   |
+| `Boost`              | **0,0**          | **579,9**        | densite de l'herbe de Landscape|
+| `Slope Vertex Offset`| **0,0**          | 0,168            | la roche envahit les versants  |
+| `Sand UV`            | 0,200            | 0,495            | carrelage du sable             |
+
+Le defaut avait deja ete trouve et corrige une fois, en creant l'instance -- mais
+la CONSTANTE du script de reconstruction n'avait pas suivi, donc **chaque
+reconstruction annulait la correction**. Corrige a la source :
+`LANDSCAPE_MATERIAL` pointe desormais sur `MI_WorldseedLandscape`.
+
+**Regle : corriger un asset ne suffit pas si un script en assigne un autre.**
+Apres toute correction de materiau, verifier ce que le script de reconstruction
+assigne reellement.
+
+### DLWE_V3 : insere et compile, mais ne produit PAS encore de neige
+
+Etat au 11 septembre 2026, a reprendre. Ce qui est fait et verifie :
+
+- `M_WorldseedLandscape` est en `use_material_attributes = True`, donc
+  l'insertion est bien UN seul noeud : le `MakeMaterialAttributes` final -- celui
+  en (2048, -128), le seul dont la sortie n'alimente aucune autre expression --
+  entre dans `Dynamic_Landscape_Weather_Effects_V3`, dont la sortie
+  `Material Attributes` va a `MP_MATERIAL_ATTRIBUTES`.
+  Il y a **six** `MakeMaterialAttributes` dans ce materiau, un par couche : ne
+  pas prendre le premier venu, prendre celui qui ne nourrit rien.
+- **Deux entrees de la fonction sont OBLIGATOIRES** et n'ont pas de defaut :
+  `Apply Snow/Dust` et `Apply Wetness/Puddles`. Sans elles, le materiau ne
+  compile pas -- « Missing function input ». Il faut y brancher un
+  `MaterialExpressionStaticBool` a `true` (statique : cout nul a l'execution).
+- Le materiau compile : 2301 expressions, 95 echantillons de texture.
+
+**CE QUI NE MARCHE PAS ENCORE** : `Material Snow Coverage` force a 1,0 sur UDW
+ne produit aucun changement visible, meme apres avoir appele
+`Check for Material Refresh`, `Instant Weather Change Updates` et
+`Update Current Global And Local Weather State`. Trois tentatives, arretees la.
+
+Pistes non explorees, dans l'ordre :
+1. Le readme du pack, auquel la description de la fonction renvoie explicitement
+   (« See the readme for more information about setting this up »). Il est dans
+   `UDS_Readme_Entries`, dont `list_variables` ne rend rien -- le contenu est
+   probablement dans le graphe. **AUCUN materiau du pack n'utilise DLWE_V3**, il
+   n'y a donc pas d'exemple a copier.
+2. `Snow Color and Alpha` a pour defaut **(0, 0, 0, 1)**, soit du NOIR. A
+   verifier : c'est peut-etre une convention signifiant « prendre la couleur
+   d'UDW », ou un vrai noir qui rend la neige invisible.
+3. La collection de parametres `UltraDynamicWeather_Parameters` porte
+   `Dust or Snow`, `Snowy`, `DLWE_Snow Depth`. Lire ces valeurs en PIE dirait si
+   UDW pousse reellement l'etat vers les materiaux. `KismetMaterialLibrary`
+   n'existe pas en Python ; passer par un autre chemin.
+
+Une sauvegarde du materiau d'avant insertion existe :
+`M_WorldseedLandscape_SauvegardeAvantDLWE` (exclue du depot, comme l'original).
