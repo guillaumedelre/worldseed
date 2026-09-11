@@ -1389,3 +1389,36 @@ Lire 64,6 et croire a un bug alors que c'est 18,1 C fait perdre du temps.
 l'instance** : `set_editor_property` sur l'acteur pose echoue avec « cannot be
 edited on instances ». Passer par le defaut de CLASSE
 (`set_variable_default_value`).
+
+### Exposition : le reglage du pack et un cycle jour/nuit sont incompatibles (11 septembre 2026)
+
+Arbitrage tranche a l'image, six captures au meme endroit et au meme cadrage.
+
+|                              | midi                          | 22 h 30                 |
+|------------------------------|-------------------------------|-------------------------|
+| exposition VERROUILLEE (pack)| riche, contrastee             | **quasi noire, injouable** |
+| UDS, biais a 0               | claire, un peu delavee        | trop claire, pas une nuit |
+| **UDS + biais regles**       | **plus riche, lisible**       | **nuit credible et jouable** |
+
+L'exposition verrouillee du pack Orasot n'est pas « meilleure » : elle est
+**incompatible avec un soleil qui bouge**. Une exposition fixe ne peut pas
+couvrir les quatorze diaphragmes qui separent midi de minuit. Le pack la
+verrouillait parce que son soleil ne bougeait jamais.
+
+**LA SOLUTION N'ETAIT PAS DE CHOISIR ENTRE LES DEUX.** UDS expose un
+`Exposure Bias` PAR MOMENT DE LA JOURNEE -- Day, Dawn/Dusk, Night, Cloudy,
+Foggy -- et ils etaient **tous a 0**, c'est-a-dire jamais regles. C'est la que
+se recupere la richesse du pack sans perdre le cycle. Retenu :
+
+    Exposure Bias Day        -0,6
+    Exposure Bias Dawn/Dusk  -1,2
+    Exposure Bias Night      -2,0
+
+**Ne PAS laisser Dawn/Dusk a 0 quand les deux autres sont negatifs** : la valeur
+bondirait de -0,6 a 0 puis a -2,0 en quelques minutes de jeu, ce qui se verrait
+comme un flash au crepuscule. La valeur intermediaire est calculee, pas mesuree ;
+verifiee sur une image a 19 h, pas sur la transition en mouvement.
+
+**Rappel de methode** : cette exposition ne se juge qu'en PIE. Le viewport de
+l'editeur a la sienne (`exposure_ev100` dans `ViewportService.get_viewport_info()`)
+et rend la meme scene sombre ou delavee sans rapport avec le jeu.
