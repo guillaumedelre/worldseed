@@ -2199,3 +2199,56 @@ un écart connu et **assumé**, pas un oubli. Les pistes écartées le même jou
 pour mémoire : baisser `sky_distance_threshold` (on perdrait aussi le rebond
 chaud légitime d'un désert), et basculer sur le `Cubemap Sky Light` (on perdrait
 tout rebond de couleur, partout).
+
+### Il neige vraiment — mais une fois sur quarante-trois (12 septembre 2026)
+
+Vérification demandée : la chaîne biome → préréglage → météo → neige au sol
+produit-elle réellement de la neige, sans qu'on force `Snow` à la main ?
+
+**OUI, ET C'EST PROUVÉ DE BOUT EN BOUT.** En PIE, joueur posé en toundra boréale
+(monde −92913 / 344882, **latitude +59,57°**, biome 4), saison forcée à l'hiver :
+le préréglage de toundra s'applique (cartes de probabilités à 7 types), le
+tirage sort `Snow`, l'état global prend **`Snow` 6,0 / `Cloud` 8,5 / `Fog` 5,0**
+— c'est-à-dire les valeurs du préréglage — et le sol se couvre.
+
+**MAIS LA PROBABILITÉ EST DÉRISOIRE.** Carte d'hiver de la toundra, mesurée :
+
+    Clear_Skies 31,8 %   Overcast 25,4 %   Partly_Cloudy 24,6 %   Cloudy 15,9 %
+    Snow_Light   2,2 %   Snow      0,1 %   Foggy          0,1 %
+
+**2,3 % de neige par tirage.** À un tirage toutes les 200 à 300 s, il faut en
+moyenne **43 tirages, soit deux heures et demie à trois heures et demie de jeu**,
+pour voir un seul épisode neigeux — en toundra, en plein hiver. Autant dire
+jamais.
+
+**LA CAUSE EST LA SÉCHERESSE POLAIRE, et c'est un argument nouveau pour la
+corriger.** Le préréglage de toundra ne porte que **22,2 mm** de neige en hiver,
+parce que notre bande 60-70° reçoit 170 mm/an contre ~500 sur Terre. On savait
+que ce manque coûtait des parts de biomes ; on sait maintenant qu'il rend aussi
+**la neige météorologique quasi impossible**, donc tout le travail DLWE
+inopérant en pratique.
+
+**LE PIÈGE DE MESURE, ET IL EST BEAU : la toundra est DÉJÀ blanche.** Le
+générateur y peint la couche `Snow`, donc une capture montrant un sol blanc ne
+prouve RIEN sur la neige météo. Le témoin qui discrimine est la part de
+**plaques brunes** qui affleurent : **6,8 % avant, 0,0 % après**, plus les
+flocons qui tombent et le ciel qui se bouche. Toujours choisir un témoin que le
+traitement fait VARIER.
+
+**Ordre des saisons, mesuré et non devine** : `Season` 0 = **printemps**, 1 été,
+2 automne, **3 hiver**. Le témoin lisible est `Season Debug` (FString, rend
+« Early Spring », « Mid Winter »...) ; `Get Season` rend le couple (double, enum).
+Pour forcer une saison, passer `Season Mode` de `USE_UDS_DATE` à
+`MANUAL_SETTING`.
+
+**APPELER `Clear and Restart` DEPUIS PYTHON NE SUFFIT PAS.** Il pose bien la
+cible du tirage, mais laisse `Current Lerp Alpha` à 1,0 : le système croit la
+transition finie et n'applique jamais l'état. Mesure : cible `Snow` pendant 64 s
+alors que la transition dure 26 s, et `Global Weather State.Snow` toujours à 0.
+Il faut enchaîner `Instant Weather Change Updates` puis
+`Update Current Global And Local Weather State`. **La preuve que c'est bien le
+système qui applique, et non notre écriture** : on demande `Snow = 8,0` et on
+relit **6,0**, la valeur du préréglage.
+
+Tout le test est resté confiné au PIE : l'acteur du niveau a gardé son
+`Season Mode`, sa saison et sa carte d'hiver, et aucune carte n'a été salie.
