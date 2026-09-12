@@ -2099,3 +2099,51 @@ pôle sud : biome 3, météo retirée au sort en `Clear_Skies` et **minuteur rem
 aucun préréglage n'existe. Le `Cast` échoue, la chaîne s'arrête, et la météo du
 dernier biome terrestre persiste. C'est un comportement acceptable ; le corriger
 demanderait une branche « biome maritime » et un préréglage océanique.
+
+### L'océan ne faisait que 512 m de côté sur un monde de 8 km (12 septembre 2026)
+
+Signalé : « je ne vois plus l'eau, est-ce que je ne suis pas au bon endroit ? ».
+La réponse était non — l'océan était bien là, mais **rendu seulement dans un carré
+de 512 m autour de l'origine**.
+
+**LA CAUSE.** Un `WaterBodyOcean` neuf arrive avec `OceanExtents` = 51 200 cm.
+C'est cette propriété, et elle seule, qui décide de l'emprise du maillage d'eau.
+`water_world.ocean()` posait l'acteur sans jamais y toucher, avec une docstring
+qui affirmait « il remplit la WaterZone tout seul ». C'était faux. La `WaterZone`
+faisait bien 8,5 km, l'océan 0,512.
+
+**POURQUOI ÇA NE SE VOIT PAS.** Le `WaterMeshComponent` porte un
+`far_distance_mesh_extent` de **40 km** avec le matériau `Water_FarMesh` : de
+loin, l'horizon est couvert d'eau et tout paraît normal. Ce n'est qu'en arrivant
+au rivage qu'on trouve du sable là où il devrait y avoir deux mètres d'eau.
+
+**ET LE PLUGIN MENT DE BONNE FOI.**
+`WaterBodyOceanComponent.get_water_surface_info_at_location` répondait
+« surface à Z = 0, profondeur 241 cm » à l'endroit exact où l'image montrait du
+sable sec. **La surface LOGIQUE était juste, c'est le MAILLAGE qui manquait.**
+Interroger le plugin ne suffit donc pas : il faut regarder l'image. Le contrôle
+qui tranche est une vue zénithale au-dessus d'un point dont on a vérifié par
+`line_trace_single` que le sol est sous zéro.
+
+**CE N'EST PAS LA SPLINE, contrairement à ce qu'on croit spontanément.** La
+spline d'un océan dessine **l'ÎLE** — le trou dans l'eau — et non son contour :
+`WaterBodyOceanComponent.cpp:223` construit `IslandBounds` à partir de ses
+sommets, puis `AddAABBQuadToDynamicMesh` remplit les huit quads autour d'elle.
+Notre spline est restée au carré de 200 m par défaut, et c'est sans conséquence.
+J'ai perdu quelques appels à la soupçonner.
+
+**LE CORRECTIF EST CELUI DU MOTEUR.**
+`UWaterBodyOceanComponent::FillWaterZoneWithOcean()`
+(`WaterBodyOceanComponent.cpp:110`) fait exactement
+`OceanExtents = WaterZone->GetZoneExtent()`. La méthode n'est ni `UFUNCTION` ni
+exposée à Python : on pose la propriété directement. D'où
+`water_world.emprise_ocean()`, appelée après `zone()` — l'ordre compte, la zone
+doit d'abord avoir été élargie à la taille du monde.
+
+`water_world.verify()` rend désormais `oceanKm` et `oceanCouvreLaZone`.
+
+**Piège de méthode à retenir** : la caméra de l'éditeur était à Z = −122 cm, donc
+*sous* le niveau de la mer, et le sol dessous à −241. Avant de chercher un défaut,
+lire la position de la caméra : `ViewportService.get_viewport_info()` donne
+`location`, `rotation` et `is_realtime`. Ce jour-là `is_realtime` était à False —
+séquelle de la recette anti-crash des collections de paramètres, jamais rallumée.

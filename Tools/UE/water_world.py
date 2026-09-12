@@ -135,7 +135,11 @@ def zone(manifest: dict, resolution: int = ZONE_RESOLUTION):
 
 
 def ocean(manifest: dict):
-    """L'ocean, a l'altitude zero. Il remplit la WaterZone tout seul."""
+    """L'ocean, a l'altitude zero.
+
+    IL NE REMPLIT PAS LA ZONE TOUT SEUL -- voir `emprise_ocean()`, a appeler
+    APRES `zone()`.
+    """
     existant = _par_label(OCEAN_LABEL)
     if existant is not None:
         log("SKIPPED", "{} deja present".format(OCEAN_LABEL))
@@ -147,6 +151,54 @@ def ocean(manifest: dict):
     _sans_relief(a)
     log("CREATED", "{} a Z = 0".format(OCEAN_LABEL))
     return a
+
+
+def emprise_ocean():
+    """Cale l'emprise de l'ocean sur la WaterZone. A appeler APRES `zone()`.
+
+    LE DEFAUT QUE CECI CORRIGE, ET IL ETAIT INVISIBLE. Un `WaterBodyOcean`
+    neuf arrive avec `OceanExtents` = 51 200 cm, soit **512 m de cote**
+    (`WaterBodyOceanComponent.cpp:41` pose la valeur voisine
+    `CollisionExtents` a 50 000). Sur notre monde de 8 km, l'ocean n'etait donc
+    rendu que dans un carre de 512 m autour de l'origine. Partout ailleurs --
+    c'est-a-dire presque partout -- **le sol sous le niveau de la mer restait
+    sec**, sans le moindre avertissement.
+
+    CE QUI REND LE DEFAUT SI DIFFICILE A VOIR : le `WaterMeshComponent` porte
+    un `far_distance_mesh_extent` de 40 km avec le materiau `Water_FarMesh`.
+    De loin, l'horizon est donc couvert d'eau et tout parait normal ; ce n'est
+    qu'en arrivant au rivage qu'on trouve du sable la ou il devrait y avoir
+    deux metres d'eau. Et le plugin ment de bonne foi si on l'interroge :
+    `get_water_surface_info_at_location` repondait « surface a Z = 0,
+    profondeur 241 cm » a un endroit ou l'image montrait du sable sec. La
+    surface LOGIQUE etait juste, c'est le MAILLAGE qui manquait.
+
+    CE N'EST PAS LA SPLINE. On croit volontiers que la spline d'un ocean
+    dessine son contour ; elle dessine **l'ILE**, c'est-a-dire le trou dans
+    l'eau (`WaterBodyOceanComponent.cpp:223`, `IslandBounds`). La laisser a son
+    carre de 200 m par defaut est donc sans consequence.
+
+    Le moteur fait exactement ce que fait cette fonction, dans
+    `UWaterBodyOceanComponent::FillWaterZoneWithOcean()`
+    (`WaterBodyOceanComponent.cpp:110` : `OceanExtents = WaterZone->GetZoneExtent()`),
+    mais cette methode n'est ni `UFUNCTION` ni exposee a Python : on pose la
+    propriete directement.
+    """
+    o = _par_label(OCEAN_LABEL)
+    zones = [a for a in _acteurs().get_all_level_actors() if isinstance(a, unreal.WaterZone)]
+    if o is None or not zones:
+        log("ERROR", "emprise_ocean : ocean ou WaterZone absent")
+        return None
+    ext = zones[0].get_editor_property("zone_extent")
+    comp = o.get_editor_property("water_body_component")
+    avant = comp.get_editor_property("ocean_extents")
+    if abs(avant.x - ext.x) < 1.0 and abs(avant.y - ext.y) < 1.0:
+        log("SKIPPED", "l'ocean couvre deja la zone ({:.2f} km)".format(ext.x / 100000.0))
+        return o
+    comp.set_editor_property("ocean_extents", unreal.Vector2D(ext.x, ext.y))
+    log("MODIFIED", "emprise de l'ocean {:.2f} -> {:.2f} km de cote".format(
+        avant.x / 100000.0, ext.x / 100000.0))
+    return o
 
 
 # ------------------------------------------------------------------------ lacs
@@ -251,6 +303,8 @@ def build(out_dir: str, resolution: int = ZONE_RESOLUTION) -> dict:
     # L'ocean D'ABORD : c'est lui qui fait apparaitre la WaterZone.
     ocean(manifest)
     zone(manifest, resolution)
+    # ... et son emprise APRES, une fois la zone elargie a la taille du monde.
+    emprise_ocean()
     lacs = lakes(out_dir)
     rivs = rivers(out_dir)
     return {"lacs": len(lacs), "rivieres": len(rivs), "log": list(_log)}
@@ -278,4 +332,12 @@ def verify() -> dict:
         res["zoneKm"] = round(float(ext.x) / 100000.0, 3)
         res["zoneTexels"] = int(r.x)
         res["metresParTexel"] = round(float(ext.x) / 100.0 / max(int(r.x), 1), 3)
+        # Le controle qui manquait : un ocean trop petit ne se voit pas de loin,
+        # le far mesh donnant le change jusqu'a 40 km. Voir `emprise_ocean()`.
+        o = _par_label(OCEAN_LABEL)
+        if o is not None:
+            oe = o.get_editor_property("water_body_component").get_editor_property(
+                "ocean_extents")
+            res["oceanKm"] = round(float(oe.x) / 100000.0, 3)
+            res["oceanCouvreLaZone"] = abs(float(oe.x) - float(ext.x)) < 1.0
     return res
