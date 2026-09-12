@@ -1,183 +1,315 @@
 # Worldseed — état des lieux et suite
 
-Document de reprise, écrit le 9 septembre 2026 à la fin d'une longue session.
-À lire en entier avant de toucher quoi que ce soit.
+Document de reprise, **réécrit le 12 septembre 2026**. Il remplace la version du
+9 septembre, dont plusieurs affirmations étaient devenues *fausses* et non
+seulement incomplètes — elles sont listées au §8 pour que personne ne reparte
+dessus.
 
-Le guide technique du plugin et les pièges déjà rencontrés vivent dans `CLAUDE.md`,
-notamment sa **section 11**, qui est la mémoire des erreurs à ne pas refaire. Ce
-document-ci ne la répète pas : il décrit **où en est le projet** et **ce qui reste**.
+Trois documents, trois rôles, et il ne faut pas les confondre :
+
+- **`CLAUDE.md`** est la mémoire des **pièges** et des impasses, accumulée session
+  après session, avec la mesure qui a tranché. À lire avant de toucher au moteur.
+- **Ce document-ci** dit **où en est le projet** et **ce qui reste**. Il ne répète
+  pas les pièges, il y renvoie.
+- **`README.md`** dit comment reconstituer le projet depuis un clone.
 
 ---
 
 ## 1. De quoi il s'agit
 
-Un monde procédural pour un RPG sous Unreal Engine 5.8. Deux moitiés bien séparées :
+Un monde procédural pour un RPG sous Unreal Engine 5.8, en deux moitiés bien
+séparées :
 
-- **Le générateur**, en Python, dans `Tools/WorldGen/`. Il ne connaît pas Unreal et
-  n'écrit que des PNG et des JSON. Chaîne : tectonique → climat → érosion → climat
-  (2ᵉ passe) → hydrologie → biomes → surfaces → export.
-- **L'import**, dans `Tools/UE/import_world.py`, exécuté *depuis* l'éditeur, qui
-  consomme ces fichiers.
+- **Le générateur**, en Python pur, dans `Tools/WorldGen/`. Il ne connaît pas
+  Unreal et n'écrit que des PNG et des JSON. Chaîne : tectonique → climat →
+  érosion → climat (2ᵉ passe) → hydrologie → biomes → surfaces → export.
+- **L'éditeur**, dans `Tools/UE/`, exécuté *depuis* Unreal, qui consomme ces
+  fichiers et construit le niveau.
 
-Le monde est entièrement déterminé par `Tools/WorldGen/rules/world_rules.json` et la
-graine. Même graine + mêmes règles = même monde, au bit près.
+Le monde est entièrement déterminé par `Tools/WorldGen/rules/world_rules.json` et
+la graine. Même graine + mêmes règles = même monde, au bit près.
 
 **Paramètres de référence** : graine 20260909, **8 km de côté**, simulation 2049²,
 sortie 4065², soit **1,97 m/pixel**.
 
-> **11 septembre 2026 — le monde est passé de 32 km à 8 km.** C'est une *maquette
-> au 1/4* : même graine, même carte, en réduction. Le générateur étant presque
-> entièrement exprimé en unités relatives (fréquences en cycles par monde,
-> distances en pixels de simulation, seuils normalisés par centile), il a suffi
-> de diviser par 4 ce qui est **métrique** et par 16 ce qui est une **aire** ou un
-> **débit**. La règle complète vit dans `world._comment_echelle`, et le diff de
-> `metrics.py` entre les deux mondes le confirme : forêt tempérée humide 12,71 %
-> → 12,65 % des terres, roche nue 12,48 % → 11,91 %, Stone dominant 31,6 % →
-> 29,9 %.
->
-> Deux exceptions **assumées**, décidées par le propriétaire du projet :
-> `temperature.lapseRateCPerKm` est **multiplié** par 4 (6,5 → 26 °C/km) pour que
-> l'altitude garde son rôle climatique sur un relief quatre fois plus bas, et
-> `hydrology.geometryExaggeration` est multipliée par 16 (500 → 8000) pour que
-> les rivières gardent leur largeur réelle — l'échelle humaine, elle, ne
-> rétrécit pas avec le monde. Mesure : 36,1 m de large avant, 37,0 m après.
->
-> Conséquence heureuse : **4065² = 256 composants**, soit un Landscape unique.
-> Le tuilage 2×2 imposé par le plafond D3D12 disparaît, et avec lui les
-> 4 textures de biomes et les listes de tuiles du PCG.
->
-> L'ancien monde de 32 km est conservé sous `Saved/WorldGen/20260909_32km`.
+**Le monde est une maquette au 1/4** d'un ancien monde de 32 km. Ce qui est
+*relatif* ne change pas (angles, degrés de latitude, températures, millimètres de
+pluie, fréquences en cycles par monde) ; ce qui est *métrique* se divise par 4 ;
+ce qui est une *aire* ou un *débit* se divise par 16. La règle vit dans
+`world._comment_echelle`, et **toute nouvelle valeur doit la respecter**.
+
+Deux exceptions assumées, décidées par le propriétaire : `lapseRateCPerKm` est
+**multiplié** par 4 (6,5 → 26 °C/km) pour que l'altitude garde son rôle climatique
+sur un relief quatre fois plus bas, et `geometryExaggeration` est multipliée par 16
+(500 → 8000) pour que les rivières gardent leur largeur réelle — l'échelle humaine,
+elle, ne rétrécit pas avec le monde.
+
+Conséquence heureuse de la réduction : **4065² = 256 composants**, soit un
+Landscape **unique**. Le tuilage 2×2 imposé par le plafond D3D12 a disparu.
 
 ---
 
 ## 2. Où sont les choses
 
-| Chemin | Contenu |
-|---|---|
-| `Tools/WorldGen/worldgen/` | le générateur, un module par étape |
-| `Tools/WorldGen/rules/world_rules.json` | **toutes** les règles ; aucun seuil n'est en dur dans le code |
-| `Tools/WorldGen/metrics.py` | relevé et **diff** de non-régression |
-| `Tools/WorldGen/diag_hydro.py` | banc de diagnostic hydrologique, sans resimuler |
-| `Tools/WorldGen/diag_climat.py` | idem pour les précipitations |
-| `Tools/WorldGen/diag_eau.py` | **l'eau colle-t-elle au relief que voit Unreal ?** (murs d'eau, rivières enterrées) |
-| `Tools/WorldGen/spawn_point.py` | choisit le point d'apparition sur des critères mesurés |
-| `Tools/WorldGen/tile_world.py` | découpe la sortie en tuiles importables (**une seule** à 8 km ; le nombre est déduit de la résolution) |
-| `Tools/WorldGen/tune_coast.py` | banc de réglage de la forme du littoral |
-| `Tools/UE/rebuild_world.py` | **la chaîne complète côté Unreal** : vider, relief, matériau, eau, biomes, végétation, apparition |
-| `Tools/UE/import_world.py` | import du Landscape (ne pose PAS le matériau) |
-| `Tools/UE/water_world.py` | océan, lacs et rivières à partir de `lakes.json` / `rivers.json` |
-| `Saved/WorldGen/20260909/` | la sortie courante (PNG, JSON, rapport HTML) |
-| `Saved/WorldGen/20260909_32km/` | l'ancien monde de 32 km, conservé pour comparaison |
-| `Saved/WorldGen/releves/` | relevés figés : `reference.json`, `final.json` |
-| `Saved/VibeUE/Captures/` | captures d'écran de la session |
+### Le générateur — `Tools/WorldGen/`
 
-Le dépôt git couvre `Tools/`, `Config/`, `Source/` et `CLAUDE.md`. **`Content/` en est
-exclu volontairement** (plusieurs Go de bundles achetés et d'assets régénérables), tout
-comme `Plugins/`, qui a son propre dépôt.
+| Fichier | Rôle |
+|---|---|
+| `worldgen/` | le générateur, un module par étape |
+| `rules/world_rules.json` | **toutes** les règles ; aucun seuil n'est en dur dans le code |
+| `terre.py` | **l'instrument principal** : bulletin de conformité terrestre, sur références sourcées |
+| `metrics.py` | relevé complet et **diff** de non-régression |
+| `diag_climat.py`, `diag_hydro.py` | diagnostics sans resimuler |
+| `diag_eau.py` | **l'eau colle-t-elle au relief que voit Unreal ?** (murs d'eau, rivières enterrées) |
+| `diag_uds_climat.py` | cohérence climat / biomes / préréglages Ultra Dynamic Sky |
+| `tile_world.py` | découpe la sortie pour l'import (**une seule tuile** à 8 km) |
+| `export_biome_texture.py` | carte des biomes pour le PCG, avec le **décalage minéral** |
+| `export_uds_climate.py` | fabrique les 31 préréglages climatiques `CP_Worldseed_*` |
+| `spawn_point.py` | choisit le point d'apparition sur des critères mesurés |
+| `montage.py`, `rebuild_report.py`, `refresh_manifest.py`, `tune_coast.py` | outillage annexe |
+
+### L'éditeur — `Tools/UE/`
+
+| Fichier | Rôle |
+|---|---|
+| `rebuild_world.py` | **la chaîne complète** : vider, relief, matériau, RVT, eau, biomes, végétation, apparition |
+| `import_world.py` | import du Landscape (ne pose **pas** le matériau) |
+| `water_world.py` | océan, lacs et rivières depuis `lakes.json` / `rivers.json` |
+| `vegetation.py` | recettes et graphe du semis PCG, redirections de matériaux |
+| `rvt_setup.py` | pose les deux Runtime Virtual Textures sur le terrain et ses proxies |
+| `rvt_graft.py` | greffe la teinte RVT **et** le vent d'UDS sur les 11 maîtres de végétation |
+| `landscape_material.py` | rejoue le carrelage de l'herbe dans le maître de terrain (hors dépôt) |
+| `foliage_lods.py` | pose les groupes de LOD sur les maillages qui n'en ont pas |
+| `uds_climate.py` | inspection des préréglages climatiques d'Ultra Dynamic Sky |
+| `pcg_bench.py`, `water_zones.py`, `export_godot*.py` | bancs d'essai et export annexe |
+
+### Ce que git suit, et ce qu'il ne suit pas
+
+**Attention : c'est le point que l'ancienne version disait faux.** Le dépôt suit
+`Tools/`, `Config/`, `Source/`, la documentation **et `Content/Worldseed/`** —
+notre contenu propre : graphes PCG, 31 préréglages climatiques,
+`BP_WorldseedClimat`, `MI_WorldseedLandscape`, les `LayerInfo`, la carte.
+
+Sont exclus, et pour des raisons différentes :
+
+| Exclu | Pourquoi |
+|---|---|
+| `Content/Orasot_Bundle/`, `UltraDynamicSky/`, `Stylized_PBR_Nature/` | **packs payants** — les EULA interdisent d'en redistribuer les sources sur un dépôt public |
+| `Content/Worldseed/Materials/M_WorldseedLandscape` | c'est une copie du maître d'Orasot, donc un dérivé du pack |
+| `Content/__ExternalActors__/` | régénéré par `rebuild_world` |
+| `Saved/`, `Intermediate/`, `Binaries/`, `DerivedDataCache/` | caches et sorties |
+| `Plugins/` | VibeUE, dépôt séparé |
+
+**Conséquence pratique, et elle a dicté un choix d'architecture cette semaine :**
+un réglage posé sur un **acteur** du niveau vit dans `__ExternalActors__`, donc
+hors dépôt, donc perdu au clone suivant. Tout réglage qui doit survivre va dans un
+Blueprint de `Content/Worldseed/` ou dans un script de rejeu de `Tools/UE/`.
 
 ---
 
 ## 3. Le générateur : état
 
-Cinq commits, un par tâche :
-
-```
-c6a357a  Tache 4 : la bande littorale existe enfin
-c330dbe  Tache 3 : la ZCIT est enfin alimentee
-5f18044  Tache 2 : geometrie hydraulique physique, exageration nommee
-6fd04c2  Tache 1 : le drainage rejoint enfin la mer
-ea7d4e2  Etat de reference du generateur Worldseed
-```
-
-**Les quinze contrôles du rapport sont au vert.** Ils s'affichent à chaque génération
-et sont écrits dans `pipeline._checks`. Ne jamais rendre un contrôle vert en abaissant
-son seuil : c'est une règle posée par le propriétaire du projet.
-
-### Ce qui a été corrigé, et pourquoi ça comptait
-
-| | Avant | Après |
-|---|---|---|
-| Cours d'eau atteignant l'océan | 0 % (0/10) | **100 % (45/45)** |
-| Plus long cours d'eau | 2,8 km (8,8 % du monde) | **11,2 km (35,1 %)** |
-| Lacs sur les terres | 20,5 % | **5,5 %** |
-| Bassins endoréiques hors zone aride | 1 | **0** |
-| Latitude la plus humide | −42° | **équateur** |
-| Rapport pluie équateur / ±30° | 0,51 | **6,6** |
-| Plage sur les terres | 0,20 % | **1,4 %** |
-| Neige dominante sur les terres | 82 % | **12 %** |
-
-Quatre causes, toutes trouvées par la mesure et non par la lecture du code :
-
-1. **Le remplissage epsilon n'existait pas.** Ce qui en tenait lieu relevait les
-   cellules de déversement de zéro, les laissant à égalité avec leur voisine : 83 % des
-   terres voyaient leur écoulement mourir dans un puits. Remplacé par une vraie variante
-   epsilon du Priority-Flood.
-2. **Le comblement numérique était pris pour un lac.** `extract_lakes` et
-   `biomes.classify` appliquaient chacun de leur côté un seuil de 5 cm. Un critère
-   unique, `hydrology.lake_mask`, évalue désormais la cuvette entière.
-3. **Le terme de neige avait un signe inversé** : `smoothstep(-1, -9, -T)` donnait de la
-   neige totale à +27 °C et aucune à −9 °C. La forêt tropicale était sous la neige.
-4. **La ZCIT n'était alimentée par rien.** Le terme de convergence existait et
-   fonctionnait, mais l'advection semi-lagrangienne transporte l'humidité sans la
-   concentrer : l'équateur avait le taux de pluie le plus fort et l'humidité la plus
-   faible du monde. Ajout de `precipitation.moistureConvergenceRate`.
-
-### Décisions de conception à ne pas défaire sans en parler
-
-- **Exagération hydraulique assumée.** Un monde de 8 km ne peut pas porter de fleuve :
-  son plus grand bassin fait quelques km², soit 0,043 m³/s, ce qui donne physiquement un
-  chenal de 40 cm. Les coefficients `widthCoefA` = 2,0 et `depthCoefB` = 0,3 sont les
-  **vraies** valeurs physiques, et le grossissement passe par `geometryExaggeration`
-  = 8000, qui multiplie le **débit apparent** servant à la géométrie — largeur et
-  profondeur restent donc dans leur proportion naturelle. Le débit exporté reste le vrai.
-  Mettre ce paramètre à 1 rend le générateur strictement physique.
-- **Un Landscape ne doit pas dépasser ~256 composants s'il porte dix couches.** Au-delà,
-  l'import des poids fait tomber le thread RHI (plafond D3D12 non configurable). À 8 km
-  la sortie 4065² tombe **pile** sur 256 : un seul Landscape, aucun tuilage.
-  `tile_world.py` déduit désormais le nombre de tuiles de la résolution.
-  Détail complet dans `CLAUDE.md` §11.
-- **Le critère de lac est volontairement sévère** (`minLakeDepthM` 0,5 m,
-  `minLakeAreaHa` 9,375 — soit les seuils de 32 km divisés par 4 et par 16) : il ne
-  laisse que quelques grands lacs. Le desserrer fait remonter la part des lacs au-dessus
-  de la cible de 5 %.
-- **La règle de mise à l'échelle est écrite dans `world._comment_echelle`.** Tout nouveau
-  réglage doit la respecter. Et **après toute mise à l'échelle, lancer
-  `metrics.py --diff` contre l'ancien monde** : c'est le seul contrôle qui voit une
-  constante métrique oubliée en dur dans le code. C'est ainsi qu'a été trouvé le
-  `+ 400.0` de `tectonics.py`, qui poussait le pôle sud à 430 m au lieu de 130 et faisait
-  passer la calotte glaciaire de 7,1 à 11,9 % des terres.
+**Il est calé sur la Terre, et c'est vérifiable.** `terre.py` compare le monde à
+des références **sourcées** — part des terres émergées, moyenne des précipitations
+terrestres, part du climat BWh (Peel, Finlayson & McMahon 2007), parts de surface
+par zone climatique déduites de la géométrie d'une sphère — et fait passer les
+23 climats réels livrés par Ultra Dynamic Sky dans notre propre diagramme de
+Whittaker.
 
 ### Le monde actuel en chiffres
 
-Terres 38,5 %, eau 61,5 %. Relief −258 à +376 m. 45 rivières, toutes à l'océan, la
-principale de 2,81 km portant 0,041 m³/s pour 36,1 m de large. 5 lacs, 134 ha.
+Mesuré sur la sortie du 11 septembre 23 h 45, celle qui est importée dans le
+niveau.
 
-Biomes majeurs, en part des terres : forêt tempérée humide 12,7 %, roche nue 12,4 %,
-désert chaud 11,9 %, forêt tropicale humide 9,3 %, forêt tempérée 9,1 %, toundra 7,8 %.
+| | Worldseed | Terre |
+|---|---|---|
+| terres émergées | **29,2 %** | 29,2 % (ancre) |
+| pluie moyenne sur les terres | **708 mm/an** | ~715 mm |
+| terres au-dessus de 2000 mm | **9,0 %** | 7 à 8 % |
+| terres sous 250 mm | 39,4 % | — |
+| relief | −287 à +347 m | — |
+| rivières / lacs | 21 / 3 | — |
+| pente médiane des terres | 30,6° | — |
 
-**La preuve que c'est bien le même monde**, `metrics.py --diff` entre 32 km et 8 km :
-**15 métriques bougent sur 200**, et toutes comme la construction l'exige —
-altitude max 1502,0 → 375,5 m (**exactement ÷4**), plus long cours d'eau 11 230,9 →
-2 807,7 m (**÷4**), aire des lacs 2 137,5 → 133,6 ha (**÷16**), débit max 0,650 →
-0,0406 m³/s (**÷16**). La largeur maximale des rivières, 36,1 m, n'apparaît même pas
-dans le diff : elle est **identique**.
+Parts des biomes, en pourcentage des terres :
 
-Couches de peinture dominantes : Stone 31,6 %, Grass 17,8 %, Snow 12,1 %,
-DesertSand 11,6 %, Biom Grass 5 8,3 %.
+| biome | part | Terre |
+|---|---|---|
+| désert chaud | **16,5 %** | 21 |
+| forêt tropicale humide | **11,3 %** | 11 |
+| calotte glaciaire | **9,9 %** | 10 |
+| savane | **9,5 %** | 13 |
+| forêt tempérée | 7,9 % | — |
+| désert froid | 7,7 % | — |
+| forêt tropicale sèche | 7,3 % | — |
+| taïga | **6,4 %** | 10 |
+| prairie | 5,3 % | — |
+| toundra | **4,7 %** | 8 |
+| roche nue | 3,8 % | — |
+| plage, steppe, alpin, forêt tempérée humide, marais | 9,8 % cumulés | — |
 
-**Les 19 biomes sont tous présents.** Attention : un biome n'est **pas** une couche de
-peinture. Chaque biome est une recette de mélange des 10 couches
-(`surfaces.recipes`), et l'identité du biome vit dans `biome_index.png`. C'est ce
-fichier, et non les couches, qui doit piloter la végétation.
+Écart absolu moyen aux huit grands biomes terrestres : **24,3 %**.
+
+**Ce chiffre COMPARE, il ne juge pas.** Il plafonne vers 24-32 % quel que soit le
+réglage, pour deux raisons structurelles : les terres étant fixées à 29,2 %, les
+parts de biomes sont un jeu à **somme nulle** (agrandir l'Antarctique retire de la
+savane) ; et nos 16 catégories ne se ramènent pas aux 8 de référence, qui n'en
+couvrent que 68 %. L'utiliser pour départager deux réglages, **jamais** pour juger
+un monde dans l'absolu. Le *bulletin* de `terre.py`, lui, se lit dans l'absolu.
+
+### Les grandes corrections de calage
+
+Toutes trouvées par la **mesure**, aucune par la lecture du code.
+
+| Défaut | Cause | Effet |
+|---|---|---|
+| monde 70 % trop humide | 715 mm est la **moyenne** terrestre, pas la médiane, et l'ancrage portait sur la médiane | trop de forêts, pas assez de prairies |
+| déserts à 16,6 °C | pas de prime d'aridité — ciel dégagé, donc plus d'insolation, et pas d'évaporation pour en consommer une part | désert chaud porté à 25,1 °C |
+| profil zonal faux | il était en `(lat/90)^k` ; l'insolation suit **cos(latitude)** | écart au réel 1,95 → **0,84 °C** |
+| amplitude saisonnière fausse deux fois | croissance linéaire au lieu du **sinus**, et océan amortissant par soustraction au lieu de proportionnellement | écart sur 8 stations 15,4 → **4,7 °C** |
+| intérieurs continentaux inexistants | `oceanModerationRangeKm` cinq fois trop grand | ni taïga ni toundra possibles |
+| biomes froids mangés | **`bareRockSlopeDeg` à 42° sur un monde de pente médiane 30,6°** | roche nue 12,6 → **3,5 %**, neuf points rendus à tous les biomes |
+
+**Le motif à retenir** : quand aucune valeur d'un paramètre ne satisfait deux
+mesures à la fois, c'est la **forme** de la fonction qui est fausse, pas la valeur.
+Et un `max(x, 1)` posé pour rattraper un résultat absurde en est presque toujours
+le symptôme.
+
+**Ordre des termes, règle d'ingénierie.** La pluie pilote l'érosion, donc le
+relief. Un terme de température placé **avant** le calcul des précipitations fait
+bouger le terrain, les rivières et les lacs à chaque réglage ; placé **après**, il
+ne déplace que les biomes. On choisit selon la causalité réelle : la prime
+d'aridité vient après (c'est la sécheresse qui réchauffe), le refroidissement
+continental vient avant (un air plus froid porte moins de vapeur).
 
 ---
 
 ## 4. Le monde dans Unreal : état
 
-Niveau `/Game/Worldseed/Maps/L_Worldseed`, World Partition. **À jour** : il contient le
-monde de 8 km.
+Niveau `/Game/Worldseed/Maps/L_Worldseed`, World Partition. **À jour** : relevé des
+horodatages, génération 23 h 45 → tuiles 23 h 47 → import 23 h 48. Le niveau porte
+bien le monde recalibré.
 
-**Tout se refait en un appel**, depuis l'éditeur :
+### Terrain
+
+- **1 Landscape** `Worldseed_Landscape_x0_y0`, 4065² sommets, 16×16 = 256
+  composants. Contrôle : le Landscape rend 6916,20 cm là où la heightmap annonce
+  6916,80 — **0,6 cm d'écart**.
+- **Matériau `MI_WorldseedLandscape`** — l'**instance**, pas le maître. Le rendu du
+  pack Orasot tient dans ses 18 surcharges ; le maître seul ne ressemble à rien.
+  Le défaut a été commis deux fois : une fois sur le matériau, une fois dans la
+  constante de `rebuild_world.py`, qui annulait la correction à chaque
+  reconstruction.
+- **Deux Runtime Virtual Textures** posées sur le terrain, vérifiées présentes.
+  `virtual_texture_render_pass_type = ALWAYS` est **obligatoire** : à son défaut le
+  terrain proche paraît aplati, ce qui avait fait abandonner la RVT une première
+  fois. Une reconstruction les efface — `rebuild_world` les repose désormais.
+- **Carrelage** : l'herbe resserrée ×4 (+34 % d'énergie haute fréquence, aucun
+  artefact). **La roche et les graviers restent à 1** — à 4 ils font apparaître un
+  moiré hexagonal sur les pentes lointaines. Ce réglage vit dans le **maître**,
+  donc hors dépôt : il se rejoue par `landscape_material.regler()`.
+- **`DLWE_V3`** (neige et flaques dynamiques) est inséré dans le maître et compile.
+  Prouvé fonctionnel : `Snow = 10` couvre la toundra à 185 FPS.
+
+### Eau
+
+1 `WaterBodyOcean` à Z = 0, 3 `WaterBodyLake`, 21 `WaterBodyRiver`, 1 `WaterZone` à
+4096 texels (**2,08 m par texel**). `affects_landscape` est à **False** sur tous les
+corps d'eau, sans quoi ils creuseraient le relief importé. Rejouable par
+`water_world.py`.
+
+Le mur d'eau au bord des lacs a été **corrigé à la source** : le contour était trié
+par angle autour du centre, ce qui fait zigzaguer le polygone à travers un lac non
+étoilé. De 42-69 % du périmètre en surplomb à **0,3-3,5 %**, p95 sous 0,5 m. Les
+rivières sont passées de 46,4 % enterrées et 22,8 % suspendues à **0 % suspendues**,
+enterrement plafonné à 1,00 m. Contrôle : `diag_eau.py`.
+
+### Végétation
+
+- **Semis PCG** en génération à l'exécution, ~400 000 instances, un `PCGVolume` et
+  **un seul `PCGWorldActor`** — un doublon désarmé suffit à tuer tout le semis en
+  silence, et `rebuild_world` détruit désormais les surnuméraires.
+- **La carte des biomes porte deux informations** : l'identifiant du biome, et
+  **+100 si le sol y est peint en minéral**. Le tapis d'herbe ne prend que `id`,
+  les arbres prennent `id` et `id + 100` — un versant raide reste boisé même quand
+  la roche affleure. Cela a retiré exactement les 39,6 % de tapis qui poussaient
+  sur de la roche. `MINERAL_ID_OFFSET` et `DECALAGE_MINERAL` doivent rester égaux,
+  et **rien ne le vérifie**.
+- **La RVT teinte le feuillage**, greffée sur 11 maîtres et redirigée sur ~55
+  instances (191 entrées de maillage sur 216). La teinte est dosée par un **fondu
+  en hauteur** : au ras du sol la plante prend le ton du terrain, au-delà elle garde
+  le sien — c'est ce qui permet de teindre une touffe d'herbe sans peindre un arbre
+  en terre.
+- **Le vent d'Ultra Dynamic Sky** souffle sur 9 maîtres de feuillage, en trois
+  classes (petit, moyen, grand). Coût mesuré : **nul** (117 FPS contre 115 sans).
+  Il a en revanche imposé `r.Velocity.EnableVertexDeformation=0` : un matériau à
+  WorldPositionOffset devient écrivain de vélocité, et 400 000 instances qui en
+  gagnent un d'un coup font tomber le RHI.
+
+### Couverture du sol, mesurée en A/B
+
+En prairie, à hauteur d'œil : semis PCG **16,3 %**, herbe du Landscape **39,6 %**,
+sol nu **44,1 %**. **L'herbe du Landscape couvre 2,5 fois plus que le semis PCG et
+ne coûte aucune instance.** Décision prise : **on ne densifie pas**.
+
+### Ciel, climat et météo
+
+- **Ultra Dynamic Sky remplace les cinq acteurs d'éclairage manuels**, qui sont
+  *neutralisés* et non supprimés (visibilité à False, réversible en une ligne).
+- **`Simulate Real Sun = True`** — sans quoi `Latitude` ne sert à rien et le soleil
+  culmine à 60° à toutes les latitudes.
+- **L'exposition est rendue à UDS**, avec ses biais par moment de la journée
+  (Day −0,6, Dawn/Dusk −1,2, Night −2,0). L'exposition verrouillée du pack Orasot
+  est **incompatible** avec un soleil qui bouge : elle rend la nuit injouable.
+- **`BP_WorldseedClimat`** lit la position du joueur deux fois par seconde, en
+  déduit la latitude par arc sinus (`lat = degrés(asin(Y / demi-étendue))`, la carte
+  étant équivalente-aire), lit le biome dans une grille 128×128 et applique le
+  préréglage climatique correspondant, saisons inversées au sud. Il arme aussi, au
+  démarrage, le tirage de météo aléatoire et le cycle jour/nuit, et force un
+  nouveau tirage à chaque changement de biome.
+  **Cet acteur doit être `is_spatially_loaded = False`** : sinon World Partition ne
+  l'instancie jamais et il n'existe tout simplement pas en jeu.
+- **Ultra Dynamic Sky fait lui-même la conversion physique** : il transforme les
+  millimètres mensuels de pluie et de neige de chaque préréglage en probabilités de
+  météo par saison, arbitre pluie contre neige par leur rapport, et en déduit
+  jusqu'au brouillard et aux tempêtes de sable. Il ne faut **pas** écrire
+  `Global Weather State` à la main.
+- Mesure de recette : biome 6, météo `Partly_Cloudy`, horloge qui avance,
+  **107,6 images par seconde, verdict PASS**. Au pôle sud, météo retirée au sort et
+  minuteur remis à zéro.
+
+---
+
+## 5. La chaîne complète, dans l'ordre
+
+```bash
+cd Tools/WorldGen
+
+# Le monde. ~4 min 45 en pleine resolution.
+./.venv/Scripts/python.exe -m worldgen
+
+# Banc de calibration : ~50 s, simulation 1025, erosion allegee.
+# Comparer des previews ENTRE EUX, jamais un preview a une pleine resolution.
+./.venv/Scripts/python.exe -m worldgen --preview
+
+# Controler
+./.venv/Scripts/python.exe terre.py                       # bulletin terrestre
+./.venv/Scripts/python.exe metrics.py --diff avant.json apres.json
+./.venv/Scripts/python.exe diag_eau.py <monde>
+```
+
+Puis, depuis la racine :
+
+```bash
+P=Tools/WorldGen/.venv/Scripts/python.exe
+M=Saved/WorldGen/20260909
+$P Tools/WorldGen/tile_world.py $M
+$P Tools/WorldGen/export_biome_texture.py $M
+$P Tools/WorldGen/spawn_point.py $M
+$P Tools/WorldGen/export_uds_climate.py
+```
+
+Enfin, dans l'éditeur, sur `L_Worldseed` :
 
 ```python
 import sys, importlib
@@ -186,165 +318,110 @@ import rebuild_world; importlib.reload(rebuild_world)
 print(rebuild_world.rebuild(r"D:\UE\Worldseed\Saved\WorldGen\20260909"))
 ```
 
-- **1 seul Landscape** de 4065² sommets, 16×16 = 256 composants, 4 proxies. Plus aucune
-  couture à vérifier. Contrôle mesuré : le Landscape rend 6916,20 cm là où la heightmap
-  annonce 6916,80 — **0,6 cm d'écart**.
-- **Matériau** `/Game/Worldseed/Materials/M_WorldseedLandscape`, dupliqué du maître
-  Orasot, auquel a été ajoutée la 10ᵉ couche `Snow`. **`import_world.py` ne le pose
-  pas** : un Landscape fraîchement importé est blanc. `rebuild_world.landscape()` s'en
-  charge.
-- **Eau** : 1 `WaterBodyOcean` à Z = 0, 4 `WaterBodyLake` (splines fermées et linéaires,
-  chacun à son niveau, de 40,8 à 129,2 m), 48 `WaterBodyRiver` avec largeur et profondeur
-  par nœud, 1 `WaterZone` de 8,5 km à 4096 texels. **`affects_landscape` est à `False`
-  sur les 53 corps d'eau** : sans cela ils creuseraient le relief importé.
-  Tout est rejouable par `Tools/UE/water_world.py`.
-  - **Le rideau d'eau au bord des lacs s'est beaucoup amélioré tout seul** : la zone
-    passe de 8,3 à **2,08 m par texel**, et la plage de hauteurs d'eau de 0–545 m à
-    0–136 m. Soit environ 17 fois moins de marche à franchir par texel.
-  - **Et le mur d'eau proprement dit a été corrigé à la source** (11 sept. 2026).
-    Le contour des lacs était trié *par angle autour du centre* : sur un lac qui
-    n'est pas en étoile, le polygone zigzague à travers l'eau. Mesure : **42 à
-    69 % du périmètre** surplombait un sol situé plus d'un mètre sous la surface,
-    murs jusqu'à 26 m. Le contour est désormais tracé par suivi de contour sur le
-    relief **de sortie** puis accroché à la berge → **0,3 à 3,5 %**, p95 sous
-    0,5 m, le reste tombant sur les déversoirs, où une chute est normale.
-    Les rivières souffraient du même défaut (46,4 % enterrées, 22,8 % suspendues)
-    → **0 % suspendues, enterrement plafonné à 1,00 m**.
-    Contrôle : `python diag_eau.py`.
-- **Végétation PCG** : 1 `PCGVolume` `Worldseed_Vegetation_x0_y0`, graphe de 104 nœuds
-  et 32 couches, en **génération à l'exécution**. Vérifié en PIE : les acteurs de
-  partition sont dépilés d'un pool transitoire, rien n'est écrit sur le disque.
-- **`PCGWorldActor`** : posé à la main et **armé**. Un acteur neuf arrive avec
-  `enable_world_partition_generation_sources = False` et un cache de paysage en
-  `NeverSerialize` — et alors le PIE ne produit rien, sans une seule ligne `LogPCG`.
-- **Éclairage** : soleil directionnel mobile lié à l'atmosphère, SkyLight en capture temps
-  réel, SkyAtmosphere, brouillard. Le niveau avait été créé vide, sans aucune lumière.
-- **`Worldseed_PlayerStart`** posé en forêt tempérée humide, sur un critère **mesuré**
-  (biome, altitude, pente sous 8°, distance à l'eau) et non à l'œil. Sans lui, le PIE fait
-  apparaître le pion à l'origine du monde, c'est-à-dire en pleine mer.
-- **Herbe de Landscape** : cinq types dans `/Game/Worldseed/Landscape/`
-  (`GT_Worldseed_Grass`, `_Flower_1`, `_Flower_2`, `_Flower_3`, `_Fern`), tous dupliqués
-  chez nous pour ne pas modifier le bundle acheté.
+Une minute plus tard : relief, dix couches peintes, océan, lacs, rivières, semis
+PCG et point d'apparition.
+
+**Deux choses ne sont PAS dans `rebuild()`**, parce qu'elles vivent hors du dépôt
+et ne se refont qu'une fois : `landscape_material.regler()` (carrelage de l'herbe)
+et la suite `rvt_graft.greffer()` / `greffer_vent()` / `rediriger()`. Le README les
+détaille. ⚠ Traiter les matériaux **un ou deux à la fois** : recompiler neuf gros
+matériaux d'affilée a fait tomber l'éditeur deux fois.
 
 ---
 
-## 5. Ce qui reste à faire
+## 6. Ce qui reste à faire
 
 Dans l'ordre où je le ferais.
 
-### 5.1 La densité d'herbe ne répond pas — non résolu
+### 6.1 Prouver qu'il neige vraiment — non vérifié
 
-Monter `grass_density` de 581 à 1200 puis 4000 donne des captures **identiques au pixel
-près**. Vider le cache (`grass.FlushCache`) supprime l'herbe, qui revient à l'identique
-au redémarrage du PIE. Étendre la distance de coupe de 190 à 400 m ne change rien non
-plus.
+On a démontré que le biome pilote les cartes de probabilités de météo, que le
+tirage tourne et qu'une météo est retirée au sort à chaque changement de biome.
+On n'a **jamais observé** une chute de neige survenir d'elle-même en toundra
+l'hiver, ni DLWE couvrir le sol à cette occasion. La neige n'a été vue qu'en
+forçant `Snow = 10` à la main. C'est le dénouement de deux sessions de travail, et
+il tient à une observation d'une dizaine de minutes en PIE.
 
-Conclusion : le facteur limitant est le **poids** que le matériau envoie à chaque
-émetteur, pas la densité — le nombre d'instances vaut densité × poids, et les expressions
-du pack (`Add_21`, `Subtract_6`, `Subtract_4`, `Subtract_20`, `Subtract_22`, qui
-alimentent le `LandscapeGrassOutput`) produisent une valeur faible pour notre mélange de
-couches. Obtenir un vrai tapis demande de **remettre ces entrées à l'échelle dans le
-graphe du matériau**, ce qui touche au rendu du terrain. Le propriétaire du projet devait
-donner son accord avant que j'y aille ; la question est restée ouverte.
+### 6.2 La sécheresse polaire — un manque du MODÈLE, pas un réglage
 
-### 5.2 La végétation PCG — faite, et vérifiée en exécution
+| latitude | Worldseed | Terre (ordre) |
+|---|---|---|
+| 60-70° | 170 mm | ~500 mm |
+| 70-80° | 11 mm | ~250 mm |
+| 80-90° | 0 mm | ~150 mm |
 
-**Résolu.** Un graphe `PCG_Vegetation_x0_y0` (104 nœuds, 32 couches) et un `PCGVolume`
-en génération à l'exécution. Le chemin retenu est le **natif** :
-`PCGSurfaceSampler` (bornée par la maille) → `PCGSampleTexture` sur `biome_index.png`
-en filtrage `Point` → `PCGProjection` sur le Landscape → `PCGStaticMeshSpawner`.
+Il n'existe **aucun transport d'humidité vers les pôles par les tempêtes**. C'est
+ce qui maintient la toundra à 4,7 % et la taïga à 6,4 % au lieu de 8 et 10.
 
-Ce n'est **pas** `PCGBiomeCore` / `PCGBiomeSample`, le pack de biomes expérimental
-d'Epic : il a été monté entièrement puis abandonné (aucune instance produite,
-`GetAttributeFromPointIndex : index 0 hors limites` dans `LocalBiomeCore`, et il
-apparie les biomes par **couleur** et non par identifiant). Il est expérimental, en
-v0.2, sans aucune API C++ ni garantie entre versions du moteur. Voir `CLAUDE.md` §11.
+**Essayé et REJETÉ** : `saturationScaleC` 16 → 24 porte la bande 60-70° à 297 mm et
+l'écart moyen à 20,5 %, mais s'éloigne de Clausius-Clapeyron (échelle théorique
+10/ln2 = 14,4 °C) et **touche au relief** — la pluie pilote l'érosion. C'est un
+pansement sur un mécanisme absent. **Sans effet mesurable** : `polarFrontStrength`
+(0,45 → 0,70) et `subsidenceFactor` (0,75 → 0,60), moins de 0,2 point chacun.
 
-Ce qui reste ouvert sur la végétation : les **silhouettes manquantes**. Taïga (deux
-conifères seulement), toundra (rien de spécifique), savane (pas d'acacia), marais (pas
-de végétation palustre) — ensemble 15 % des terres, traitées par emprunt en attendant.
+Ce chantier impose une régénération complète du monde, donc un commit `BREAKING`.
 
-### 5.3 Points ouverts, plus petits
+### 6.3 Le sable scintille encore dans les dix premiers mètres
 
-- **La plage est indiscernable du désert** : même couche dominante. Se corrige soit par
-  une recette de surface propre à la plage, soit en laissant le PCG faire la différence.
-- **Le sol des zones végétalisées est un vert plat sans texture**, alors que le sable
-  montre du détail. Probablement le parti pris stylisé du pack ; se règle dans `MF_Grass`.
-- **La médiane équatoriale frôle le plafond `maxPrecipMm`.** Le réglage a été ramené de
-  0,004 à 0,002 pour cette raison, mais il reste peu de marge.
-- **Les HLOD ne sont pas construits.** À faire quand il y aura du contenu, pas avant.
-- **Le rapport HTML** publié en artefact en début de session décrit le monde d'AVANT les
-  corrections. Le rapport à jour est dans `Saved/WorldGen/20260909/world_report.html`.
+Traité à 90 % : `T_Sand_Glitter` est une texture de **paillettes émissives**
+dépendante de l'angle de vue, et son `Boost` valait 579,9 — la valeur de l'auteur,
+juste sur sa petite carte de démo, absurde sur 8 km. Ramené à 5,0, plus une
+correction de `Sand UV` 0,495 → 2,0. Il reste un scintillement de près, là où le
+matériau mêle sans doute une texture de détail rapprochée.
 
----
+### 6.4 Points ouverts, plus petits
 
-## 6. Pièges de cette session, en plus de `CLAUDE.md` §11
-
-- **L'herbe d'Orasot dépend d'une texture virtuelle.** `M_Grass` contient deux
-  `RuntimeVirtualTextureSample` : sans `RuntimeVirtualTextureVolume` dans le niveau,
-  l'échantillonnage retourne du vide et l'herbe s'affiche en **bleu pur**. J'ai essayé de
-  créer la RVT et de l'assigner aux Landscapes : l'assignation prend, mais la texture
-  reste vide (l'herbe passe de bleue à noire) et le terrain proche s'aplatit. **Revenu en
-  arrière.** La solution retenue contourne : les types d'herbe de LowPolyForestVol2 et les
-  fleurs de Biom_Green n'ont **aucun** nœud RVT. Vérifier avant d'utiliser un type d'herbe.
-- **`RuntimeVirtualTextureService.create_rvt_volume` est défaillant** : il crée des
-  `Actor` génériques à l'origine, à l'échelle 1, et non des `RuntimeVirtualTextureVolume`.
-- **Les tableaux de structs ne se réécrivent pas tels quels depuis Python.**
-  `o.get_editor_property("grass_varieties")` rend un `Array` dont la modification ne
-  remonte pas ; il faut le repasser en `list(...)` puis réaffecter.
-- **En PIE, sans `PlayerStart`, le pion apparaît en (0, 0, 0)** — au milieu de l'océan sur
-  ce monde — et tombe. Et attention en choisissant un point : les lacs sont profonds et
-  rien ne les signale depuis la berge ; mon premier point d'apparition était 11 m sous la
-  surface d'un lac.
-- **Le toolset `EditorToolset.EditorAppToolset` d'Epic n'est pas enregistré** dans ce
-  build : pour le PIE, utiliser `LevelEditorSubsystem.editor_request_begin_play()` et
-  `editor_request_end_play()`.
-- **Quand le client MCP décroche**, l'éditeur reste joignable : son endpoint est un
-  serveur HTTP sur `http://127.0.0.1:8000/mcp`. Un relais en curl (initialize → session →
-  `tools/call`) permet de continuer sans redémarrer l'éditeur, donc sans perdre le travail
-  non sauvegardé. C'est ce qui a servi pendant la moitié de la session.
-- **Un `TaskStop` tue le shell mais pas le processus Python enfant** : une génération
-  arrêtée peut continuer jusqu'au bout et écrire ses sorties, avec les anciens paramètres.
-  Vérifier `tasklist` avant de conclure sur un fichier daté.
+- **Silhouettes manquantes** : taïga (deux conifères seulement), toundra (rien de
+  spécifique), savane (pas d'acacia), marais (pas de végétation palustre) —
+  ensemble ~15 % des terres, traitées par emprunt.
+- **Au-dessus de l'océan, le biome vaut 0**, pour lequel aucun préréglage
+  climatique n'existe : la météo du dernier biome terrestre persiste. Acceptable.
+- **La plage est indiscernable du désert** : même couche dominante.
+- **Les HLOD ne sont pas construits.** À faire quand il y aura du contenu.
+- **`Tools/UE/export_godot_textures.py`** porte 219 lignes modifiées non
+  committées, qui ne viennent pas de l'agent. À arbitrer.
 
 ---
 
-## 7. Comment faire les choses
+## 7. Décisions à ne pas défaire sans en parler
 
-```bash
-cd D:/UE/Worldseed/Tools/WorldGen
+- **L'exagération hydraulique est assumée.** Un monde de 8 km ne peut pas porter de
+  fleuve : son plus grand bassin donne physiquement un chenal de 40 cm. Les
+  coefficients sont les **vraies** valeurs physiques ; le grossissement passe par
+  `geometryExaggeration = 8000`, qui multiplie le *débit apparent* servant à la
+  géométrie. Le débit exporté reste le vrai. Mettre ce paramètre à 1 rend le
+  générateur strictement physique.
+- **`LandscapeGrassOutput` ne se touche pas.** Sa « porte fermée » (un `Floor()` qui
+  n'ouvre qu'à un poids exactement égal à 1,0) est un **choix de l'auteur du pack**.
+  Décision du propriétaire, 11 septembre : ne pas rouvrir, ne pas retoucher les
+  `ConstAlpha`, ne pas rendre les poids peints plus purs. Et de toute façon l'herbe
+  du Landscape fonctionne et couvre l'essentiel du sol (§4).
+- **Le critère de lac est volontairement sévère.** Le desserrer fait remonter la
+  part des lacs au-dessus de la cible de 5 %.
+- **Ne jamais rendre un contrôle vert en abaissant son seuil.** Règle du
+  propriétaire.
+- **Ne rien pousser de payant sur GitHub.** Règle du propriétaire, absolue. Le
+  dépôt est public ; les packs et leurs dérivés directs en sont exclus.
+- **Un réglage qui doit survivre ne se pose pas sur un acteur** (voir §2).
+- **`PCGBiomeCore` est abandonné.** Monté entièrement puis mis de côté : aucune
+  instance produite, appariement par **couleur** et non par identifiant,
+  expérimental en v0.2, sans API C++ ni garantie entre versions du moteur. Le
+  chemin natif marche et est prouvé exact.
 
-# Générer le monde (~9 min ; affiche les quinze contrôles à la fin)
-./.venv/Scripts/python.exe -m worldgen
+---
 
-# Figer un relevé, puis comparer à un autre
-./.venv/Scripts/python.exe metrics.py ../../Saved/WorldGen/20260909 --out releve.json
-./.venv/Scripts/python.exe metrics.py --diff reference.json releve.json
+## 8. Ce que l'ancienne version disait, et qui est faux
 
-# Diagnostiquer sans resimuler (~1 min)
-./.venv/Scripts/python.exe diag_hydro.py
-./.venv/Scripts/python.exe diag_climat.py
+À ne pas ressortir d'un vieux clone.
 
-# Découper pour l'import (coutures vérifiées automatiquement)
-./.venv/Scripts/python.exe tile_world.py
-```
-
-Import dans Unreal, depuis l'éditeur, une tuile par appel (~40 s chacune) :
-
-```python
-import sys, importlib, json
-sys.path.insert(0, r"D:\UE\Worldseed\Tools\UE")
-import import_world; importlib.reload(import_world)
-TILE = r"D:\UE\Worldseed\Saved\WorldGen\20260909\tiles\x0_y0"
-m = json.load(open(TILE + r"\manifest.json", encoding="utf-8"))
-import_world.create_landscape_with_layers(m, TILE, m["tile"]["label"])
-```
-
-**Avant de réimporter**, supprimer les anciens Landscapes *et* leurs proxies, puis
-sauvegarder avec `EditorLoadingAndSavingUtils.save_dirty_packages(True, True)` —
-`save_current_level()` n'écrit que le `.umap` et laisse les acteurs World Partition de
-côté.
-
-**Après réouverture du niveau**, aucun proxy n'est chargé et les lectures de hauteur
-renvoient l'altitude minimale sans erreur. Charger d'abord via
-`WorldPartitionBlueprintLibrary.get_actor_descs()` puis `load_actors(guids)`.
+| Elle disait | La vérité |
+|---|---|
+| « `Content/` est exclu du dépôt » | **Faux.** `Content/Worldseed/` est versionné ; seuls les packs payants, leurs dérivés et `__ExternalActors__` sont exclus. |
+| « la RVT a été essayée et abandonnée : herbe bleue puis noire, terrain aplati » | **Faux depuis le 11 septembre.** La RVT marche ; le coupable était `virtual_texture_render_pass_type`, à mettre à `ALWAYS`. |
+| « éclairage : soleil directionnel, SkyLight, SkyAtmosphere, brouillard » | **Périmé.** Ultra Dynamic Sky les remplace ; ils sont neutralisés, pas supprimés. |
+| « la densité d'herbe ne répond pas — non résolu » | **Tranché.** Ce n'est pas une panne mais un choix du pack. Mesure à l'appui : l'herbe du Landscape couvre 39,6 % du sol, 2,5× le semis PCG. On n'y touche pas. |
+| « 34 des 85 Blueprints d'UDS sont en erreur, la scène reste noire » | **Périmé.** Le pack réimporté donne 87 Blueprints sur 87 à jour. |
+| « import une tuile par appel (~40 s chacune) » | **Périmé.** À 8 km il n'y a **qu'une** tuile, et `rebuild_world.rebuild()` fait tout. |
+| « `M_WorldseedLandscape` est le matériau du terrain » | **Faux.** C'est `MI_WorldseedLandscape`, l'**instance**. Le maître seul ne ressemble à rien. |
+| chiffres de biomes : forêt tempérée humide 12,7 %, roche nue 12,4 %… | **Périmés** — antérieurs à la correction de `bareRockSlopeDeg`. Voir §3. |
+| « terres 38,5 %, 45 rivières, 5 lacs » | **Périmé.** 29,2 %, 21 rivières, 3 lacs. |
