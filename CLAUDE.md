@@ -1945,3 +1945,55 @@ acteurs ; PCG n'en interroge qu'un, et quand c'est le desarme qui repond **le
 semis ne produit plus une seule instance, ni en editeur ni en PIE**, sans le
 moindre message. Corrige : la fonction detruit desormais les surnumeraires en
 gardant celui qui est deja arme, et `rebuild()` la rappelle APRES le semis.
+
+### DLWE : la neige marchait depuis le debut, il ne neigeait jamais (12 septembre 2026)
+
+**LES TROIS PISTES NOTEES PLUS HAUT ETAIENT TOUTES FAUSSES.** Le materiau n'a
+jamais eu de defaut. Preuve : en PIE, poser `Snow = 10` sur le
+`Global Weather State` d'UDW couvre la toundra d'un manteau blanc convaincant,
+a **185 FPS**. Ni le readme du pack, ni `Snow Color and Alpha`, ni un cablage
+manquant n'etaient en cause.
+
+**LA CHAINE REELLE**, et ce n'est pas celle qu'on soupconnait :
+
+    Global Weather State.Snow  ->  collection UltraDynamicWeather_Parameters
+                               ->  parametre `Snowy`  ->  DLWE_Snow  ->  sol
+
+`Material Snow Coverage`, que la session precedente forcait a 1,0 sans effet,
+**n'est PAS le pilote** : il valait encore 0,0 pendant que le sol etait blanc.
+`Currently Snowing` vaut False aussi -- il parle des flocons qui tombent, pas
+de la neige au sol.
+
+**POURQUOI IL NE NEIGE JAMAIS** : `Ultra_Dynamic_Weather.Random Weather
+Variation` vaut **DISABLED**, et rien d'autre ne pilote la meteo. L'etat global
+reste donc a `Snow = 0, Rain = 0, Cloud Coverage = 3,8` en permanence, quel que
+soit le biome ou la saison. Le froid seul ne declenche rien : en pleine toundra,
+`Currently Snowing` = False.
+
+Essaye et INSUFFISANT : passer `Random Weather Variation` a `HOURLY` puis
+appeler `Change to Random Weather Variation` douze fois de suite ne change
+AUCUNE valeur de l'etat global (neige 0, pluie 0, nuages 3,8 aux douze
+tirages). Activer le reglage ne suffit donc pas.
+
+**COMMENT VERIFIER CE GENRE DE CHOSE**, puisque `get_all_level_actors()` rend
+une liste vide en PIE : passer par le monde de jeu --
+`UnrealEditorSubsystem.get_game_world()` puis
+`GameplayStatics.get_all_actors_of_class(monde, unreal.Actor)` et filtrer sur
+le LIBELLE. `load_blueprint_class` + `get_all_actors_of_class` sur la classe
+exacte a rendu 0 acteur, alors que l'acteur existe.
+
+**PIEGE PAYE COMPTANT : modifier une MaterialParameterCollection fait tomber
+l'editeur.** Changer une valeur par defaut force la mise a jour de TOUS les
+materiaux qui la referencent -- dont notre materiau de terrain avec DLWE --,
+et le RHI D3D12 de cette machine n'y survit pas
+(`EXCEPTION_ACCESS_VIOLATION`). Pire, le gestionnaire de crash a SAUVEGARDE la
+collection modifiee : le pack est reste avec `Snowy = 1` jusqu'a la relance.
+Recette qui passe : viser le ciel avec la camera, couper le temps reel
+(`ViewportService.set_realtime(False)`), poser les valeurs dans un appel, et
+SAUVEGARDER DANS UN APPEL SEPARE.
+
+**RESTE A FAIRE** : piloter la meteo. Le plus coherent avec le reste du projet
+est de le faire depuis `BP_WorldseedClimat`, qui applique deja un preset par
+biome : poser `Global Weather State.Snow` et `.Rain` d'apres les millimetres
+mensuels de pluie et de neige du preset et la saison en cours. Tout est deja
+dans `uds_climate.json`.
