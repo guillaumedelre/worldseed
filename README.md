@@ -182,6 +182,28 @@ Une minute plus tard : relief, dix couches peintes, océan, lacs, rivières,
 semis PCG et point d'apparition. Compter environ 400 000 instances de
 végétation et 88 images par seconde sur une RTX 4090.
 
+### 6. La météo suit le biome, toute seule
+
+Rien à lancer : `BP_WorldseedClimat` s'en charge au démarrage du jeu. Il lit la
+position du joueur deux fois par seconde, en déduit la latitude et le biome, et
+applique le préréglage climatique correspondant — nos 31 `CP_Worldseed_*`, tirés
+des mesures du générateur, avec les saisons inversées dans l'hémisphère sud.
+
+**Ultra Dynamic Sky fait le reste du calcul lui-même** : il convertit les
+millimètres mensuels de pluie et de neige de chaque préréglage en probabilités de
+météo par saison, arbitre pluie contre neige par leur rapport, et en déduit
+jusqu'au brouillard et aux tempêtes de sable. Il ne faut donc surtout pas écrire
+`Global Weather State` à la main : il suffit d'armer le tirage, ce que le
+Blueprint fait aussi au démarrage (`Random Weather Variation` en intervalle
+aléatoire de 200 à 300 s, et le cycle jour/nuit lancé — 45 minutes réelles pour
+24 heures, sans quoi les saisons ne progressent jamais).
+
+À chaque changement de biome, la météo est retirée au sort immédiatement. Mesure
+en jeu : forêt tempérée → `Partly_Cloudy` ; téléportation au pôle sud → biome
+calotte, `Clear_Skies`, minuteur de changement remis à zéro. Les cartes de
+probabilités passent de 8-9 types de météo en forêt tempérée à 4 sous la calotte.
+107,6 images par seconde, verdict PASS.
+
 ---
 
 ## Vérifier que le monde est juste

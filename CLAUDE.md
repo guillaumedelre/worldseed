@@ -1997,3 +1997,105 @@ est de le faire depuis `BP_WorldseedClimat`, qui applique deja un preset par
 biome : poser `Global Weather State.Snow` et `.Rain` d'apres les millimetres
 mensuels de pluie et de neige du preset et la saison en cours. Tout est deja
 dans `uds_climate.json`.
+
+### La météo se pilote par le BIOME, et UDS fait déjà tout le calcul (12 septembre 2026)
+
+**LE PIÈGE PRINCIPAL : j'allais recoder ce que le pack fait déjà, et mieux.**
+Le plan de départ était de lire les millimètres de pluie et de neige du préréglage,
+de les convertir à la main en intensité 0-10 et de les écrire dans
+`Global Weather State`. C'était inutile. `Apply Climate Preset Object` appelle
+`Make Climate Probability Map` (229 nœuds, sur `Random_Weather_Variation`), qui
+convertit déjà, **par saison** :
+
+- `Cloudy Percentage` → répartition ensoleillé / nuageux ;
+- `Rainfall + Snowfall` → `Precipitating Percentage`, via `Map Range Clamped`
+  puis `Power` puis `Lerp` ;
+- `Rainfall / (Rainfall + Snowfall)` → arbitrage pluie contre neige ;
+- `Dust/Sand Present` → probabilité de tempête de sable ;
+- `Rainfall + Snowfall` → probabilité de brouillard ;
+- puis normalisation de toutes les probabilités à 100.
+
+**Règle à en tirer : avant d'écrire une conversion physique vers un pack, chercher
+si le pack ne la fait pas déjà.** Ici la recherche tenait en un appel —
+`get_nodes_in_graph` sur le graphe `Apply Climate Preset Object`.
+
+**LA VRAIE CAUSE DE L'INERTIE : `Random Weather Variation = DISABLED`.**
+`BP_WorldseedClimat` appliquait fidèlement un préréglage par biome, UDS remplissait
+fidèlement ses quatre cartes de probabilités (8 à 10 entrées par saison)… et
+personne n'y piochait jamais. Un seul énumérateur rendait tout le calage climatique
+décoratif. **Quand une chaîne complète ne produit rien, chercher d'abord
+l'interrupteur, pas l'erreur de calcul.**
+
+**`Animate Time of Day` était à False.** L'horloge d'UDS était figée à 11 h 00.
+Conséquences en cascade : les modes `DAILY` et `HOURLY` ne se déclenchent jamais,
+et surtout la **saison ne progresse pas** — nos préréglages portent quatre saisons,
+une seule servait. Jour de 30 min + nuit de 15 min, soit 45 minutes réelles pour
+24 h, et `Time of Day` avance de 1 unité par 1,125 s réelle.
+
+**DEUX FONCTIONS D'UDW SONT PROTÉGÉES**, et cela ne se voit qu'à la compilation :
+`Check For Season Instant Refresh` et `Initialize Random Weather Variation` —
+« La fonction est protégée et ne peut être accessible en dehors de sa hiérarchie ».
+`get_function_info` n'expose AUCUN indicateur d'accès (seulement `is_pure`) : le
+seul moyen de savoir est de créer le nœud et de compiler. Les équivalents publics :
+
+| voulu | protégé | public à utiliser |
+|---|---|---|
+| retirer une météo au sort | `Check For Season Instant Refresh` | `Clear and Restart` (sur `Random Weather Manager`) |
+| relancer le système météo | `Initialize Random Weather Variation` | `Full Reconstruction at Runtime` (sur UDW) |
+
+Différence de comportement à connaître : `Check For Season Instant Refresh` ne
+rebascule que si la météo en cours est **devenue impossible** dans la nouvelle
+carte ; `Clear and Restart` retire **toujours**. Comme `BP_WorldseedClimat`
+n'applique le préréglage que sur un CHANGEMENT de biome, le tirage forcé reste
+rare — mais longer une frontière de biome fera changer la météo à chaque passage.
+
+**`Random Weather Manager` n'apparaît PAS dans `list_variables` d'UDW** (584
+variables listées, celle-là absente) alors qu'elle est bien lisible depuis un autre
+Blueprint par un `member_get`. Ne pas conclure de l'absence dans la liste à
+l'inaccessibilité : essayer le nœud.
+
+**LES ÉNUMÉRATIONS BLUEPRINT SE POSENT PAR `NewEnumerator<N>`, ET N N'EST PAS LA
+VALEUR.** `set_node_pin_value` refuse `RANDOM_INTERVAL` comme `Random Interval`
+comme `1` ; il n'accepte que `NewEnumerator0..3`. Or **N est l'ordre de CRÉATION,
+pas l'index d'affichage ni la valeur d'octet**. Mesuré sur
+`UDS_RandomWeatherTiming` :
+
+    NewEnumerator0 -> RANDOM_INTERVAL (1)     NewEnumerator2 -> HOURLY (3)
+    NewEnumerator1 -> DAILY (2)               NewEnumerator3 -> DISABLED (0)
+
+L'auteur avait écrit les trois modes, puis ajouté `DISABLED` et l'avait remonté en
+tête. **Poser `NewEnumerator1` en croyant écrire la valeur 1 donne DAILY.** Le seul
+contrôle qui tranche est de relire la propriété sur l'acteur EN PIE — c'est ce qui
+a rattrapé l'erreur ici.
+
+**PIÈGE DE MESURE, et il m'a coûté six appels : `Apply Climate Preset` reste à
+`None` même quand le préréglage est appliqué.** J'ai cru à un échec du
+`LoadAsset_Blocking` ou du `Cast`, et je suis parti vérifier le chemin, la classe
+de l'asset, l'existence du préréglage austral, l'identité de l'acteur… tout était
+juste. La preuve que l'application fonctionne n'est pas cette variable, c'est la
+**taille des cartes de probabilités** : 4 types par saison sous la calotte polaire
+contre 8, 8, 8 et 9 en forêt tempérée. **Choisir comme témoin une grandeur que le
+traitement fait VARIER, pas un drapeau dont on suppose qu'il est posé.**
+
+**Ce qui a été monté dans `BP_WorldseedClimat`** (tout est dans `Content/Worldseed/`,
+donc versionné — un réglage posé sur l'acteur UDW aurait vécu dans
+`__ExternalActors__`, qui ne l'est pas, et aurait été perdu au clone suivant) :
+
+- au `BeginPlay`, entre `Set UDW` et `Set Grille` : `Random Weather Variation`
+  = `RANDOM_INTERVAL`, puis `Full Reconstruction at Runtime` sur UDW pour que le
+  système relise ce réglage, puis `Animate Time of Day` = True sur UDS ;
+- dans `MajClimat`, après `Apply Climate Preset Object` : un `IsValid` sur
+  `Random Weather Manager` — indispensable, sinon le journal se remplit
+  d'« Accessed None » si le tirage aléatoire est un jour redésactivé — puis
+  `Clear and Restart`.
+
+**Mesures de recette**, PIE, point d'apparition : biome 6, météo `Partly_Cloudy`,
+minuteur de changement qui court vers 200-300 s, horloge qui avance
+(1100,0 → 1101,4), **107,6 images par seconde, verdict PASS**. Téléportation au
+pôle sud : biome 3, météo retirée au sort en `Clear_Skies` et **minuteur remis à
+0,0 s** — c'est la signature de `Clear and Restart`.
+
+**Reste ouvert, sans gravité** : au-dessus de l'océan le biome vaut 0, pour lequel
+aucun préréglage n'existe. Le `Cast` échoue, la chaîne s'arrête, et la météo du
+dernier biome terrestre persiste. C'est un comportement acceptable ; le corriger
+demanderait une branche « biome maritime » et un préréglage océanique.
