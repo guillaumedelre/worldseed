@@ -2147,3 +2147,55 @@ doit d'abord avoir été élargie à la taille du monde.
 lire la position de la caméra : `ViewportService.get_viewport_info()` donne
 `location`, `rotation` et `is_realtime`. Ce jour-là `is_realtime` était à False —
 séquelle de la recette anti-crash des collections de paramètres, jamais rallumée.
+
+### « La végétation stylisée est très fluo » : ce n'est pas la végétation (12 septembre 2026)
+
+Signalé sur une capture en PIE, sous la pluie : le feuillage de
+`Stylized_PBR_Nature` paraît vert fluo. Question posée : est-ce la pluie, ou
+a-t-on déréglé quelque chose ?
+
+**CE QUE CE N'EST PAS.** Quatre contrôles, tous propres — ne pas les refaire :
+
+| contrôle | résultat |
+|---|---|
+| nos 20 copies d'instances vs celles du pack, paramètre par paramètre | **zéro écart** |
+| dosages `Teinte RVT` / `Hauteur fondu RVT` sur les 11 maîtres greffés | valeurs documentées, aucune dérive |
+| `Worldseed_PostProcess` | **aucune surcharge active** |
+| les 5 acteurs d'éclairage manuels | tous `visible = False`, correctement neutralisés |
+
+**LA MÉTHODE QUI A TRANCHÉ, et elle est réutilisable.** Avant de mesurer des
+couleurs sur une capture, **valider la capture sur un témoin hors rendu** :
+l'interface de l'éditeur. Quatre échantillons de panneaux gris donnent
+**V−R = 0,0** — donc aucune dérive de profil colorimétrique, l'image est fidèle.
+Puis prendre pour témoin un objet dont on connaît la couleur : **le personnage
+est gris, et il rend à V−R = +27**. Un robot gris ne doit pas être vert.
+
+**CE N'EST PAS UN FILTRE PLEIN ÉCRAN.** Luminance du personnage 60,9, du
+feuillage 62,2 — quasi identiques. Une teinte appliquée à l'écran les décalerait
+donc pareillement ; or le feuillage est à V−R = +48 et le personnage à +27.
+**C'est la lumière AMBIANTE qui est verte**, pas l'image.
+
+**LA CAUSE.** Le `Captured Scene Sky Light` d'UDS est en `SLS_CAPTURED_SCENE`,
+capture temps réel, `sky_distance_threshold` = **500 m**. Toute géométrie plus
+PROCHE que ce seuil est traitée comme de la *scène* et nourrit l'ambiance ; plus
+loin, elle est traitée comme du *ciel*. En forêt dense, c'est donc du feuillage
+vert dans toutes les directions qui fait la lumière ambiante, et elle repeint
+tout — y compris un personnage gris.
+
+**POURQUOI SEULEMENT MAINTENANT.** Par ciel dégagé le soleil domine et noie
+l'ambiance. Sous la pluie il disparaît, et **l'ambiance devient la lumière
+principale** : le vert, toujours présent, prend toute la place. Il a fallu armer
+la météo (12 septembre) pour qu'un ciel couvert existe enfin dans ce monde. Nos
+6 200 instances à l'hectare et la teinte RVT qui accorde le feuillage au sol ne
+font qu'amplifier le phénomène.
+
+**DÉCISION DU PROPRIÉTAIRE, 12 septembre 2026 : on ne change rien.** Le rebond
+vert d'une canopée existe réellement, et une forêt sous la pluie est verte et
+sourde. Ce rendu est physiquement défendable.
+
+**Conséquence à ne PAS « corriger » par mégarde** : `Exposure Bias Cloudy` et
+`Exposure Bias Foggy` valent toujours **0**, alors que `Day` vaut −0,6. C'est
+un écart connu et **assumé**, pas un oubli. Les pistes écartées le même jour,
+pour mémoire : baisser `sky_distance_threshold` (on perdrait aussi le rebond
+chaud légitime d'un désert), et basculer sur le `Cubemap Sky Light` (on perdrait
+tout rebond de couleur, partout).
