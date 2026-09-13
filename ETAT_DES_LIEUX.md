@@ -367,16 +367,22 @@ la bande 80-90° plafonne à **27 mm** contre ~150 sur Terre, parce qu'à −40 
 capacité de l'air vaut 0,09 contre 1,48 à l'équateur. Quatre variantes essayées,
 le même chiffre. **Ne pas retenter sans truquer Clausius-Clapeyron.**
 
-### 6.3 Les silhouettes manquantes de végétation — le plus visible
+### 6.3 — FAIT le 13 septembre, gardé pour mémoire
 
-Taïga (deux conifères seulement), toundra (rien de spécifique), savane (pas
-d'acacia), marais (pas de végétation palustre) : ensemble **~15 % des terres**,
-habillées par emprunt. Se règle dans `vegetation_recipes.json`, sans régénérer.
-Limite : ce que les packs contiennent réellement.
+**Les quatre biomes habillés par emprunt ont été traités.** Toundra sans arbres
+(décision du propriétaire : elle se définit par la limite des arbres), taïga en
+forêt MIXTE bouleau-conifère, savane débarrassée de son palmier, marais enrichi.
+Vérifié en jeu pour les trois premiers.
 
-Ce chantier a pris du poids le 13 septembre — toundra et taïga pèsent désormais
-8,4 et 8,6 % des terres contre 4,7 et 6,4 avant, donc leur habillage par emprunt
-se voit deux fois plus.
+**Ce que l'inventaire a établi et qu'il ne faut pas réessayer** : il n'existe
+**ni roseau, ni nénuphar, ni acacia, ni mousse, ni lichen, ni cactus** dans les
+trois packs — 273 maillages balayés. Ces silhouettes ne peuvent pas être créées
+sans nouvel asset.
+
+**Et le marais est intestable** : 0,01 % des terres, soit **169 pixels dans tout
+le monde**, son point le plus intérieur à 3 m d'une frontière. L'habiller était
+théorique ; si on veut un vrai marais, c'est le GÉNÉRATEUR qu'il faut regarder,
+pas les recettes.
 
 ### 6.4 Le sable scintille encore dans les dix premiers mètres
 
@@ -395,6 +401,10 @@ matériau mêle sans doute une texture de détail rapprochée.
 - **`Docs/atlas-worldseed.html` date du 11 septembre** : ses mesures décrivent
   un monde d'avant la correction de la sécheresse polaire. Il le dit lui-même,
   mais il faudra le refaire.
+- **Le marais ne pèse que 0,01 % des terres** (169 pixels). Question de
+  générateur — seuils d'humidité et de pente — et non de recette.
+- **La carte du monde / minimap**, mise de côté le 12 septembre. Tout a été
+  retiré ; le seul verrou était un clic dans le menu `Build`.
 
 ---
 
