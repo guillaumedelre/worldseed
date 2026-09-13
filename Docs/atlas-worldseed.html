@@ -205,16 +205,7 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
 <header class="tete">
   <p class="eyebrow">Worldseed · Unreal Engine 5.8 · référence des outils</p>
   <h1>Atlas Worldseed</h1>
-  <p style="margin:18px 0;padding:14px 18px;border-left:4px solid #c9761f;background:rgba(201,118,31,.10);border-radius:4px;font-size:.95em">
-    <strong>Chiffres datés du 11 septembre 2026.</strong> Le monde a été régénéré le
-    13 septembre pour corriger la <em>sécheresse polaire</em> — il manquait le transport
-    de l'humidité vers les pôles par les dépressions. Les parts de biomes et les profils
-    zonaux de ce document décrivent donc le monde d'<em>avant</em> : la toundra y pèse
-    4,7 % des terres au lieu de 8,4, la taïga 6,4 au lieu de 8,6, et l'écart absolu moyen
-    aux biomes terrestres 24,3 % au lieu de 16,7. Les <em>méthodes</em>, les formules et
-    les pièges décrits restent exacts. Voir <code>CLAUDE.md</code> et
-    <code>ETAT_DES_LIEUX.md</code> pour les mesures à jour.
-  </p>
+  
   <p class="chapo">Un monde de <strong>8 km de côté</strong> qui va d'un pôle à l'autre, engendré hors d'Unreal par une chaîne de huit étapes, puis importé en relief, en eau, en végétation et en météo. Ce document explique comment lancer chaque outil, comment le climat est construit, et sur quelles mesures terrestres il est calé.</p>
   <figure style="margin-top:30px">
     <div class="fig-boite" id="fig-bande"></div>
@@ -590,9 +581,9 @@ et fait manquer la cible a la premiere.</div>
 <thead><tr><th>critère</th><th class="n">monde</th><th class="n">Terre</th><th>source</th></tr></thead>
 <tbody>
 <tr><td>Terres émergées</td><td class="n">29,2 %</td><td class="n">29,2 %</td><td>valeur physique établie</td></tr>
-<tr><td>Pluie moyenne sur les terres</td><td class="n">708 mm</td><td class="n">715 mm</td><td>valeur physique établie</td></tr>
-<tr><td>Terres au-dessus de 2000 mm</td><td class="n">9,0 %</td><td class="n">7,5 %</td><td>—</td></tr>
-<tr><td>Désert + semi-aride chauds</td><td class="n">14,6 %</td><td class="n">21,0 %</td><td>BWh 14,2 % — Peel, Finlayson &amp; McMahon 2007</td></tr>
+<tr><td>Pluie moyenne sur les terres</td><td class="n">713 mm</td><td class="n">715 mm</td><td>valeur physique établie</td></tr>
+<tr><td>Terres au-dessus de 2000 mm</td><td class="n">6,6 %</td><td class="n">7,5 %</td><td>—</td></tr>
+<tr><td>Désert + semi-aride chauds</td><td class="n">15,4 %</td><td class="n">21,0 %</td><td>BWh 14,2 % — Peel, Finlayson &amp; McMahon 2007</td></tr>
 <tr><td>Surface tropicale (&lt; 23,4°)</td><td class="n">39,8 %</td><td class="n">39,8 %</td><td>géométrie d'une sphère : surface entre −L et +L = sin L</td></tr>
 <tr><td>Surface polaire (&gt; 66,6°)</td><td class="n">8,3 %</td><td class="n">8,3 %</td><td>idem</td></tr>
 </tbody></table></div>
@@ -651,31 +642,49 @@ et fait manquer la cible a la premiere.</div>
 <script>
 /* ====================================================== donnees mesurees */
 const D = {
-  zonal: [{lat:-83.1,t:-26.6,p:0,terre:100.0},{lat:-69.2,t:-11.3,p:4,terre:70.5},
-    {lat:-55.4,t:2.2,p:613,terre:9.4},{lat:-41.5,t:11.0,p:383,terre:21.2},
-    {lat:-27.7,t:21.5,p:361,terre:19.0},{lat:-13.8,t:24.9,p:1552,terre:25.7},
-    {lat:0.0,t:26.2,p:1702,terre:18.8},{lat:13.8,t:24.9,p:511,terre:23.9},
-    {lat:27.7,t:23.0,p:0,terre:40.1},{lat:41.5,t:11.6,p:401,terre:45.4},
-    {lat:55.4,t:0.3,p:523,terre:41.0},{lat:69.2,t:-7.8,p:333,terre:21.4},
-    {lat:83.1,t:-15.2,p:0,terre:0.0}],
-  biomes: [["Désert chaud",14.64,21],["Roche nue",12.08,null],["Calotte glaciaire",9.57,10],
-    ["Forêt tropicale humide",9.18,11],["Savane",8.60,13],["Forêt tempérée",7.15,9],
-    ["Forêt tropicale sèche",6.61,null],["Désert froid",6.54,null],["Taïga",5.58,10],
-    ["Prairie",4.83,8],["Plage",3.08,null],["Toundra",2.91,8],["Steppe",2.43,null],
-    ["Lac",2.29,null],["Alpin",2.11,null],["Rivière",1.47,null],
-    ["Forêt tempérée humide",0.91,null]],
+  zonal: [{lat:-83.1,t:-26.5,p:43,terre:100.0},
+    {lat:-69.2,t:-12.6,p:289,terre:69.5},
+    {lat:-55.4,t:1.4,p:973,terre:9.3},
+    {lat:-41.5,t:10.4,p:647,terre:21.0},
+    {lat:-27.7,t:21.8,p:402,terre:18.9},
+    {lat:-13.8,t:24.9,p:1532,terre:25.1},
+    {lat:0.0,t:26.1,p:1845,terre:16.6},
+    {lat:13.8,t:23.6,p:1046,terre:22.4},
+    {lat:27.7,t:22.3,p:271,terre:36.1},
+    {lat:41.5,t:11.7,p:427,terre:44.8},
+    {lat:55.4,t:-0.5,p:788,terre:40.5},
+    {lat:69.2,t:-8.4,p:495,terre:21.0},
+    {lat:83.1,t:-15.4,p:0,terre:0.0}],
+  biomes: [["Désert chaud",15.44,21],
+    ["Savane",11.29,13],
+    ["Calotte glaciaire",10.68,10],
+    ["Forêt tropicale humide",8.28,11],
+    ["Taïga",8.25,10],
+    ["Toundra",8.07,8],
+    ["Forêt tempérée",7.72,9],
+    ["Forêt tropicale sèche",7.42,null],
+    ["Prairie",5.68,8],
+    ["Roche nue",3.72,null],
+    ["Plage",3.08,null],
+    ["Lac",2.31,null],
+    ["Steppe",2.22,null],
+    ["Alpin",2.16,null],
+    ["Rivière",1.40,null],
+    ["Forêt tempérée humide",1.27,null],
+    ["Désert froid",1.01,null],
+    ["Marais",0.01,null]],
   couleurs: {"Désert chaud":"#D6BE7E","Roche nue":"#706C68","Calotte glaciaire":"#D8E2EC",
     "Forêt tropicale humide":"#1E6E3A","Savane":"#C4AC5C","Forêt tempérée":"#468042",
     "Forêt tropicale sèche":"#809846","Désert froid":"#B0B0A6","Taïga":"#2E543E",
     "Prairie":"#96A85C","Plage":"#E2D4AC","Toundra":"#A6B098","Steppe":"#B2AC6C",
-    "Lac":"#2E74B5","Alpin":"#96928C","Rivière":"#56A4D6","Forêt tempérée humide":"#2A6836"},
+    "Lac":"#2E74B5","Alpin":"#96928C","Rivière":"#56A4D6","Forêt tempérée humide":"#2A6836","Marais":"#4E5C3A"},
   /* bandes de Whittaker : [tMin, tMax, [[pMax, nom]...]] */
   bandes: [
-    [-27,-5,[[120,"Désert froid"],[3000,"Toundra"]]],
-    [-5,5,[[150,"Désert froid"],[350,"Toundra"],[3000,"Taïga"]]],
-    [5,12,[[150,"Désert froid"],[400,"Steppe"],[1200,"Forêt tempérée"],[3000,"Forêt tempérée humide"]]],
-    [12,20,[[250,"Désert chaud"],[600,"Prairie"],[1500,"Forêt tempérée"],[3000,"Forêt tempérée humide"]]],
-    [20,33,[[300,"Désert chaud"],[900,"Savane"],[1500,"Forêt tropicale sèche"],[3000,"Forêt tropicale humide"]]]],
+    [-27,-5,[[50,"Désert froid"], [3000,"Toundra"]]],
+    [-5,5,[[60,"Désert froid"], [350,"Toundra"], [3000,"Taïga"]]],
+    [5,12,[[150,"Désert froid"], [400,"Steppe"], [1200,"Forêt tempérée"], [3000,"Forêt tempérée humide"]]],
+    [12,20,[[250,"Désert chaud"], [600,"Prairie"], [1500,"Forêt tempérée"], [3000,"Forêt tempérée humide"]]],
+    [20,33,[[300,"Désert chaud"], [900,"Savane"], [1500,"Forêt tropicale sèche"], [3000,"Forêt tropicale humide"]]]],
   reels: [["Tropical_Savanna-Dry_Winter",28.1,818],["Polar_Ice_Cap",-16.1,197],
     ["Oceanic",8.6,639],["Hot_Desert",25.8,20],["Cold_Desert",17.0,221],
     ["Subarctic",2.5,1340],["Subarctic-Severe_Winter",-11.6,389],["Polar_Tundra",-8.4,1202],

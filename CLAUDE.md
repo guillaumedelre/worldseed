@@ -2466,3 +2466,48 @@ réellement émergé (`line_trace_single`, Z > 0).
 **4. Et le marais est intestable** : 0,01 % des terres, soit **169 pixels dans
 tout le monde**, son point le plus intérieur à 3 m d'une frontière. L'habiller
 était largement théorique.
+
+### Les HLOD n'ont rien à construire, et c'est mesuré (13 septembre 2026)
+
+Chantier ouvert depuis longtemps sous la forme « les HLOD ne sont pas
+construits ». Vérification faite avant de lancer quoi que ce soit :
+
+- **zéro `StaticMeshActor` dans le niveau.** Les 42 acteurs chargés sont le
+  terrain et ses 4 proxies, l'eau (1 océan, 3 lacs, 16 rivières, la zone), les
+  2 volumes de RVT, le volume PCG, les lumières et les acteurs de gestion ;
+- **aucun acteur ne porte de couche HLOD** (`hlod_layer` à `None` partout), bien
+  que deux couches existent pour la carte — `L_Worldseed_HLODLayer_Instanced` et
+  `_Merged` ;
+- le **Landscape est `is_spatially_loaded = False`** : toujours chargé, donc
+  jamais remplacé par un proxy lointain ;
+- et la raison de fond : **la végétation est générée par PCG à l'EXÉCUTION**.
+  Elle n'existe pas au moment d'un build, donc aucun HLOD ne peut la couvrir.
+  C'est structurel, pas un oubli de configuration.
+
+**Ce qui est exposé à Python**, pour le jour où ce sera utile :
+`unreal.WorldPartitionHLODBlueprintLibrary.build_hlod_for_actors(actors)` et
+`build_hlod_for_volume(...)`. En revanche le build COMPLET du menu
+`Build > Build HLODs` ne l'est pas — même mur que la minimap du World
+Partition, dont le builder est une classe sans binding Python.
+
+**À reprendre le jour où des maillages statiques seront posés à la main.** Tant
+que tout le contenu est terrain, eau ou PCG runtime, construire les HLOD produit
+un fichier vide.
+
+### L'atlas se refait par son bloc de données (13 septembre 2026)
+
+`Docs/atlas-worldseed.html` porte un `const D = {...}` qui alimente ses neuf
+schémas. Seuls **trois champs décrivent notre monde** et se périment à chaque
+régénération : `zonal` (13 bandes de latitude), `biomes` (parts, ocean exclu
+mais lacs et rivières INCLUS) et `bandes` (le diagramme de Whittaker, relu depuis
+`world_rules.json`). Les champs `reels`, `stations` et `profilTerre` sont des
+références terrestres et ne bougent pas.
+
+**Piège à ne pas rater** : la table `couleurs` doit couvrir TOUS les biomes de
+`biomes`. La régénération a fait apparaître `Marais` pour la première fois, sans
+couleur — le schéma l'aurait tracé en indéfini. Contrôler l'appariement des deux
+listes après chaque mise à jour.
+
+Le script de mise à jour est dans le scratchpad de la session ; il se refait en
+quelques minutes à partir de `manifest.json`, des trois PNG de climat et des
+règles.

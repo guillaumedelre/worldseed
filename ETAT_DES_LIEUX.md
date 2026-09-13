@@ -384,29 +384,38 @@ le monde**, son point le plus intérieur à 3 m d'une frontière. L'habiller ét
 théorique ; si on veut un vrai marais, c'est le GÉNÉRATEUR qu'il faut regarder,
 pas les recettes.
 
-### 6.4 Le sable scintille encore dans les dix premiers mètres
+### 6.4 — CLOS le 13 septembre, sur décision du propriétaire
 
-Traité à 90 % : `T_Sand_Glitter` est une texture de **paillettes émissives**
-dépendante de l'angle de vue, et son `Boost` valait 579,9 — la valeur de l'auteur,
-juste sur sa petite carte de démo, absurde sur 8 km. Ramené à 5,0, plus une
-correction de `Sand UV` 0,495 → 2,0. Il reste un scintillement de près, là où le
-matériau mêle sans doute une texture de détail rapprochée.
+**Le scintillement du sable de près** est accepté en l'état. Il avait été traité
+à 90 % — `T_Sand_Glitter` est une texture de paillettes émissives dépendante de
+l'angle de vue, son `Boost` ramené de 579,9 à 5,0, plus `Sand UV` 0,495 → 2,0.
+Le résidu tient à une texture de détail rapprochée dans le maître du pack ; le
+poursuivre demanderait une chirurgie hors dépôt, sur un matériau qui a fait
+tomber l'éditeur plusieurs fois. **Ne pas rouvrir sans une raison visible.**
+
+**Le marais à 0,01 % des terres** est accepté lui aussi. 169 pixels dans tout le
+monde, son point le plus intérieur à 3 m d'une frontière : il est introuvable en
+jeu. Ses recettes de végétation existent et sont correctes ; c'est sa SURFACE qui
+est négligeable, et cela se réglerait dans le générateur, pas ici.
+
+**Les HLOD n'ont rien à construire, et c'est mesuré.** Le niveau contient **zéro
+`StaticMeshActor`** : il n'y a que le terrain (qui a son propre système de LOD),
+l'eau (procédurale), le volume PCG, les lumières et les acteurs de gestion.
+**Aucun acteur ne porte de couche HLOD**, et le Landscape est
+`is_spatially_loaded = False`, donc jamais déchargé ni remplacé par un proxy.
+S'y ajoute la raison de fond : **la végétation est générée par PCG à
+l'EXÉCUTION**, elle n'existe donc pas au moment d'un build et aucun HLOD ne peut
+la couvrir. Deux couches HLOD existent pour la carte
+(`L_Worldseed_HLODLayer_Instanced` et `_Merged`) mais ne sont assignées à rien.
+À reprendre **le jour où des maillages statiques seront posés à la main**.
 
 ### 6.5 Points ouverts, plus petits
 
+- **La plage est indiscernable du désert** : même couche dominante.
 - **Au-dessus de l'océan, le biome vaut 0**, pour lequel aucun préréglage
   climatique n'existe : la météo du dernier biome terrestre persiste. Acceptable.
-- **La plage est indiscernable du désert** : même couche dominante.
-- **Les HLOD ne sont pas construits.** À faire quand il y aura du contenu.
-- **`Docs/atlas-worldseed.html` date du 11 septembre** : ses mesures décrivent
-  un monde d'avant la correction de la sécheresse polaire. Il le dit lui-même,
-  mais il faudra le refaire.
-- **Le marais ne pèse que 0,01 % des terres** (169 pixels). Question de
-  générateur — seuils d'humidité et de pente — et non de recette.
 - **La carte du monde / minimap**, mise de côté le 12 septembre. Tout a été
   retiré ; le seul verrou était un clic dans le menu `Build`.
-
----
 
 ## 7. Décisions à ne pas défaire sans en parler
 
