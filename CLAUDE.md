@@ -2432,3 +2432,37 @@ pixel tiré de la carte des biomes sans vérifier son ALTITUDE — le premier es
 fait tomber le pion dans l'océan. Et la grille de `BP_WorldseedClimat` est en
 128×128 : à la frontière de deux biomes elle rend le voisin (biome 13 lu au lieu
 de 12). Contrôler `BiomeCourant` avant de conclure sur une capture.
+
+### Se téléporter au bon endroit : la grille de biomes n'est pas la carte (13 septembre 2026)
+
+Vérifier un biome en jeu demande d'y arriver, et trois pièges s'enchaînent.
+
+**1. LA CONVENTION DE LA GRILLE, calibrée et non devinée.** `BP_WorldseedClimat`
+lit une grille 128×128 (cellule 6250 cm, demi-étendue 400 000). Sa **ligne 0 est
+au SUD** et sa colonne donne X :
+
+    i = (x + 400000) / 6250      j = (y + 400000) / 6250      Grille[j][i]
+
+Les quatre combinaisons possibles ont été testées en jeu sur une même cellule de
+taïga : seule celle-là rend 5. **Ne pas déduire cette convention de la carte
+PNG** — voir le point 3.
+
+**2. LA TOUNDRA NE VALIDE RIEN, et elle m'a trompé.** J'ai cru ma conversion
+bonne parce qu'un point de toundra tombait bien en toundra. Mais **la toundra
+existe aux DEUX pôles** : une erreur de signe en Y y tombe quand même. Pour
+calibrer un repère, choisir un biome ASYMÉTRIQUE, ou tester explicitement les
+variantes.
+
+**3. LA GRILLE CLIMATIQUE PORTE LA DOMINANTE SUR 200 m, PAS LE PIXEL.** Elle
+déclare donc des biomes terrestres au-dessus de l'eau proche du rivage, et ce
+n'est pas un défaut. Mesure sur 46 sondages en jeu : **72 % d'accord terre/mer,
+0 cas de terre émergée déclarée mer, 13 cas de fond marin déclaré terre** — dont
+douze à **32 m de profondeur ou moins**, c'est-à-dire le plateau côtier.
+**J'ai failli conclure à un désalignement de la grille** ; c'est la distribution
+des profondeurs qui a montré qu'il n'en était rien. Pour poser un pion,
+demander un point dont la grille dit le bon biome **et** dont le sol est
+réellement émergé (`line_trace_single`, Z > 0).
+
+**4. Et le marais est intestable** : 0,01 % des terres, soit **169 pixels dans
+tout le monde**, son point le plus intérieur à 3 m d'une frontière. L'habiller
+était largement théorique.
