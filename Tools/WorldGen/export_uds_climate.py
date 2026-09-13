@@ -173,7 +173,33 @@ def grille_dominante(idx, n_grille, rayon_px):
                 v, c = np.unique(terre, return_counts=True)
                 ligne.append(int(v[c.argmax()]))
         sortie.append(ligne)
-    return sortie
+
+    # EN MER, ON PREND LE CLIMAT DE LA COTE LA PLUS PROCHE.
+    #
+    # Une cellule sans aucune terre dans son rayon valait 0, et AUCUN prereglage
+    # n'existe pour l'identifiant 0 : le `Cast` de BP_WorldseedClimat echouait
+    # alors en silence et la meteo du dernier biome VISITE persistait. Le climat
+    # dependait donc de l'historique du joueur et non de l'endroit ou il se
+    # trouve -- un accident, pas une intention.
+    #
+    # POURQUOI LA COTE VOISINE, ET NON UN PREREGLAGE OCEANIQUE DEDIE. Mesure sur
+    # ce monde : l'eau n'est JAMAIS a plus de 2002 m d'une terre, mediane 335 m,
+    # 90e centile 911 m, et 7,5 % seulement au-dela d'un kilometre. La cote
+    # voisine EST donc le climat local. A l'inverse, un prereglage unique pour
+    # tout l'ocean serait absurde : la mer fait 27,0 C sous les tropiques,
+    # 15,7 aux moyennes latitudes et -4,6 au-dela de 60 degres -- une seule
+    # fiche ne peut pas decrire cela, et les autres biomes n'ont pas ce probleme
+    # parce qu'ils sont contraints en latitude par construction.
+    #
+    # Le remplissage se fait par transformee de distance sur la GRILLE (128x128,
+    # donc gratuit) et non sur la carte : `distance_transform_edt` rend, pour
+    # chaque cellule, l'indice de la cellule NON VIDE la plus proche.
+    g = np.array(sortie, dtype=np.int32)
+    vide = g == 0
+    if vide.any():
+        _, (iy, ix) = ndimage.distance_transform_edt(vide, return_indices=True)
+        g = g[iy, ix]
+    return g.tolist()
 
 
 def run(dossier: Path, regles: Path) -> dict:

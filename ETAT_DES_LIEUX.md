@@ -412,8 +412,13 @@ la couvrir. Deux couches HLOD existent pour la carte
 ### 6.5 Points ouverts, plus petits
 
 - **La plage est indiscernable du désert** : même couche dominante.
-- **Au-dessus de l'océan, le biome vaut 0**, pour lequel aucun préréglage
-  climatique n'existe : la météo du dernier biome terrestre persiste. Acceptable.
+- ~~Au-dessus de l'océan, le biome vaut 0~~ — **RÉGLÉ le 13 septembre.** Les
+  cellules d'eau prennent désormais le biome de la côte la plus proche, l'eau
+  n'étant jamais à plus de 2 km d'une terre (médiane 335 m). Un préréglage
+  océanique unique aurait été absurde : la mer fait 27 °C sous les tropiques et
+  −4,6 au-delà de 60°. Et `uds_climate.poser_grille()` comble un manque plus
+  grave : la grille n'était rejouée par AUCUN script, donc toute régénération
+  laissait le Blueprint avec celle d'un monde disparu.
 - **La carte du monde / minimap**, mise de côté le 12 septembre. Tout a été
   retiré ; le seul verrou était un clic dans le menu `Build`.
 

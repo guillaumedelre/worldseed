@@ -117,3 +117,60 @@ def verifier() -> dict:
             }
     return {"attendus": len(d["presets"]), "manquants": manquants,
             "ecarts": ecarts[:10], "nombreEcarts": len(ecarts), "temoin": temoin}
+
+
+# ------------------------------------------------------- la grille de biomes
+
+BLUEPRINT_CLIMAT = "/Game/Worldseed/Climate/BP_WorldseedClimat"
+
+
+def poser_grille() -> dict:
+    """Ecrit la grille de biomes dans `BP_WorldseedClimat.GrilleBrute`.
+
+    POURQUOI CETTE FONCTION EXISTE. La grille avait ete posee A LA MAIN lors
+    d'une session precedente, et aucun script ne la rejouait : toute
+    regeneration du monde laissait donc le Blueprint avec la grille d'un monde
+    qui n'existait plus, sans que rien ne le signale.
+
+    LE FORMAT EST DICTE PAR LE BLUEPRINT, qui decoupe en deux temps : les
+    LIGNES par `;` une seule fois au BeginPlay, puis les CELLULES par `-` sur
+    la seule ligne utile a chaque mise a jour. C'est ce decoupage en deux temps
+    qui rend tenable une chaine de ~39 000 caracteres appelee deux fois par
+    seconde.
+
+    LA VALEUR NE SE RELIT PAS PAR `get_variable_info(...).default_value`, qui
+    rend une chaine VIDE pour une valeur longue alors qu'elle est bien posee.
+    Le controle se fait par `get_property`, qui dit vrai.
+    """
+    _log.clear()
+    d = _donnees()
+    g = d.get("grid") or {}
+    lignes = g.get("data")
+    if not lignes:
+        log("ERROR", "pas de grille dans {}".format(SOURCE))
+        return {"success": False, "log": list(_log)}
+
+    brut = ";".join("-".join(str(int(v)) for v in ligne) for ligne in lignes)
+    vides = sum(1 for ligne in lignes for v in ligne if int(v) == 0)
+    if vides:
+        log("ERROR", "{} cellules a 0 : aucun prereglage n'existe pour l'ocean, "
+                     "relancer export_uds_climate.py".format(vides))
+        return {"success": False, "log": list(_log)}
+
+    ok = unreal.BlueprintService.set_variable_default_value(
+        BLUEPRINT_CLIMAT, "GrilleBrute", brut)
+    if not ok:
+        log("ERROR", "ecriture de GrilleBrute refusee")
+        return {"success": False, "log": list(_log)}
+    unreal.BlueprintEditorLibrary.compile_blueprint(
+        unreal.EditorAssetLibrary.load_asset(BLUEPRINT_CLIMAT))
+    unreal.EditorAssetLibrary.save_asset(BLUEPRINT_CLIMAT)
+
+    relu = unreal.BlueprintService.get_property(BLUEPRINT_CLIMAT, "GrilleBrute")
+    conforme = str(relu) == brut
+    log("MODIFIED" if conforme else "ERROR",
+        "GrilleBrute : {} lignes, {} caracteres, relecture {}".format(
+            len(lignes), len(brut), "conforme" if conforme else "DIFFERENTE"))
+    return {"success": conforme, "lignes": len(lignes), "caracteres": len(brut),
+            "resolution": g.get("resolution"), "celluleCm": g.get("cellSizeCm"),
+            "log": list(_log)}

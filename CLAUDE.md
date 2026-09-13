@@ -2511,3 +2511,46 @@ listes après chaque mise à jour.
 Le script de mise à jour est dans le scratchpad de la session ; il se refait en
 quelques minutes à partir de `manifest.json`, des trois PNG de climat et des
 règles.
+
+### En mer, le climat est celui de la côte la plus proche (13 septembre 2026)
+
+Au-dessus de l'eau, la grille de `BP_WorldseedClimat` valait **0**, identifiant
+pour lequel aucun préréglage n'existe. Le `Cast` échouait donc en silence et la
+météo du **dernier biome VISITÉ** persistait : le climat dépendait de
+l'historique du joueur et non de l'endroit où il se trouve. Un accident, pas une
+intention.
+
+**POURQUOI PAS UN PRÉRÉGLAGE OCÉANIQUE, malgré l'évidence apparente.** Deux
+mesures l'ont écarté :
+
+- **l'eau n'est JAMAIS à plus de 2002 m d'une terre** — médiane 335 m, 90ᵉ
+  centile 911 m, et 7,5 % seulement au-delà d'un kilomètre. Sur un monde de
+  8 km, la côte voisine **est** le climat local ;
+- **un préréglage unique pour tout l'océan serait absurde** : la mer fait
+  **27,0 °C** sous les tropiques, **15,7** aux moyennes latitudes et **−4,6**
+  au-delà de 60°. Une seule fiche ne peut pas décrire cela. Les autres biomes
+  n'ont pas ce problème parce qu'ils sont contraints en latitude par
+  construction — la toundra n'existe qu'où il fait froid.
+
+**LE CORRECTIF** tient en quelques lignes dans `export_uds_climate.grille_dominante` :
+une transformée de distance sur la GRILLE (128×128, donc gratuite) donne pour
+chaque cellule vide l'indice de la cellule non vide la plus proche.
+`ndimage.distance_transform_edt(vide, return_indices=True)`. Résultat : **0
+cellule à 0 sur 16 384**.
+
+**ET LA GRILLE N'ÉTAIT REJOUÉE PAR AUCUN SCRIPT.** Elle avait été posée à la
+main lors d'une session précédente : toute régénération du monde laissait donc
+`BP_WorldseedClimat` avec la grille d'un monde qui n'existait plus, **sans que
+rien ne le signale**. D'où `uds_climate.poser_grille()`, qui l'écrit depuis
+`uds_climate.json` et relit pour vérifier. Rappel utile :
+`get_variable_info(...).default_value` rend une chaîne VIDE pour une valeur
+longue ; le contrôle passe par `get_property`.
+
+**PREUVE, en PIE.** Le témoin n'est pas la taille des cartes de probabilités —
+elles font 7 entrées des deux côtés — mais leur CONTENU :
+
+    en toundra : Snow_Light 2,7  Snow 0,4  et pas une goutte de pluie
+    au large   : Rain_Light 9,9  Rain 8,8  et pas un flocon
+
+La grille passe de 39 120 à 43 544 caractères, les cellules d'océan portant
+désormais un identifiant à deux chiffres au lieu de `0`.
