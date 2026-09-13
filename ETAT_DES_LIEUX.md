@@ -350,77 +350,47 @@ matériaux d'affilée a fait tomber l'éditeur deux fois.
 
 ## 6. Ce qui reste à faire
 
-Dans l'ordre où je le ferais.
+**Au 13 septembre 2026, il ne reste presque rien.** Les sept chantiers ouverts
+le 12 ont été traités ou tranchés en deux jours. Ce qui suit est court à dessein.
 
-### 6.1 et 6.2 — FAITS le 13 septembre, gardés ici pour mémoire
+### 6.1 Ouvert
 
-**La sécheresse polaire est corrigée.** Il manquait le transport méridien de
-l'humidité par les dépressions : l'advection suit le vent moyen, zonal aux
-moyennes latitudes, si bien que rien ne portait l'eau vers les pôles. Un mélange
-méridien descendant le gradient, centré sur le rail des dépressions, a porté la
-bande 60-70° de **170 à 456 mm**, la toundra de 4,66 à **8,09 %** et l'écart
-absolu moyen de 24,3 à **16,7 %**. Détail complet et pistes rejetées dans
-`CLAUDE.md`.
+- **La carte du monde / minimap.** Mise de côté par le propriétaire le
+  12 septembre ; tout ce qui avait été monté a été retiré. Le seul verrou
+  technique était un **clic dans le menu `Build`** — la construction de la
+  texture World Partition n'est pas exposée à Python (vérifié trois fois :
+  pas d'API, pas de commande console, pas de binding sur le builder).
+  Le reste — recopie de la texture en asset autonome, widget, câblage de la
+  touche — est du travail ordinaire.
+- **Le marais ne pèse que 0,01 % des terres**, soit 169 pixels dans tout le
+  monde. Ses recettes de végétation sont correctes ; c'est sa SURFACE qui est
+  négligeable. **C'est une question de générateur** — seuils d'humidité et de
+  pente — et non de recette. Accepté en l'état pour l'instant.
 
-**Et il neige vraiment**, vérifié en PIE. Reste un plafond que rien ne franchit :
-la bande 80-90° plafonne à **27 mm** contre ~150 sur Terre, parce qu'à −40 °C la
-capacité de l'air vaut 0,09 contre 1,48 à l'équateur. Quatre variantes essayées,
-le même chiffre. **Ne pas retenter sans truquer Clausius-Clapeyron.**
+### 6.2 Deux murs, à ne pas confondre avec des chantiers
 
-### 6.3 — FAIT le 13 septembre, gardé pour mémoire
+- **La bande 80-90° plafonne à 27 mm** de précipitations contre ~150 sur Terre.
+  Quatre variantes essayées — élargie, déplacée, renforcée — le même chiffre :
+  à −40 °C la capacité de l'air vaut 0,09 contre 1,48 à l'équateur. Le franchir
+  demanderait de truquer Clausius-Clapeyron, piste déjà rejetée.
+- **Il n'existe ni roseau, ni nénuphar, ni acacia, ni mousse, ni lichen, ni
+  cactus** dans les trois packs — 273 maillages balayés. Ces silhouettes ne
+  peuvent pas être créées sans acheter un nouvel asset.
 
-**Les quatre biomes habillés par emprunt ont été traités.** Toundra sans arbres
-(décision du propriétaire : elle se définit par la limite des arbres), taïga en
-forêt MIXTE bouleau-conifère, savane débarrassée de son palmier, marais enrichi.
-Vérifié en jeu pour les trois premiers.
+### 6.3 Clos les 12 et 13 septembre, avec ce qu'il ne faut pas rouvrir
 
-**Ce que l'inventaire a établi et qu'il ne faut pas réessayer** : il n'existe
-**ni roseau, ni nénuphar, ni acacia, ni mousse, ni lichen, ni cactus** dans les
-trois packs — 273 maillages balayés. Ces silhouettes ne peuvent pas être créées
-sans nouvel asset.
-
-**Et le marais est intestable** : 0,01 % des terres, soit **169 pixels dans tout
-le monde**, son point le plus intérieur à 3 m d'une frontière. L'habiller était
-théorique ; si on veut un vrai marais, c'est le GÉNÉRATEUR qu'il faut regarder,
-pas les recettes.
-
-### 6.4 — CLOS le 13 septembre, sur décision du propriétaire
-
-**Le scintillement du sable de près** est accepté en l'état. Il avait été traité
-à 90 % — `T_Sand_Glitter` est une texture de paillettes émissives dépendante de
-l'angle de vue, son `Boost` ramené de 579,9 à 5,0, plus `Sand UV` 0,495 → 2,0.
-Le résidu tient à une texture de détail rapprochée dans le maître du pack ; le
-poursuivre demanderait une chirurgie hors dépôt, sur un matériau qui a fait
-tomber l'éditeur plusieurs fois. **Ne pas rouvrir sans une raison visible.**
-
-**Le marais à 0,01 % des terres** est accepté lui aussi. 169 pixels dans tout le
-monde, son point le plus intérieur à 3 m d'une frontière : il est introuvable en
-jeu. Ses recettes de végétation existent et sont correctes ; c'est sa SURFACE qui
-est négligeable, et cela se réglerait dans le générateur, pas ici.
-
-**Les HLOD n'ont rien à construire, et c'est mesuré.** Le niveau contient **zéro
-`StaticMeshActor`** : il n'y a que le terrain (qui a son propre système de LOD),
-l'eau (procédurale), le volume PCG, les lumières et les acteurs de gestion.
-**Aucun acteur ne porte de couche HLOD**, et le Landscape est
-`is_spatially_loaded = False`, donc jamais déchargé ni remplacé par un proxy.
-S'y ajoute la raison de fond : **la végétation est générée par PCG à
-l'EXÉCUTION**, elle n'existe donc pas au moment d'un build et aucun HLOD ne peut
-la couvrir. Deux couches HLOD existent pour la carte
-(`L_Worldseed_HLODLayer_Instanced` et `_Merged`) mais ne sont assignées à rien.
-À reprendre **le jour où des maillages statiques seront posés à la main**.
-
-### 6.5 Points ouverts, plus petits
-
-- **La plage est indiscernable du désert** : même couche dominante.
-- ~~Au-dessus de l'océan, le biome vaut 0~~ — **RÉGLÉ le 13 septembre.** Les
-  cellules d'eau prennent désormais le biome de la côte la plus proche, l'eau
-  n'étant jamais à plus de 2 km d'une terre (médiane 335 m). Un préréglage
-  océanique unique aurait été absurde : la mer fait 27 °C sous les tropiques et
-  −4,6 au-delà de 60°. Et `uds_climate.poser_grille()` comble un manque plus
-  grave : la grille n'était rejouée par AUCUN script, donc toute régénération
-  laissait le Blueprint avec celle d'un monde disparu.
-- **La carte du monde / minimap**, mise de côté le 12 septembre. Tout a été
-  retiré ; le seul verrou était un clic dans le menu `Build`.
+| chantier | issue |
+|---|---|
+| **Sécheresse polaire** | corrigée par un transport méridien de l'humidité. 60-70° : 170 → 456 mm. Toundra 4,66 → 8,09 %, écart absolu moyen 24,3 → **16,7 %**, le meilleur du projet |
+| **Rythme du temps** | l'année passait de 274 h à **27 h** via `CAL_Worldseed`. **Ne PAS piloter `Season` directement** : c'est la DATE qui donne la déclinaison du soleil |
+| **Preuve de la neige** | il neige, vérifié en PIE. ~3 épisodes par hiver de toundra |
+| **Silhouettes de végétation** | toundra sans arbres, taïga en forêt mixte bouleau-conifère, savane sans palmier, marais enrichi. Vérifié en jeu |
+| **Climat en mer** | les cellules d'eau prennent le biome de la côte la plus proche — l'eau n'est jamais à plus de 2 km d'une terre |
+| **Plage indiscernable du désert** | teinte de sable pilotée par l'ALTITUDE. Saturation −17 %, clarté +15 %, mesuré en A/B avec le personnage comme témoin d'éclairage. Réglable sur l'instance, **sans recompiler** |
+| **Scintillement du sable de près** | accepté en l'état. Le résidu tient à une texture de détail dans le maître du pack — chirurgie hors dépôt, sur un matériau qui a fait tomber l'éditeur trois fois |
+| **HLOD** | **rien à construire** : zéro `StaticMeshActor`, aucun acteur ne porte de couche HLOD, le Landscape n'est jamais déchargé, et la végétation PCG est générée à l'EXÉCUTION donc invisible à un build. À reprendre le jour où des maillages statiques seront posés à la main |
+| **Atlas périmé** | refait sur le monde du 13 |
+| **Carte par défaut** | `GameDefaultMap` et `EditorStartupMap` pointent `L_Worldseed` ; `Lvl_ThirdPerson` supprimée. `GlobalDefaultGameMode` reste `BP_ThirdPersonGameMode`, qui porte le pion et les entrées |
 
 ## 7. Décisions à ne pas défaire sans en parler
 
