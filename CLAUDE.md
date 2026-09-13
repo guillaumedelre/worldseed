@@ -2554,3 +2554,56 @@ elles font 7 entrées des deux côtés — mais leur CONTENU :
 
 La grille passe de 39 120 à 43 544 caractères, les cellules d'océan portant
 désormais un identifiant à deux chiffres au lieu de `0`.
+
+### Sable de plage : teinter par l'ALTITUDE, et le crash que ça coûte (13 septembre 2026)
+
+Demande : « plutôt qu'une plage de galets, une teinte un peu plus jaune pour le
+sable de plage ». Bonne idée, mais elle ne se règle pas — il faut une greffe.
+
+**LE MATÉRIAU NE CONNAÎT PAS LES BIOMES.** Il ne voit que les dix poids peints,
+et plage et désert sont dominés par la **même couche `DesertSand`** — 0,84 contre
+0,72. Aucun poids ne les sépare. Et le matériau **n'expose aucun paramètre de
+couleur** : `Sand UV`, `SandStrenght`, `HueShift`, `Desatureate`, dont les deux
+derniers sont GLOBAUX et teinteraient tout le terrain.
+
+**LE DISCRIMINANT DISPONIBLE EST L'ALTITUDE**, et il est physiquement juste :
+une plage est au niveau de la mer, c'est même ce qui la définit. La greffe est
+`Lerp(sable, sable × teinte, masque)` avec
+`masque = "Palissement plage" × saturate(1 − Z / "Hauteur plage")`. Bonus : les
+dunes côtières du désert pâlissent aussi, ce qui est correct.
+
+**BONNE SURPRISE DE STRUCTURE** : le matériau échantillonne ses **dix couches au
+premier niveau** (10 `LandscapeLayerSample`), et `T_Sand` y est directement
+accessible — l'insertion se fait entre sa sortie `RGB` et le `Lerp` qui la
+consomme. Pas besoin de descendre dans les fonctions du pack.
+
+**UN SECOND PIÈGE DE `batch_connect_expressions`, frère du premier.** On savait
+qu'une ENTRÉE unique se désigne par la chaîne VIDE et non par `"Input"`. On sait
+maintenant qu'**une SORTIE unique aussi** : passer `"Output_0"` — le nom que rend
+pourtant `list_expressions` — échoue **en silence**. Mesure : **4 connexions sur
+12** à la première tentative, et l'appel ne dit pas lesquelles. Les sorties
+NOMMÉES (`RGB`, `Z`) passent bien par leur nom. Diagnostic : relire le graphe et
+comparer les liaisons attendues aux liaisons faites.
+
+**PIÈGE DE VÉRIFICATION** : après coup, deux liaisons semblaient manquer parce
+que l'export les nomme `'Input'` là où on avait passé la chaîne vide. Elles
+étaient bien là. Comparer par l'export, pas par ce qu'on a envoyé.
+
+**ET L'ÉDITEUR EST TOMBÉ, comme annoncé.** Chronologie précise :
+
+    21:39:11  signal de sante : gameThreadStallSeconds = 0
+    21:39:13  materiau sauvegarde, 164 861 octets, `is_compiled_ok = True`
+    21:39:15  EXCEPTION_ACCESS_VIOLATION dans UnrealEditor-D3D12RHI,
+              via RHI/Renderer, « Crash in runnable thread Foreground Worker #1 »
+
+C'est la création des états de pipeline du matériau recompilé, la même signature
+que les crashes du vent sur le feuillage. **Le travail était déjà sur le
+disque** : la recompilation et la sauvegarde avaient rendu `True` avant.
+
+**CE QUI A PERMIS DE TRANCHER SANS L'ÉDITEUR** : `Saved/VibeUE/Signals/editor-<pid>-health.json`
+datait de 28 s avec un blocage à 0, mais `tasklist` ne trouvait plus
+`UnrealEditor.exe` — et `CrashReportClientEditor.exe` tournait. **Un signal de
+santé frais ne prouve donc pas que le processus vit encore** : il prouve qu'il
+vivait il y a quelques secondes. Croiser avec la liste des processus.
+
+Rejeu : `landscape_material.sable_de_plage()`, idempotent par constat.

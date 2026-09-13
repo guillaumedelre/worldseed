@@ -152,3 +152,113 @@ def verifier():
                     "herbe": e["id"] in herbes,
                     "u": p.get("UTiling"), "v": p.get("VTiling")})
     return out
+
+
+# --------------------------------------------------- sable de plage, par l'altitude
+
+P_TEINTE = "Teinte sable plage"
+P_HAUTEUR = "Hauteur plage"
+P_FORCE = "Palissement plage"
+TEINTE_DEFAUT = "(R=1.100000,G=1.120000,B=0.850000,A=1.000000)"
+HAUTEUR_DEFAUT = 1200.0          # cm : la zone atteinte par la mer
+FORCE_DEFAUT = 1.0
+
+
+def _sable(d):
+    """L'echantillon de `T_Sand`, et le noeud qui consomme sa couleur."""
+    src = next((e["id"] for e in d["expressions"]
+                if e["class"] == "TextureSample"
+                and "T_Sand." in str((e.get("properties") or {}).get("Texture", ""))), None)
+    if src is None:
+        return None, None, None
+    for c in d["connections"]:
+        if c["source_id"] == src and c["source_output_name"] == "RGB":
+            return src, c["target_id"], c["target_input"]
+    return src, None, None
+
+
+def sable_de_plage(hauteur=HAUTEUR_DEFAUT, force=FORCE_DEFAUT, teinte=TEINTE_DEFAUT):
+    """Palit et jaunit le sable EN DESSOUS d'une altitude donnee. Idempotent.
+
+    POURQUOI PAR L'ALTITUDE, ET NON PAR LE BIOME. Le materiau ne connait pas les
+    biomes : il ne voit que les dix poids peints, et la plage comme le desert
+    sont domines par la MEME couche `DesertSand` -- 0,84 contre 0,72. Aucun
+    poids ne les separe. En revanche le materiau connait l'altitude, et une
+    plage est par definition au niveau de la mer : c'est meme ce qui la definit.
+    Bonus physique : les dunes cotieres du desert palissent aussi, ce qui est
+    juste -- un sable lave par la mer EST plus pale.
+
+    LA GREFFE : `Lerp(sable, sable x teinte, masque)` avec
+    `masque = "Palissement plage" * saturate(1 - Z / "Hauteur plage")`.
+
+    DEUX PIEGES DE `batch_connect_expressions`, payes comptant tous les deux :
+      - une entree UNIQUE se designe par la chaine VIDE, jamais par "Input" --
+        deja note pour la greffe de RVT ;
+      - et une SORTIE unique aussi. Passer "Output_0", le nom que rend pourtant
+        `list_expressions`, echoue EN SILENCE : 4 connexions sur 12 a la
+        premiere tentative, sans dire lesquelles. Les sorties NOMMEES (`RGB`,
+        `Z`) se passent bien par leur nom.
+
+    ⚠ RECOMPILER CE MATERIAU FAIT TOMBER L'EDITEUR. Mesure du 13 septembre :
+    graphe pose et sauvegarde a 21:39:13, crash a 21:39:15 --
+    EXCEPTION_ACCESS_VIOLATION dans D3D12RHI, via RHI/Renderer sur un
+    « Foreground Worker », c'est-a-dire la creation des etats de pipeline. Le
+    travail etait deja sur le disque. Viser le ciel et couper le temps reel
+    AVANT, et s'attendre a relancer.
+    """
+    _log.clear()
+    if not unreal.EditorAssetLibrary.does_asset_exist(MAITRE):
+        log("ERROR", "{} absent : le recreer d'abord (voir README)".format(MAITRE))
+        return {"greffe": False, "log": list(_log)}
+    d = _graphe()
+    noms = {(e.get("properties") or {}).get("ParameterName") for e in d["expressions"]}
+    if P_TEINTE in noms and P_HAUTEUR in noms and P_FORCE in noms:
+        log("SKIPPED", "le sable de plage est deja greffe")
+        return {"greffe": False, "log": list(_log)}
+
+    src, cible, broche = _sable(d)
+    if src is None or cible is None:
+        log("ERROR", "chaine du sable introuvable : le graphe du pack a change")
+        return {"greffe": False, "log": list(_log)}
+
+    S = unreal.MaterialNodeService
+    classes = ["MaterialExpressionVectorParameter", "MaterialExpressionMultiply",
+               "MaterialExpressionScalarParameter", "MaterialExpressionWorldPosition",
+               "MaterialExpressionDivide", "MaterialExpressionOneMinus",
+               "MaterialExpressionClamp", "MaterialExpressionScalarParameter",
+               "MaterialExpressionMultiply", "MaterialExpressionLinearInterpolate"]
+    xs = [-4700.0, -4300.0, -5300.0, -5300.0, -4950.0, -4750.0, -4550.0, -4950.0, -4350.0, -3700.0]
+    ys = [4950.0, 4950.0, 5350.0, 5550.0, 5450.0, 5450.0, 5450.0, 5750.0, 5600.0, 4300.0]
+    n = [e.id for e in S.batch_create_expressions(MAITRE, classes, xs, ys)]
+    if len(n) != 10:
+        log("ERROR", "{} noeuds crees sur 10".format(len(n)))
+        return {"greffe": False, "log": list(_log)}
+    (teint, sableT, haut, wpos, div, om, clamp, forc, masq, fondu) = n
+
+    S.batch_set_properties(
+        MAITRE,
+        [teint, teint, haut, haut, forc, forc, clamp, clamp],
+        ["ParameterName", "DefaultValue", "ParameterName", "DefaultValue",
+         "ParameterName", "DefaultValue", "MinDefault", "MaxDefault"],
+        [P_TEINTE, teinte, P_HAUTEUR, "{:.6f}".format(hauteur),
+         P_FORCE, "{:.6f}".format(force), "0.0", "1.0"])
+
+    # sorties NOMMEES d'abord, puis les sorties uniques (chaine vide)
+    faites = S.batch_connect_expressions(
+        MAITRE, [wpos, src, teint, src], ["Z", "RGB", "RGB", "RGB"],
+        [div, sableT, sableT, fondu], ["A", "A", "B", "A"])
+    faites += S.batch_connect_expressions(
+        MAITRE, [haut, div, om, clamp, forc, sableT, masq, fondu],
+        ["", "", "", "", "", "", "", ""],
+        [div, om, clamp, masq, masq, fondu, fondu, cible],
+        ["B", "", "", "A", "B", "B", "Alpha", broche])
+    if faites != 12:
+        log("ERROR", "{} liaisons sur 12".format(faites))
+        return {"greffe": False, "log": list(_log)}
+
+    unreal.MaterialEditingLibrary.recompile_material(
+        unreal.EditorAssetLibrary.load_asset(MAITRE))
+    unreal.EditorAssetLibrary.save_asset(MAITRE)
+    log("MODIFIED", "sable de plage greffe : hauteur {:.0f} cm, force {:.2f}".format(
+        hauteur, force))
+    return {"greffe": True, "log": list(_log)}
