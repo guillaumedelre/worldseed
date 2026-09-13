@@ -362,6 +362,15 @@ le 12 ont été traités ou tranchés en deux jours. Ce qui suit est court à de
   pas d'API, pas de commande console, pas de binding sur le builder).
   Le reste — recopie de la texture en asset autonome, widget, câblage de la
   touche — est du travail ordinaire.
+- **La végétation des nouveaux packs Fab n'est ni teintée ni agitée par le
+  vent.** Les greffes de Runtime Virtual Texture et de `Foliage_Wind_Movement`
+  ont été posées sur les 11 maîtres d'Orasot ; les ~10 maîtres venus de
+  Kobo_Nature, Stylized_Forest, Stylized_Village, Stylized_Egypt et Snow_Forest
+  ne les ont pas. Conséquence visible : ces plantes gardent leur vert d'origine
+  au lieu de prendre le ton du sol, et restent immobiles. Le chantier est connu
+  et documenté (`Tools/UE/rvt_graft.py`), mais il **recompile de gros matériaux**,
+  ce qui a fait tomber l'éditeur trois fois : à mener par UN OU DEUX matériaux à
+  la fois, jamais en série.
 - **Le marais ne pèse que 0,01 % des terres**, soit 169 pixels dans tout le
   monde. Ses recettes de végétation sont correctes ; c'est sa SURFACE qui est
   négligeable. **C'est une question de générateur** — seuils d'humidité et de
@@ -390,6 +399,8 @@ le 12 ont été traités ou tranchés en deux jours. Ce qui suit est court à de
 | **Scintillement du sable de près** | accepté en l'état. Le résidu tient à une texture de détail dans le maître du pack — chirurgie hors dépôt, sur un matériau qui a fait tomber l'éditeur trois fois |
 | **HLOD** | **rien à construire** : zéro `StaticMeshActor`, aucun acteur ne porte de couche HLOD, le Landscape n'est jamais déchargé, et la végétation PCG est générée à l'EXÉCUTION donc invisible à un build. À reprendre le jour où des maillages statiques seront posés à la main |
 | **Atlas périmé** | refait sur le monde du 13 |
+| **Packs Fab** | 3,5 Go importés et câblés : 179 maillages ajoutés aux couches EXISTANTES, donc **variété à coût identique** — 344 482 instances avant comme après, 116,4 FPS, verdict PASS. Comble la mousse, la toundra neigeuse, la prairie et le désert chaud |
+| **MegaPlants** | **écarté après mesure.** Bibliothèque du plugin Procedural Vegetation : plantes en `SkeletalMesh`, 78 924 triangles de moyenne contre 1 798 pour nos pins, aucune herbe, 32 % du monde non couvert. Laissé en place, inactif |
 | **Carte par défaut** | `GameDefaultMap` et `EditorStartupMap` pointent `L_Worldseed` ; `Lvl_ThirdPerson` supprimée. `GlobalDefaultGameMode` reste `BP_ThirdPersonGameMode`, qui porte le pion et les entrées |
 
 ## 7. Décisions à ne pas défaire sans en parler

@@ -62,6 +62,10 @@
 		{
 			"Name": "WorldPartitionHLODUtilities",
 			"Enabled": true
+		},
+		{
+			"Name": "ProceduralVegetationEditor",
+			"Enabled": true
 		}
 	]
 }

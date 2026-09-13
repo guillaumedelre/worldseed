@@ -2653,3 +2653,93 @@ le PIE s'ouvraient donc sur une démo vide. Les deux pointent désormais
 aucun référenceur hors de ses propres `__ExternalActors__`. **`GlobalDefaultGameMode`
 reste `BP_ThirdPersonGameMode`** : ce Blueprint porte notre pion et nos entrées,
 il ne faut pas le confondre avec la carte de démonstration.
+
+### MegaPlants n'est pas un pack d'arbres, et il rend un mât nu (13 septembre 2026)
+
+Les 29 espèces de `Megaplant_Library` (1 847 assets, **8,6 Go**) sont une
+bibliothèque pour le plugin **`ProceduralVegetationEditor`** — un générateur
+d'arbres à graphe de nœuds livré avec 5.8, *Experimental*, **désactivé par
+défaut**. Activé depuis (`Worldseed.uproject`), il expose ~230 classes `PV*`.
+
+**Ce que contient réellement le pack**, et c'est contre-intuitif :
+
+- les 134 plantes « finies » sont des **`SkeletalMesh` Nanite**, pas des
+  `StaticMesh` — notre `PCGStaticMeshSpawner` ne peut donc rien en faire ;
+- `Tree_Norway_Spruce_01_A` = **139 849 triangles et 1 082 OS**, mais ce n'est
+  que le TRONC : posé en `SkeletalMeshActor`, il rend **un mât nu**, vérifié en
+  fil de fer. Les bornes annoncent pourtant 6,6 m de large — elles décrivent le
+  squelette, pas de la géométrie ;
+- le feuillage est dans les **549 `StaticMesh` de `Instances/`** (`Branch_`,
+  `Twig_`, `Decoration_`), instanciés sur les 1 082 os par le système. **Une
+  seule branche, `SKM_Branch_Norway_Spruce_02`, fait 607 261 triangles** — quatre
+  fois l'arbre entier. Total de la bibliothèque : **39,3 millions de triangles**.
+
+**`ProceduralVegetationGraph` hérite de `PCGGraph`** et `ProceduralVegetationGraphInstance`
+de `PCGGraphInstance` : l'assemblage est un graphe PCG joué dans l'éditeur du
+plugin. Il n'existe **aucune classe d'acteur ni de composant** pour poser une de
+ces plantes dans un niveau — la sortie attendue est un export (`PVExportSettings`).
+
+**PCG SAIT semer du skinné** — `PCGSkinnedMeshSpawnerSettings`,
+`PCGSkinnedMeshSelector`, `PCGSoftSkinnedMeshComponentDescriptor` existent. Mais
+le sélecteur n'a qu'un `mesh_attribute` : **pas d'équivalent de
+`PCGMeshSelectorWeightedByCategory`**, donc tout notre tri par bande de densité
+de biome serait à reconstruire.
+
+**Couverture par biome, chiffrée** : flore européenne tempérée. Bien couverts,
+forêt tempérée (8,98 % des terres) et taïga (8,25) ; **rien du tout** pour désert
+chaud (15,42), savane (11,29) et prairie (5,67) — la bibliothèque **n'a aucune
+herbe**, alors que notre tapis pèse 67 % des instances. Elle comble en revanche
+des manques documentés : **roseaux** (marais), **greasewood** (désert froid),
+**rosier rugueux** (plage).
+
+**DÉCISION : on ne remplace pas.** Cinq raisons indépendantes — échelle
+(78 924 triangles de moyenne contre 1 798 pour nos pins), style photoréaliste
+contre notre stylisé, 32 % du monde non couvert, pas d'herbe, et la chaîne PCG à
+refaire. Le pack reste en place, inactif ; `Content/*` étant exclu par
+`.gitignore`, il ne part pas sur GitHub.
+
+### Importer un pack Fab : le point de montage se vérifie sur un témoin (13 septembre 2026)
+
+`strings` ne lit pas la table de noms d'un `.uasset` : impossible d'y trouver le
+chemin `/Game/...` attendu. Le contrôle qui tranche est un **témoin déjà
+installé et fonctionnel** — `D:\Assets\Fab\UltraDynamicSky` et
+`Content/UltraDynamicSky` ont la même arborescence, donc
+**`Fab\<Pack>` → `Content\<Pack>`**, sans imbrication.
+
+Importés ainsi : Kobo_Nature, Stylized_Environments, Stylized_Egypt,
+Stylized_Forest, Stylized_Rocks(+_Free), DreamscapeMeadows (+SharedResources,
+sans DreamscapeTower) et quatre sous-dossiers de Stylized_Village — **3,5 Go**,
+2 044 assets, au lieu de 8,25 Go pour les packs entiers.
+
+### Enrichir une couche PCG ne coûte RIEN, en ajouter une coûte tout (13 septembre 2026)
+
+**Le nombre d'instances est fixé par le PAS DE GRILLE de la couche, pas par le
+nombre de maillages qu'elle liste.** Ajouter des maillages à une couche existante
+donne donc de la VARIÉTÉ À COÛT IDENTIQUE. Mesuré : **344 482 instances avant et
+après** l'ajout de 179 maillages, 116,4 FPS, verdict PASS. C'est ce qui permet de
+tenir la décision « on ne densifie pas » tout en renouvelant le monde.
+
+**PIÈGE D'ÉCHELLE, payé à l'image : l'échelle est réglée PAR COUCHE.**
+`SFP:SM_shrub_01` fait **3,05 m de haut et 3,4 m de large** ; posé dans une couche
+de sous-bois dont les autres membres font 1,4 m (`SM_Bush`) à 0,3 m (`SM_Fern`),
+à l'échelle 0,7-1,3, il a donné **26 exemplaires de 2,4 à 4,4 m dans un rayon de
+25 m** — un mur. Retiré. **Avant d'ajouter un maillage à une couche, comparer son
+`ApproxSize` à celui des maillages déjà présents** ; le tag `ApproxSize` du
+registre le donne sans charger l'asset, avec `Triangles`, `LODs` et `Materials`.
+
+**Et juger la couleur EN PLEIN JOUR.** Sous la pluie, ce mur d'arbustes
+jaune-olive rendait **noir** et ressemblait à un défaut de matériau ; tous les
+matériaux résolvaient pourtant. Forcer `Time of Day` à 13 h et `Cloud Coverage`
+à 1 a montré la vraie couleur, et donc la vraie faute : un jaune saturé au milieu
+du vert. Nos arbres, eux, restent très verts — c'est le rebond de la canopée
+déjà documenté, assumé par le propriétaire.
+
+**`_mesh` accepte désormais un sous-dossier** (`RACINE:SousDossier/Nom`) :
+Stylized_Rocks range ses 26 rochers dans 26 dossiers, ce qui aurait demandé
+26 racines. Sans `/`, le comportement est celui d'avant, au caractère près.
+
+**Contrôler les références AVANT de reconstruire** : `does_asset_exist` sur les
+257 références du fichier de recettes, PIE arrêté, coûte 35 ms et évite un semis
+qui perd des maillages en silence. `foliage_lods.audit()` a de son côté trouvé
+les **4 palmiers Kobo à LOD unique pour 7 768 triangles**, seuls maillages neufs
+sans LOD.

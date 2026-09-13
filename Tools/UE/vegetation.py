@@ -89,9 +89,16 @@ def recipes() -> dict:
 
 
 def _mesh(ref: str, roots: dict):
+    """Resout 'RACINE:Nom' ou 'RACINE:SousDossier/Nom'.
+
+    Le sous-dossier est indispensable pour les packs qui rangent un maillage
+    par dossier -- Stylized_Rocks en a 26 --, sans quoi il faudrait une racine
+    par rocher. Sans '/', le comportement est celui d'avant, au caractere pres.
+    """
     prefix, name = ref.split(":")
+    court = name.rsplit("/", 1)[-1]
     return unreal.EditorAssetLibrary.load_asset(
-        "{}/{}.{}".format(roots[prefix], name, name))
+        "{}/{}.{}".format(roots[prefix], name, court))
 
 
 MATERIAL_DIR = "/Game/Worldseed/PCG/Materials"
