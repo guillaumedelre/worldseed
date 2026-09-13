@@ -2252,3 +2252,49 @@ relit **6,0**, la valeur du préréglage.
 
 Tout le test est resté confiné au PIE : l'acteur du niveau a gardé son
 `Season Mode`, sa saison et sa carte d'hiver, et aucune carte n'a été salie.
+
+### Une année durait 274 heures : le calendrier de Worldseed (13 septembre 2026)
+
+Mesuré après avoir armé l'horloge : journée de 30 min + nuit de 15 = **45 minutes
+réelles pour 24 h**, multiplié par les 365 jours du calendrier grégorien d'UDS.
+Soit **273,8 heures pour une année, 68,4 heures pour une saison**. Autrement dit,
+les saisons ne changeaient jamais — et tout le calage saisonnier (quatre saisons
+par préréglage, inversion des hémisphères, physique de l'amplitude) était
+invisible. Même famille de défaut que la neige à 2,3 % : la mécanique est juste,
+le rythme la rend inobservable.
+
+**LA SOLUTION EST UN CALENDRIER, PAS UN PILOTAGE DIRECT DE LA SAISON.** On
+pouvait passer `Season Mode` à `MANUAL_SETTING` et faire avancer `Season` depuis
+`BP_WorldseedClimat`. **Mauvaise idée** : avec `Simulate Real Sun = True`, c'est
+la DATE qui donne la déclinaison du soleil. Découpler la saison de la date
+produirait un « hiver » sous un soleil d'été. Raccourcir l'année déplace les
+deux ensemble.
+
+`CAL_Worldseed` (`Content/Worldseed/Climate/`, donc versionné) : **12 mois de
+3 jours, 36 jours par an**, soit une année de **27 h** et une saison de
+**6 h 45**. Il est assigné à UDS par `BP_WorldseedClimat` au BeginPlay — et non
+posé sur l'acteur, qui vit dans `__ExternalActors__` et serait perdu au clone.
+
+**QUATRE PIÈGES, tous payés comptant :**
+
+- **`Number of Days in Year` et `Month Lengths` sont CALCULÉS.** Un duplicata
+  frais les rend à `0` et `[]` : la source de vérité est la table `Months`. Poser
+  les deux — la table ET les tableaux dérivés (`Day Count At Start of Each Month`
+  compris) — puis `Calendar Data Saved = True`.
+- **`Winter Solstice Offset` est en JOURS.** −11 sur une année de 365 devient
+  ininterprétable sur 36. Mis à l'échelle : −11 × 36/365 = −1,08, donc **−1**.
+  Une valeur laissée à −11 décalerait les saisons de presque un tiers d'année.
+- **L'HORLOGE NE S'ACCÉLÈRE PAS À CHAUD.** Ni `Day Length` ni
+  `Time of Day Movement Multiplier` (essayé à 400) ne changent la vitesse en
+  cours de partie : elle est mise en cache dans `Time of Day Change Speed`.
+  Ne pas perdre de temps à vouloir accélérer le temps pour observer une saison.
+- **ÉCRIRE `Month` / `Day` À CHAUD NE RECALCULE PAS LA SAISON.** Elle est
+  calculée au démarrage et sur l'événement `Date Changed`, qu'une écriture
+  directe ne déclenche pas. Mesure : date déplacée du jour 8 au jour 20, saison
+  figée à 3,884. **Pour éprouver une saison, poser la date dans le NIVEAU et
+  relancer le PIE.**
+
+**LA PREUVE, par cette méthode** : jour 8 sur 36 → saison 3,884, « Mid Spring » ;
+jour 20 sur 36 → saison 1,106, « **Mid Summer** ». La saison suit bien notre
+calendrier. Contrôle annexe qui confirme qu'il est en vigueur : la date de départ
+26/3 est ramenée à 3/3, puisque les mois ne font plus que 3 jours.
