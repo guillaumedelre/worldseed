@@ -684,9 +684,20 @@ def build_world(tiles: list[str] | None = None,
             log("ERROR", "texture de biomes absente pour la tuile {}".format(tile))
             continue
         loc, half = tile_surface(tile)
+        label = "Worldseed_Vegetation_" + tile
+        # RENDRE LE COMPOSANT INERTE AVANT DE RECONSTRUIRE, et c'est mesure.
+        # Relancer `build_world()` sur un volume encore en `GenerateAtRuntime`
+        # a produit **289 PCGPartitionActor PERSISTANTS** -- ecrits sous
+        # `Content/__ExternalActors__`, donc sur le disque -- alors que le
+        # nouveau volume etait pose dans le bon ordre. La pose elle-meme est
+        # innocente : instrumentee pas a pas, elle donne 0 acteur a chaque
+        # etape. C'est le composant VIVANT que l'on detruit qui les laisse
+        # derriere lui, et PCG ne les cree qu'au tick SUIVANT, si bien qu'un
+        # comptage synchrone dans le meme script ne voit rien.
+        # Apres cet appel : 0 acteur persistant, deux reconstructions de suite.
+        set_runtime_enabled(label, False)
         path = build_graph("{}/PCG_Vegetation_{}".format(GRAPH_DIR, tile),
                            texture, loc, half, biomes, hierarchical=True)
-        label = "Worldseed_Vegetation_" + tile
         place_volume(label, path, loc, half, partitioned=True, runtime=True)
         made[tile] = label
         n_persistants = count_persistent_partition_actors()

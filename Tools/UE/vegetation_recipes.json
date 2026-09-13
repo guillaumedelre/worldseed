@@ -153,49 +153,57 @@
           ]
         },
         {
-          "name": "bois_mort",
-          "spacing": "arbres_epars",
+          "name": "arbrisseaux",
+          "spacing": "sousbois",
           "scale": [
-            0.6,
-            1.0
+            0.25,
+            0.5
           ],
           "cull": [
-            25000,
-            40000
+            7000,
+            12000
           ],
           "meshes": [
             [
-              "LPF:SM_Env_death_tree_small_1",
+              "LPF:SM_Env_bush_berry_1",
+              3
+            ],
+            [
+              "LPF:SM_Env_bush_berry_4",
+              3
+            ],
+            [
+              "LPF:SM_Env_bush_berry_7",
               2
             ],
             [
-              "LPF:SM_Env_death_tree_small_2",
+              "LPF:SM_Env_bush_2",
               2
             ],
             [
-              "LPF:SM_Env_death_tree_small_3",
+              "LPF:SM_Env_bush_5",
               2
             ],
             [
-              "LPF:SM_Env_death_tree_small_4",
-              1
+              "GRN:SM_Bush_Red",
+              2
             ],
             [
-              "LPF:SM_Env_death_tree_small_5",
+              "GRN:SM_Bush_Yellow",
               1
             ]
           ]
         },
         {
-          "name": "cailloux",
+          "name": "blocs",
           "spacing": "sousbois_clair",
           "scale": [
             0.5,
-            1.2
+            1.4
           ],
           "cull": [
-            8000,
-            14000
+            9000,
+            16000
           ],
           "meshes": [
             [
@@ -211,11 +219,23 @@
               2
             ],
             [
-              "LPF:SM_Env_bush_1",
+              "LPF:SM_Env_scatter_rock_12",
+              2
+            ],
+            [
+              "SFL:SM_Rock_3",
+              2
+            ],
+            [
+              "SFL:SM_Rock_5",
+              2
+            ],
+            [
+              "DRK:SM_Rock_2",
               1
             ],
             [
-              "LPF:SM_Env_bush_3",
+              "LPF:SM_Env_bush_1",
               1
             ]
           ]
@@ -302,6 +322,14 @@
             [
               "LPF:SM_Env_death_tree_1",
               1
+            ],
+            [
+              "SFL:SM_Birch_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Birch_Tree_2",
+              2
             ]
           ]
         },
@@ -352,6 +380,26 @@
             [
               "PBF:SM_Bush",
               2
+            ],
+            [
+              "SFL:SM_Birch_Stump",
+              1
+            ],
+            [
+              "SFL:SM_Log_Birch_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_berry_1",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_berry_4",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_berry_7",
+              1
             ]
           ]
         }
@@ -1061,7 +1109,11 @@
               3
             ],
             [
-              "DES:SM_PalmTree_Small",
+              "RED:SM_Tree_3",
+              1
+            ],
+            [
+              "GRN:SM_Mid_Tree_1",
               1
             ]
           ]
@@ -1097,6 +1149,14 @@
             [
               "PBF:SM_Bush",
               2
+            ],
+            [
+              "GRN:SM_Bush_Yellow",
+              1
+            ],
+            [
+              "DES:SM_Bush_many_2",
+              1
             ]
           ]
         }
@@ -1617,6 +1677,14 @@
             [
               "LPF:SM_Env_fallen_tree",
               1
+            ],
+            [
+              "SFL:SM_Log",
+              2
+            ],
+            [
+              "SFL:SM_Log_2",
+              2
             ]
           ]
         },
@@ -1651,6 +1719,22 @@
             [
               "LPF:SM_Env_plant_3",
               2
+            ],
+            [
+              "LPF:SM_Env_treestump_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_treestump_6",
+              1
+            ],
+            [
+              "GRN:SM_Plant_1",
+              2
+            ],
+            [
+              "SFL:SM_Mushroom",
+              1
             ]
           ]
         }

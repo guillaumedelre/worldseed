@@ -2375,3 +2375,60 @@ bouge aussi : 21 rivières → 16, mais plus longues (médiane 354 → 510 m).
   neige domine son poids vaut 1,00 et la température moyenne −20,6 °C. Ce 1 %
   est du sol en recette ALPINE dont le mois le plus chaud repasse juste au-dessus
   de zéro. Marginal, laissé ouvert, **seuil NON abaissé**.
+
+### Silhouettes de végétation : ce que les packs contiennent vraiment (13 septembre 2026)
+
+Quatre biomes étaient « habillés par emprunt » : toundra, taïga, savane, marais.
+Inventaire fait AVANT de promettre quoi que ce soit — 273 maillages balayés :
+
+**IL N'EXISTE NI ROSEAU, NI NÉNUPHAR, NI ACACIA, NI MOUSSE, NI LICHEN, NI
+CACTUS** dans les trois packs. Ces silhouettes-là ne peuvent pas être créées, il
+n'y a qu'à mieux choisir parmi les 141 maillages employés et la soixantaine qui
+dormaient (4 brindilles, 5 branches, 3 buissons colorés, 3 troncs couchés,
+2 souches, 2 champignons, 1 arbre sombre, une trentaine de rochers).
+
+**UNE AFFIRMATION DE NOTRE PROPRE DOCUMENTATION ÉTAIT FAUSSE.** `ETAT_DES_LIEUX`
+disait « taïga : deux conifères seulement ». Elle en a **neuf** — 3 LowPolyForest,
+4 Stylized_PBR, 2 StylizedForest. La note était périmée. **Vérifier l'inventaire
+avant de traiter un manque signalé par une note.**
+
+**LA MÉTHODE QUI RENSEIGNE : regarder où un maillage est DÉJÀ employé.** Son nom
+ne dit pas son allure, son usage si. `SM_Birch_Tree` sert en forêt tempérée, donc
+c'est bien un feuillu — et le bouleau est l'arbre de la taïga. `SM_Hero_Tree_1`
+sert en désert chaud ET en savane, donc c'est l'arbre sec, notre acacia de
+substitution. Les arbres `RED`/`GRN` servent en forêt tropicale sèche, donc ils
+ont l'allure qui convient à une savane.
+
+**DÉCISION DU PROPRIÉTAIRE : la toundra n'a plus d'arbres.** Elle se définit par
+la limite des arbres, c'est ce qui la sépare de la taïga. Les cinq petits arbres
+morts sont retirés.
+
+**ET UNE ITÉRATION À L'IMAGE, parce que le premier choix était mauvais.** J'avais
+mis les `SM_Twig` comme arbrisseaux nains : à l'écran ce sont des **bâtons
+allongés couchés à plat sur la neige**, qui se lisent comme du bois mort — sans
+provenance crédible sur une toundra sans arbres. Remplacés par de vrais buissons
+ramenés à 25-50 % (saule et bouleau nains), plus les buissons rouges et jaunes du
+pack Green, qui donnent en prime les couleurs d'une toundra d'automne.
+**Un nom de maillage ne dit pas comment il se pose : le juger à l'image.**
+
+**LE PIÈGE PCG DU JOUR, ET IL ÉCRIT SUR LE DISQUE.** Relancer `build_world()` sur
+un volume encore en `GenerateAtRuntime` a produit **289 `PCGPartitionActor`
+PERSISTANTS** sous `Content/__ExternalActors__`, alors que le nouveau volume était
+posé dans le bon ordre (déclencheur puis partitionnement).
+
+- **La pose elle-même est innocente** : instrumentée pas à pas — spawn, échelle,
+  déclencheur, partitionnement, `set_graph` — elle donne **0 acteur à chaque
+  étape**. C'est le composant VIVANT que l'on détruit qui les laisse derrière lui.
+- **Et un comptage synchrone ne voit rien** : PCG ne crée ces acteurs qu'au tick
+  SUIVANT. C'est ce qui m'a fait chercher au mauvais endroit.
+- **Le remède** : `set_runtime_enabled(label, False)` AVANT de reconstruire.
+  Posé dans `build_world()`. Après : 0 acteur persistant, deux reconstructions de
+  suite.
+- Nettoyage d'un dégât déjà fait : repasser en `GenerateOnDemand`, puis
+  `destroy_actors` sur les `PCGPartitionActor`, puis `save_dirty_packages`.
+
+**PIÈGE DE MESURE ANNEXE** : pour juger un biome en PIE, ne pas se téléporter à un
+pixel tiré de la carte des biomes sans vérifier son ALTITUDE — le premier essai a
+fait tomber le pion dans l'océan. Et la grille de `BP_WorldseedClimat` est en
+128×128 : à la frontière de deux biomes elle rend le voisin (biome 13 lu au lieu
+de 12). Contrôler `BiomeCourant` avant de conclure sur une capture.
