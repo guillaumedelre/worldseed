@@ -2298,3 +2298,80 @@ posé sur l'acteur, qui vit dans `__ExternalActors__` et serait perdu au clone.
 jour 20 sur 36 → saison 1,106, « **Mid Summer** ». La saison suit bien notre
 calendrier. Contrôle annexe qui confirme qu'il est en vigueur : la date de départ
 26/3 est ramenée à 3/3, puisque les mois ne font plus que 3 jours.
+
+### La sécheresse polaire : ce qui manquait était un TRANSPORT (13 septembre 2026)
+
+Les hautes latitudes ne recevaient presque rien — 170 mm/an à 60-70° contre
+~500 sur Terre, 11 à 70-80 contre ~250, 0 à 80-90 contre ~150 — avec deux
+conséquences mesurées : toundra à 4,7 % des terres contre 8 attendus, taïga à
+6,4 contre 10, et surtout **une neige quasi impossible** (2,3 % de probabilité
+par tirage en toundra, en plein hiver).
+
+**PREMIÈRE HYPOTHÈSE, FAUSSE, ET C'EST LA MESURE QUI L'A DITE.** Je soupçonnais
+la boucle d'advection de *jeter* de l'eau : elle plafonne l'humidité à la
+saturation **avant** de faire pleuvoir, au lieu de laisser le surplus condenser.
+Compté bande par bande : **0,0 % d'humidité écrêtée au-delà de 60 degrés**. Le
+terme ne mord qu'à ±38° (15 à 23 %). Piste abandonnée, code non touché.
+**Mesurer avant de corriger, même quand l'hypothèse est séduisante.**
+
+**LA VRAIE CAUSE.** La capacité de l'air s'effondre avec le froid — 1,48 à
+l'équateur, 0,21 à 68°, 0,09 à 82° — et surtout **rien ne porte l'humidité vers
+les pôles** : l'advection suit le vent MOYEN, zonal aux moyennes latitudes. Sur
+Terre ce transport est l'œuvre des dépressions barocliniques, des tourbillons
+qu'une simulation à cette résolution ne résout pas.
+
+**LE TERME AJOUTÉ** (`climate._advect_moisture`) : un mélange méridien
+descendant le gradient — un lissage gaussien en latitude est exactement
+l'opérateur de diffusion correspondant — pondéré par une gaussienne centrée sur
+le rail des dépressions. Il **déplace** l'eau, il n'en crée pas.
+
+    eddyMixingRate      0,5     intensité, calibrée au banc
+    eddyMixingSigmaDeg  10      taille d'une dépression synoptique
+    stormTrackLatDeg    55      position réelle des rails terrestres
+    stormTrackWidthDeg  20      largeur réelle
+
+**L'ÉCHELLE EST EN DEGRÉS, JAMAIS EN PIXELS** : le banc tourne en simulation
+1025 et le monde final en 2049.
+
+**UNE MÉTHODE QUI A ÉCHOUÉ, à ne pas refaire.** J'ai voulu déduire la position
+du rail de notre propre modèle, en cherchant où le gradient méridien de
+température culmine. Mesure : **il culmine à 82°**, parce que notre profil est
+en `cos(latitude)` dont la dérivée croît jusqu'au pôle. Artefact de la forme,
+pas physique. Cette valeur doit venir du réel.
+
+**UN RÉGLAGE MEILLEUR AU SCORE, ÉCARTÉ.** Rail à 60° et largeur 28° donnent
+18,1 % contre 18,4 % aux valeurs ancrées. Déplacer un paramètre hors de son sens
+physique pour 0,3 point sur un score qui COMPARE et ne juge pas, c'est ce qui
+avait fait rejeter `saturationScaleC`.
+
+**RÉSULTAT, pleine résolution :**
+
+| | avant | après | Terre |
+|---|---|---|---|
+| 60-70° | 170 mm | **456** | ~500 |
+| 70-80° | 11 mm | **136** | ~250 |
+| 80-90° | 0 mm | **26** | ~150 |
+| toundra | 4,66 % | **8,09 %** | 8 |
+| taïga | 6,37 % | **8,25 %** | 10 |
+| savane | 9,48 % | **11,29 %** | 13 |
+| forêt tropicale humide | 11,32 % | 8,28 % | 11 |
+| **écart absolu moyen** | **24,3 %** | **16,7 %** | — |
+
+Et le gain qui justifiait le chantier : la neige hivernale du préréglage de
+toundra passe de **22,2 à 39,2 mm** d'équivalent-eau.
+
+**UN PLAFOND PHYSIQUE SUBSISTE.** La bande 80-90° reste à ~27 mm quelle que soit
+la variante — élargie, déplacée, renforcée : quatre essais, même chiffre. À
+−40 °C la capacité de l'air vaut 0,09. Ne pas retenter.
+
+**CE QUE ÇA COÛTE, jeu à somme nulle** (la pluie moyenne est ancrée à 715 mm) :
+forêt tropicale humide 11,32 → 8,28 %, désert chaud 16,20 → 15,42. Le relief
+bouge aussi : 21 rivières → 16, mais plus longues (médiane 354 → 510 m).
+
+**DEUX ÉCARTS AU RAPPORT, dont un préexistant :**
+- *longueur du plus long cours d'eau* 20,6 % contre 30 — **préexistait**, le
+  relevé d'avant donne 17,38 % ; il a progressé sans passer la barre ;
+- *neige sur terrain hors gel* 1,0 %, à la limite exacte. Vérifié : là où la
+  neige domine son poids vaut 1,00 et la température moyenne −20,6 °C. Ce 1 %
+  est du sol en recette ALPINE dont le mois le plus chaud repasse juste au-dessus
+  de zéro. Marginal, laissé ouvert, **seuil NON abaissé**.

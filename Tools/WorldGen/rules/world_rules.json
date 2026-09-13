@@ -101,7 +101,12 @@
     "targetMeanLandMm": 715.0,
     "polarFrontStrength": 0.45,
     "cellWobble": 0.3,
-    "cellWobbleFrequency": 2.4
+    "cellWobbleFrequency": 2.4,
+    "_comment_tourbillons": "TRANSPORT MERIDIEN PAR LES DEPRESSIONS. L'advection suit le vent MOYEN, zonal aux moyennes latitudes : sans ce terme, rien ne porte l'humidite vers les poles et ils restent des deserts absolus -- mesure avant correction, 170 mm/an a 60-70 deg contre ~500 sur Terre, 11 a 70-80 contre ~250, 0 a 80-90 contre ~150. Sur Terre ce transport est l'oeuvre des tourbillons barocliniques, que cette resolution ne resout pas. Modelise ici comme un melange DESCENDANT LE GRADIENT en latitude (un lissage gaussien est l'operateur de diffusion correspondant), maximal la ou naissent les depressions. Ce terme DEPLACE l'eau, il n'en cree pas : la capacite reste celle de Clausius-Clapeyron et l'humidite transportee precipite en chemin. NE PAS confondre avec saturationScaleC, qui lui truque la capacite de l'air et fait bouger le relief -- piste essayee puis REJETEE.",
+    "eddyMixingRate": 0.5,
+    "eddyMixingSigmaDeg": 10.0,
+    "stormTrackLatDeg": 55.0,
+    "stormTrackWidthDeg": 20.0
   },
   "erosion": {
     "iterations": 60,

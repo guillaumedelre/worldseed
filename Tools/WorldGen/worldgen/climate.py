@@ -283,6 +283,53 @@ def _advect_moisture(
     step = np.float32(prec["advectionStepPx"])
     sweeps = int(prec["advectionSweeps"])
 
+    # TRANSPORT MERIDIEN PAR LES TOURBILLONS -- le rail des depressions.
+    #
+    # L'advection ci-dessous suit le vent MOYEN, qui est zonal aux moyennes
+    # latitudes : rien, dans ce modele, ne porte l'humidite vers les poles. Or
+    # sur Terre ce transport n'est pas assure par le vent moyen mais par les
+    # DEPRESSIONS BAROCLINIQUES, des tourbillons nes du fort gradient meridien
+    # de temperature vers 50-60 degres, et qu'une simulation a cette resolution
+    # ne resout pas. Sans terme dedie, ils n'existent tout simplement pas.
+    #
+    # CE QUE COUTAIT LEUR ABSENCE, mesure sur la graine 20260909 :
+    #   60-70 deg  170 mm/an   (Terre ~500)
+    #   70-80 deg   11 mm/an   (Terre ~250)
+    #   80-90 deg    0 mm/an   (Terre ~150)
+    # avec pour consequences une toundra a 4,7 % des terres contre 8 attendus,
+    # une taiga a 6,4 contre 10, et surtout une neige quasi impossible : le
+    # prereglage de toundra ne portait que 22,2 mm d'equivalent-eau en hiver,
+    # soit 2,3 % de chances de neige par tirage de meteo.
+    #
+    # CE N'EST PAS L'ECRETAGE A SATURATION, et c'est mesure : la part
+    # d'humidite supprimee par `min(humidity, h_max)` vaut 0,0 % au-dela de
+    # 60 degres. Elle ne mord qu'a +-38 degres (15 a 23 %), la ou de l'air
+    # chaud croise du froid. Piste ecartee.
+    #
+    # LA FORME : un melange DESCENDANT LE GRADIENT, ce que fait un tourbillon.
+    # Un lissage gaussien en latitude est exactement l'operateur de diffusion
+    # correspondant ; son ecart-type porte la taille caracteristique du
+    # tourbillon. Le terme NE CREE PAS d'eau, il en deplace -- la capacite
+    # reste gouvernee par Clausius-Clapeyron, et l'humidite transportee est
+    # ecretee a `h_max` comme partout, donc elle PRECIPITE en chemin, comme une
+    # depression qui se vide en remontant vers le nord.
+    # L'echelle du tourbillon est donnee en DEGRES de latitude, jamais en
+    # pixels : le banc de calibration tourne en simulation 1025 et le monde
+    # final en 2049 : un sigma en pixels ne decrirait pas le meme phenomene
+    # dans les deux cas. C'est la regle d'echelle du projet -- ce qui est
+    # RELATIF ne change pas avec la resolution.
+    eddy = float(prec.get("eddyMixingRate", 0.0))
+    eddy_deg = float(prec.get("eddyMixingSigmaDeg", 0.0))
+    eddy_sigma = eddy_deg * (float(n) / max(float(geo.lat_span_deg), 1e-6))
+    k_eddy = None
+    if eddy > 0.0 and eddy_sigma > 0.0:
+        track = np.float32(prec.get("stormTrackLatDeg", 55.0))
+        width = np.float32(max(float(prec.get("stormTrackWidthDeg", 20.0)), 1e-3))
+        # Gaussienne centree sur le rail : maximale la ou naissent les
+        # depressions, nulle a l'equateur comme au pole.
+        k_eddy = (np.float32(eddy)
+                  * np.exp(-(((abs_lat - track) / width) ** 2))).astype(np.float32)
+
     jj, ii = np.meshgrid(
         np.arange(n, dtype=np.float32), np.arange(n, dtype=np.float32), indexing="ij"
     )
@@ -321,6 +368,16 @@ def _advect_moisture(
         # au-dessus des terres, parce que la pluie de mousson tombe sur les
         # continents.
         humidity = humidity + conv_moisture * conv_norm * (h_max - humidity)
+
+        # Melange meridien par les tourbillons (voir l'explication plus haut).
+        # `mode="nearest"` et non un enroulement : le pole n'est pas voisin de
+        # l'autre pole, et un enroulement y ferait passer l'humidite australe
+        # dans l'Arctique.
+        if k_eddy is not None:
+            melangee = ndimage.gaussian_filter1d(
+                humidity, eddy_sigma, axis=0, mode="nearest"
+            ).astype(np.float32)
+            humidity = humidity + k_eddy * (melangee - humidity)
 
         np.clip(humidity, 0.0, None, out=humidity)
         np.minimum(humidity, h_max, out=humidity)
