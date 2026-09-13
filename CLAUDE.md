@@ -2798,3 +2798,93 @@ Le premier constat avait ete fait par ciel couvert, ou tout s'aplatit en vert
 sombre. Forcer `Time of Day` a 13 h 30, `Cloud Coverage` a 1 et `Cloud Speed` a
 0 rend les deux captures comparables -- c'est la que le rocher facette et les
 cerisiers roses sautent aux yeux.
+
+### Doctrine de placement : chaque plante a son endroit (13 septembre 2026)
+
+Signale : « ne pas essayer de mettre des fleurs des qu'il y a de l'herbe mais
+plutot preter attention au relief, au biome et a ce qui existe deja ».
+
+**LE DEFAUT N'ETAIT PAS DANS LE CHOIX DES BIOMES.** Contre-verifie par un
+tableau type x biome : les fleurs n'etaient que dans trois biomes, les
+champignons que dans les forets. Le defaut etait qu'**A L'INTERIEUR d'un biome,
+tout etait seme uniformement sur une grille reguliere** -- ni clairieres, ni
+bords, ni touffes.
+
+**DEUX NOEUDS PCG DEBLOQUENT LE PROBLEME, et ils sont pilotables depuis Python :**
+
+- **`PCGNormalToDensity`** ecrit `dot(normale du point, verticale)` dans la
+  densite, soit exactement **`cos(pente)`**. Un `PCGDensityFilter` derriere
+  devient donc un filtre de PENTE, sans passer par un selecteur d'attribut.
+  La borne basse du filtre vient de la pente MAXIMALE -- le cosinus decroit.
+- **`PCGSpatialNoise`** en Perlin 2D ecrit un bruit COHERENT EN ESPACE dans la
+  densite : son `value_target` vaut `$Density` par defaut, verifie par
+  `export_text()` qui rend `PCGBegin($Density)PCGEnd`. Un filtre derriere ne
+  garde que les bosses, c'est-a-dire des TACHES. L'echelle de sa `transform`
+  donne le diametre du motif.
+
+**OU LES PLACER DANS LA CHAINE, et pourquoi.** Apres le tri par biome, qui a
+besoin de la densite pour porter l'identifiant, et AVANT `TransformPoints`, qui
+remplace la rotation du point par un lacet aleatoire et **detruit donc la
+normale**. Mis apres, le filtre de pente ne verrait plus rien.
+
+**Les points du `PCGSurfaceSampler` portent bien la normale du terrain** --
+prouve par le fait que les couches reservees au raide (`eboulis`, `falaises`,
+bornes 25-90 et 32-90) rendent 514 instances et non zero. Si la normale etait
+perdue, la densite vaudrait 1,0 partout et ces bornes ne garderaient RIEN :
+c'est le controle a refaire si un doute revient.
+
+**LA MESURE QUI A TOUT RECALIBRE, et l'erreur qu'elle a rattrapee.** Les premiers
+plafonds avaient ete poses a l'intuition terrestre -- « de l'herbe jusqu'a
+25 degres ». Or la pente **MEDIANE des terres de Worldseed vaut 30,6 degres** :
+ce plafond ne gardait que **36,7 % des terres** et l'herbe disparaissait des deux
+tiers du monde, ce qui se voyait immediatement sur les versants nus. Un seuil de
+pente se lit contre la DISTRIBUTION du monde, jamais contre l'intuition :
+
+    sous 20 deg  25,5 %      sous 32 deg  53,3 %
+    sous 25 deg  36,7 %      sous 35 deg  61,4 %
+    sous 28 deg  43,7 %      sous 38 deg  70,9 %
+    sous 30 deg  48,4 %      sous 45 deg  87,2 %
+
+Apres recalibrage (tapis 38 deg, sous-bois 40, arbres 42) : **340 034 instances
+contre 344 482 avant doctrine**, donc a densite quasi inchangee, mais placees.
+
+**TROIS EXTRACTIONS, parce que la COUCHE est l'unite de placement.** On ne peut
+pas donner sa regle propre a un type de plante tant qu'il partage sa couche :
+
+- **la mousse et les fleurs etaient dans le TAPIS**, seme au pas de 150 cm, soit
+  4 444 pieds a l'hectare. Elles se retrouvaient donc partout, une touffe tous
+  les metres et demi ; la mousse pesait a elle seule **13,6 % de tout le semis** ;
+- **les champignons etaient noyes dans le sous-bois**, melanges aux buissons ;
+- **le bois mort aussi** : mesure a l'image, **cinq `SM_Env_fallen_tree` dans un
+  rayon de 12 m**, dont un a 1,8 m du joueur -- 1 600 troncs couches a l'hectare.
+  Passe au pas `arbres_epars`, il en reste **un**.
+
+**PLAFOND DE TAILLE PAR ROLE, et la couche COMPAGNE.** L'echelle etant reglee
+PAR COUCHE, un maillage dont la taille naturelle est double de celle de ses
+voisins ressort au double : une fougere `SFL:SM_Fern` a **4,6 m** et un
+`SFL:SM_Bush_2` a **5,6 m** ecrasaient le sous-bois d'une foret temperee. Les
+retirer serait du gachis et deshabillerait des biomes entiers. Ils passent dans
+`<couche>_haut` : un pas de grille plus large -- ce qui est aussi plus juste, un
+buisson de trois metres est plus rare qu'un buisson d'un metre -- et une echelle
+calculee pour que le plus gros tombe pile sous le plafond de son role (2 m pour
+ce qui rampe, 3 m pour le sous-bois ; arbres, mineral et bois mort exemptes).
+Resultat mesure dans 9 m du joueur : canopee 9,3 / 8,1 / 5,4 m, puis le plus
+gros du sous-bois a **2,5 m**. Le profil d'une vraie foret.
+
+**Le mineral est exempte de plafond A DESSEIN** : un eboulis melange le gravier
+au bloc, et c'est cette dispersion qui le rend credible. Les falaises DOIVENT
+faire 80 a 140 m. Un critere fonde sur la mediane de la couche les aurait
+condamnees -- c'est pourquoi le plafond est absolu et par ROLE.
+
+**Schema des recettes, deux cles optionnelles par couche :**
+
+    "pente":  [0, 38]                        degres autorises
+    "taches": {"taille": 3500, "seuil": 0.5} diametre en cm, part retenue
+
+Sans elles, la couche traverse sans ajouter un seul noeud. Le graphe passe de
+175 a 521 noeuds et de 44 a 77 couches ; 115,3 FPS, verdict PASS.
+
+**PIEGE REFAIT, et il est deja note plus haut : ne pas enchainer
+`editor_request_end_play()` et un chargement d'asset dans le meme script.**
+`build_world()` a rendu « texture de biomes absente » et construit un graphe
+vide. Deux appels separes.

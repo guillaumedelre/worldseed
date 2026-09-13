@@ -161,6 +161,10 @@
               "SNW:SM_SnowPile_03",
               3
             ]
+          ],
+          "pente": [
+            15,
+            90
           ]
         }
       ]
@@ -199,23 +203,11 @@
             [
               "SVF:Grass/SM_SimpleGrass_Snow",
               3
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -270,7 +262,15 @@
               "SVF:Weeds/SM_WeedyBush_01_Stems",
               1
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 2200,
+            "seuil": 0.42
+          }
         },
         {
           "name": "blocs",
@@ -337,6 +337,44 @@
               1
             ]
           ]
+        },
+        {
+          "name": "mousse",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.9,
+            2.0
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_Moss_Patch_01",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            35
+          ],
+          "taches": {
+            "taille": 1400,
+            "seuil": 0.5
+          }
         }
       ]
     },
@@ -374,23 +412,11 @@
             [
               "SFP:SM_grass_01",
               2
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -473,6 +499,10 @@
               "KOB:SM-Pine/SM-Pine-02",
               2
             ]
+          ],
+          "pente": [
+            0,
+            42
           ]
         },
         {
@@ -504,32 +534,8 @@
               1
             ],
             [
-              "LPF:SM_Env_mushroom_3",
-              1
-            ],
-            [
-              "LPF:SM_Env_mushroom_11",
-              1
-            ],
-            [
-              "LPF:SM_Env_treestump_2",
-              1
-            ],
-            [
-              "LPF:SM_Env_fallen_branch_4",
-              1
-            ],
-            [
               "PBF:SM_Bush",
               2
-            ],
-            [
-              "SFL:SM_Birch_Stump",
-              1
-            ],
-            [
-              "SFL:SM_Log_Birch_2",
-              1
             ],
             [
               "LPF:SM_Env_bush_berry_1",
@@ -550,15 +556,25 @@
             [
               "SFP:SM_shrub_02",
               2
-            ],
-            [
-              "DSF:SM_Mushroom_02",
-              1
-            ],
-            [
-              "DSF:SM_Mushroom_04",
-              1
-            ],
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ]
+        },
+        {
+          "name": "mousse",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.9,
+            2.0
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
             [
               "SVF:Flowers/Moss/SM_MossPatch_Small_01",
               1
@@ -575,7 +591,91 @@
               "SVF:Flowers/Moss/SM_Moss_Patch_01",
               1
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            35
+          ],
+          "taches": {
+            "taille": 1400,
+            "seuil": 0.5
+          }
+        },
+        {
+          "name": "champignons",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.4
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_mushroom_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_mushroom_11",
+              1
+            ],
+            [
+              "DSF:SM_Mushroom_02",
+              1
+            ],
+            [
+              "DSF:SM_Mushroom_04",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 900,
+            "seuil": 0.58
+          }
+        },
+        {
+          "name": "bois_mort",
+          "spacing": "arbres_epars",
+          "scale": [
+            0.7,
+            1.2
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "pente": [
+            0,
+            32
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_treestump_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_fallen_branch_4",
+              1
+            ],
+            [
+              "SFL:SM_Birch_Stump",
+              1
+            ],
+            [
+              "SFL:SM_Log_Birch_2",
+              1
+            ]
+          ],
+          "taches": {
+            "taille": 4000,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -603,14 +703,6 @@
               4
             ],
             [
-              "SFL:SM_Flower",
-              1
-            ],
-            [
-              "SFL:SM_Damdelion",
-              1
-            ],
-            [
               "SVF:Grass/SM_SimpleGrass_Green",
               3
             ],
@@ -625,23 +717,11 @@
             [
               "SFP:SM_grass_03",
               2
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -716,6 +796,10 @@
               "KOB:SM-Birch/SM-Birch-05",
               1
             ]
+          ],
+          "pente": [
+            0,
+            42
           ]
         },
         {
@@ -724,6 +808,172 @@
           "scale": [
             0.7,
             1.3
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_bush_berry_5",
+              1
+            ],
+            [
+              "PBF:SM_Bush",
+              2
+            ],
+            [
+              "SFP:SM_shrub_02",
+              2
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ]
+        },
+        {
+          "name": "mousse",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.9,
+            2.0
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_Moss_Patch_01",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            35
+          ],
+          "taches": {
+            "taille": 1400,
+            "seuil": 0.5
+          }
+        },
+        {
+          "name": "champignons",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.4
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_mushroom_7",
+              1
+            ],
+            [
+              "DSF:SM_Mushroom_01",
+              1
+            ],
+            [
+              "DSF:SM_Mushroom_04",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 900,
+            "seuil": 0.58
+          }
+        },
+        {
+          "name": "fleurs_sous_bois",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.3
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "SFL:SM_Flower",
+              1
+            ],
+            [
+              "SFL:SM_Damdelion",
+              1
+            ],
+            [
+              "SFP:SM_shrub_flower_01",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 2200,
+            "seuil": 0.55
+          }
+        },
+        {
+          "name": "bois_mort",
+          "spacing": "arbres_epars",
+          "scale": [
+            0.7,
+            1.2
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "pente": [
+            0,
+            32
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_treestump_5",
+              1
+            ],
+            [
+              "LPF:SM_Env_fallen_tree",
+              1
+            ]
+          ],
+          "taches": {
+            "taille": 4000,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "sous_bois_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.415,
+            0.691
           ],
           "cull": [
             9000,
@@ -741,52 +991,16 @@
             [
               "SFL:SM_Fern",
               2
-            ],
-            [
-              "LPF:SM_Env_bush_berry_5",
-              1
-            ],
-            [
-              "LPF:SM_Env_mushroom_7",
-              1
-            ],
-            [
-              "SFL:SM_Flower",
-              1
-            ],
-            [
-              "SFL:SM_Damdelion",
-              1
-            ],
-            [
-              "LPF:SM_Env_treestump_5",
-              1
-            ],
-            [
-              "LPF:SM_Env_fallen_tree",
-              1
-            ],
-            [
-              "PBF:SM_Bush",
-              2
-            ],
-            [
-              "SFP:SM_shrub_02",
-              2
-            ],
-            [
-              "DSF:SM_Mushroom_01",
-              1
-            ],
-            [
-              "DSF:SM_Mushroom_04",
-              1
-            ],
-            [
-              "SFP:SM_shrub_flower_01",
-              1
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -824,23 +1038,11 @@
             [
               "SVF:Grass/SM_SimpleGrass_Green",
               3
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -899,6 +1101,10 @@
               "SVF:Trees/Tree_Small_Green",
               1
             ]
+          ],
+          "pente": [
+            0,
+            40
           ]
         },
         {
@@ -913,14 +1119,6 @@
             15000
           ],
           "meshes": [
-            [
-              "SFL:SM_Fern",
-              3
-            ],
-            [
-              "SFL:SM_Fern_2",
-              3
-            ],
             [
               "PBF:SM_Fern",
               3
@@ -938,37 +1136,31 @@
               2
             ],
             [
-              "LPF:SM_Env_mushroom_14",
-              1
-            ],
-            [
-              "LPF:SM_Env_mushroom_collection_1",
-              1
-            ],
-            [
-              "LPF:SM_Env_treestump_3",
-              1
-            ],
-            [
               "PBF:SM_Bush",
               2
             ],
             [
               "PIR:SM_Fern",
               3
-            ],
-            [
-              "SVF:Ivy/SM_IvyBranch_01_A",
-              2
-            ],
-            [
-              "SVF:Ivy/SM_IvyBranch_01_B",
-              2
-            ],
-            [
-              "DSF:SM_Mushroom_03",
-              1
-            ],
+            ]
+          ],
+          "pente": [
+            0,
+            38
+          ]
+        },
+        {
+          "name": "mousse",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.9,
+            2.0
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
             [
               "SVF:Flowers/Moss/SM_MossPatch_Small_01",
               1
@@ -985,7 +1177,113 @@
               "SVF:Flowers/Moss/SM_Moss_Patch_01",
               1
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            35
+          ],
+          "taches": {
+            "taille": 1400,
+            "seuil": 0.5
+          }
+        },
+        {
+          "name": "champignons",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.4
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_mushroom_14",
+              1
+            ],
+            [
+              "LPF:SM_Env_mushroom_collection_1",
+              1
+            ],
+            [
+              "DSF:SM_Mushroom_03",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 900,
+            "seuil": 0.58
+          }
+        },
+        {
+          "name": "bois_mort",
+          "spacing": "arbres_epars",
+          "scale": [
+            0.7,
+            1.2
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "pente": [
+            0,
+            32
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_treestump_3",
+              1
+            ],
+            [
+              "SVF:Ivy/SM_IvyBranch_01_A",
+              2
+            ],
+            [
+              "SVF:Ivy/SM_IvyBranch_01_B",
+              2
+            ]
+          ],
+          "taches": {
+            "taille": 4000,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "fougeres_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.588,
+            0.98
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "SFL:SM_Fern",
+              3
+            ],
+            [
+              "SFL:SM_Fern_2",
+              3
+            ]
+          ],
+          "pente": [
+            0,
+            38
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1013,30 +1311,6 @@
               5
             ],
             [
-              "SFL:SM_Flower",
-              2
-            ],
-            [
-              "SFL:SM_Flower_2",
-              2
-            ],
-            [
-              "SFL:SM_Red_Flower",
-              1
-            ],
-            [
-              "SFL:SM_Pink_Flower",
-              1
-            ],
-            [
-              "SFL:SM_Damdelion",
-              2
-            ],
-            [
-              "DSF:SM_Grass_Clump_01",
-              3
-            ],
-            [
               "DSF:SM_Grass_Clump_02",
               3
             ],
@@ -1052,6 +1326,10 @@
               "SVF:Grass/SM_SimpleGrass_Green",
               3
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1086,6 +1364,10 @@
               "SFT:SM_tree_06",
               1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1109,10 +1391,6 @@
               2
             ],
             [
-              "SFL:SM_Flower_2",
-              2
-            ],
-            [
               "SFL:SM_Red_Flower",
               2
             ],
@@ -1131,6 +1409,58 @@
             [
               "DSF:SM_Flowers_01",
               3
+            ]
+          ],
+          "pente": [
+            0,
+            28
+          ],
+          "taches": {
+            "taille": 3500,
+            "seuil": 0.5
+          }
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.667,
+            1.111
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "DSF:SM_Grass_Clump_01",
+              3
+            ]
+          ],
+          "pente": [
+            0,
+            38
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "fleurs_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.256,
+            0.427
+          ],
+          "cull": [
+            8000,
+            13000
+          ],
+          "meshes": [
+            [
+              "SFL:SM_Flower_2",
+              2
             ],
             [
               "DSF:SM_Flower_Group_01",
@@ -1140,7 +1470,15 @@
               "DSF:SM_Flower_Group_02",
               2
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            28
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1179,6 +1517,10 @@
               "EGP:SM_grass",
               3
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1198,10 +1540,6 @@
               3
             ],
             [
-              "DES:SM_Mid_Bush_1",
-              2
-            ],
-            [
               "DES:SM_Bush_many_2",
               2
             ],
@@ -1217,7 +1555,15 @@
               "EGP:SM_bush_03",
               2
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 4000,
+            "seuil": 0.45
+          }
         },
         {
           "name": "herbes_seches",
@@ -1236,14 +1582,6 @@
               3
             ],
             [
-              "LPF:SM_Env_scatter_rock_3",
-              1
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_12",
-              1
-            ],
-            [
               "PBF:SM_Bush",
               2
             ],
@@ -1254,6 +1592,36 @@
             [
               "EGP:SM_grass",
               2
+            ]
+          ],
+          "pente": [
+            0,
+            38
+          ]
+        },
+        {
+          "name": "pierres",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.5,
+            1.2
+          ],
+          "cull": [
+            8000,
+            13000
+          ],
+          "pente": [
+            0,
+            45
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_scatter_rock_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_12",
+              1
             ],
             [
               "SRK:Rock_05/SM_Rock_05",
@@ -1264,6 +1632,32 @@
               1
             ]
           ]
+        },
+        {
+          "name": "buissons_haut",
+          "spacing": "rares",
+          "scale": [
+            0.623,
+            1.038
+          ],
+          "cull": [
+            20000,
+            32000
+          ],
+          "meshes": [
+            [
+              "DES:SM_Mid_Bush_1",
+              2
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1294,6 +1688,10 @@
               "EGP:SM_grass",
               1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1328,6 +1726,10 @@
               "SFT:SM_branch_02",
               1
             ]
+          ],
+          "pente": [
+            0,
+            32
           ]
         },
         {
@@ -1374,6 +1776,10 @@
               "SNW:SM_SnowStone_01",
               1
             ]
+          ],
+          "pente": [
+            20,
+            90
           ]
         }
       ]
@@ -1417,6 +1823,10 @@
               "KOB:SM-Palm/SM-Palm-05",
               1
             ]
+          ],
+          "pente": [
+            0,
+            28
           ]
         },
         {
@@ -1436,25 +1846,17 @@
               3
             ],
             [
-              "DES:SM_Mid_Bush_1",
-              2
-            ],
-            [
               "DES:SM_Bush_many_2",
-              2
-            ],
-            [
-              "EGP:SM_bush_01",
-              2
-            ],
-            [
-              "EGP:SM_bush_02",
               2
             ],
             [
               "EGP:SM_bush_03",
               2
             ]
+          ],
+          "pente": [
+            0,
+            40
           ]
         },
         {
@@ -1510,6 +1912,40 @@
               1
             ]
           ]
+        },
+        {
+          "name": "buissons_secs_haut",
+          "spacing": "rares",
+          "scale": [
+            0.526,
+            0.877
+          ],
+          "cull": [
+            20000,
+            32000
+          ],
+          "meshes": [
+            [
+              "DES:SM_Mid_Bush_1",
+              2
+            ],
+            [
+              "EGP:SM_bush_01",
+              2
+            ],
+            [
+              "EGP:SM_bush_02",
+              2
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1544,6 +1980,10 @@
               "EGP:SM_grass",
               3
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1574,6 +2014,10 @@
               "EGP:SM_tree_01",
               2
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1597,14 +2041,6 @@
               2
             ],
             [
-              "DES:SM_Mid_Bush_1",
-              1
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_11",
-              1
-            ],
-            [
               "PBF:SM_Bush",
               2
             ],
@@ -1623,12 +2059,68 @@
             [
               "SVF:Weeds/SM_WeedyBush_01_Fall",
               2
+            ]
+          ],
+          "pente": [
+            0,
+            38
+          ],
+          "taches": {
+            "taille": 3000,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "pierres",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.5,
+            1.2
+          ],
+          "cull": [
+            9000,
+            14000
+          ],
+          "pente": [
+            0,
+            45
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_scatter_rock_11",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "herbes_hautes_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.552,
+            0.92
+          ],
+          "cull": [
+            9000,
+            14000
+          ],
+          "meshes": [
+            [
+              "DES:SM_Mid_Bush_1",
+              1
             ],
             [
               "EGP:SM_bush_01",
               1
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            38
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1667,6 +2159,10 @@
               "EGP:SM_grass",
               2
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1713,6 +2209,10 @@
               "SFT:SM_tree_07",
               1
             ]
+          ],
+          "pente": [
+            0,
+            42
           ]
         },
         {
@@ -1728,10 +2228,6 @@
           ],
           "meshes": [
             [
-              "RED:SM_Fern_1",
-              2
-            ],
-            [
               "RED:SM_Fern_2",
               2
             ],
@@ -1740,19 +2236,63 @@
               2
             ],
             [
-              "RED:SM_Plant_2",
-              2
-            ],
-            [
               "DES:SM_Bush_Yellow",
               1
             ],
             [
-              "RED:SM_Rock_1",
-              1
+              "PBF:SM_Bush",
+              2
             ],
             [
-              "PBF:SM_Bush",
+              "PIR:SM_Fern",
+              2
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ]
+        },
+        {
+          "name": "pierres",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.5,
+            1.2
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "pente": [
+            0,
+            45
+          ],
+          "meshes": [
+            [
+              "RED:SM_Rock_1",
+              1
+            ]
+          ]
+        },
+        {
+          "name": "sous_bois_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.526,
+            0.877
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "RED:SM_Fern_1",
+              2
+            ],
+            [
+              "RED:SM_Plant_2",
               2
             ],
             [
@@ -1762,12 +2302,16 @@
             [
               "EGP:SM_bush_02",
               2
-            ],
-            [
-              "PIR:SM_Fern",
-              2
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1795,33 +2339,13 @@
               4
             ],
             [
-              "GRN:SM_Flower_1",
-              1
-            ],
-            [
-              "GRN:SM_Flower_2",
-              1
-            ],
-            [
               "SVF:Grass/SM_SimpleGrass_Green",
               2
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1868,6 +2392,10 @@
               "KOB:SM-Bamboo/SM-Bamboo-01",
               2
             ]
+          ],
+          "pente": [
+            0,
+            36
           ]
         },
         {
@@ -1887,28 +2415,8 @@
               3
             ],
             [
-              "BAM:SM_Ivy",
-              2
-            ],
-            [
               "GRN:SM_Plant_1",
               2
-            ],
-            [
-              "GRN:SM_Flower_1",
-              1
-            ],
-            [
-              "GRN:SM_Flower_2",
-              1
-            ],
-            [
-              "GRN:SM_Flower_3",
-              1
-            ],
-            [
-              "LPF:SM_Env_mushroom_16",
-              1
             ],
             [
               "PIR:SM_Fern",
@@ -1921,12 +2429,184 @@
             [
               "KOB:SM-Plants/SM-Plants-08",
               2
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ]
+        },
+        {
+          "name": "mousse",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.9,
+            2.0
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
+              1
             ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_Moss_Patch_01",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            35
+          ],
+          "taches": {
+            "taille": 1400,
+            "seuil": 0.5
+          }
+        },
+        {
+          "name": "champignons",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.4
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_mushroom_16",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 900,
+            "seuil": 0.58
+          }
+        },
+        {
+          "name": "fleurs_sous_bois",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.3
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "GRN:SM_Flower_3",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 2200,
+            "seuil": 0.55
+          }
+        },
+        {
+          "name": "bois_mort",
+          "spacing": "arbres_epars",
+          "scale": [
+            0.7,
+            1.2
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "pente": [
+            0,
+            32
+          ],
+          "meshes": [
             [
               "SVF:Ivy/SM_IvyBranch_Straight_A",
               1
             ]
-          ]
+          ],
+          "taches": {
+            "taille": 4000,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "sous_bois_humide_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.891,
+            1.485
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "BAM:SM_Ivy",
+              2
+            ]
+          ],
+          "pente": [
+            0,
+            40
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "fleurs_sous_bois_haut",
+          "spacing": "arbres_epars",
+          "scale": [
+            0.449,
+            0.749
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "GRN:SM_Flower_1",
+              1
+            ],
+            [
+              "GRN:SM_Flower_2",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     },
@@ -1961,6 +2641,10 @@
               "SNW:SM_SnowGrass_01",
               2
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -1999,6 +2683,10 @@
               "SVF:Trees/Tree_Small_Snow",
               2
             ]
+          ],
+          "pente": [
+            0,
+            45
           ]
         },
         {
@@ -2108,6 +2796,10 @@
               "SRK:Rock_26/SM_Rock_26",
               1
             ]
+          ],
+          "pente": [
+            32,
+            90
           ]
         },
         {
@@ -2178,6 +2870,10 @@
               "SFS:SM_small_stone_04",
               1
             ]
+          ],
+          "pente": [
+            25,
+            90
           ]
         }
       ]
@@ -2221,6 +2917,10 @@
               "KOB:SM-Palm/SM-Palm-04",
               1
             ]
+          ],
+          "pente": [
+            0,
+            20
           ]
         },
         {
@@ -2267,6 +2967,10 @@
               "SRK:Rock_10/SM_Rock_10",
               2
             ]
+          ],
+          "pente": [
+            0,
+            18
           ]
         }
       ]
@@ -2299,29 +3003,13 @@
               2
             ],
             [
-              "RED:SM_Plant_2",
-              1
-            ],
-            [
               "SVF:Grass/SM_SimpleGrass_Green",
               2
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
+          ],
+          "pente": [
+            0,
+            38
           ]
         },
         {
@@ -2368,6 +3056,10 @@
               "SFT:SM_stump_01",
               1
             ]
+          ],
+          "pente": [
+            0,
+            18
           ]
         },
         {
@@ -2376,6 +3068,176 @@
           "scale": [
             0.8,
             1.4
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "SFL:SM_Ivy_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_plant_3",
+              2
+            ],
+            [
+              "GRN:SM_Plant_1",
+              2
+            ],
+            [
+              "PIR:SM_Fern",
+              3
+            ]
+          ],
+          "pente": [
+            0,
+            20
+          ]
+        },
+        {
+          "name": "mousse",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.9,
+            2.0
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
+              1
+            ],
+            [
+              "SVF:Flowers/Moss/SM_Moss_Patch_01",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            35
+          ],
+          "taches": {
+            "taille": 1400,
+            "seuil": 0.5
+          }
+        },
+        {
+          "name": "champignons",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.8,
+            1.4
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "meshes": [
+            [
+              "SFL:SM_Mushroom",
+              1
+            ],
+            [
+              "DSF:SM_Mushroom_05",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            30
+          ],
+          "taches": {
+            "taille": 900,
+            "seuil": 0.58
+          }
+        },
+        {
+          "name": "bois_mort",
+          "spacing": "arbres_epars",
+          "scale": [
+            0.7,
+            1.2
+          ],
+          "cull": [
+            9000,
+            15000
+          ],
+          "pente": [
+            0,
+            32
+          ],
+          "meshes": [
+            [
+              "LPF:SM_Env_treestump_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_treestump_6",
+              1
+            ],
+            [
+              "SVF:Ivy/SM_IvyBranch_Straight_A",
+              2
+            ],
+            [
+              "SVF:Ivy/SM_IvyBranch_Straight_B",
+              2
+            ],
+            [
+              "SFT:SM_stump_02",
+              1
+            ]
+          ],
+          "taches": {
+            "taille": 4000,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "tapis_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.44,
+            0.733
+          ],
+          "cull": [
+            5000,
+            8000
+          ],
+          "meshes": [
+            [
+              "RED:SM_Plant_2",
+              1
+            ]
+          ],
+          "pente": [
+            0,
+            38
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
+        },
+        {
+          "name": "palustre_haut",
+          "spacing": "sousbois_clair",
+          "scale": [
+            0.659,
+            1.099
           ],
           "cull": [
             9000,
@@ -2393,68 +3255,16 @@
             [
               "RED:SM_Plant_2",
               2
-            ],
-            [
-              "SFL:SM_Ivy_2",
-              1
-            ],
-            [
-              "LPF:SM_Env_plant_3",
-              2
-            ],
-            [
-              "LPF:SM_Env_treestump_3",
-              1
-            ],
-            [
-              "LPF:SM_Env_treestump_6",
-              1
-            ],
-            [
-              "GRN:SM_Plant_1",
-              2
-            ],
-            [
-              "SFL:SM_Mushroom",
-              1
-            ],
-            [
-              "PIR:SM_Fern",
-              3
-            ],
-            [
-              "SVF:Ivy/SM_IvyBranch_Straight_A",
-              2
-            ],
-            [
-              "SVF:Ivy/SM_IvyBranch_Straight_B",
-              2
-            ],
-            [
-              "DSF:SM_Mushroom_05",
-              1
-            ],
-            [
-              "SFT:SM_stump_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Small_02",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_MossPatch_Medium_01",
-              1
-            ],
-            [
-              "SVF:Flowers/Moss/SM_Moss_Patch_01",
-              1
             ]
-          ]
+          ],
+          "pente": [
+            0,
+            20
+          ],
+          "taches": {
+            "taille": 2600,
+            "seuil": 0.45
+          }
         }
       ]
     }

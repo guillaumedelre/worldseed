@@ -39,6 +39,7 @@ palmier de plage plante en zone alpine. Voir CLAUDE.md section 11.
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import unreal
@@ -276,6 +277,71 @@ def _pin(node, out: bool = False) -> str:
     return str(ps[0].get_editor_property("properties").get_editor_property("label"))
 
 
+def _etage_pente(graph, layer, amont):
+    """Ne garde que les points dont la PENTE tombe dans l'intervalle demande.
+
+    `PCGNormalToDensity` ecrit `dot(normale du point, verticale)` dans la
+    densite, soit exactement `cos(pente)` : un filtre de densite devient donc un
+    filtre de pente, sans passer par un selecteur d'attribut. Attention au sens,
+    le cosinus DECROIT quand la pente monte -- la borne basse vient de la pente
+    MAXIMALE.
+
+    L'etage se place APRES le tri par biome, qui a besoin de la densite pour
+    porter l'identifiant, et AVANT `TransformPoints`, qui remplace la rotation
+    du point par un lacet aleatoire et detruit donc la normale.
+    """
+    p = layer.get("pente")
+    if not p:
+        return amont
+    pmin, pmax = float(p[0]), float(p[1])
+    nd, nds = graph.add_node_of_type(unreal.PCGNormalToDensitySettings)
+    nds.set_editor_property("density_mode", unreal.PCGNormalToDensityMode.SET)
+    nds.set_editor_property("normal", unreal.Vector(0.0, 0.0, 1.0))
+    for n, pin in amont:
+        graph.add_edge(n, pin, nd, _pin(nd))
+    f, fs = graph.add_node_of_type(unreal.PCGDensityFilterSettings)
+    fs.set_editor_property("lower_bound", math.cos(math.radians(pmax)))
+    fs.set_editor_property("upper_bound", min(1.0, math.cos(math.radians(pmin)) + 1e-4))
+    graph.add_edge(nd, "Out", f, _pin(f))
+    return [(f, "Out")]
+
+
+def _etage_taches(graph, layer, amont):
+    """Seme par TACHES plutot qu'uniformement.
+
+    Les fleurs, les champignons et les baies ne sont pas repartis au hasard :
+    ils poussent en colonies. Une grille reguliere les eparpille un par un, ce
+    qui se lit immediatement comme artificiel.
+
+    `PCGSpatialNoise` en Perlin 2D ecrit un bruit COHERENT EN ESPACE dans la
+    densite -- son `value_target` vaut `$Density` par defaut, verifie par
+    `export_text()` -- et un filtre de densite ne garde alors que les creux ou
+    les bosses, c'est-a-dire des taches. `taille` est le diametre approximatif
+    d'une tache en centimetres ; `seuil` decide de la part de terrain retenue,
+    0,5 en gardant a peu pres la moitie.
+    """
+    t = layer.get("taches")
+    if not t:
+        return amont
+    taille = float(t.get("taille", 2500.0))
+    seuil = float(t.get("seuil", 0.5))
+    br, brs = graph.add_node_of_type(unreal.PCGSpatialNoiseSettings)
+    brs.set_editor_property("mode", unreal.PCGSpatialNoiseMode.PERLIN2D)
+    brs.set_editor_property("iterations", int(t.get("iterations", 2)))
+    # L'echelle de la transformation donne la taille du motif : un Perlin a
+    # frequence 1 sur une unite de monde, donc on etire d'autant.
+    brs.set_editor_property("transform", unreal.Transform(
+        unreal.Vector(0.0, 0.0, 0.0), unreal.Rotator(0.0, 0.0, 0.0),
+        unreal.Vector(taille, taille, taille)))
+    for n, pin in amont:
+        graph.add_edge(n, pin, br, _pin(br))
+    f, fs = graph.add_node_of_type(unreal.PCGDensityFilterSettings)
+    fs.set_editor_property("lower_bound", seuil)
+    fs.set_editor_property("upper_bound", 1.0)
+    graph.add_edge(br, "Out", f, _pin(f))
+    return [(f, "Out")]
+
+
 def _fresh_graph(asset_path: str) -> "unreal.PCGGraph":
     """Reutilise l'asset et le vide, sans jamais le supprimer.
 
@@ -447,6 +513,14 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
                 f2s.set_editor_property("upper_bound", (idm + 0.5) / 255.0)
                 graph.add_edge(source, sortie, f2, _pin(f2))
                 filtres.append(f2)
+            # PLACEMENT FIN. Deux etages optionnels, dans cet ordre : la
+            # pente decide de ce qui tient au sol, les taches de ce qui pousse
+            # en colonies. Une couche qui n'en declare aucun traverse sans
+            # ajouter un seul noeud.
+            amont = [(f, "Out") for f in filtres]
+            amont = _etage_pente(graph, layer, amont)
+            amont = _etage_taches(graph, layer, amont)
+
             xf, xs = graph.add_node_of_type(unreal.PCGTransformPointsSettings)
             xs.set_editor_property("absolute_scale", True)
             xs.set_editor_property("uniform_scale", True)
@@ -457,8 +531,8 @@ def build_graph(asset_path: str, texture, location_cm: dict, half_span_cm: float
             xs.set_editor_property("absolute_rotation", True)
             xs.set_editor_property("rotation_min", unreal.Rotator(0.0, 0.0, 0.0))
             xs.set_editor_property("rotation_max", unreal.Rotator(0.0, 0.0, 360.0))
-            for f in filtres:
-                graph.add_edge(f, "Out", xf, "In")
+            for n, pin in amont:
+                graph.add_edge(n, pin, xf, "In")
 
             spawn, sp = graph.add_node_of_type(unreal.PCGStaticMeshSpawnerSettings)
             selector = sp.get_editor_property("mesh_selector_parameters")

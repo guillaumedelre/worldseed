@@ -402,6 +402,7 @@ le 12 ont été traités ou tranchés en deux jours. Ce qui suit est court à de
 | **Packs Fab** | 3,5 Go importés et câblés : 179 maillages ajoutés aux couches EXISTANTES, donc **variété à coût identique** — 344 482 instances avant comme après, 116,4 FPS, verdict PASS. Comble la mousse, la toundra neigeuse, la prairie et le désert chaud |
 | **MegaPlants** | **écarté après mesure.** Bibliothèque du plugin Procedural Vegetation : plantes en `SkeletalMesh`, 78 924 triangles de moyenne contre 1 798 pour nos pins, aucune herbe, 32 % du monde non couvert. Laissé en place, inactif |
 | **Palette visuelle** | le monde melangeait **neuf familles stylisees** ; ramene a **deux** (Orasot + Stylized_PBR_Nature) par `Tools/UE/palette.py`. 86 maillages au lieu de 139, **344 482 instances dans les deux cas** -- le pas de grille fixe le nombre, pas la liste. Les huit packs Fab restent au catalogue et reviennent en une ligne |
+| **Placement de la végétation** | chaque type a désormais sa couche et sa règle : **pente** (`PCGNormalToDensity`) et **taches** (`PCGSpatialNoise`), plus un plafond de taille par rôle. Mousse, fleurs, champignons et bois mort sortis du tapis et du sous-bois. 340 034 instances, 115,3 FPS |
 | **Carte par défaut** | `GameDefaultMap` et `EditorStartupMap` pointent `L_Worldseed` ; `Lvl_ThirdPerson` supprimée. `GlobalDefaultGameMode` reste `BP_ThirdPersonGameMode`, qui porte le pion et les entrées |
 
 ## 7. Décisions à ne pas défaire sans en parler
