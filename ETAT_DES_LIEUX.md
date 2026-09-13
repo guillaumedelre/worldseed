@@ -1,6 +1,6 @@
 # Worldseed — état des lieux et suite
 
-Document de reprise, **réécrit le 12 septembre 2026**. Il remplace la version du
+Document de reprise, **réécrit le 12 septembre 2026**, mis à jour le 13. Il remplace la version du
 9 septembre, dont plusieurs affirmations étaient devenues *fausses* et non
 seulement incomplètes — elles sont listées au §8 pour que personne ne reparte
 dessus.
@@ -64,7 +64,7 @@ Landscape **unique**. Le tuilage 2×2 imposé par le plafond D3D12 a disparu.
 | `diag_uds_climat.py` | cohérence climat / biomes / préréglages Ultra Dynamic Sky |
 | `tile_world.py` | découpe la sortie pour l'import (**une seule tuile** à 8 km) |
 | `export_biome_texture.py` | carte des biomes pour le PCG, avec le **décalage minéral** |
-| `export_uds_climate.py` | fabrique les 31 préréglages climatiques `CP_Worldseed_*` |
+| `export_uds_climate.py` | fabrique les 30 préréglages climatiques `CP_Worldseed_*` |
 | `spawn_point.py` | choisit le point d'apparition sur des critères mesurés |
 | `montage.py`, `rebuild_report.py`, `refresh_manifest.py`, `tune_coast.py` | outillage annexe |
 
@@ -87,7 +87,7 @@ Landscape **unique**. Le tuilage 2×2 imposé par le plafond D3D12 a disparu.
 
 **Attention : c'est le point que l'ancienne version disait faux.** Le dépôt suit
 `Tools/`, `Config/`, `Source/`, la documentation **et `Content/Worldseed/`** —
-notre contenu propre : graphes PCG, 31 préréglages climatiques,
+notre contenu propre : graphes PCG, 30 préréglages climatiques, le calendrier,
 `BP_WorldseedClimat`, `MI_WorldseedLandscape`, les `LayerInfo`, la carte.
 
 Sont exclus, et pour des raisons différentes :
@@ -118,40 +118,40 @@ Whittaker.
 
 ### Le monde actuel en chiffres
 
-Mesuré sur la sortie du 11 septembre 23 h 45, celle qui est importée dans le
-niveau.
+Mesuré sur la sortie du **13 septembre**, celle qui est importée dans le niveau.
 
 | | Worldseed | Terre |
 |---|---|---|
 | terres émergées | **29,2 %** | 29,2 % (ancre) |
-| pluie moyenne sur les terres | **708 mm/an** | ~715 mm |
-| terres au-dessus de 2000 mm | **9,0 %** | 7 à 8 % |
-| terres sous 250 mm | 39,4 % | — |
+| pluie moyenne sur les terres | **713 mm/an** | ~715 mm |
+| terres au-dessus de 2000 mm | **6,6 %** | 7 à 8 % |
+| terres sous 250 mm | 30,1 % | — |
 | relief | −287 à +347 m | — |
-| rivières / lacs | 21 / 3 | — |
+| rivières / lacs | 16 / 3 | — |
 | pente médiane des terres | 30,6° | — |
 
 Parts des biomes, en pourcentage des terres :
 
 | biome | part | Terre |
 |---|---|---|
-| désert chaud | **16,5 %** | 21 |
-| forêt tropicale humide | **11,3 %** | 11 |
-| calotte glaciaire | **9,9 %** | 10 |
-| savane | **9,5 %** | 13 |
-| forêt tempérée | 7,9 % | — |
-| désert froid | 7,7 % | — |
-| forêt tropicale sèche | 7,3 % | — |
-| taïga | **6,4 %** | 10 |
-| prairie | 5,3 % | — |
-| toundra | **4,7 %** | 8 |
-| roche nue | 3,8 % | — |
-| plage, steppe, alpin, forêt tempérée humide, marais | 9,8 % cumulés | — |
+| désert chaud | **16,0 %** | 21 |
+| savane | **11,7 %** | 13 |
+| calotte glaciaire | **11,1 %** | 10 |
+| forêt tropicale humide | **8,6 %** | 11 |
+| taïga | **8,6 %** | 10 |
+| toundra | **8,4 %** | 8 |
+| forêt tempérée | **8,0 %** | 9 |
+| forêt tropicale sèche | 7,7 % | — |
+| prairie | 5,9 % | 8 |
+| roche nue | 3,9 % | — |
+| plage, steppe, alpin, forêt tempérée humide, désert froid, marais | 10,1 % cumulés | — |
 
-Écart absolu moyen aux huit grands biomes terrestres : **24,3 %**.
+Écart absolu moyen aux huit grands biomes terrestres : **16,7 %** — le
+meilleur du projet, contre 24,3 % avant la correction de la sécheresse
+polaire (13 septembre).
 
-**Ce chiffre COMPARE, il ne juge pas.** Il plafonne vers 24-32 % quel que soit le
-réglage, pour deux raisons structurelles : les terres étant fixées à 29,2 %, les
+**Ce chiffre COMPARE, il ne juge pas.** Il ne descendra jamais très bas, pour
+deux raisons structurelles : les terres étant fixées à 29,2 %, les
 parts de biomes sont un jeu à **somme nulle** (agrandir l'Antarctique retire de la
 savane) ; et nos 16 catégories ne se ramènent pas aux 8 de référence, qui n'en
 couvrent que 68 %. L'utiliser pour départager deux réglages, **jamais** pour juger
@@ -213,8 +213,11 @@ bien le monde recalibré.
 
 ### Eau
 
-1 `WaterBodyOcean` à Z = 0, 3 `WaterBodyLake`, 21 `WaterBodyRiver`, 1 `WaterZone` à
-4096 texels (**2,08 m par texel**). `affects_landscape` est à **False** sur tous les
+1 `WaterBodyOcean` à Z = 0, 3 `WaterBodyLake`, 16 `WaterBodyRiver`, 1 `WaterZone` à
+4096 texels (**2,08 m par texel**). **L'emprise de l'océan (`OceanExtents`) doit
+valoir celle de la zone** : livrée à 512 m sur un monde de 8 km, elle ne rendait
+d'eau qu'autour de l'origine, le *far mesh* de 40 km donnant le change au loin.
+`water_world.emprise_ocean()` la cale, et `verify()` le contrôle. `affects_landscape` est à **False** sur tous les
 corps d'eau, sans quoi ils creuseraient le relief importé. Rejouable par
 `water_world.py`.
 
@@ -274,9 +277,25 @@ ne coûte aucune instance.** Décision prise : **on ne densifie pas**.
   météo par saison, arbitre pluie contre neige par leur rapport, et en déduit
   jusqu'au brouillard et aux tempêtes de sable. Il ne faut **pas** écrire
   `Global Weather State` à la main.
-- Mesure de recette : biome 6, météo `Partly_Cloudy`, horloge qui avance,
-  **107,6 images par seconde, verdict PASS**. Au pôle sud, météo retirée au sort et
-  minuteur remis à zéro.
+- **Le temps passe à une vitesse jouable, et c'est un calendrier qui le règle.**
+  Le grégorien d'UDS donnait une année de **274 heures réelles** et une saison de
+  68 : les saisons ne changeaient jamais, et tout le calage saisonnier restait
+  invisible. `CAL_Worldseed` (12 mois de 3 jours, 36 jours) ramène l'année à
+  **27 h** et la saison à **6 h 45**, la journée restant à 45 min.
+  **Ne PAS piloter `Season` directement** : avec `Simulate Real Sun`, c'est la
+  DATE qui donne la déclinaison du soleil, et découpler les deux produirait un
+  hiver sous un soleil d'été. Le calendrier déplace les deux ensemble.
+  `BP_WorldseedClimat` l'assigne au démarrage — posé sur l'acteur UDS, il aurait
+  vécu hors dépôt.
+- Mesures de recette : biome 6, météo `Partly_Cloudy`, horloge qui avance,
+  **107,6 images par seconde, verdict PASS** ; au pôle sud, météo retirée au sort
+  et minuteur remis à zéro ; jour 8 sur 36 → « Mid Spring », jour 20 → « Mid
+  Summer ».
+- **Il neige vraiment**, prouvé en toundra boréale à +64° : le tirage sort `Snow`,
+  l'état global prend les valeurs du préréglage et le sol se couvre — plaques
+  brunes affleurantes **6,8 % → 0,0 %**. Fréquence mesurée après la correction de
+  la sécheresse polaire : **3,1 % par tirage** en hiver, soit ~3 épisodes neigeux
+  par hiver de toundra, et ~15 épisodes pluvieux par été (pluie 15,2 %).
 
 ---
 
@@ -333,35 +352,33 @@ matériaux d'affilée a fait tomber l'éditeur deux fois.
 
 Dans l'ordre où je le ferais.
 
-### 6.1 Prouver qu'il neige vraiment — non vérifié
+### 6.1 et 6.2 — FAITS le 13 septembre, gardés ici pour mémoire
 
-On a démontré que le biome pilote les cartes de probabilités de météo, que le
-tirage tourne et qu'une météo est retirée au sort à chaque changement de biome.
-On n'a **jamais observé** une chute de neige survenir d'elle-même en toundra
-l'hiver, ni DLWE couvrir le sol à cette occasion. La neige n'a été vue qu'en
-forçant `Snow = 10` à la main. C'est le dénouement de deux sessions de travail, et
-il tient à une observation d'une dizaine de minutes en PIE.
+**La sécheresse polaire est corrigée.** Il manquait le transport méridien de
+l'humidité par les dépressions : l'advection suit le vent moyen, zonal aux
+moyennes latitudes, si bien que rien ne portait l'eau vers les pôles. Un mélange
+méridien descendant le gradient, centré sur le rail des dépressions, a porté la
+bande 60-70° de **170 à 456 mm**, la toundra de 4,66 à **8,09 %** et l'écart
+absolu moyen de 24,3 à **16,7 %**. Détail complet et pistes rejetées dans
+`CLAUDE.md`.
 
-### 6.2 La sécheresse polaire — un manque du MODÈLE, pas un réglage
+**Et il neige vraiment**, vérifié en PIE. Reste un plafond que rien ne franchit :
+la bande 80-90° plafonne à **27 mm** contre ~150 sur Terre, parce qu'à −40 °C la
+capacité de l'air vaut 0,09 contre 1,48 à l'équateur. Quatre variantes essayées,
+le même chiffre. **Ne pas retenter sans truquer Clausius-Clapeyron.**
 
-| latitude | Worldseed | Terre (ordre) |
-|---|---|---|
-| 60-70° | 170 mm | ~500 mm |
-| 70-80° | 11 mm | ~250 mm |
-| 80-90° | 0 mm | ~150 mm |
+### 6.3 Les silhouettes manquantes de végétation — le plus visible
 
-Il n'existe **aucun transport d'humidité vers les pôles par les tempêtes**. C'est
-ce qui maintient la toundra à 4,7 % et la taïga à 6,4 % au lieu de 8 et 10.
+Taïga (deux conifères seulement), toundra (rien de spécifique), savane (pas
+d'acacia), marais (pas de végétation palustre) : ensemble **~15 % des terres**,
+habillées par emprunt. Se règle dans `vegetation_recipes.json`, sans régénérer.
+Limite : ce que les packs contiennent réellement.
 
-**Essayé et REJETÉ** : `saturationScaleC` 16 → 24 porte la bande 60-70° à 297 mm et
-l'écart moyen à 20,5 %, mais s'éloigne de Clausius-Clapeyron (échelle théorique
-10/ln2 = 14,4 °C) et **touche au relief** — la pluie pilote l'érosion. C'est un
-pansement sur un mécanisme absent. **Sans effet mesurable** : `polarFrontStrength`
-(0,45 → 0,70) et `subsidenceFactor` (0,75 → 0,60), moins de 0,2 point chacun.
+Ce chantier a pris du poids le 13 septembre — toundra et taïga pèsent désormais
+8,4 et 8,6 % des terres contre 4,7 et 6,4 avant, donc leur habillage par emprunt
+se voit deux fois plus.
 
-Ce chantier impose une régénération complète du monde, donc un commit `BREAKING`.
-
-### 6.3 Le sable scintille encore dans les dix premiers mètres
+### 6.4 Le sable scintille encore dans les dix premiers mètres
 
 Traité à 90 % : `T_Sand_Glitter` est une texture de **paillettes émissives**
 dépendante de l'angle de vue, et son `Boost` valait 579,9 — la valeur de l'auteur,
@@ -369,7 +386,7 @@ juste sur sa petite carte de démo, absurde sur 8 km. Ramené à 5,0, plus une
 correction de `Sand UV` 0,495 → 2,0. Il reste un scintillement de près, là où le
 matériau mêle sans doute une texture de détail rapprochée.
 
-### 6.4 Points ouverts, plus petits
+### 6.5 Points ouverts, plus petits
 
 - **Silhouettes manquantes** : taïga (deux conifères seulement), toundra (rien de
   spécifique), savane (pas d'acacia), marais (pas de végétation palustre) —
@@ -378,8 +395,9 @@ matériau mêle sans doute une texture de détail rapprochée.
   climatique n'existe : la météo du dernier biome terrestre persiste. Acceptable.
 - **La plage est indiscernable du désert** : même couche dominante.
 - **Les HLOD ne sont pas construits.** À faire quand il y aura du contenu.
-- **`Tools/UE/export_godot_textures.py`** porte 219 lignes modifiées non
-  committées, qui ne viennent pas de l'agent. À arbitrer.
+- **`Docs/atlas-worldseed.html` date du 11 septembre** : ses mesures décrivent
+  un monde d'avant la correction de la sécheresse polaire. Il le dit lui-même,
+  mais il faudra le refaire.
 
 ---
 
@@ -424,4 +442,4 @@ matériau mêle sans doute une texture de détail rapprochée.
 | « import une tuile par appel (~40 s chacune) » | **Périmé.** À 8 km il n'y a **qu'une** tuile, et `rebuild_world.rebuild()` fait tout. |
 | « `M_WorldseedLandscape` est le matériau du terrain » | **Faux.** C'est `MI_WorldseedLandscape`, l'**instance**. Le maître seul ne ressemble à rien. |
 | chiffres de biomes : forêt tempérée humide 12,7 %, roche nue 12,4 %… | **Périmés** — antérieurs à la correction de `bareRockSlopeDeg`. Voir §3. |
-| « terres 38,5 %, 45 rivières, 5 lacs » | **Périmé.** 29,2 %, 21 rivières, 3 lacs. |
+| « terres 38,5 %, 45 rivières, 5 lacs » | **Périmé.** 29,2 %, 16 rivières, 3 lacs. |

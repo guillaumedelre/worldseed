@@ -204,6 +204,21 @@ calotte, `Clear_Skies`, minuteur de changement remis à zéro. Les cartes de
 probabilités passent de 8-9 types de météo en forêt tempérée à 4 sous la calotte.
 107,6 images par seconde, verdict PASS.
 
+**Et le temps passe à une vitesse jouable.** Le calendrier grégorien d'Ultra
+Dynamic Sky donnait une année de **274 heures réelles** — les saisons ne
+changeaient donc jamais, et les quatre saisons de chaque préréglage ne servaient
+à rien. `CAL_Worldseed` (12 mois de 3 jours) ramène l'année à **27 h** et la
+saison à **6 h 45**, la journée restant à 45 minutes. Il est assigné au
+démarrage par `BP_WorldseedClimat`.
+
+⚠ **Ne pas piloter la saison directement** en passant `Season Mode` en manuel :
+avec `Simulate Real Sun`, c'est la DATE qui donne la déclinaison du soleil, et
+découpler les deux produit un hiver sous un soleil d'été. C'est le calendrier
+qui doit être raccourci, parce qu'il déplace les deux ensemble.
+
+Résultat mesuré en toundra boréale : ~3 épisodes neigeux par hiver et ~15
+épisodes pluvieux par été.
+
 ---
 
 ## Vérifier que le monde est juste
