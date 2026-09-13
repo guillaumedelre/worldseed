@@ -388,9 +388,6 @@ matériau mêle sans doute une texture de détail rapprochée.
 
 ### 6.5 Points ouverts, plus petits
 
-- **Silhouettes manquantes** : taïga (deux conifères seulement), toundra (rien de
-  spécifique), savane (pas d'acacia), marais (pas de végétation palustre) —
-  ensemble ~15 % des terres, traitées par emprunt.
 - **Au-dessus de l'océan, le biome vaut 0**, pour lequel aucun préréglage
   climatique n'existe : la météo du dernier biome terrestre persiste. Acceptable.
 - **La plage est indiscernable du désert** : même couche dominante.
