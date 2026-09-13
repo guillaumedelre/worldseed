@@ -2743,3 +2743,58 @@ Stylized_Rocks range ses 26 rochers dans 26 dossiers, ce qui aurait demandé
 qui perd des maillages en silence. `foliage_lods.audit()` a de son côté trouvé
 les **4 palmiers Kobo à LOD unique pour 7 768 triangles**, seuls maillages neufs
 sans LOD.
+
+### La palette : neuf familles visuelles, et on n'en garde que deux (13 septembre 2026)
+
+Signale : « il y a enormement de style graphique different ». C'etait juste, et
+la cause n'etait pas celle qu'on croyait.
+
+**MEGAPLANTS N'EST PAS DANS LE MONDE, et n'y a jamais ete** : aucune racine
+`Megaplant` dans les recettes. Le desaccord ne venait donc pas d'un melange
+realiste / stylise mais de **neuf familles STYLISEES de dessins differents** --
+le low-poly a facettes d'Orasot, le PBR stylise de Stylized_PBR_Nature, le peint
+a la main de Stylized_Village, le plat et sature de Kobo. Trois d'entre elles
+portaient 83 % du semis (PBF 36,2 %, SVF 20,7 %, Orasot 26,6 %).
+
+**ET UNE VARIANTE REALISTE N'EST PAS REALISABLE.** Confirme au-dela de la note
+precedente : `ProceduralVegetation` n'expose **rien** a Python -- ni graphe, ni
+noeuds, ni export, et il n'est pas un `PCGGraph` malgre l'heritage de
+`ProceduralVegetationGraph`. `PVExportMeshType` connait pourtant `STATIC_MESH`,
+mais c'est un noeud a l'interieur d'un graphe hors de portee. Et il n'existe
+aucune autre vegetation realiste sur le disque : les 20 dossiers de
+`D:\Assets\Fab\` sont tous stylises sauf MegaPlants.
+
+**`Tools/UE/palette.py`** filtre les recettes par pack. Deux fichiers, et c'est
+le point a comprendre :
+
+    vegetation_recipes.complet.json   le CATALOGUE, les neuf familles (413 maillages)
+    vegetation_recipes.json           les recettes ACTIVES, vue filtree (237)
+
+Les deux sont versionnes, donc un clone frais retrouve le catalogue entier ET la
+palette en vigueur. `appliquer()` part TOUJOURS du catalogue : enchainer deux
+palettes ne cumule pas les filtres. La cle `_palette` inscrite dans les recettes
+actives dit laquelle est en vigueur.
+
+**MESURE QUI COMPTE : le nombre d'instances ne bouge pas d'un iota d'une palette
+a l'autre -- 344 482 dans les deux cas.** C'est le pas de grille qui le fixe, pas
+la liste de maillages. Changer de palette ne change donc QUE le dessin : 86
+maillages distincts en « origine » contre 139 en « tout », a cout egal.
+
+**ORASOT SEUL EST IMPOSSIBLE, et c'est la surprise.** Filtre a ce seul pack, la
+**calotte glaciaire se retrouve sans aucune vegetation**, et la toundra, le
+desert froid et l'alpin perdent leur tapis : tous empruntaient a
+Stylized_PBR_Nature. `simuler()` le dit avant d'ecrire quoi que ce soit, et
+`appliquer()` refuse une palette qui laisserait un biome nu. La palette la plus
+homogene atteignable est donc a DEUX familles, pas une.
+
+**DECISION DU PROPRIETAIRE, 13 septembre 2026 : palette « origine »**, soit
+Orasot + Stylized_PBR_Nature. Les huit packs Fab restent sur le disque et dans le
+catalogue ; ils reviennent en une ligne (`palette.appliquer("tout")`). Ce qu'on
+perd sciemment : la mousse, la toundra neigeuse et les variantes saisonnieres
+importees le matin meme.
+
+**Piege de methode, utile : une rupture de style ne se juge pas sous la pluie.**
+Le premier constat avait ete fait par ciel couvert, ou tout s'aplatit en vert
+sombre. Forcer `Time of Day` a 13 h 30, `Cloud Coverage` a 1 et `Cloud Speed` a
+0 rend les deux captures comparables -- c'est la que le rocher facette et les
+cerisiers roses sautent aux yeux.
