@@ -2607,3 +2607,49 @@ santé frais ne prouve donc pas que le processus vit encore** : il prouve qu'il
 vivait il y a quelques secondes. Croiser avec la liste des processus.
 
 Rejeu : `landscape_material.sable_de_plage()`, idempotent par constat.
+
+### Doser une teinte : le multiplicateur qui SATURE au lieu de pâlir (13 septembre 2026)
+
+La greffe de sable de plage posée, il restait à choisir la teinte. **Ma première
+valeur allait dans le mauvais sens**, et seule la mesure l'a montré.
+
+**LE PROTOCOLE, parce que l'œil ne suffisait pas.** Trois captures au même
+endroit, heure figée à 13 h, ciel dégagé — et surtout **le personnage comme
+témoin d'éclairage**, tout ramené à 100 de luminance sur lui :
+
+    sans greffe        R 185,2  V 121,9  B  77,8   saturation 0,580   clarte 128,3
+    (1,10/1,12/0,85)     203,1    140,3     76,7   saturation 0,622   clarte 140,0
+    (1,12/1,35/1,75)     196,3    142,7    102,3   saturation 0,479   clarte 147,1
+
+**Sans le témoin, la comparaison était fausse** : entre deux captures censées
+être identiques, la couverture nuageuse avait bougé et le personnage lui-même
+variait de +9 en luminance. Un sable « plus clair » ne prouvait donc rien.
+
+**LA LEÇON DE FOND.** Un multiplicateur par canal ne peut désaturer qu'en
+RELEVANT les canaux faibles. Baisser le bleu — le réflexe pour « jaunir » —
+**augmente** la saturation : mon (1,10 / 1,12 / 0,85) a porté la saturation de
+0,580 à 0,622, soit l'inverse de l'effet voulu. Pour pâlir un sable déjà très
+saturé (R 185 / V 122 / B 78), il faut monter le bleu et le vert plus que le
+rouge.
+
+**ET LE RÉGLAGE S'EST FAIT SANS RECOMPILER**, sur l'INSTANCE : c'est tout
+l'intérêt d'avoir exposé des paramètres plutôt que des constantes. Le matériau
+qui fait tomber l'éditeur n'a été recompilé qu'une seule fois.
+
+**PIÈGE ANNEXE, qui a coûté une capture pour rien** : `load_asset` rend `None`
+pendant un PIE. `set_material_instance_scalar_parameter_value(None, ...)` ne
+lève rien et `get_...(None, ...)` rend `0.0` — on croit donc avoir éteint la
+greffe alors qu'on n'a rien fait, et `0.0` se confond avec « pas de surcharge ».
+Toute écriture de paramètre se fait **PIE arrêté**, et se relit pour vérifier.
+
+### La carte par défaut du projet (13 septembre 2026)
+
+`Config/DefaultEngine.ini` pointait encore `GameDefaultMap` et `EditorStartupMap`
+sur `/Game/ThirdPerson/Lvl_ThirdPerson`, la scène du modèle Epic : l'éditeur et
+le PIE s'ouvraient donc sur une démo vide. Les deux pointent désormais
+`/Game/Worldseed/Maps/L_Worldseed`.
+
+`Lvl_ThirdPerson` a été supprimée, avec ses acteurs externes — vérifié sans
+aucun référenceur hors de ses propres `__ExternalActors__`. **`GlobalDefaultGameMode`
+reste `BP_ThirdPersonGameMode`** : ce Blueprint porte notre pion et nos entrées,
+il ne faut pas le confondre avec la carte de démonstration.

@@ -159,7 +159,15 @@ def verifier():
 P_TEINTE = "Teinte sable plage"
 P_HAUTEUR = "Hauteur plage"
 P_FORCE = "Palissement plage"
-TEINTE_DEFAUT = "(R=1.100000,G=1.120000,B=0.850000,A=1.000000)"
+# MESUREE, ET MA PREMIERE VALEUR ETAIT FAUSSE. J'avais pris (1,10 / 1,12 / 0,85),
+# qui baisse le bleu : cela SATURE le sable en dore au lieu de le palir. Mesure en
+# A/B a eclairage egal, personnage ramene a 100 de luminance comme temoin :
+#   sans greffe   R 185,2  V 121,9  B  77,8   saturation 0,580   clarte 128,3
+#   (1,10/1,12/0,85)  203,1    140,3     76,7   saturation 0,622   clarte 140,0  <- PIRE
+#   (1,12/1,35/1,75)  196,3    142,7    102,3   saturation 0,479   clarte 147,1  <- retenu
+# Pour PALIR un sable deja tres sature, il faut RELEVER le bleu et le vert plus
+# que le rouge. Un multiplicateur ne peut desaturer qu'ainsi.
+TEINTE_DEFAUT = "(R=1.120000,G=1.350000,B=1.750000,A=1.000000)"
 HAUTEUR_DEFAUT = 1200.0          # cm : la zone atteinte par la mer
 FORCE_DEFAUT = 1.0
 
