@@ -83,8 +83,6 @@
     "DES": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/StaticMeshes",
     "GRN": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/StaticMeshes",
     "RED": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/StaticMeshes",
-    "PBF": "/Game/Stylized_PBR_Nature/Foliage/Assets",
-    "PBR": "/Game/Stylized_PBR_Nature/Rocks/Assets",
     "KOB": "/Game/Kobo_Nature/Meshes",
     "SNW": "/Game/Stylized_Environments/Snow_Forest/Models",
     "PIR": "/Game/Stylized_Environments/Pirates_Theme/Models",
@@ -125,18 +123,6 @@
             45000
           ],
           "meshes": [
-            [
-              "PBR:SM_S_Rock_01",
-              1
-            ],
-            [
-              "PBR:SM_S_Rock_05",
-              1
-            ],
-            [
-              "PBR:SM_R_Rock_02",
-              1
-            ],
             [
               "SNW:SM_SnowStone_01",
               2
@@ -184,14 +170,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              4
-            ],
-            [
-              "PBF:SM_Clover",
-              3
-            ],
             [
               "SNW:SM_SnowGrass_01",
               3
@@ -394,14 +372,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              6
-            ],
-            [
-              "PBF:SM_Clover",
-              3
-            ],
-            [
               "LPF:SM_Env_plant_5",
               1
             ],
@@ -442,22 +412,6 @@
             [
               "LPF:SM_Env_Pine_Tree_3",
               3
-            ],
-            [
-              "PBF:SM_Pine_Tree_1",
-              2
-            ],
-            [
-              "PBF:SM_Pine_Tree_2",
-              2
-            ],
-            [
-              "PBF:SM_Pine_Tree_3",
-              2
-            ],
-            [
-              "PBF:SM_Pine_Tree_4",
-              2
             ],
             [
               "SFL:SM_Pine",
@@ -532,10 +486,6 @@
             [
               "LPF:SM_Env_bush_berry_2",
               1
-            ],
-            [
-              "PBF:SM_Bush",
-              2
             ],
             [
               "LPF:SM_Env_bush_berry_1",
@@ -695,14 +645,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
-              "PBF:SM_Clover",
-              4
-            ],
-            [
               "SVF:Grass/SM_SimpleGrass_Green",
               3
             ],
@@ -761,22 +703,6 @@
               2
             ],
             [
-              "PBF:SM_Common_Tree_01",
-              2
-            ],
-            [
-              "PBF:SM_Common_Tree_04",
-              2
-            ],
-            [
-              "PBF:SM_Common_Tree_07",
-              2
-            ],
-            [
-              "PBF:SM_Common_Tree_10",
-              2
-            ],
-            [
               "SFL:SM_Pine",
               1
             ],
@@ -817,10 +743,6 @@
             [
               "LPF:SM_Env_bush_berry_5",
               1
-            ],
-            [
-              "PBF:SM_Bush",
-              2
             ],
             [
               "SFP:SM_shrub_02",
@@ -1020,14 +942,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
-              "PBF:SM_Clover",
-              5
-            ],
-            [
               "LPF:SM_Env_plant_2",
               1
             ],
@@ -1057,34 +971,6 @@
             60000
           ],
           "meshes": [
-            [
-              "PBF:SM_Common_Tree_02",
-              3
-            ],
-            [
-              "PBF:SM_Common_Tree_03",
-              3
-            ],
-            [
-              "PBF:SM_Common_Tree_05",
-              3
-            ],
-            [
-              "PBF:SM_Common_Tree_06",
-              3
-            ],
-            [
-              "PBF:SM_Common_Tree_08",
-              3
-            ],
-            [
-              "PBF:SM_Common_Tree_09",
-              3
-            ],
-            [
-              "PBF:SM_Common_Tree_11",
-              3
-            ],
             [
               "SFL:SM_Oak_Tree",
               2
@@ -1120,10 +1006,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Fern",
-              3
-            ],
-            [
               "SFL:SM_Ivy",
               1
             ],
@@ -1133,10 +1015,6 @@
             ],
             [
               "LPF:SM_Env_plant_5",
-              2
-            ],
-            [
-              "PBF:SM_Bush",
               2
             ],
             [
@@ -1303,14 +1181,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              10
-            ],
-            [
-              "PBF:SM_Clover",
-              5
-            ],
-            [
               "DSF:SM_Grass_Clump_02",
               3
             ],
@@ -1347,10 +1217,6 @@
             [
               "SFL:SM_Oak_Tree_Accent",
               2
-            ],
-            [
-              "PBF:SM_Common_Tree_04",
-              1
             ],
             [
               "SFL:SM_Poplar_Tree",
@@ -1400,10 +1266,6 @@
             ],
             [
               "SFL:SM_Wheat",
-              2
-            ],
-            [
-              "PBF:SM_Clover",
               2
             ],
             [
@@ -1498,16 +1360,8 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
               "SFL:SM_Wheat",
               4
-            ],
-            [
-              "PBF:SM_Clover",
-              1
             ],
             [
               "SVF:Grass/SM_SimpleGrass_Yellow",
@@ -1580,10 +1434,6 @@
             [
               "SFL:SM_Wheat",
               3
-            ],
-            [
-              "PBF:SM_Bush",
-              2
             ],
             [
               "SVF:Grass/SM_SimpleGrass_Yellow",
@@ -1676,10 +1526,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              2
-            ],
             [
               "SVF:Grass/SM_SimpleGrass_Yellow",
               2
@@ -1965,10 +1811,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              9
-            ],
-            [
               "SFL:SM_Wheat",
               4
             ],
@@ -2038,10 +1880,6 @@
             ],
             [
               "DES:SM_Bush_Yellow",
-              2
-            ],
-            [
-              "PBF:SM_Bush",
               2
             ],
             [
@@ -2140,14 +1978,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              8
-            ],
-            [
-              "PBF:SM_Clover",
-              2
-            ],
-            [
               "RED:SM_Plant_1",
               2
             ],
@@ -2240,10 +2070,6 @@
               1
             ],
             [
-              "PBF:SM_Bush",
-              2
-            ],
-            [
               "PIR:SM_Fern",
               2
             ]
@@ -2330,14 +2156,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              6
-            ],
-            [
-              "PBF:SM_Clover",
-              4
-            ],
             [
               "SVF:Grass/SM_SimpleGrass_Green",
               2
@@ -2626,14 +2444,6 @@
           ],
           "meshes": [
             [
-              "PBF:SM_Grass",
-              3
-            ],
-            [
-              "PBF:SM_Clover",
-              1
-            ],
-            [
               "SVF:Grass/SM_SimpleGrass_Snow",
               2
             ],
@@ -2839,14 +2649,6 @@
               2
             ],
             [
-              "PBR:SM_S_Rock_03",
-              2
-            ],
-            [
-              "PBR:SM_R_Rock_04",
-              2
-            ],
-            [
               "SRK:Rock_01/SM_Rock_01",
               2
             ],
@@ -2990,14 +2792,6 @@
             8000
           ],
           "meshes": [
-            [
-              "PBF:SM_Grass",
-              6
-            ],
-            [
-              "PBF:SM_Clover",
-              5
-            ],
             [
               "SFL:SM_Ivy_2",
               2

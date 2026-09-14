@@ -42,7 +42,6 @@ CATALOGUE = os.path.join(os.path.dirname(__file__), "vegetation_recipes.complet.
 # Les familles, par leurs prefixes de racine. Un pack = un dessin.
 FAMILLES = {
     "orasot": ["LPF", "SFL", "GRN", "RED", "DES", "BAM", "DRK"],
-    "pbr_nature": ["PBF", "PBR"],
     "village": ["SVF"],
     "dreamscape": ["DSF", "DST", "DSR"],
     "stylized_forest": ["SFP", "SFT", "SFS"],
@@ -54,15 +53,16 @@ FAMILLES = {
 
 # Les palettes proposees, du plus homogene au plus melange.
 PALETTES = {
-    # ATTENTION : "orasot" SEUL ne marche pas. La calotte glaciaire se retrouve
-    # sans aucune vegetation, et la toundra, le desert froid et l'alpin perdent
-    # leur tapis -- tous empruntaient a Stylized_PBR_Nature. Mesure, pas suppose.
     "orasot": ["orasot"],
-    # La palette retenue par le proprietaire le 13 septembre 2026 : le look le
-    # plus homogene atteignable, et celui avec lequel le monde a ete bati.
-    "origine": ["orasot", "pbr_nature"],
+    # "origine" a ete retiree le 14 septembre 2026 : elle valait
+    # orasot + pbr_nature, et Stylized_PBR_Nature a ete supprime du projet.
     # Tout le catalogue.
     "tout": list(FAMILLES),
+    # LE MONDE NU. Aucune vegetation semee -- il reste le relief, l'eau, les
+    # couches peintes et l'herbe emise par le materiau de terrain, qui ne passe
+    # pas par le PCG. C'est le point de depart d'une reintroduction PACK PAR
+    # PACK : on rajoute une famille, on regarde, on tranche.
+    "nu": [],
 }
 
 
@@ -130,6 +130,11 @@ def appliquer(palette) -> dict:
     palettes de suite ne cumule donc pas les filtres.
     """
     r = simuler(palette)
+    # Une palette DELIBEREMENT vide est legitime : c'est le monde nu. La garde
+    # ne vise que les palettes qui deshabillent un biome PAR ACCIDENT.
+    if not _racines(palette):
+        r["utilisable"] = True
+        r["biomesNus"] = []
     if not r["utilisable"]:
         raise RuntimeError("palette refusee, biomes sans aucune vegetation : {}".format(
             ", ".join(r["biomesNus"])))
@@ -167,3 +172,27 @@ def catalogue() -> str:
 def active() -> str:
     """Nom de la palette en vigueur, tel qu'inscrit dans les recettes actives."""
     return _lire(ACTIVES).get("_palette", "(non marquee)")
+
+
+def familles() -> None:
+    """Affiche les familles, leur poids dans le semis et leur etat courant.
+
+    C'est le tableau de bord de la reintroduction progressive : on voit d'un
+    coup d'oeil ce qui est en vigueur et ce qu'il reste a essayer.
+    """
+    d = _lire(CATALOGUE)
+    spac = d["spacings"]
+    en_cours = _racines(_lire(ACTIVES).get("_palette", "tout")) if os.path.exists(ACTIVES) else set()
+    poids = {}
+    for b in d["biomes"].values():
+        for c in b["layers"]:
+            dens = 1.0 / (spac[c["spacing"]] ** 2)
+            tot = sum(p for _, p in c["meshes"]) or 1
+            for m, p in c["meshes"]:
+                poids[m.split(":")[0]] = poids.get(m.split(":")[0], 0.0) + dens * p / tot
+    somme = sum(poids.values()) or 1.0
+    print("{:<18} {:>7} {:>9}  {}".format("famille", "part", "etat", "racines"))
+    for f, rs in sorted(FAMILLES.items(), key=lambda kv: -sum(poids.get(r, 0) for r in kv[1])):
+        part = 100.0 * sum(poids.get(r, 0.0) for r in rs) / somme
+        etat = "EN COURS" if set(rs) & en_cours else "-"
+        print("{:<18} {:>6.1f} % {:>9}  {}".format(f, part, etat, " ".join(rs)))
