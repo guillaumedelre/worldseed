@@ -54,9 +54,9 @@ ATTENDU = {
     "Humid_Subtropical-Dry_Winter": "foret_temperee_humide",
     "Hot_Summer_Continental": "foret_temperee",
     "Warm_Summer_Continental": "foret_temperee",
-    "Mediterranean_Hot_Summer": "steppe_ou_prairie",
-    "Mediterranean_Cool_Summer": "steppe_ou_prairie",
-    "Mediterranean_Cold_Summer": "steppe_ou_prairie",
+    "Mediterranean_Hot_Summer": "mediterraneen",
+    "Mediterranean_Cool_Summer": "mediterraneen",
+    "Mediterranean_Cold_Summer": "mediterraneen",
     "Hot_Desert": "desert_chaud",
     "Cold_Desert": "desert_froid",
     "Hot_Semi-Arid": "desert_chaud_ou_savane",
@@ -79,7 +79,30 @@ def climat_annuel(p: dict) -> tuple:
     return float(t), float(mm)
 
 
-def case_whittaker(t: float, p: float, bandes: list, regles: dict | None = None) -> str:
+# SEUIL PROPRE AUX RELEVES, ET IL N'EST PAS CELUI DU MOTEUR.
+# Notre part estivale est plus CONTRASTEE que la realite -- 0,15 a 0,21 entre 38
+# et 50 degres dans le monde genere, contre 0,24 a 0,30 mesures sur les villes
+# mediterraneennes reelles -- parce que le modele de circulation est purement
+# zonal : ni moderation maritime de la saisonnalite, ni asymetrie est/ouest des
+# bassins oceaniques. Le nombre ci-dessous separe proprement les trois releves
+# mediterraneens (0,243 / 0,289 / 0,299) de leurs voisins immediats, Oceanic a
+# 0,427 et Humid_Subtropical a 0,413. Confondre les deux seuils serait une faute.
+FRAC_ETE_MEDITERRANEENNE = 0.31
+
+
+def fraction_ete(p: dict) -> float:
+    """Part de la pluie annuelle tombant sur le SEMESTRE CHAUD."""
+    mm = {s: p["{} Rainfall (mm)".format(s)] + p["{} Snowfall (mm)".format(s)]
+          for s in SAISONS}
+    total = sum(mm.values())
+    if total <= 0.0:
+        return 0.5
+    chaud = mm["Summer"] + 0.5 * (mm["Spring"] + mm["Autumn"])
+    return float(chaud / total)
+
+
+def case_whittaker(t: float, p: float, bandes: list, regles: dict | None = None,
+                   frac_ete: float | None = None) -> str:
     """La case du diagramme, SURCHARGES COMPRISES.
 
     LE DIAGRAMME SEUL NE SUFFIT PLUS, et ce controle doit dire ce que fait
@@ -102,6 +125,15 @@ def case_whittaker(t: float, p: float, bandes: list, regles: dict | None = None)
     if case is None:
         case = bandes[-1]["cuts"][-1][1]
 
+    if regles and frac_ete is not None and case in (
+            "foret_temperee", "prairie", "steppe"):
+        if (frac_ete < FRAC_ETE_MEDITERRANEENNE
+                and float(regles.get("mediterraneanMinTempC", 7.0)) <= t
+                <= float(regles.get("mediterraneanMaxTempC", 18.0))
+                and float(regles.get("mediterraneanMinPrecipMm", 400.0)) <= p
+                <= float(regles.get("mediterraneanMaxPrecipMm", 850.0))):
+            case = "mediterraneen"
+
     if regles and case == "desert_chaud":
         if t < float(regles.get("coldDesertMaxTempC", 18.0)):
             case = "desert_froid"
@@ -115,7 +147,7 @@ def controle_1(livres: dict, bandes: list, regles: dict | None = None) -> None:
     bons = 0
     for nom in sorted(livres):
         t, mm = climat_annuel(livres[nom])
-        case = case_whittaker(t, mm, bandes, regles)
+        case = case_whittaker(t, mm, bandes, regles, fraction_ete(livres[nom]))
         att = ATTENDU.get(nom, "?")
         ok = case in att.split("_ou_") or case == att or any(
             case == x for x in att.split("_ou_"))

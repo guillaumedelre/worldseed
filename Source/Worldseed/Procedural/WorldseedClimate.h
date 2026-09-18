@@ -36,6 +36,33 @@ struct WORLDSEED_API FWorldseedClimateResult
  */
 namespace WorldseedClimate
 {
+
+	/**
+	 * Part de la pluie annuelle qui tombe pendant le SEMESTRE CHAUD, dans [0..1].
+	 *
+	 * POURQUOI ELLE EXISTE. Le climat ne portait qu'un CUMUL ANNUEL, et tout un
+	 * pan des climats terrestres se definit par la SAISON de cette pluie et non
+	 * par sa quantite : le climat mediterraneen, c'est un ete sec sous une annee
+	 * qui ne l'est pas. Sans cette grandeur, ces terres se lisaient comme une
+	 * foret temperee ou une prairie, et le bulletin terrestre le disait -- deux
+	 * des trois releves Mediterranean tombaient dans la mauvaise case.
+	 *
+	 * ELLE NE DEMANDE AUCUNE PHYSIQUE NOUVELLE, et c'est ce qui la rend sure :
+	 * la circulation est deja une fonction de la latitude,
+	 * omega(phi) = cos(cellules * pi * |phi| / demi-portee), qui place la ZCIT a
+	 * l'equateur, la subsidence vers 30 degres et le front polaire vers 60. Les
+	 * ceintures MIGRENT avec le soleil ; il suffit donc d'evaluer la meme
+	 * fonction a deux latitudes decalees de precipitation.beltShiftDeg, une fois
+	 * vers le pole (ete) et une fois vers l'equateur (hiver), et de comparer les
+	 * deux taux de pluie. A 38 degres, la subsidence passe SUR le point en ete et
+	 * s'en ecarte en hiver : l'ete sec sort tout seul.
+	 *
+	 * Elle ne depend que de la latitude et des regles, donc elle se recalcule a
+	 * la demande et ne pese pas sur le cache du monde.
+	 */
+	WORLDSEED_API float SummerRainFraction(const UWorldseedRules& Rules,
+		const FWorldseedGeometry& Geo, float LatitudeDeg);
+
 	/**
 	 * Amplitude saisonniere. Exposee a dessein : l'export des prereglages
 	 * Ultra Dynamic Sky a besoin exactement de cette valeur, et la formule ne

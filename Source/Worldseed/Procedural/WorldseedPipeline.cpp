@@ -148,7 +148,7 @@ namespace WorldseedPipeline
 					WorldseedBiomes::Classify(Geometry, Out.ElevationM,
 						Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 						NoWaterMask, NoWaterMask,
-						FWorldseedBiomeRules::FromRules(*BioRules), Out.Biomes);
+						FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
 				}
 			}
 
@@ -294,7 +294,7 @@ namespace WorldseedPipeline
 				WorldseedBiomes::Classify(Geometry, Out.ElevationM,
 					Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 					NoWaterMask, NoWaterMask,
-					FWorldseedBiomeRules::FromRules(*BioRules), Out.Biomes);
+					FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
 			}
 		}
 

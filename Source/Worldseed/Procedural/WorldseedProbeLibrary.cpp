@@ -403,7 +403,7 @@ FString UWorldseedProbeLibrary::ProbeWhittaker(int32 Seed, float HeightMeters,
 		return FString::Printf(TEXT("regles illisibles : %s"), *Error);
 	}
 
-	const FWorldseedBiomeRules Bio = FWorldseedBiomeRules::FromRules(*Rules);
+	const FWorldseedBiomeRules Bio = FWorldseedBiomeRules::FromRules(*Rules, World.Geometry);
 	if (Bio.Bands.Num() == 0 || !World.bHasClimate)
 	{
 		return TEXT("pas de climat ou pas de diagramme");

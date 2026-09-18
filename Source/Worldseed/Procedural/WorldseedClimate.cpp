@@ -48,6 +48,23 @@ namespace WorldseedClimate
 		}
 	}
 
+	float TauxDePluieZonal(const UWorldseedRules& Rules, float AbsLatEff, float Half,
+		float Cells, float Front, float ConvF, float Subs)
+	{
+		// LA MEME FORMULE QUE LA CHAINE, et c'est voulu : si la circulation
+		// change un jour, la saisonnalite doit changer avec elle. On ne garde
+		// que les termes ZONAUX -- le soulevement orographique ne migre pas
+		// avec les saisons, une montagne reste ou elle est.
+		const float Omega = FMath::Cos(Cells * PI * AbsLatEff / Half);
+		const float FrontWeight = Front + (1.0f - Front) * (1.0f - AbsLatEff / Half);
+
+		const float Convergence = FMath::Max(Omega, 0.0f) * FrontWeight;
+		const float Subsidence = FMath::Max(-Omega, 0.0f);
+
+		const float R = 1.0f + ConvF * Convergence;
+		return R * FMath::Max(1.0f - Subs * Subsidence, 0.05f);
+	}
+
 	float SeasonalAmplitude(const UWorldseedRules& Rules, float LatNorm, float Cont)
 	{
 		const float AmpEq = static_cast<float>(
@@ -603,4 +620,40 @@ namespace WorldseedClimate
 		Progress.Step(1.0f);
 		return true;
 	}
+}
+
+float WorldseedClimate::SummerRainFraction(const UWorldseedRules& Rules,
+	const FWorldseedGeometry& Geo, float LatitudeDeg)
+{
+	const float Half = FMath::Max(Geo.LatSpanDeg * 0.5f, 1e-6f);
+	const float Shift = static_cast<float>(
+		Rules.Num(TEXT("precipitation"), TEXT("beltShiftDeg"), 0.0));
+
+	// Sans migration des ceintures, il n'y a pas de saison : moitie-moitie.
+	if (Shift <= 0.0f)
+	{
+		return 0.5f;
+	}
+
+	const float Cells = static_cast<float>(
+		Rules.Num(TEXT("precipitation"), TEXT("cellsPerHemisphere"), 3.0));
+	const float Front = static_cast<float>(
+		Rules.Num(TEXT("precipitation"), TEXT("polarFrontStrength"), 0.45));
+	const float ConvF = static_cast<float>(
+		Rules.Num(TEXT("precipitation"), TEXT("convergenceFactor"), 3.0));
+	const float Subs = static_cast<float>(
+		Rules.Num(TEXT("precipitation"), TEXT("subsidenceFactor"), 0.75));
+
+	// EN ETE LES CEINTURES MONTENT VERS LE POLE DE L'HEMISPHERE CHAUD. Vu du
+	// point, elles s'eloignent de l'equateur : sa position RELATIVE aux
+	// ceintures diminue d'autant. En hiver, l'inverse.
+	const float Signe = (LatitudeDeg >= 0.0f) ? 1.0f : -1.0f;
+	const float AbsEte = FMath::Min(FMath::Abs(LatitudeDeg - Shift * Signe), Half);
+	const float AbsHiver = FMath::Min(FMath::Abs(LatitudeDeg + Shift * Signe), Half);
+
+	const float Ete = TauxDePluieZonal(Rules, AbsEte, Half, Cells, Front, ConvF, Subs);
+	const float Hiver = TauxDePluieZonal(Rules, AbsHiver, Half, Cells, Front, ConvF, Subs);
+
+	const float Somme = Ete + Hiver;
+	return (Somme > 1e-6f) ? Ete / Somme : 0.5f;
 }

@@ -3139,3 +3139,71 @@ le porter a la valeur de `load_radius_m` (250) donne de la geometrie physique su
 tout le rayon charge, donc des sondes verticales partout. Compter **~16 s** apres
 le changement pour que la cuisson suive : un premier relevé fait a 10 s n'a couvert
 que 662 colonnes contre 3576, et les pourcentages n'etaient pas comparables.
+
+### La pluie a enfin une SAISON, et le mediterraneen avec elle (18 septembre 2026)
+
+`PrecipMm` n'etait qu'un CUMUL ANNUEL, et tout un pan des climats terrestres se
+definit par la saison de cette pluie, pas par sa quantite. Le bulletin de
+`terre.py` l'avouait : il attendait « steppe ou prairie » pour les trois releves
+`Mediterranean` livres avec Ultra Dynamic Sky, faute d'avoir une case a leur
+donner.
+
+**AUCUNE PHYSIQUE NOUVELLE N'A ETE NECESSAIRE, et c'est ce qui rend le terme
+sur.** La circulation est deja une fonction de la latitude,
+`omega(phi) = cos(cellules * pi * |phi| / demi-portee)` -- ZCIT a l'equateur,
+subsidence vers 30 degres, front polaire vers 60. Les ceintures MIGRENT avec le
+soleil : il suffit d'evaluer la MEME fonction a deux latitudes decalees de
+`precipitation.beltShiftDeg`, une fois vers le pole (ete) et une fois vers
+l'equateur (hiver), et de comparer les deux taux. A 38 degres la subsidence
+passe SUR le point en ete et s'en ecarte en hiver : l'ete sec sort tout seul.
+`WorldseedClimate::SummerRainFraction` ne depend que de la latitude et des
+regles, donc elle se recalcule a la demande et **ne pese pas sur le cache**.
+
+Le terme ne touche ni au cumul annuel ni au relief : il repartit une pluie deja
+calculee. `beltShiftDeg = 0` rend le comportement d'avant, a l'identique.
+
+**LE NOUVEAU BIOME.** `mediterraneen`, identifiant **19, ajoute en FIN de liste**
+-- les identifiants sont des cles, on ne les intercale jamais. Il ne prend que
+les cases que le diagramme donne a une vegetation temperee ou herbacee : une
+foret tropicale a mousson a elle aussi une saison seche, et elle n'est pas
+mediterraneenne pour autant.
+
+Calage : bornes de temperature et de pluie = l'enveloppe des trois releves reels
+(7,2 a 17,0 degres, 420 a 809 mm), legerement elargie ; seuil de part estivale
+**0,25**, qui est le rapport 1/3 de Koppen (groupe Cs) ramene a deux semestres.
+Resultat **2,44 % des terres**, la Terre en portant environ 2. Un seuil a 0,20
+donnait 2,24 % et 0,2 point de score en plus : refuse, on ne deplace pas une
+valeur sourcee pour cela.
+
+**DEUX ECHELLES, ET LES CONFONDRE SERAIT UNE FAUTE.** Notre part estivale est
+plus CONTRASTEE que la realite -- 0,15 a 0,21 entre 38 et 50 degres chez nous,
+contre 0,24 a 0,30 mesures sur les villes mediterraneennes reelles -- parce que
+le modele est purement zonal : ni moderation maritime de la saisonnalite, ni
+asymetrie est/ouest des bassins oceaniques (sur Terre le mediterraneen est un
+climat de FACADE OUEST, pas une ceinture). `terre.py` emploie donc son propre
+seuil, 0,31, qui separe proprement les trois releves mediterraneens de leurs
+voisins immediats (Oceanic 0,427, Humid_Subtropical 0,413). Les deux nombres ne
+sont pas le meme et ne doivent jamais etre unifies sans refaire la mesure.
+
+**Bulletin terrestre : de 15 a 19 climats reels sur 23** dans la case attendue,
+au fil de la session (etiquettes, seuil de foret pluviale, desert froid,
+mediterraneen).
+
+**CE QUI RESTE OUVERT, et c'est chiffre :**
+
+- *Foret subtropicale humide.* `Humid_Subtropical` (14,0 C, 673 mm) et sa
+  variante a hiver sec (14,4 C, 1364 mm) tombent en foret temperee. La table des
+  attendus les envoie vers `foret_temperee_humide`, ce qui est un pis-aller :
+  une foret subtropicale humide n'est pas une foret PLUVIALE temperee. La case
+  de 12 a 20 degres au-dessus de 600 mm porte **1,90 % des terres** et merite
+  son propre identifiant -- le 20, en fin de liste.
+- *Trop de terres froides.* 30,9 % des terres ont un ete sous 10 degres quand la
+  Terre en a 18, et la foret temperee mixte plafonne a 3,78 % pour 13 attendus.
+  C'est ce qui bloque la limite des arbres (voir la section precedente). Ce n'est
+  PAS l'amplitude saisonniere : continentalite mediane 0,58 pour une cible de
+  0,6, amplitude a 50-70 degres mediane 27,9 et p90 38,6 contre ~38 sur Terre en
+  continental.
+- *Cold_Semi-Arid* (6,1 C, 610 mm) tombe en foret temperee. 610 mm a 6 degres
+  EST une foret dans un diagramme de Whittaker ; le releve inclut l'equivalent
+  en eau de la neige, ce qui le gonfle. Probablement un artefact du releve, a
+  ne pas corriger par un seuil.

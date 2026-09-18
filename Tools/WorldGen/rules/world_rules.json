@@ -104,7 +104,9 @@
     "eddyMixingRate": 0.5,
     "eddyMixingSigmaDeg": 10.0,
     "stormTrackLatDeg": 55.0,
-    "stormTrackWidthDeg": 20.0
+    "stormTrackWidthDeg": 20.0,
+    "_comment_beltShiftDeg": "Migration SAISONNIERE des ceintures de circulation, en degres de latitude. Les cellules de Hadley et de Ferrel suivent le soleil : sur Terre la ZCIT se deplace de 5 a 10 degres entre janvier et juillet, davantage sur les continents de mousson. C'est ce seul nombre qui donne une SAISON a la pluie -- sans lui PrecipMm n'est qu'un cumul annuel, et tout un pan des climats terrestres, le mediterraneen en tete, est hors de portee. A zero, la saisonnalite est nulle et tout se comporte comme avant. IL NE CHANGE NI LE CUMUL ANNUEL NI LE RELIEF : il ne sert qu'a repartir la pluie deja calculee entre les deux semestres.",
+    "beltShiftDeg": 8.0
   },
   "erosion": {
     "iterations": 60,
@@ -274,7 +276,8 @@
       "alpin": 15,
       "roche_nue": 16,
       "plage": 17,
-      "marais": 18
+      "marais": 18,
+      "mediterraneen": 19
     },
     "labels": {
       "0": "Océan",
@@ -295,7 +298,8 @@
       "15": "Pelouse alpine",
       "16": "Roche nue",
       "17": "Plage",
-      "18": "Marais"
+      "18": "Marais",
+      "19": "Mediterraneen"
     },
     "debugColors": {
       "0": [
@@ -392,13 +396,24 @@
         96,
         118,
         84
+      ],
+      "19": [
+        158,
+        148,
+        112
       ]
     },
     "alpineMinElevationM": 212.5,
     "_comment_labels": "ETIQUETTES alignees sur la nomenclature terrestre le 18 septembre 2026. Les CLES de 'ids', elles, ne changent JAMAIS : elles indexent surfaces.recipes, les recettes de vegetation et les tables en dur de WorldseedBiomes.cpp. Trois corrections : 'Foret temperee humide' cachait une foret PLUVIALE temperee (le code l'appelle TemperateRainforest depuis le debut, l'etiquette ne le disait pas) ; 'Foret temperee' est la foret feuillue et mixte des referentiels ; 'Alpin' est un adjectif, pas un nom de biome -- la reference dit pelouses et landes d'altitude. Les identifiants 0, 1, 2 (nappes), 16 et 17 (substrats) et 18 (marais, inatteignable sans hydrologie) ne sont plus attribues comme biomes.",
     "treeLineWarmestMonthC": -100.0,
     "taigaMinPrecipMm": 1000000000.0,
-    "_comment_treeLineWarmestMonthC": "LA LIMITE DES ARBRES SUR LE MOIS LE PLUS CHAUD EST ECRITE MAIS DESACTIVEE (valeur neutre), et il ne faut pas la rallumer sans avoir d'abord corrige les temperatures d'ete. MOTIF, mesure le 18 septembre 2026 sur la graine 20260909 : l'isotherme 10 degres de Koppen est LE critere de la limite des arbres, mais l'appliquer ici porte la toundra de 16,1 a 19,1 % des terres (Terre : 8) et fait reculer la taiga de 10,2 a 7,3 (Terre : 10) -- ecart absolu moyen aux huit biomes de reference 33,2 -> 40,9 %. Calibre a 8 degres il donne la taiga pile a 10,00 % mais un ecart de 33,3 %, soit RIEN de plus que sans lui. LA CAUSE EST EN AMONT : 30,9 % de nos terres ont un ete sous 10 degres quand la Terre en a 18 (toundra 8 + calotte 10). Et ce n'est PAS l'amplitude saisonniere, contrairement a ce qu'on croyait : continentalite mediane 0,58 (cible ~0,6), amplitude a 50-70 degres mediane 27,9 et p90 38,6, la Terre etant vers 38 en continental. Seuls 3,7 % des terres cumulent une annee clemente et un ete froid. Le monde a simplement trop de terres froides -- et le meme desequilibre se lit sur la foret temperee mixte, a 5,4 % pour 13 attendus. Tant que ce point n'est pas traite, appliquer le critere ne fait que propager l'erreur du climat dans la carte des biomes. taigaMinPrecipMm est neutralise avec lui : il n'a de sens qu'en paire."
+    "_comment_treeLineWarmestMonthC": "LA LIMITE DES ARBRES SUR LE MOIS LE PLUS CHAUD EST ECRITE MAIS DESACTIVEE (valeur neutre), et il ne faut pas la rallumer sans avoir d'abord corrige les temperatures d'ete. MOTIF, mesure le 18 septembre 2026 sur la graine 20260909 : l'isotherme 10 degres de Koppen est LE critere de la limite des arbres, mais l'appliquer ici porte la toundra de 16,1 a 19,1 % des terres (Terre : 8) et fait reculer la taiga de 10,2 a 7,3 (Terre : 10) -- ecart absolu moyen aux huit biomes de reference 33,2 -> 40,9 %. Calibre a 8 degres il donne la taiga pile a 10,00 % mais un ecart de 33,3 %, soit RIEN de plus que sans lui. LA CAUSE EST EN AMONT : 30,9 % de nos terres ont un ete sous 10 degres quand la Terre en a 18 (toundra 8 + calotte 10). Et ce n'est PAS l'amplitude saisonniere, contrairement a ce qu'on croyait : continentalite mediane 0,58 (cible ~0,6), amplitude a 50-70 degres mediane 27,9 et p90 38,6, la Terre etant vers 38 en continental. Seuls 3,7 % des terres cumulent une annee clemente et un ete froid. Le monde a simplement trop de terres froides -- et le meme desequilibre se lit sur la foret temperee mixte, a 5,4 % pour 13 attendus. Tant que ce point n'est pas traite, appliquer le critere ne fait que propager l'erreur du climat dans la carte des biomes. taigaMinPrecipMm est neutralise avec lui : il n'a de sens qu'en paire.",
+    "_comment_mediterraneen": "CLIMAT MEDITERRANEEN, ajoute le 18 septembre 2026. C'etait le seul grand biome terrestre que le diagramme ne pouvait pas produire : il se definit par un ETE SEC sous une annee qui ne l'est pas, et le diagramme ne connaissait que le cumul annuel. Le bulletin terrestre l'avouait -- il attendait 'steppe ou prairie' pour les trois releves Mediterranean livres avec Ultra Dynamic Sky, faute de mieux. Les bornes sont calees sur ces trois releves : 7,2 a 17,0 degres et 420 a 809 mm. Le seuil de part estivale vient de Koppen (groupe Cs : le mois d'ete le plus sec recoit moins du tiers du mois d'hiver le plus arrose), ramene a deux semestres. L'identifiant est AJOUTE EN FIN DE LISTE, jamais intercale : les identifiants sont des cles. CALAGE MESURE : les bornes de temperature et de pluie sont l'enveloppe des trois releves reels, legerement elargie. Le seuil de part estivale vient de Koppen (rapport 1/3 ramene a deux semestres = 0,25). Part des terres obtenue : 2,44 %, la Terre en portant environ 2. Un seuil a 0,20 donnerait 2,24 % et 0,2 point de score en plus : refuse, on ne deplace pas une valeur sourcee pour cela. ATTENTION AUX DEUX ECHELLES : notre part estivale est plus CONTRASTEE que la realite -- 0,15 a 0,21 entre 38 et 50 degres chez nous, contre 0,24 a 0,30 mesures sur les villes mediterraneennes reelles -- parce que le modele est purement zonal, sans moderation maritime de la saisonnalite ni asymetrie est/ouest des bassins. Le seuil employe par terre.py sur les releves n'est donc PAS le meme nombre, et les confondre serait une faute.",
+    "mediterraneanSummerFracMax": 0.25,
+    "mediterraneanMinTempC": 7.0,
+    "mediterraneanMaxTempC": 18.0,
+    "mediterraneanMinPrecipMm": 400.0,
+    "mediterraneanMaxPrecipMm": 850.0
   },
   "surfaces": {
     "_comment": "Ordre des 10 couches du materiau M_WorldseedLandscape. Chaque biome est une recette de melange.",

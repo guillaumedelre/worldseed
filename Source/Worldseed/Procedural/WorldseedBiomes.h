@@ -56,7 +56,17 @@ enum class EWorldseedBiome : uint8
 	Beach = 17,
 	Marsh = 18,
 
-	Count = 19
+	/**
+	 * Climat mediterraneen : ete sec, hiver doux et arrose.
+	 *
+	 * AJOUTE EN FIN DE LISTE, JAMAIS INTERCALE. C'est l'un des quatorze biomes
+	 * de reference, environ 2 % des terres, et le seul grand absent de la
+	 * liste -- le bulletin terrestre l'avouait en attendant "steppe ou prairie"
+	 * pour ses trois releves reels, faute de mieux.
+	 */
+	Mediterranean = 19,
+
+	Count = 20
 };
 
 /** Un seuil du diagramme de Whittaker : jusqu'a tant de pluie, ce biome. */
@@ -132,7 +142,32 @@ struct WORLDSEED_API FWorldseedBiomeRules
 	float MarshMaxSlopeDeg = 2.0f;
 	float MarshMinPrecipMm = 900.0f;
 
-	static FWorldseedBiomeRules FromRules(const UWorldseedRules& Rules);
+	/**
+	 * Part maximale de pluie estivale pour qu'un climat soit MEDITERRANEEN.
+	 *
+	 * Koppen definit le groupe Cs par un ete sec : le mois d'ete le plus sec
+	 * recoit moins du tiers du mois d'hiver le plus arrose. Ramene a deux
+	 * semestres, cela donne une part estivale nettement sous la moitie.
+	 */
+	float MediterraneanSummerFracMax = 0.38f;
+
+	/** Bornes du climat mediterraneen, calees sur les trois releves reels. */
+	float MediterraneanMinTempC = 6.0f;
+	float MediterraneanMaxTempC = 20.0f;
+	float MediterraneanMinPrecipMm = 300.0f;
+	float MediterraneanMaxPrecipMm = 1000.0f;
+
+	/**
+	 * Part de pluie estivale par LIGNE de la grille, dans [0..1].
+	 *
+	 * Precalculee ici plutot que recalculee par cellule : elle ne depend que de
+	 * la latitude. Et elle est calculee par WorldseedClimate, pas recopiee --
+	 * si la circulation change un jour, la saisonnalite doit changer avec elle.
+	 */
+	TArray<float> SummerRainFracByRow;
+
+	static FWorldseedBiomeRules FromRules(const UWorldseedRules& Rules,
+		const FWorldseedGeometry& Geo);
 };
 
 /**

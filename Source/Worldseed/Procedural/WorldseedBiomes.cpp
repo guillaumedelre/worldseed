@@ -2,6 +2,7 @@
 
 #include "Procedural/WorldseedBiomes.h"
 
+#include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedWind.h"
@@ -24,6 +25,7 @@ namespace
 		TEXT("desert_froid"), TEXT("desert_chaud"), TEXT("savane"),
 		TEXT("foret_tropicale_seche"), TEXT("foret_tropicale_humide"),
 		TEXT("alpin"), TEXT("roche_nue"), TEXT("plage"), TEXT("marais"),
+		TEXT("mediterraneen"),
 	};
 
 	/**
@@ -43,6 +45,7 @@ namespace
 		TEXT("desert froid"), TEXT("desert chaud"), TEXT("savane"),
 		TEXT("foret tropicale seche"), TEXT("foret tropicale humide"),
 		TEXT("pelouse alpine"), TEXT("roche nue"), TEXT("plage"), TEXT("marais"),
+		TEXT("mediterraneen"),
 	};
 
 	/** debugColors de world_rules.json, en octets. */
@@ -52,6 +55,7 @@ namespace
 		{ 150, 168,  92 }, { 178, 172, 108 }, { 176, 176, 166 }, { 214, 190, 126 },
 		{ 196, 172,  92 }, { 128, 152,  70 }, {  30, 110,  58 }, { 150, 146, 140 },
 		{ 112, 108, 104 }, { 226, 212, 172 }, {  96, 118,  84 },
+		{ 158, 148, 112 },
 	};
 
 	EWorldseedBiome BiomeFromKey(const FString& Key)
@@ -106,7 +110,8 @@ namespace
 	}
 }
 
-FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rules)
+FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rules,
+	const FWorldseedGeometry& Geo)
 {
 	FWorldseedBiomeRules Out;
 
@@ -131,6 +136,22 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 
 	Out.MarshMaxSlopeDeg = Num(TEXT("marshMaxSlopeDeg"), 2.0);
 	Out.MarshMinPrecipMm = Num(TEXT("marshMinPrecipMm"), 900.0);
+
+	Out.MediterraneanSummerFracMax = Num(TEXT("mediterraneanSummerFracMax"), 0.38);
+	Out.MediterraneanMinTempC = Num(TEXT("mediterraneanMinTempC"), 6.0);
+	Out.MediterraneanMaxTempC = Num(TEXT("mediterraneanMaxTempC"), 20.0);
+	Out.MediterraneanMinPrecipMm = Num(TEXT("mediterraneanMinPrecipMm"), 300.0);
+	Out.MediterraneanMaxPrecipMm = Num(TEXT("mediterraneanMaxPrecipMm"), 1000.0);
+
+	// La saisonnalite ne depend que de la latitude : une valeur par LIGNE
+	// suffit, et c'est WorldseedClimate qui la calcule -- la formule de la
+	// circulation ne doit exister qu'a un seul endroit.
+	Out.SummerRainFracByRow.SetNumUninitialized(FMath::Max(Geo.NY, 0));
+	for (int32 Row = 0; Row < Geo.NY; ++Row)
+	{
+		Out.SummerRainFracByRow[Row] = WorldseedClimate::SummerRainFraction(
+			Rules, Geo, Geo.LatitudeDegForRow(Row));
+	}
 
 	// --- diagramme de Whittaker ---------------------------------------------
 	if (const TArray<TSharedPtr<FJsonValue>>* Bands =
@@ -261,6 +282,10 @@ namespace WorldseedBiomes
 		case EWorldseedBiome::Beach:               return FLinearColor(0.00f, 1.00f, 0.00f, 0.00f);
 		case EWorldseedBiome::Marsh:               return FLinearColor(0.20f, 0.00f, 0.00f, 0.80f);
 
+		// Un maquis n'est ni une prairie ni un desert : de l'herbe rase et des
+		// arbustes sur une terre seche et caillouteuse, qui se voit entre eux.
+		case EWorldseedBiome::Mediterranean:       return FLinearColor(0.40f, 0.40f, 0.15f, 0.05f);
+
 		// L'eau : le composant d'eau pose sa nappe par-dessus, mais le fond
 		// doit tout de meme ressembler a quelque chose.
 		case EWorldseedBiome::Ocean:
@@ -367,9 +392,12 @@ namespace WorldseedBiomes
 		}
 
 		// --- classification ------------------------------------------------------
+		const bool bSummerFrac = (Rules.SummerRainFracByRow.Num() == NY);
+
 		ParallelFor(NY, [&](int32 Row)
 		{
 			const float LatitudeDeg = Geometry.LatitudeDegForRow(Row);
+			const float SummerFrac = bSummerFrac ? Rules.SummerRainFracByRow[Row] : 0.5f;
 
 			float WindEast = 0.0f;
 			float WindNorth = 0.0f;
@@ -438,6 +466,31 @@ namespace WorldseedBiomes
 					{
 						Biome = EWorldseedBiome::Taiga;
 					}
+				}
+
+				// --- le climat mediterraneen : un ETE SEC sous une annee qui ne l'est pas
+				//
+				// C'est le seul grand biome terrestre que le diagramme ne pouvait
+				// pas produire, parce qu'il ne connaissait que le CUMUL annuel.
+				// Trois releves reels le montraient : Mediterranean_Cool_Summer
+				// (13,2 C, 809 mm) tombait en foret temperee, alors qu'il n'y
+				// pousse ni la meme foret ni la meme chose.
+				//
+				// IL NE PREND QUE CE QUI LUI REVIENT : seules les cases que le
+				// diagramme donne a une vegetation temperee ou herbacee peuvent
+				// basculer. Une foret tropicale a mousson a elle aussi une saison
+				// seche, et elle n'est pas mediterraneenne pour autant.
+				if (bSummerFrac
+					&& (Biome == EWorldseedBiome::TemperateForest
+						|| Biome == EWorldseedBiome::Grassland
+						|| Biome == EWorldseedBiome::Steppe)
+					&& SummerFrac < Rules.MediterraneanSummerFracMax
+					&& T >= Rules.MediterraneanMinTempC
+					&& T <= Rules.MediterraneanMaxTempC
+					&& P >= Rules.MediterraneanMinPrecipMm
+					&& P <= Rules.MediterraneanMaxPrecipMm)
+				{
+					Biome = EWorldseedBiome::Mediterranean;
 				}
 
 				// --- un desert FROID se definit par son hiver -----------------------
