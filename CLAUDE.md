@@ -3469,3 +3469,51 @@ cuisson de collision. Il reste sous le budget de 16,67.
   les chunks autour de lui etaient en cours de relachement, la scene etait
   presque vide. Protocole minimal : pion immobile, streaming stabilise, et
   plusieurs lectures espacees qui doivent coincider.
+
+### La plaque noire qui clignote : une normale decidee sur UN seul sommet (18 septembre 2026)
+
+Signale en PIE : « il y a une plaque noire au sol qui blink ». C'etait un vrai
+defaut, present depuis le premier maillage voxel, et invisible sur le banc parce
+qu'on n'y marche pas.
+
+**LA DEMARCHE, parce que mes deux premieres hypotheses etaient fausses et que
+c'est la sequence de tests qui a tranche :**
+
+1. *Le sol de fond passerait au-dessus du relief voxel.* Faux : masquer
+   `WorldseedGroundProxy` ne change rien a l'image.
+2. *Ce serait une ombre.* Faux : `ShowFlag.DynamicShadows 0` retire l'ombre du
+   personnage et laisse la plaque intacte.
+3. *Le materiau recevrait des canaux vides.* Faux : les chunks portent bien
+   `M_WorldseedBiome`, le mode est `BiomeColour`, et les sondes verticales
+   montrent que le noir ET le vert sont tous deux des chunks `Worldseed_Voxel`.
+4. **`ShowFlag.Lighting 0` : le noir disparait completement.** Donc les couleurs
+   de sommet sont bonnes, et le probleme est l'ECLAIRAGE -- des normales
+   inversees.
+
+**LA CAUSE.** `WorldseedVoxelChunk` decidait le sens des normales de TOUT le
+chunk d'apres le gradient du champ mesure a **un seul sommet**, `MC.Vertices[0]`,
+avec un commentaire qui affirmait « la reponse est exacte ». Elle ne l'est pas :
+si ce sommet tombe la ou le gradient est presque perpendiculaire a la normale, ou
+sur un plafond de galerie, le produit scalaire change de signe et le chunk entier
+se retourne. Il devient noir -- eclaire par-derriere -- et il CLIGNOTE, parce
+qu'un chunk remaille en marchant ne retombe pas forcement du meme cote.
+
+**LE CORRECTIF : un vote pondere.** On somme les produits scalaires sur un
+echantillon de sommets repartis dans le chunk, plafonne a soixante-quatre. Un
+sommet dont le gradient est faible ou presque perpendiculaire pese peu, un sommet
+franc pese beaucoup -- la ponderation sort gratuitement de la somme. Cout : six
+evaluations par echantillon, soit moins de dix pour cent du maillage d'un chunk,
+et il ne suit pas la taille du chunk. Mesure apres correction : **1,27 ms par
+chunk**, du meme ordre qu'avant.
+
+**CE QUE CET EPISODE APPREND SUR LA METHODE.** Un seul echantillon pour decider
+d'une propriete globale est un pari, meme quand il donne le bon resultat la
+plupart du temps -- et un commentaire qui annonce l'exactitude ne la cree pas.
+Des qu'une decision porte sur un ensemble, la mesurer sur un point unique doit
+etre suspect.
+
+**ET LE TEST QUI SEPARE GEOMETRIE, COULEUR ET ECLAIRAGE tient en une ligne :**
+`ShowFlag.Lighting 0`. Si le noir disparait, ce sont les normales ou les lumieres ;
+s'il reste, ce sont les couleurs de sommet ou le materiau. A faire AVANT de
+soupconner quoi que ce soit d'autre -- j'ai perdu deux hypotheses faute de
+commencer par la.

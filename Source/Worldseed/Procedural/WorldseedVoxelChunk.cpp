@@ -254,21 +254,46 @@ namespace WorldseedVoxelChunk
 		// seules les aretes des ressauts accrochaient la lumiere.
 		//
 		// Plutot que de figer une convention et d'esperer, on la MESURE : le
-		// gradient du champ croit vers l'air, donc il donne le dehors sans
-		// ambiguite. Six evaluations pour tout le chunk -- et non six par
-		// sommet comme l'ancienne methode -- et la reponse est exacte.
+		// gradient du champ croit vers l'air, donc il donne le dehors.
+		//
+		// MAIS PAS SUR UN SEUL SOMMET, et c'est la correction du 18 septembre
+		// 2026. La premiere version lisait le gradient au sommet numero zero et
+		// en tirait le sens de TOUT le chunk ; son commentaire annoncait meme
+		// "la reponse est exacte". Elle ne l'est pas : si ce sommet tombe la ou
+		// le gradient est presque perpendiculaire a la normale, ou sur un
+		// plafond de galerie, le produit scalaire change de signe et le chunk
+		// ENTIER se retourne. Il devient alors noir -- eclaire par-derriere --
+		// et il clignote, parce qu'un chunk remaille en marchant ne retombe pas
+		// forcement du meme cote.
+		//
+		// On VOTE donc sur un echantillon reparti dans le chunk, en sommant les
+		// produits scalaires : un sommet dont le gradient est faible ou presque
+		// perpendiculaire pese peu, un sommet franc pese beaucoup. C'est
+		// exactement la ponderation qu'on veut, et elle sort gratuitement de la
+		// somme.
 		{
-			const FVector3d& V = MC.Vertices[0];
 			const double H = FMath::Max(VoxelSizeM * 0.5f, 0.05f);
 
-			const FVector Gradient(
-				Density.At(FVector(V.X + H, V.Y, V.Z)) - Density.At(FVector(V.X - H, V.Y, V.Z)),
-				Density.At(FVector(V.X, V.Y + H, V.Z)) - Density.At(FVector(V.X, V.Y - H, V.Z)),
-				Density.At(FVector(V.X, V.Y, V.Z + H)) - Density.At(FVector(V.X, V.Y, V.Z - H)));
+			// Au plus soixante-quatre sommets : le cout suit l'echantillon, pas
+			// la taille du chunk. Six evaluations chacun, soit moins de dix pour
+			// cent du cout de maillage d'un chunk typique.
+			constexpr int32 MaxEchantillons = 64;
+			const int32 Pas = FMath::Max(1, VertexCount / MaxEchantillons);
 
-			OutStats.FieldSamples += 6;
+			double Vote = 0.0;
+			for (int32 I = 0; I < VertexCount; I += Pas)
+			{
+				const FVector3d& V = MC.Vertices[I];
+				const FVector Gradient(
+					Density.At(FVector(V.X + H, V.Y, V.Z)) - Density.At(FVector(V.X - H, V.Y, V.Z)),
+					Density.At(FVector(V.X, V.Y + H, V.Z)) - Density.At(FVector(V.X, V.Y - H, V.Z)),
+					Density.At(FVector(V.X, V.Y, V.Z + H)) - Density.At(FVector(V.X, V.Y, V.Z - H)));
 
-			if (FVector::DotProduct(Gradient, Out.Normals[0]) < 0.0)
+				OutStats.FieldSamples += 6;
+				Vote += FVector::DotProduct(Gradient, Out.Normals[I]);
+			}
+
+			if (Vote < 0.0)
 			{
 				for (int32 I = 0; I < VertexCount; ++I)
 				{
