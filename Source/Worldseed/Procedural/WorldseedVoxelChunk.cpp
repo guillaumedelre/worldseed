@@ -244,6 +244,39 @@ namespace WorldseedVoxelChunk
 			}
 		}
 
+		// --- LE SENS, ET COMMENT ON LE SAIT -------------------------------------
+		//
+		// L'ordre des sommets d'un triangle decide du sens de sa normale, et la
+		// convention d'enroulement de GeometryCore n'est pas celle d'Unreal. Se
+		// tromper ne casse RIEN de visible dans la geometrie -- les faces
+		// restent tournees vers la camera -- mais le terrain devient NOIR :
+		// l'eclairage croit qu'il regarde ailleurs. Mesure du premier essai :
+		// seules les aretes des ressauts accrochaient la lumiere.
+		//
+		// Plutot que de figer une convention et d'esperer, on la MESURE : le
+		// gradient du champ croit vers l'air, donc il donne le dehors sans
+		// ambiguite. Six evaluations pour tout le chunk -- et non six par
+		// sommet comme l'ancienne methode -- et la reponse est exacte.
+		{
+			const FVector3d& V = MC.Vertices[0];
+			const double H = FMath::Max(VoxelSizeM * 0.5f, 0.05f);
+
+			const FVector Gradient(
+				Density.At(FVector(V.X + H, V.Y, V.Z)) - Density.At(FVector(V.X - H, V.Y, V.Z)),
+				Density.At(FVector(V.X, V.Y + H, V.Z)) - Density.At(FVector(V.X, V.Y - H, V.Z)),
+				Density.At(FVector(V.X, V.Y, V.Z + H)) - Density.At(FVector(V.X, V.Y, V.Z - H)));
+
+			OutStats.FieldSamples += 6;
+
+			if (FVector::DotProduct(Gradient, Out.Normals[0]) < 0.0)
+			{
+				for (int32 I = 0; I < VertexCount; ++I)
+				{
+					Out.Normals[I] = -Out.Normals[I];
+				}
+			}
+		}
+
 		OutStats.NormalMs = (FPlatformTime::Seconds() - NormalStart) * 1000.0;
 
 		OutStats.Vertices = VertexCount;
