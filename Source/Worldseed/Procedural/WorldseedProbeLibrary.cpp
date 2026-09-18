@@ -227,6 +227,127 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 	return Summary;
 }
 
+FString UWorldseedProbeLibrary::ProbeWhittaker(int32 Seed, float HeightMeters,
+	int32 ResolutionY)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules)
+	{
+		return FString::Printf(TEXT("regles illisibles : %s"), *Error);
+	}
+
+	const FWorldseedBiomeRules Bio = FWorldseedBiomeRules::FromRules(*Rules);
+	if (Bio.Bands.Num() == 0 || !World.bHasClimate)
+	{
+		return TEXT("pas de climat ou pas de diagramme");
+	}
+
+	const int32 Count = World.Geometry.CellCount();
+
+	// LA TEMPERATURE DU MOIS LE PLUS CHAUD SE RECONSTRUIT COMME DANS LA CHAINE :
+	// moyenne annuelle plus la moitie de l'amplitude saisonniere. On ne s'en sert
+	// que pour ecarter la calotte, qui n'est pas une case du diagramme.
+	const bool bHasAmp = (World.Climate.SeasonalAmpC.Num() == Count);
+
+	// Un compteur par case, a plat : bande * plus grand nombre de coupes + coupe.
+	int32 MaxCuts = 0;
+	for (const FWorldseedWhittakerBand& B : Bio.Bands)
+	{
+		MaxCuts = FMath::Max(MaxCuts, B.Cuts.Num());
+	}
+
+	TArray<int32> Tally;
+	Tally.Init(0, Bio.Bands.Num() * MaxCuts);
+	int32 LandTotal = 0;
+	int32 IceCap = 0;
+	int32 Alpine = 0;
+
+	for (int32 I = 0; I < Count; ++I)
+	{
+		if (World.ElevationM[I] <= 0.0f)
+		{
+			continue;
+		}
+		++LandTotal;
+
+		const float T = World.Climate.TempMeanC[I];
+		const float P = World.Climate.PrecipMm[I];
+
+		// LES SURCHARGES CLIMATIQUES SONT COMPTEES A PART, pas dans une case :
+		// elles ne viennent pas du diagramme, et les melanger ferait croire que
+		// la case qu'elles recouvrent est vide alors qu'elle ne l'est pas.
+		const float TMax = T + (bHasAmp ? World.Climate.SeasonalAmpC[I] * 0.5f : 0.0f);
+		if (TMax < Bio.PermanentIceTempC)
+		{
+			++IceCap;
+			continue;
+		}
+		if (T < Bio.TreeLineTempC && World.ElevationM[I] > Bio.AlpineMinElevationM)
+		{
+			++Alpine;
+			continue;
+		}
+
+		for (int32 B = 0; B < Bio.Bands.Num(); ++B)
+		{
+			if (T > Bio.Bands[B].MaxTempC && B + 1 < Bio.Bands.Num())
+			{
+				continue;
+			}
+			const TArray<FWorldseedWhittakerCut>& Cuts = Bio.Bands[B].Cuts;
+			for (int32 C = 0; C < Cuts.Num(); ++C)
+			{
+				if (P <= Cuts[C].MaxPrecipMm || C + 1 == Cuts.Num())
+				{
+					++Tally[B * MaxCuts + C];
+					break;
+				}
+			}
+			break;
+		}
+	}
+
+	if (LandTotal == 0)
+	{
+		return TEXT("aucune terre emergee");
+	}
+
+	auto Pct = [LandTotal](int32 N) { return 100.0f * N / LandTotal; };
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- cases du diagramme, part des terres ---"));
+	for (int32 B = 0; B < Bio.Bands.Num(); ++B)
+	{
+		const float TLo = (B == 0) ? -100.0f : Bio.Bands[B - 1].MaxTempC;
+		const TArray<FWorldseedWhittakerCut>& Cuts = Bio.Bands[B].Cuts;
+		float PLo = 0.0f;
+		for (int32 C = 0; C < Cuts.Num(); ++C)
+		{
+			const float PHi = Cuts[C].MaxPrecipMm;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   T %6.1f..%6.1f C  P %6.0f..%-8.0f mm  %-24s %5.2f %%"),
+				TLo, Bio.Bands[B].MaxTempC, PLo, FMath::Min(PHi, 99999.0f),
+				WorldseedBiomes::Name(Cuts[C].Biome), Pct(Tally[B * MaxCuts + C]));
+			PLo = PHi;
+		}
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   hors diagramme : calotte %.2f %%, alpin %.2f %%"),
+		Pct(IceCap), Pct(Alpine));
+
+	return FString::Printf(
+		TEXT("%d cases mesurees sur %d cellules de terre ; le detail est au journal"),
+		Tally.Num(), LandTotal);
+}
+
 FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 	int32 ResolutionY, float AreaM, float StepM, bool bSteepest)
 {

@@ -66,6 +66,23 @@ public:
 	 * y fait noir -- d'ou cette sonde. Elle relit les regles du disque a chaque
 	 * appel, pour qu'un essai coute une seconde et non un redemarrage.
 	 */
+	/**
+	 * Rend la part des terres que porte CHAQUE CASE du diagramme de Whittaker.
+	 *
+	 * POURQUOI CETTE SONDE. Le tableau des biomes donne la part de chaque NOM,
+	 * or plusieurs noms couvrent plusieurs cases : "desert froid" s'etale sur
+	 * trois bandes de temperature, "foret temperee" sur deux. Une case qui ne
+	 * porte rien ne merite pas un nom ; une case qui porte cinq pour cent des
+	 * terres sous le nom d'une autre est une erreur de vocabulaire. La part par
+	 * NOM ne permet de trancher ni l'un ni l'autre.
+	 *
+	 * Elle relit les regles du disque, comme les autres : retoucher un seuil du
+	 * diagramme et remesurer doit couter une seconde.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeWhittaker(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 1024);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeCaves(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f,
