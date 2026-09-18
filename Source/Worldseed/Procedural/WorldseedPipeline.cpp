@@ -149,6 +149,10 @@ namespace WorldseedPipeline
 						Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 						NoWaterMask, NoWaterMask,
 						FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
+
+					WorldseedFields::Compute(Geometry, Out.ElevationM,
+						Out.Climate.PrecipMm,
+						FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
 				}
 			}
 
@@ -295,6 +299,10 @@ namespace WorldseedPipeline
 					Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 					NoWaterMask, NoWaterMask,
 					FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
+
+				WorldseedFields::Compute(Geometry, Out.ElevationM,
+					Out.Climate.PrecipMm,
+					FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
 			}
 		}
 

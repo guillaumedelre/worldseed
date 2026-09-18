@@ -88,6 +88,19 @@ public:
 	 * existe. C'est le juge des reglages de biomes : on change un seuil dans
 	 * les regles, on relance, on compare.
 	 */
+	/**
+	 * Verifie les deux champs continus du sol.
+	 *
+	 * LE CONTROLE QUI COMPTE EST CELUI DE L'HEMISPHERE. Un champ d'ensoleillement
+	 * se trompe silencieusement d'un signe : les chiffres restent plausibles,
+	 * l'adret se retrouve simplement du mauvais cote, et rien ne le signale --
+	 * sauf a comparer les DEUX hemispheres, ou l'asymetrie doit s'inverser. Elle
+	 * ne s'inverse pas si le signe est faux, et c'est immediat a lire.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeGroundFields(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 1024);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeBiomes(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);

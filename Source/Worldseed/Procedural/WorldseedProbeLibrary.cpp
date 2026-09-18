@@ -227,6 +227,110 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 	return Summary;
 }
 
+FString UWorldseedProbeLibrary::ProbeGroundFields(int32 Seed, float HeightMeters,
+	int32 ResolutionY)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const int32 Count = World.Geometry.CellCount();
+	if (!World.Ground.IsValid(Count))
+	{
+		return TEXT("les champs du sol n'ont pas ete calcules");
+	}
+
+	const int32 NX = World.Geometry.NX;
+	const float SpacingM = FMath::Max(World.Geometry.MetersPerPixel(), 1e-3f);
+
+	TArray<float> DY;
+	TArray<float> DX;
+	WorldseedGrid::Gradient(World.ElevationM, NX, World.Geometry.NY, SpacingM, DY, DX);
+
+	TArray<float> Humidite;
+	TArray<float> Soleil;
+
+	// Versants tournes vers le nord et vers le sud, par hemisphere. Seules les
+	// pentes FRANCHES comptent : sur du plat il n'y a pas d'adret.
+	double SudNord[2] = { 0.0, 0.0 };     // hemisphere nord : vers le nord, vers le sud
+	int32 SudNordN[2] = { 0, 0 };
+	double SudSud[2] = { 0.0, 0.0 };      // hemisphere sud
+	int32 SudSudN[2] = { 0, 0 };
+
+	for (int32 Row = 0; Row < World.Geometry.NY; ++Row)
+	{
+		const float Lat = World.Geometry.LatitudeDegForRow(Row);
+		for (int32 Col = 0; Col < NX; ++Col)
+		{
+			const int32 I = Row * NX + Col;
+			if (World.ElevationM[I] <= 0.0f)
+			{
+				continue;
+			}
+			Humidite.Add(World.Ground.SoilMoisture01[I]);
+			Soleil.Add(World.Ground.SunExposure01[I]);
+
+			// dZ/dNord positif : le terrain MONTE vers le nord, donc la pente
+			// regarde vers le SUD. C'est la definition, et c'est elle qu'une
+			// erreur de signe fait basculer.
+			if (FMath::Abs(DY[I]) < 0.2f || FMath::Abs(Lat) < 15.0f)
+			{
+				continue;
+			}
+			const int32 Face = (DY[I] > 0.0f) ? 1 : 0;   // 1 = vers le sud
+			if (Lat > 0.0f) { SudNord[Face] += World.Ground.SunExposure01[I]; ++SudNordN[Face]; }
+			else            { SudSud[Face] += World.Ground.SunExposure01[I]; ++SudSudN[Face]; }
+		}
+	}
+
+	if (Humidite.Num() == 0)
+	{
+		return TEXT("aucune terre emergee");
+	}
+
+	auto Moy = [](double S, int32 N) { return (N > 0) ? S / N : 0.0; };
+
+	const double NordVersNord = Moy(SudNord[0], SudNordN[0]);
+	const double NordVersSud = Moy(SudNord[1], SudNordN[1]);
+	const double SudVersNord = Moy(SudSud[0], SudSudN[0]);
+	const double SudVersSud = Moy(SudSud[1], SudSudN[1]);
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- champs continus du sol ---"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   humidite  : p10 %.2f  mediane %.2f  p90 %.2f"),
+		WorldseedGrid::Quantile(Humidite, 0.10f),
+		WorldseedGrid::Quantile(Humidite, 0.50f),
+		WorldseedGrid::Quantile(Humidite, 0.90f));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   soleil    : p10 %.2f  mediane %.2f  p90 %.2f  (0,50 = terrain plat)"),
+		WorldseedGrid::Quantile(Soleil, 0.10f),
+		WorldseedGrid::Quantile(Soleil, 0.50f),
+		WorldseedGrid::Quantile(Soleil, 0.90f));
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   hemisphere NORD : versant au sud %.3f, versant au nord %.3f  (ecart %+.3f)"),
+		NordVersSud, NordVersNord, NordVersSud - NordVersNord);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   hemisphere SUD  : versant au nord %.3f, versant au sud %.3f  (ecart %+.3f)"),
+		SudVersNord, SudVersSud, SudVersNord - SudVersSud);
+
+	// LE VERDICT. Au nord l'adret regarde le sud, au sud il regarde le nord.
+	// Les deux ecarts doivent donc etre POSITIFS. Si l'un est negatif, le signe
+	// du soleil est faux, et aucun autre chiffre ne l'aurait dit.
+	const bool bNord = (NordVersSud - NordVersNord) > 0.0;
+	const bool bSud = (SudVersNord - SudVersSud) > 0.0;
+
+	return FString::Printf(
+		TEXT("adret au sud dans l'hemisphere nord : %s ; adret au nord dans l'hemisphere sud : %s"),
+		bNord ? TEXT("OUI") : TEXT("NON -- SIGNE FAUX"),
+		bSud ? TEXT("OUI") : TEXT("NON -- SIGNE FAUX"));
+}
+
 FString UWorldseedProbeLibrary::ProbeBiomes(int32 Seed, float HeightMeters,
 	int32 ResolutionY)
 {

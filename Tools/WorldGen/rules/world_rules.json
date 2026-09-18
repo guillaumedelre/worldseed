@@ -704,5 +704,12 @@
     "dustPrecipMaxMm": 250.0,
     "gridResolution": 128,
     "dominantRadiusM": 200.0
+  },
+  "ground": {
+    "_comment": "LES CHAMPS CONTINUS DU SOL, ajoutes le 18 septembre 2026. Un biome est une ETIQUETTE, pas une grandeur : rien dans la nature ne calcule un biome. Ce qui se calcule, ce sont des champs continus, et ce sont EUX la source de verite pour la vegetation. Deux manquaient, et ce sont les deux que la litterature met en tete du rapport credibilite sur cout apres le relief et la pluie -- l'humidite du sol et l'ensoleillement. Ils sont produits A COTE de la classification, jamais avant : rien en amont ne les relit.",
+    "_comment_soilMoistureRefMm": "Cumul annuel au-dessus duquel la pluie seule sature le sol. Sert a ramener les precipitations dans [0..1] avant de les melanger a la topographie.",
+    "soilMoistureRefMm": 1200.0,
+    "_comment_soilWetnessWeight": "Poids de la topographie dans l'humidite. A zero, l'humidite du sol n'est que la pluie -- l'etat d'avant ce module. A un, elle n'est que le relief, ce qui rendrait un talweg saharien aussi vert qu'un talweg breton. La valeur dit combien le terrain corrige le climat. L'indice topographique employe est celui de Beven et Kirkby (1979), ln(a / tan beta), avec une accumulation PONDEREE PAR LA PLUIE : ce qui arrive dans un talweg, c'est de l'eau, et deux bassins de meme surface sous des pluies differentes n'en fournissent pas autant.",
+    "soilWetnessWeight": 0.4
   }
 }

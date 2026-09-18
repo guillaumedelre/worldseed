@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedFields.h"
 #include "Procedural/WorldseedJob.h"
 #include "Procedural/WorldseedRules.h"
 
@@ -47,8 +48,18 @@ namespace WorldseedPipeline
 		/** Vrai si l'etape climat a tourne. */
 		bool bHasClimate = false;
 
-		/** Les 19 biomes, avec la pente qui a servi a les classer. */
+		/** Les biomes, avec la pente qui a servi a les classer. */
 		FWorldseedBiomeMap Biomes;
+
+		/**
+		 * Humidite du sol et ensoleillement, les deux champs CONTINUS.
+		 *
+		 * Ils sont produits a cote de la classification, jamais avant : rien en
+		 * amont ne les relit. C'est deliberé — ce sont eux la source de verite
+		 * pour la vegetation, et l'etiquette de biome n'est qu'un cache pose a
+		 * cote pour lier des assets.
+		 */
+		FWorldseedGroundFields Ground;
 
 		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
 		bool bFromCache = false;
