@@ -3399,28 +3399,42 @@ section sur le cout d'un chunk : `SUB` etait defini dans deux namespaces ANONYME
 -- biomes et lithologie -- qu'UBT a fusionnes. Les noms de section vivent
 desormais dans `WorldseedSection`, une seule fois, comme `WorldseedMetersToCm`.
 
-**CE QUE CA COUTE, mesure proprement sur la meme carte et le meme monde**, trois
-lectures stables de chaque cote (la sonde rend la DERNIERE image rendue : une
-lecture isolee juste apres un changement est du bruit -- mes trois premieres
-mesures se contredisaient, 20,6 / 30,3 / 51,1 ms) :
+**CE QUE CA COUTE.** *(Cette section a ete ECRITE FAUSSE le 18 septembre et
+corrigee le 19. Les chiffres d'alors -- ancien mailleur 30,25 ms de GPU et
+33,1 FPS, voxel 47,92 et 20,9, donc "+17,7 ms, 58 % de plus" -- etaient un
+ARTEFACT DU BRIDAGE DE L'EDITEUR EN ARRIERE-PLAN. Je les laisse ici avec leur
+correction, parce que c'est le piege qui compte, pas le chiffre.)*
 
-| | GPU | fil de jeu | fil de rendu | images/s |
-|---|---|---|---|---|
-| ancien mailleur | **30,25 ms** | 7,06 | 4,88 | **33,1** |
-| voxel | **47,92 ms** | 5,83 | 4,58 | **20,9** |
+**LE PIEGE.** L'editeur non focalise bride son rendu, et `PerformanceService`
+rapporte alors un temps de trame plafonne par le bridage en l'attribuant au GPU.
+Le signe qui aurait du alerter etait sous mes yeux : **`frame_ms` valait
+EXACTEMENT `gpu_ms`** (40,23 et 40,23), ce qui ne se produit pas sur une scene
+reellement limitee par le GPU. `CLAUDE.md` documentait deja le remede en
+section 7 -- `PerformanceService.set_background_throttling(False)` -- et je ne
+l'ai pas applique. **A poser AVANT toute mesure de performance pilotee par MCP,
+sans exception.**
 
-**Le voxel coute +17,7 ms de GPU, soit 58 % de plus.** Les fils de jeu et de
-rendu, eux, ne bougent pas -- le streaming ne coute rien. La cause est la
-geometrie : **461 chunks affiches, tous avec collision**, a 1 m de voxel sur un
-rayon de 250 m et SANS AUCUN NIVEAU DE DETAIL, la ou l'ancien mailleur dessinait
-une grille de 512 x 256 -- 31 m par cellule -- avec trois niveaux de LOD.
+**LES VRAIS CHIFFRES**, bridage coupe, meme carte, meme monde, trois lectures
+coincidentes de chaque cote :
 
-**CELA TRANCHE L'ARBITRAGE A3 : le LOD n'est pas optionnel a ce rayon.** Le banc
-donnait 182 FPS parce qu'il n'avait ni nuages volumetriques ni ocean ; la vraie
-carte est deja limitee par le GPU a 33 FPS AVANT le voxel, ce qui est un probleme
-distinct et anterieur -- Ultra Dynamic Sky et son ciel volumetrique. Les leviers,
-dans l'ordre : reduire `LoadRadiusM`, puis le LOD (Transvoxel ou colliers), puis
-s'attaquer au cout du ciel.
+| | GPU | fil de jeu | fil de rendu | trame | images/s | limite par |
+|---|---|---|---|---|---|---|
+| ancien mailleur | 3,44 ms | 4,47 | 3,94 | 4,47 | **223,8** | fil de jeu |
+| voxel, 405 chunks | 3,41 ms | 4,76 | 4,03 | 4,76 | **210,0** | fil de jeu |
+
+**Le voxel coute +0,29 ms sur le FIL DE JEU et rien sur le GPU** -- six pour cent
+d'images en moins, pas cinquante-huit. Et la carte n'est pas limitee par le GPU :
+elle l'est par le fil de jeu, a 4,8 ms pour un budget de 16,67.
+
+**CONSEQUENCE SUR L'ARBITRAGE A3.** La conclusion d'hier -- "le LOD n'est pas
+optionnel a ce rayon" -- **est annulee**. A 250 m de rayon, sans aucun niveau de
+detail, la carte de jeu tourne a 210 FPS. Le LOD n'est pas necessaire a cette
+distance de vue, ce qui rejoint exactement la condition posee par le
+proprietaire : ne coder le LOD que si la distance de vue l'exige.
+
+**Et le rayon de chargement n'est pas un levier utile** : mesure a 250 et a
+180 m, 461 puis 384 chunks, GPU inchange. Reduire le rayon retire surtout des
+chunks hors du champ de vision, qui ne coutaient rien a dessiner.
 
 ### Le joueur passait a travers le sol au-dela de 120 m (18 septembre 2026)
 
@@ -3558,3 +3572,34 @@ qui explique pourquoi la premiere correction semblait incomplete :
 **LA LECON DE METHODE** : avant de chercher une cause, s'assurer qu'on regarde
 UN seul phenomene. Deux taches noires ne sont pas forcement la meme tache noire,
 et corriger la premiere donne alors l'impression de n'avoir rien corrige.
+
+### Toute mesure de performance pilotee par MCP exige de couper le bridage (19 septembre 2026)
+
+**C'est le piege qui m'a le plus coute sur ce projet a ce jour**, parce qu'il ne
+se signale pas : il rend des chiffres plausibles, stables, reproductibles -- et
+faux. Une journee entiere de conclusions de performance a ete batie dessus avant
+que deux lectures identiques au centieme pour deux reglages differents ne
+trahissent l'affaire.
+
+**CE QUI SE PASSE.** L'editeur non focalise bride son rendu, et c'est le cas
+PERMANENT quand on le pilote par MCP depuis un terminal. `PerformanceService`
+rapporte alors un temps de trame plafonne par le bridage, et l'attribue au GPU
+avec un verdict "GPU-bound" et un conseil de profilage GPU parfaitement
+convaincant.
+
+**LE SIGNE QUI TRAHIT, et il est fiable** : `frame_ms` vaut EXACTEMENT `gpu_ms`.
+Sur une scene reellement limitee par le GPU, la trame depasse toujours un peu le
+temps GPU. Quand les deux sont egaux au centieme, la trame est plafonnee par
+autre chose.
+
+**LE REMEDE, deja documente en section 7 et que je n'avais pas applique** :
+
+    unreal.PerformanceService.set_background_throttling(False)
+
+**L'ECART MESURE SUR LA MEME SCENE** : 39 a 48 ms de "GPU" et 21 a 33 FPS avec le
+bridage, **3,4 ms de GPU et 210 a 224 FPS sans**. Un facteur dix.
+
+**A RETENIR AUSSI** : trois lectures IDENTIQUES au centieme ne prouvent pas la
+stabilite, elles peuvent prouver que la trame n'avance pas. Le controle qui
+tranche est de changer quelque chose de visible entre deux lectures et de
+verifier que le chiffre bouge.
