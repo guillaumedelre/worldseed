@@ -3421,3 +3421,51 @@ carte est deja limitee par le GPU a 33 FPS AVANT le voxel, ce qui est un problem
 distinct et anterieur -- Ultra Dynamic Sky et son ciel volumetrique. Les leviers,
 dans l'ordre : reduire `LoadRadiusM`, puis le LOD (Transvoxel ou colliers), puis
 s'attaquer au cout du ciel.
+
+### Le joueur passait a travers le sol au-dela de 120 m (18 septembre 2026)
+
+Signale en PIE : « le personnage tombe dans le sol au bout d'un moment de
+marche ». C'etait exact, et le defaut etait dans le mailleur voxel depuis le
+depart -- il ne se voyait pas sur le banc, ou l'on ne marche pas.
+
+**LA CAUSE.** `AWorldseedVoxelTerrain` portait un `CollisionRadiusM` de 120 m,
+plus court que le rayon de chargement de 250, au motif que cuire une collision
+coute plus cher que mailler. Le drapeau `bCreateCollision` etait donc decide
+**UNE FOIS, au televersement**, d'apres la distance a cet instant. Or
+**ProceduralMeshComponent n'expose aucune facon de donner la collision a une
+section deja creee** -- verifie sur toute son API : `create_mesh_section`,
+`update_mesh_section`, `set_mesh_section_visible`, et rien pour la collision.
+La decision etait donc definitive : un chunk pose au-dela de 120 m n'en recevait
+jamais, meme quand le joueur arrivait dessus.
+
+**MESURE DU DEFAUT**, sondes verticales tous les dix metres depuis le pion :
+sol present de 0 a 110 m, **PLUS RIEN de 120 a 250 m**. La frontiere tombait
+exactement sur l'ancien rayon.
+
+**LE CORRECTIF : tout chunk maille est solide, sans exception**, et la propriete
+est SUPPRIMEE pour qu'on ne la remette pas. Un chunk qu'on voit est un chunk
+qu'on peut atteindre, et le rayon de CHARGEMENT borne deja le travail. Si la
+cuisson coute trop cher, la reponse est de la faire de facon asynchrone --
+c'est precisement ce que RealtimeMeshComponent apporterait (arbitrage A2).
+
+Apres correction, memes sondes sur 500 m : **deux trous, a exactement plus et
+moins 250 m**, c'est-a-dire la limite du rayon de chargement -- du terrain pas
+encore construit, pas un defaut. Et le pion deplace par pas de 30 m jusqu'a
+240 m reste en `MOVE_WALKING` a altitude constante.
+
+**CE QUE CA COUTE** : le fil de jeu passe de 5,83 a 8,54 ms, ce qui est la
+cuisson de collision. Il reste sous le budget de 16,67.
+
+**DEUX PIEGES DE MESURE PAYES SUR CE MEME DEFAUT, et ils se ressemblent :**
+
+- *Compter les composants ne dit rien de la collision.*
+  `get_collision_enabled()` rend le reglage du COMPOSANT, toujours
+  `QUERY_AND_PHYSICS` ici, et pas la presence de donnees cuites. J'avais
+  rapporte « 461 chunks, dont 461 avec collision » : ce chiffre ne prouvait
+  rien, et le sol etait troue. **Seule une sonde verticale dit la verite.**
+- *`PerformanceService` depend enormement de ce qui est a l'ecran ET de l'etat
+  du streaming.* Une lecture prise juste apres avoir teleporte le pion a donne
+  **127 FPS et 7,86 ms de GPU** la ou la meme scene stabilisee en donne 21 a 33 :
+  les chunks autour de lui etaient en cours de relachement, la scene etait
+  presque vide. Protocole minimal : pion immobile, streaming stabilise, et
+  plusieurs lectures espacees qui doivent coincider.

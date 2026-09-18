@@ -101,16 +101,14 @@ public:
 		meta = (ClampMin = "32.0"))
 	float UnloadRadiusM = 350.0f;
 
-	/**
-	 * Rayon au-dela duquel un chunk n'a pas de collision, en metres.
-	 *
-	 * CUIRE UNE COLLISION COUTE PLUS CHER QUE MAILLER. Le joueur ne peut
-	 * toucher que ce qui est pres de lui ; au-dela, le maillage se regarde mais
-	 * ne se heurte pas.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
-		meta = (ClampMin = "0.0"))
-	float CollisionRadiusM = 120.0f;
+	// IL Y AVAIT ICI UN RAYON DE COLLISION, plus court que le rayon de
+	// chargement, au motif que cuire une collision coute plus cher que mailler.
+	// Il est RETIRE : aucune API ne permet de donner la collision a une section
+	// deja creee, donc la decision prise au televersement etait definitive, et
+	// le joueur qui marchait au-dela passait AU TRAVERS DU SOL. Mesure du
+	// defaut : sol present de 0 a 110 m, plus rien de 120 a 250 -- la frontiere
+	// tombait exactement sur l'ancien rayon. Ne pas le remettre : si la cuisson
+	// coute trop cher, la reponse est de la faire de facon asynchrone.
 
 	/** Travaux simultanes sur le pool de fils. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",

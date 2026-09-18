@@ -119,10 +119,9 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] voxel : chunks de %.0f m, voxel %.2f m, rayon %.0f m ")
-		TEXT("(collision %.0f m), %d travaux simultanes"),
-		ChunkSideM, DensityRules.VoxelSizeM, LoadRadiusM, CollisionRadiusM,
-		MaxJobsInFlight);
+		TEXT("[Worldseed] voxel : chunks de %.0f m, voxel %.2f m, rayon %.0f m, ")
+		TEXT("collision partout, %d travaux simultanes"),
+		ChunkSideM, DensityRules.VoxelSizeM, LoadRadiusM, MaxJobsInFlight);
 
 	if (UWorld* const W = GetWorld())
 	{
@@ -442,16 +441,28 @@ void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
 		}
 	}
 
-	const FVector CentreM = ChunkBoundsM(Key).GetCenter();
-	const FVector OriginM = (StreamingOriginCm() - GetActorLocation())
-		/ WorldseedMetersToCm;
-	const bool bCollide = FVector::Dist(CentreM, OriginM) <= CollisionRadiusM;
-
+	// TOUT CHUNK MAILLE EST SOLIDE, SANS EXCEPTION.
+	//
+	// Il y avait ici un rayon de collision, plus court que le rayon de
+	// chargement : les chunks lointains etaient poses SANS collision, pour
+	// economiser la cuisson. Le defaut est qu'il n'existe aucune facon de
+	// donner la collision a une section deja creee -- ProceduralMeshComponent
+	// n'expose rien de tel -- donc la decision, prise UNE FOIS au televersement,
+	// etait definitive. Un chunk pose a plus de 120 m n'en recevait jamais, et
+	// le joueur qui marchait jusqu'a lui passait AU TRAVERS DU SOL.
+	//
+	// Mesure du defaut, sondes verticales tous les dix metres depuis le pion :
+	// sol present de 0 a 110 m, PLUS RIEN de 120 a 250 m. La frontiere tombait
+	// exactement sur l'ancien rayon.
+	//
+	// Un chunk qu'on voit est un chunk qu'on peut atteindre, et le rayon de
+	// CHARGEMENT borne deja le travail. Si la cuisson coute trop cher, la
+	// reponse est de la faire de facon asynchrone, pas de laisser un trou.
 	State.Mesh->CreateMeshSection_LinearColor(0, Job->Mesh.Positions,
 		Job->Mesh.Triangles, Job->Mesh.Normals, TArray<FVector2D>(),
-		Job->Mesh.Colours, TArray<FProcMeshTangent>(), bCollide);
+		Job->Mesh.Colours, TArray<FProcMeshTangent>(), true);
 
-	State.bHasCollision = bCollide;
+	State.bHasCollision = true;
 
 	++BuiltChunks;
 	TotalTriangles += Job->Mesh.TriangleCount();
