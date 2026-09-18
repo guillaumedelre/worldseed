@@ -23,7 +23,7 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
 
 _SOUS_ECH = 4          # sous-echantillonnage des cartes : le releve doit rester rapide
-_EAU_IDS = (0, 1, 2)   # ocean, lac, riviere
+_EAU_IDS = (0,)        # ocean (les identifiants lac et riviere ne sont plus attribues)
 
 
 def _charge(src: Path, nom: str, gris: bool = True) -> np.ndarray:
@@ -60,16 +60,7 @@ def releve(src: Path) -> dict:
     for k, nom in enumerate(noms_couches):
         couches[nom] = round(100.0 * float(((dominante == k) & terre).sum()) / n_terre, 3)
 
-    rivieres = json.loads((src / "rivers.json").read_text(encoding="utf-8"))["rivers"]
-    lacs = json.loads((src / "lakes.json").read_text(encoding="utf-8"))["lakes"]
     taille_km = float(m["world"]["sizeKm"])
-    bouches = {}
-    for r in rivieres:
-        bouches[r["mouth"]] = bouches.get(r["mouth"], 0) + 1
-    longueurs = [r["lengthM"] for r in rivieres] or [0.0]
-    debits = [r["maxDischargeM3s"] for r in rivieres] or [0.0]
-    largeurs = [r["maxWidthM"] for r in rivieres] or [0.0]
-    aires_lacs = [l["areaHa"] for l in lacs] or [0.0]
 
     return {
         "source": str(src),
@@ -84,19 +75,6 @@ def releve(src: Path) -> dict:
         },
         "biomes": biomes,
         "couchesDominantes": couches,
-        "hydrographie": {
-            "nbRivieres": len(rivieres),
-            "embouchures": bouches,
-            "longueurMaxM": round(max(longueurs), 1),
-            "longueurMaxPctMonde": round(100.0 * max(longueurs) / (taille_km * 1000.0), 2),
-            "longueurMedianeM": round(float(np.median(longueurs)), 1),
-            "debitMaxM3s": round(max(debits), 4),
-            "largeurMaxM": round(max(largeurs), 2),
-            "nbLacs": len(lacs),
-            "aireLacsHa": round(sum(aires_lacs), 1),
-            "partLacsSurTerresPct": round(
-                100.0 * float((biome == 1).sum()) / n_terre, 3),
-        },
         "profilZonal": stats.get("zonal", []),
         "controles": stats.get("checks", []),
     }
@@ -149,14 +127,8 @@ def main(argv: list[str]) -> int:
         dest = Path(argv[argv.index("--out") + 1])
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
-    h = r["hydrographie"]
-    print("monde     : %.0f km, terres %.1f %%, eau %.1f %%" % (
+    print("monde     : %.0f km, terres %.1f %%, mer %.1f %%" % (
         r["monde"]["tailleKm"], r["monde"]["partTerresPct"], r["monde"]["partEauPct"]))
-    print("rivieres  : %d, embouchures %s" % (h["nbRivieres"], h["embouchures"]))
-    print("            plus longue %.0f m (%.1f %% du monde), debit max %.4f m3/s, largeur max %.1f m" % (
-        h["longueurMaxM"], h["longueurMaxPctMonde"], h["debitMaxM3s"], h["largeurMaxM"]))
-    print("lacs      : %d, %.0f ha, %.1f %% des terres" % (
-        h["nbLacs"], h["aireLacsHa"], h["partLacsSurTerresPct"]))
     if dest:
         print("releve ecrit : %s" % dest)
     return 0

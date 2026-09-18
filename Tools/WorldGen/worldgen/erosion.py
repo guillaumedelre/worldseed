@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import ndimage
 
-from .hydrology import compute_flow
+from .flow import compute_flow
 
 _LAPLACE = np.array([[0.5, 1.0, 0.5], [1.0, -6.0, 1.0], [0.5, 1.0, 0.5]], dtype=np.float32)
 

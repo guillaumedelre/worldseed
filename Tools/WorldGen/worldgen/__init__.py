@@ -1,7 +1,7 @@
 """Worldseed - generateur de monde climatique.
 
 Chaine complete : tectonique -> temperature -> circulation atmospherique ->
-erosion -> hydrologie -> biomes -> surfaces -> export.
+erosion -> biomes -> surfaces -> export.
 
 Aucune dependance a Unreal : le module tourne dans son propre venv et n'ecrit
 que des PNG / JSON, consommes ensuite par les scripts de Tools/UE.
@@ -15,7 +15,7 @@ effectue la symetrie verticale pour afficher le nord en haut.
 
 __all__ = [
     "config", "noise", "tectonics", "climate", "erosion",
-    "hydrology", "biomes", "surfaces", "export", "pipeline",
+    "flow", "biomes", "surfaces", "export", "pipeline",
 ]
 
 __version__ = "1.0.0"

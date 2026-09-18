@@ -9,10 +9,14 @@ Ordre des etapes, et pourquoi :
   5. climat (passe 2)    recalcule sur le relief FINAL : les ombres
                          pluviometriques doivent correspondre aux vallees
                          reellement creusees, pas au relief d'avant
-  6. hydrologie          debits, rivieres, lacs
-  7. biomes              Whittaker + surcharges
-  8. surfaces            recettes de melange des couches
-  9. export              PNG, JSON, manifeste, rapport
+  6. biomes              Whittaker + surcharges
+  7. surfaces            recettes de melange des couches
+  8. export              PNG, JSON, manifeste, rapport
+
+L'HYDROLOGIE NE FAIT PLUS PARTIE DE LA CHAINE. Rivieres, cascades et lacs ont
+ete retires le 18 septembre 2026 ; CLAUDE.md porte les mesures qui l'ont
+motive. Ce qui subsiste du routage d'ecoulement vit dans flow.py, et ne sert
+plus qu'a l'erosion.
 """
 
 from __future__ import annotations
@@ -28,7 +32,6 @@ from . import biomes as biomes_mod
 from . import climate as climate_mod
 from . import erosion as erosion_mod
 from . import export as export_mod
-from . import hydrology as hydro_mod
 from . import report as report_mod
 from . import surfaces as surfaces_mod
 from . import tectonics as tectonics_mod
@@ -76,7 +79,7 @@ def _zonal_profile(geo, dem, temp, precip, steps=13) -> list[dict]:
     return rows
 
 
-def _checks(rules, geo, dem, climate, biome, rivers_json, zonal,
+def _checks(rules, geo, dem, climate, biome, zonal,
             weights=None, temp_max_c=None) -> list[list[str]]:
     """Controles automatiques : chaque ligne dit attendu / mesure."""
     out = []
@@ -86,12 +89,6 @@ def _checks(rules, geo, dem, climate, biome, rivers_json, zonal,
     measured = float(land.mean() * 100.0)
     out.append(["Ratio terres / mers", "{:.0f} % +/- 2".format(target),
                 "{:.1f} % {}".format(measured, "OK" if abs(measured - target) <= 2.5 else "ECART")])
-
-    bad = sum(1 for r in rivers_json if r["mouth"] == "bord")
-    endo = sum(1 for r in rivers_json if r["mouth"] == "endoreique")
-    out.append(["Rivières sortant du monde", "0",
-                "{} {}".format(bad, "OK" if bad == 0 else "ECART")])
-    out.append(["Bassins endoréiques", "normal en zone aride", "{}".format(endo)])
 
     # La bande la plus humide doit etre l'equateur.
     # Controle durci : la ZCIT doit tomber a moins de 15 degres de l'equateur.
@@ -136,36 +133,10 @@ def _checks(rules, geo, dem, climate, biome, rivers_json, zonal,
     out.append(["Terrain praticable (moins de 25°)", "au moins 50 %",
                 "{:.0f} % {}".format(walk, "OK" if walk >= 50.0 else "ECART")])
 
-    # --- drainage ------------------------------------------------------------
-    # Le controle "rivieres sortant du monde = 0" passait au vert pour la
-    # mauvaise raison : rien ne sortait parce que rien n'allait nulle part. Ces
-    # quatre lignes verifient que le reseau REJOINT la mer.
-    hyd = rules["hydrology"]
-    if rivers_json:
-        vers_mer = sum(1 for r in rivers_json if r["mouth"] == "ocean")
-        part = 100.0 * vers_mer / len(rivers_json)
-        out.append(["Cours d'eau atteignant l'océan", "au moins 60 %",
-                    "{:.0f} % ({}/{}) {}".format(part, vers_mer, len(rivers_json),
-                                                 "OK" if part >= 60.0 else "ECART")])
-
-        plus_long = max(r["lengthM"] for r in rivers_json)
-        largeur_monde = float(rules.get("world.sizeKm")) * 1000.0
-        part_long = 100.0 * plus_long / largeur_monde
-        out.append(["Longueur du plus long cours d'eau", "au moins 30 % du monde",
-                    "{:.0f} % ({:.1f} km) {}".format(part_long, plus_long / 1000.0,
-                                                     "OK" if part_long >= 30.0 else "ECART")])
-
-        seuil_aride = float(hyd["aridPrecipThresholdMm"])
-        fautifs = sum(1 for r in rivers_json
-                      if r["mouth"] == "endoreique"
-                      and (r.get("mouthPrecipMm") or 0.0) >= seuil_aride)
-        out.append(["Bassins endoréiques hors zone aride",
-                    "0 (au-dessus de {:.0f} mm)".format(seuil_aride),
-                    "{} {}".format(fautifs, "OK" if fautifs == 0 else "ECART")])
-
-    part_lacs = 100.0 * float(biome.lake_mask[land].mean()) if land.any() else 0.0
-    out.append(["Part des lacs sur les terres", "moins de 5 %",
-                "{:.1f} % {}".format(part_lacs, "OK" if part_lacs < 5.0 else "ECART")])
+    # LES CINQ CONTROLES DE DRAINAGE ONT DISPARU AVEC L'HYDROLOGIE : part des
+    # cours atteignant l'ocean, longueur du plus long, bassins endoreiques hors
+    # zone aride, rivieres sortant du monde, part des lacs. Ils ne mesuraient
+    # que ce que le generateur ne produit plus.
 
     # --- couches de peinture -------------------------------------------------
     # Ces deux controles portent sur ce qu'Unreal PEINT reellement, pas sur la
@@ -211,10 +182,10 @@ def run(
     _log(verbose, "climat (passe 1) : pluie pour ponderer l'erosion", started)
 
     # 3. erosion ---------------------------------------------------------------
-    fill_eps = float(rules.get("hydrology.fillEpsilonM"))
+    fill_eps = float(rules.get("erosion.fillEpsilonM"))
     # Un bassin ferme n'est tenable qu'en climat aride : ailleurs on lui perce un
     # exutoire plutot que de laisser un faux endoreisme.
-    aride = clim.precip_mm < float(rules.get("hydrology.aridPrecipThresholdMm"))
+    aride = clim.precip_mm < float(rules.get("erosion.aridPrecipThresholdMm"))
     dem, ero_report = erosion_mod.run(
         tec.elevation_m, clim.precip_mm, geo, rules["erosion"],
         fill_epsilon_m=fill_eps, arid=aride,
@@ -237,60 +208,30 @@ def run(
     clim = climate_mod.generate(rules, geo, dem)
     _log(verbose, "climat (passe 2) sur le relief final", started)
 
-    # 6. hydrologie ------------------------------------------------------------
-    hyd = rules["hydrology"]
-    weights = hydro_mod.discharge_weights(
-        clim.precip_mm, geo, float(hyd.get("runoffCoefficient", 0.35))
-    )
-    flow = hydro_mod.compute_flow(dem, weights, 0.0, fill_eps, aride)
-    rivers = hydro_mod.extract_rivers(flow, dem, geo, hyd)
-    lakes = hydro_mod.extract_lakes(flow, dem, geo, hyd)
-    _log(verbose, "hydrologie : {} rivieres, {} lacs, debit max {:.3f} m3/s".format(
-        len(rivers), len(lakes), float(flow.accumulation.max())), started)
-
-    # 7. biomes ----------------------------------------------------------------
+    # 6. biomes ----------------------------------------------------------------
     biome = biomes_mod.classify(
         rules, geo, dem, clim.temp_mean_c, clim.temp_max_c, clim.precip_mm,
-        flow.lake_depth_m, flow.accumulation,
     )
     _log(verbose, "biomes : {} classes presentes".format(len(biome.counts)), started)
 
-    # 8. surfaces --------------------------------------------------------------
+    # 7. surfaces --------------------------------------------------------------
     weights_layers = surfaces_mod.build(
         rules, geo, biome.index, biome.slope_deg, clim.temp_max_c, biome.is_water
     )
     _log(verbose, "surfaces : {} couches".format(weights_layers.shape[2]), started)
 
-    # 9. export ----------------------------------------------------------------
-    # Le relief de SORTIE est calcule ICI et non plus a l'ecriture : le trait de
-    # cote des lacs doit etre trace sur le relief que voit Unreal, detail fractal
-    # compris. Calcule avant le detail, il ne tombe plus sur la ligne de rivage
-    # et l'eau se termine en mur vertical au-dessus du sol.
-    # Le niveau d'eau local (0 en mer, le niveau propre a chaque lac dans sa
-    # cuvette) dit au detail fractal ou s'effacer : sans lui, un lac perche a
-    # 136 m recoit le bruit a pleine amplitude et ses berges se herissent.
-    niveau_eau = export_mod.lake_level_field(
-        lakes, biome.lake_mask, geo, geo_out,
-        portee_m=float(rules.get("world.detailLakeFadeM", 60.0)))
-    # Meme raison pour les rivieres : le detail depose des bosses dans le fond
-    # de vallee que l'ecoulement vient de creuser, et comme la surface d'eau doit
-    # decroitre vers l'aval, chaque bosse enterre tout le troncon qui suit.
-    amorti = export_mod.river_corridor_damping(
-        biome.river_mask, geo, geo_out,
-        portee_m=float(rules.get("world.detailRiverFadeM", 30.0)))
-    big_dem = export_mod.upsample_heightmap(dem, geo_out.n, rules,
-                                            water_level=niveau_eau,
-                                            detail_damp=amorti)
-    del niveau_eau, amorti
+    # 8. export ----------------------------------------------------------------
+    # Le relief de SORTIE est calcule ICI et non plus a l'ecriture.
+    #
+    # LE FONDU DU DETAIL NE CONNAIT PLUS QUE LE NIVEAU DE LA MER. Les deux
+    # autres champs qui le pilotaient — le niveau d'eau local des lacs et
+    # l'amortissement dans le couloir des rivieres — n'ont plus d'objet depuis
+    # le retrait de l'hydrologie. Le fondu cotier, lui, reste : c'est la
+    # coherence du trait de cote avec l'ocean, et elle est toujours en jeu.
+    big_dem = export_mod.upsample_heightmap(dem, geo_out.n, rules)
     _log(verbose, "relief de sortie {0}x{0} : detail fractal ajoute, efface au bord de l'eau".format(
         geo_out.n), started)
 
-    rivers_json = export_mod.rivers_to_json(rivers, dem, geo,
-                                            precip_mm=clim.precip_mm,
-                                            geo_out=geo_out, dem_out=big_dem, hyd=hyd)
-    lakes_json = export_mod.lakes_to_json(
-        lakes, geo, geo_out=geo_out, dem_out=big_dem,
-        lake_mask=biome.lake_mask, hyd=hyd)
     zonal = _zonal_profile(geo, dem, clim.temp_mean_c, clim.precip_mm)
 
     land = dem > 0.0
@@ -320,8 +261,6 @@ def run(
         "biomeCount": len(biome.counts),
         "biomeShare": biome.counts,
         "zonal": zonal,
-        "riverCount": len(rivers_json),
-        "lakeCount": len(lakes_json),
         "erosion": {
             "iterations": ero_report.iterations,
             "flowUpdates": ero_report.flow_updates,
@@ -334,7 +273,7 @@ def run(
             "precipMaxMm": float(rules.get("precipitation.maxPrecipMm")),
         },
     }
-    stats["checks"] = _checks(rules, geo, dem, clim, biome, rivers_json, zonal,
+    stats["checks"] = _checks(rules, geo, dem, clim, biome, zonal,
                               weights_layers, clim.temp_max_c)
     stats["durationS"] = time.time() - started
 
@@ -343,10 +282,10 @@ def run(
 
     if write_outputs:
         _write_all(rules, geo, geo_out, out_dir, dem, clim, biome,
-                   weights_layers, rivers_json, lakes_json, manifest, verbose, started,
+                   weights_layers, manifest, verbose, started,
                    big_dem=big_dem)
         report_mod.write(report_path, rules, geo, dem, clim.temp_mean_c,
-                         clim.precip_mm, biome.index, rivers_json, lakes_json, stats)
+                         clim.precip_mm, biome.index, stats)
         _log(verbose, "rapport ecrit : {}".format(report_path), started)
 
     stats["durationS"] = time.time() - started
@@ -360,8 +299,7 @@ def run(
 
 
 def _write_all(rules, geo, geo_out, out_dir, dem, clim, biome, weights_layers,
-               rivers_json, lakes_json, manifest, verbose, started,
-               big_dem=None) -> None:
+               manifest, verbose, started, big_dem=None) -> None:
     out_n = geo_out.n
 
     if big_dem is None:
@@ -396,8 +334,4 @@ def _write_all(rules, geo, geo_out, out_dir, dem, clim, biome, weights_layers,
         export_mod.write_gray_png(export_mod.resample(np.clip(t01, 0, 1), out_n), out_dir / "climate_temp.png")
         export_mod.write_gray_png(export_mod.resample(np.clip(p01, 0, 1), out_n), out_dir / "climate_rain.png")
 
-    (out_dir / "rivers.json").write_text(
-        json.dumps({"rivers": rivers_json}, indent=1, ensure_ascii=False), encoding="utf-8")
-    (out_dir / "lakes.json").write_text(
-        json.dumps({"lakes": lakes_json}, indent=1, ensure_ascii=False), encoding="utf-8")
     rules.dump(out_dir / "world_rules_used.json")

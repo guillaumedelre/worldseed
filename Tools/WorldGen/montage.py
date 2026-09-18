@@ -108,13 +108,6 @@ def build(src: Path, dest: Path, rules_path: Path) -> Path:
         return ((x + half) / (2.0 * half) * _TILE,
                 (1.0 - (y + half) / (2.0 * half)) * _TILE)
 
-    for lake in json.loads((src / "lakes.json").read_text())["lakes"]:
-        if len(lake["outline"]) >= 3:
-            draw.polygon([to_px(p["x"], p["y"]) for p in lake["outline"]], fill=(47, 111, 174))
-    for river in json.loads((src / "rivers.json").read_text())["rivers"]:
-        draw.line([to_px(p["x"], p["y"]) for p in river["points"]],
-                  fill=(90, 190, 255), width=max(1, int(river["maxWidthM"] / 22)))
-
     ranges = json.loads((src / "manifest.json").read_text(encoding="utf-8"))["climateRanges"]
     panels = [
         ("RELIEF", relief_im),

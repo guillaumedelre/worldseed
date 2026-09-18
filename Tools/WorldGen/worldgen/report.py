@@ -23,8 +23,6 @@ from .export import (
     hillshade,
 )
 
-_MOUTHS = {"ocean": "Océan", "lac": "Lac",
-           "endoreique": "Endoréique", "bord": "Bord de carte"}
 
 _LAND_STOPS = [
     (0.00, (18, 46, 92)), (0.30, (33, 82, 133)), (0.415, (70, 133, 178)),
@@ -187,24 +185,6 @@ def _biome_block(share: dict[str, float], rules: Rules) -> str:
     return '<ul class="biomes">' + "".join(out) + "</ul>"
 
 
-def _rivers_block(rivers: list[dict]) -> str:
-    if not rivers:
-        return '<p class="empty">Aucun cours d\'eau n\'atteint le seuil de débit.</p>'
-    rows = sorted(rivers, key=lambda r: -r["maxDischargeM3s"])[:12]
-    body = "".join(
-        "<tr><td>{m}</td><td>{l:.2f}</td><td>{w:.0f}</td><td>{q:.3f}</td>"
-        "<td>{s}</td></tr>".format(
-            m=_MOUTHS.get(r["mouth"], r["mouth"]), l=r["lengthM"] / 1000.0, w=r["maxWidthM"],
-            q=r["maxDischargeM3s"], s=r["strahler"])
-        for r in rows)
-    return (
-        '<div class="scroller"><table><thead><tr>'
-        "<th>Embouchure</th><th>Longueur (km)</th><th>Largeur max (m)</th>"
-        "<th>Débit max (m&#179;/s)</th><th>Ordre de Strahler</th>"
-        "</tr></thead><tbody>{}</tbody></table></div>".format(body)
-    )
-
-
 # --------------------------------------------------------------------- ecriture
 
 
@@ -216,8 +196,6 @@ def write(
     temp_c: np.ndarray,
     precip_mm: np.ndarray,
     biome_index: np.ndarray,
-    rivers_json: list[dict],
-    lakes_json: list[dict],
     stats: dict,
 ) -> None:
     max_px = int(rules.get("export.reportMaxPx", 1200))
@@ -239,25 +217,6 @@ def write(
     biome_b64 = _to_png_b64(
         flip(biome_rgb(_shrink(biome_index, max_px, order=0).astype(np.uint8), rules)), "RGB")
 
-    grey = np.clip(shade * 198.0 + 26.0, 0, 255).astype(np.uint8)
-    hydro_b64 = _to_png_b64(flip(np.stack([grey] * 3, axis=-1)), "RGB")
-
-    half_cm = geo.half_size_m * 100.0
-
-    def to_svg(x: float, y: float) -> tuple[float, float]:
-        return ((x + half_cm) / (2.0 * half_cm) * 1000.0,
-                (1.0 - (y + half_cm) / (2.0 * half_cm)) * 1000.0)
-
-    shapes = []
-    for lake in lakes_json:
-        if len(lake["outline"]) >= 3:
-            pts = " ".join("%.1f,%.1f" % to_svg(p["x"], p["y"]) for p in lake["outline"])
-            shapes.append('<polygon points="{}" class="lake"/>'.format(pts))
-    for river in rivers_json:
-        pts = " ".join("%.1f,%.1f" % to_svg(p["x"], p["y"]) for p in river["points"])
-        shapes.append('<polyline points="{}" class="river" stroke-width="{:.2f}"/>'.format(
-            pts, max(1.1, min(4.0, river["maxWidthM"] / 13.0))))
-
     plates = "".join([
         _plate("I", "Relief", "Ombrage et étagement des altitudes", relief_b64, geo),
         _plate("II", "Température", "Moyenne annuelle au sol, gradient adiabatique inclus",
@@ -265,9 +224,6 @@ def write(
         _plate("III", "Précipitations", "Cumul annuel issu de l'advection d'humidité",
                rain_b64, geo),
         _plate("IV", "Biomes", "Whittaker croisé avec l'étagement altitudinal", biome_b64, geo),
-        _plate("V", "Hydrographie",
-               "{} cours d'eau, {} lacs".format(len(rivers_json), len(lakes_json)),
-               hydro_b64, geo, "".join(shapes)),
     ])
 
     landmarks = geo.landmarks()
@@ -291,8 +247,6 @@ def write(
         ("{:.0f} / {:.0f}".format(stats["elevMin"], stats["elevMax"]), "m", "Amplitude du relief"),
         ("{:+.0f} / {:+.0f}".format(stats["tempMin"], stats["tempMax"]), "°C", "Extrêmes thermiques"),
         ("{:.0f}".format(stats["precipMedian"]), "mm", "Pluie médiane, terres"),
-        (str(len(rivers_json)), "", "Cours d'eau"),
-        (str(len(lakes_json)), "", "Lacs"),
         ("{:.0f}".format(stats["walkablePct"]), "%", "Pente sous 25°"),
         (str(stats["biomeCount"]), "", "Biomes distincts"),
     ]
@@ -313,7 +267,6 @@ def write(
         checks=_checks_block(stats["checks"]),
         profile=_profile_chart(stats["zonal"], geo),
         biomes=_biome_block(stats["biomeShare"], rules),
-        rivers=_rivers_block(rivers_json),
         coords=coord_rows,
     )
     path.write_text(html, encoding="utf-8")
@@ -519,8 +472,8 @@ code {
     <p class="standfirst">Rien de cette carte n'a été peint. Le relief vient de plaques
       tectoniques en dérive, la pluie d'une circulation atmosphérique à trois
       cellules par hémisphère, les biomes du croisement température ×
-      précipitations, et le réseau hydrographique de l'écoulement réel sur le
-      terrain érodé.</p>
+      précipitations, et le grain du terrain de l'érosion fluviale sur le
+      relief brut.</p>
   </header>
 
   <section class="figures">$figures</section>
@@ -554,11 +507,6 @@ code {
   <h2><span class="sec-n">Composition</span>Répartition des biomes</h2>
   <p class="lede">Part de chaque biome sur les terres émergées.</p>
   $biomes
-
-  <h2><span class="sec-n">Hydrographie</span>Principaux cours d'eau</h2>
-  <p class="lede">Largeur déduite du débit par géométrie hydraulique. Une embouchure
-    <em>endoréique</em> désigne un bassin fermé, sans exutoire vers la mer.</p>
-  $rivers
 
   <footer>
     Le monde est entièrement déterminé par <code>world_rules.json</code> et la

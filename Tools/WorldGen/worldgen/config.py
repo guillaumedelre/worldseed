@@ -221,7 +221,7 @@ class Rules:
     def _validate(self) -> None:
         d = self.data
         for key in ("seed", "world", "tectonics", "temperature", "precipitation",
-                    "erosion", "hydrology", "biomes", "surfaces"):
+                    "erosion", "biomes", "surfaces"):
             if key not in d:
                 raise RulesError(f"section manquante dans les regles : '{key}'")
 

@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-from . import hydrology, noise
+from . import noise
 from .config import Rules, landscape_config_for, landscape_scale_for
 
 
@@ -33,76 +33,7 @@ def resample(field: np.ndarray, out_n: int, order: int = 1) -> np.ndarray:
     return ndimage.zoom(field, zoom, order=order, mode="nearest", grid_mode=False)
 
 
-def lake_level_field(lakes, lake_mask: np.ndarray, geo, geo_out,
-                     portee_m: float = 60.0) -> np.ndarray:
-    """Niveau d'eau LOCAL, a la resolution de sortie.
-
-    Zero partout -- le niveau de la mer -- et le niveau propre a chaque lac dans
-    sa cuvette puis en fondu sur une bande de berge de `portee_m`. C'est ce champ
-    qui dit au detail fractal ou s'effacer : sans lui il ne connait que le zero
-    absolu, et un lac perche recoit le bruit a pleine amplitude.
-
-    Le fondu vers zero est indispensable : sans lui, un point situe 200 m d'un
-    petit lac perche mais a peine plus haut que lui verrait son detail supprime
-    alors qu'il n'a rien d'une berge.
-    """
-    out_n = geo_out.n
-    champ = np.zeros((out_n, out_n), dtype=np.float32)
-    if not lakes or lake_mask is None or not lake_mask.any():
-        return champ
-    basin = resample(lake_mask.astype(np.float32), out_n, order=0) > 0.5
-    if not basin.any():
-        return champ
-
-    etiq, nb = ndimage.label(basin)
-    facteur = (out_n - 1) / (geo.n - 1)
-    niveaux = np.zeros(nb + 1, dtype=np.float32)
-    for lk in lakes:
-        sj = int(np.clip(round(lk.seed_px[0] * facteur), 0, out_n - 1))
-        si = int(np.clip(round(lk.seed_px[1] * facteur), 0, out_n - 1))
-        e = int(etiq[sj, si])
-        if e > 0:
-            niveaux[e] = np.float32(lk.surface_m)
-
-    # Distance a la cuvette la plus proche, ET son etiquette : c'est ce couple
-    # qui porte le niveau jusque sur la berge.
-    dist, idx = ndimage.distance_transform_edt(~basin, return_indices=True)
-    proche = niveaux[etiq[idx[0], idx[1]]]
-    del idx
-    portee_px = max(float(portee_m) / geo_out.meters_per_pixel, 1e-6)
-    fondu = np.float32(1.0) - noise.smoothstep(0.0, portee_px, dist.astype(np.float32))
-    return (proche * fondu).astype(np.float32)
-
-
-def river_corridor_damping(river_mask: np.ndarray, geo, geo_out,
-                           portee_m: float = 30.0) -> np.ndarray | None:
-    """Attenuation du detail fractal le long des cours d'eau.
-
-    Rend 0 dans le couloir de la riviere et 1 au-dela de `portee_m`, en fondu.
-
-    POURQUOI. Le detail fractal est ajoute APRES le calcul de l'hydrologie : il
-    depose jusqu'a `world.detailAmplitudeM` de bosses dans le fond des vallees
-    que l'ecoulement vient de creuser. Mesure sur la graine 20260909 : sur le
-    relief final, un cours d'eau REMONTE de 18,8 m en cumule (mediane), soit un
-    quart de sa descente totale -- pour une amplitude de detail de 21,25 m. Or
-    une riviere ne remonte pas. La surface d'eau etant forcee a decroitre vers
-    l'aval, chaque bosse enterre tout le troncon qui suit : 47 % des noeuds
-    passaient sous terre. Effacer le detail dans le couloir rend au fond de
-    vallee le profil que l'hydrologie lui avait donne.
-    """
-    if river_mask is None or not river_mask.any():
-        return None
-    corridor = resample(river_mask.astype(np.float32), geo_out.n, order=0) > 0.5
-    if not corridor.any():
-        return None
-    dist = ndimage.distance_transform_edt(~corridor).astype(np.float32)
-    portee_px = max(float(portee_m) / geo_out.meters_per_pixel, 1e-6)
-    return noise.smoothstep(0.0, portee_px, dist).astype(np.float32)
-
-
-def upsample_heightmap(dem: np.ndarray, out_n: int, rules: Rules,
-                       water_level: np.ndarray | None = None,
-                       detail_damp: np.ndarray | None = None) -> np.ndarray:
+def upsample_heightmap(dem: np.ndarray, out_n: int, rules: Rules) -> np.ndarray:
     """Sur-echantillonne le relief et lui rend du detail haute frequence.
 
     Une simple interpolation bicubique donnerait un terrain lisse et mou a la
@@ -147,16 +78,13 @@ def upsample_heightmap(dem: np.ndarray, out_n: int, rules: Rules,
     # elles valent -5 et +10 m la ou le monde de 32 km utilisait -20 et +40.
     fade_bas = float(rules.get("world.detailCoastFadeStartM", -20.0))
     fade_haut = float(rules.get("world.detailCoastFadeFullM", 40.0))
-    # Le fondu se fait autour du NIVEAU D'EAU LOCAL, pas autour du zero absolu.
-    # Sans cela un lac perche a 136 m recoit le detail a PLEINE amplitude : le
-    # bruit creuse sa cuvette et herisse ses berges, le trait de cote calcule
-    # avant l'export ne tombe plus sur la ligne d'eau, et l'eau se termine en mur
-    # vertical. Mesure sur la graine 20260909 : l'isoligne du niveau d'un lac
-    # etait brisee en 179 morceaux par ce bruit.
-    niveau = np.float32(0.0) if water_level is None else water_level
-    mask *= noise.smoothstep(fade_bas, fade_haut, big - niveau)
-    if detail_damp is not None:
-        mask = mask * detail_damp          # couloir des rivieres
+    # LE FONDU SE FAIT AUTOUR DU ZERO ABSOLU, qui est le niveau de la mer.
+    #
+    # Il connaissait aussi le niveau d'eau LOCAL de chaque lac et le couloir des
+    # rivieres, ou le detail devait s'effacer sous peine d'enterrer le cours ou
+    # de herisser les berges. Ces deux champs ont disparu avec l'hydrologie, le
+    # 18 septembre 2026 : il ne reste d'eau que la mer, et elle est a zero.
+    mask *= noise.smoothstep(fade_bas, fade_haut, big)
 
     return caler((big + detail * np.float32(amp) * mask).astype(np.float32))
 
@@ -209,146 +137,6 @@ def pixel_to_world_cm(j: float, i: float, geo) -> tuple[float, float]:
     x = (i / (geo.n - 1)) * (geo.size_m * 100.0) - half
     y = (j / (geo.n - 1)) * (geo.size_m * 100.0) - half
     return x, y
-
-
-def _altitudes_riviere(points_px, dem, geo, dem_out, geo_out, fenetre: int):
-    """Altitude du lit, echantillonnee sur le relief FINAL et lissee.
-
-    POURQUOI PAS LE RELIEF DE SIMULATION. Unreal affiche le relief de SORTIE, qui
-    a recu jusqu'a `world.detailAmplitudeM` de detail fractal APRES le calcul de
-    l'hydrologie. Un lit cale sur la simulation se retrouve donc tantot enterre,
-    tantot suspendu. Mesure sur la graine 20260909 avant correction, sur 1226
-    noeuds : 46,4 % enterres de plus d'un metre (jusqu'a -21,7 m, riviere
-    invisible) et 22,8 % flottants de plus d'un metre (jusqu'a +8,2 m, soit un
-    mur d'eau comme au bord des lacs).
-
-    POURQUOI LISSER. Echantillonne tel quel, le lit herite du bruit fractal et
-    ondule verticalement de plusieurs metres d'un noeud a l'autre. Une moyenne
-    glissante le long du cours lui rend un profil de riviere. La decroissance
-    monotone vers l'aval est imposee ensuite par l'appelant.
-    """
-    if dem_out is None or geo_out is None:
-        n = geo.n
-        return np.array([float(dem[int(np.clip(round(j), 0, n - 1)),
-                                   int(np.clip(round(i), 0, n - 1))])
-                         for j, i in points_px], dtype=np.float64)
-    facteur = (geo_out.n - 1) / (geo.n - 1)
-    rr = np.array([j * facteur for j, i in points_px], dtype=np.float64)
-    cc = np.array([i * facteur for j, i in points_px], dtype=np.float64)
-    z = ndimage.map_coordinates(dem_out, np.vstack([rr, cc]), order=1, mode="nearest")
-    if fenetre > 1 and z.size >= fenetre:
-        noyau = np.ones(fenetre, dtype=np.float64) / fenetre
-        # Bords repliques : sans cela la source et l'embouchure s'effondrent vers
-        # zero et la riviere plonge sous terre a ses deux extremites.
-        pad = fenetre // 2
-        z = np.convolve(np.pad(z, pad, mode="edge"), noyau, mode="valid")[: len(rr)]
-    return z
-
-
-def rivers_to_json(rivers, dem: np.ndarray, geo, water_drop_m: float = 0.0,
-                   precip_mm: np.ndarray | None = None,
-                   geo_out=None, dem_out=None, hyd: dict | None = None) -> list[dict]:
-    """Rivieres en coordonnees monde Unreal, pretes pour un WaterBodyRiver."""
-    out = []
-    n = geo.n
-    fenetre = int((hyd or {}).get("riverSmoothPoints", 5))
-    for r in rivers:
-        pts = []
-        z_lit = _altitudes_riviere(r.points_px, dem, geo, dem_out, geo_out, fenetre)
-        for k, (j, i) in enumerate(r.points_px):
-            x, y = pixel_to_world_cm(j, i, geo)
-            z = float(z_lit[k]) * 100.0 - water_drop_m * 100.0
-            pts.append({
-                "x": round(x, 1), "y": round(y, 1), "z": round(z, 1),
-                "widthCm": round(float(r.width_m[k]) * 100.0, 1),
-                "depthCm": round(float(r.depth_m[k]) * 100.0, 1),
-                "dischargeM3s": round(float(r.discharge[k]), 4),
-            })
-        # PROFIL DE LA SURFACE D'EAU : elle descend, mais elle ne s'enterre pas.
-        #
-        # La decroissance stricte -- la regle d'avant -- est trop raide : des
-        # qu'un noeud tombe dans un creux, tout l'aval y reste accroche. Mesure
-        # sur la graine 20260909 : 35,3 % des noeuds sous terre, jusqu'a 19 m,
-        # donc un tiers du reseau invisible. La cause n'est pas un defaut de
-        # routage : le terrain REMONTE reellement le long du cours a 13,5 % des
-        # pas, parce que la riviere traverse de petites cuvettes comblees dont
-        # elle ressort par un seuil.
-        #
-        # Deux bornes, donc : la surface ne remonte jamais de plus de
-        # `riverMaxRisePerPointM` d'un noeud au suivant, et ne passe jamais plus
-        # de `riverMaxSinkM` sous le sol. Mesure avec 0,5 m et 1,0 m : plus aucun
-        # noeud suspendu, plus aucun enterre au-dela du metre.
-        montee = float((hyd or {}).get("riverMaxRisePerPointM", 0.5)) * 100.0
-        enfonce = float((hyd or {}).get("riverMaxSinkM", 1.0)) * 100.0
-        for k in range(1, len(pts)):
-            sol = float(z_lit[k]) * 100.0 - water_drop_m * 100.0
-            z = min(sol, pts[k - 1]["z"] + montee)
-            pts[k]["z"] = round(max(z, sol - enfonce), 1)
-        # Pluie a l'embouchure : sert au controle des bassins endoreiques, qui ne
-        # sont legitimes qu'en zone aride.
-        jm, im = r.points_px[-1]
-        jm = int(np.clip(round(jm), 0, n - 1))
-        im = int(np.clip(round(im), 0, n - 1))
-        out.append({
-            "points": pts,
-            "mouthPrecipMm": (round(float(precip_mm[jm, im]), 1)
-                              if precip_mm is not None else None),
-            "strahler": int(r.strahler),
-            "lengthM": round(float(r.length_m), 1),
-            "mouth": r.mouth,
-            "maxWidthM": round(max(r.width_m), 1),
-            "maxDischargeM3s": round(max(r.discharge), 4),
-        })
-    return out
-
-
-def lakes_to_json(lakes, geo, geo_out=None, dem_out=None,
-                  lake_mask=None, hyd=None) -> list[dict]:
-    """Les lacs en JSON, avec leur TRAIT DE COTE.
-
-    Quand `dem_out` est fourni, le contour est retrace sur le relief FINAL (celui
-    qu'Unreal affiche, detail fractal compris) et accroche a la berge, par
-    `hydrology.lake_shoreline`. Sans lui, on retombe sur le contour de
-    simulation, qui ne connait pas le detail ajoute a l'export : le trait d'eau
-    ne tombe alors plus sur la ligne de rivage et l'eau se termine en MUR
-    vertical au-dessus du sol.
-    """
-    refait = dem_out is not None and lake_mask is not None and geo_out is not None
-    if refait:
-        out_n = geo_out.n
-        # Le masque de cuvette monte a la resolution de sortie AU PLUS PROCHE
-        # VOISIN : c'est un masque, pas une image, il ne s'interpole pas.
-        basin = resample(lake_mask.astype(np.float32), out_n, order=0) > 0.5
-        etiq, _ = ndimage.label(basin)
-        facteur = (out_n - 1) / (geo.n - 1)
-
-    out = []
-    for lk in lakes:
-        cx, cy = pixel_to_world_cm(*lk.centroid_px, geo)
-        points_px, geo_px = lk.outline_px, geo
-        if refait:
-            sj = int(round(lk.seed_px[0] * facteur))
-            si = int(round(lk.seed_px[1] * facteur))
-            sj = int(np.clip(sj, 0, out_n - 1)); si = int(np.clip(si, 0, out_n - 1))
-            e = int(etiq[sj, si])
-            if e > 0:
-                trace = hydrology.lake_shoreline(
-                    dem_out, etiq == e, (sj, si), lk.surface_m, hyd or {})
-                if len(trace) >= 4:
-                    points_px, geo_px = trace, geo_out
-        outline = []
-        for (j, i) in points_px:
-            x, y = pixel_to_world_cm(j, i, geo_px)
-            outline.append({"x": round(x, 1), "y": round(y, 1)})
-        out.append({
-            "centre": {"x": round(cx, 1), "y": round(cy, 1),
-                       "z": round(lk.surface_m * 100.0, 1)},
-            "surfaceM": round(lk.surface_m, 2),
-            "areaHa": round(lk.area_ha, 2),
-            "cells": int(lk.cells),
-            "outline": outline,
-        })
-    return out
 
 
 # -------------------------------------------------------------------- manifeste

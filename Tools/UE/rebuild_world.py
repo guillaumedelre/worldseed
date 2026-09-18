@@ -39,7 +39,6 @@ import os
 import unreal
 
 import import_world
-import water_world
 import pcg_bench
 import vegetation
 import rvt_setup
@@ -261,9 +260,6 @@ def rebuild(out_dir: str, with_vegetation: bool = True) -> dict:
     if label is None:
         return {"success": False, "etape": "landscape", "log": list(_log)}
 
-    eau = water_world.build(out_dir)
-    log("CREATED", "eau : {} lacs, {} rivieres".format(eau["lacs"], eau["rivieres"]))
-
     # LA RVT SE REPOSE A CHAQUE RECONSTRUCTION, ET C'EST OBLIGATOIRE.
     # `clear()` detruit le Landscape et ses proxies ; `landscape()` les recree
     # NEUFS, donc sans aucune texture virtuelle. Les deux volumes, eux, sont des
@@ -286,5 +282,4 @@ def rebuild(out_dir: str, with_vegetation: bool = True) -> dict:
     unreal.EditorAssetLibrary.save_directory("/Game/Worldseed", False, True)
     log("MODIFIED", "niveau et assets sauvegardes")
 
-    return {"success": True, "landscape": label, "eau": eau,
-            "verification": water_world.verify(), "log": list(_log)}
+    return {"success": True, "landscape": label, "log": list(_log)}

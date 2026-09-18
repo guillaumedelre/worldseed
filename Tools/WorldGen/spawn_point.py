@@ -53,7 +53,9 @@ def choisir(src: Path, biome: str = BIOME_PAR_DEFAUT) -> dict:
     alt = h / 65535.0 * (mx - mn) + mn
     mpp = float(manifest["world"]["metresPerPixel"])
 
-    eau = np.isin(bio, [ids["ocean"], ids["lac"], ids["riviere"]])
+    # Seul l'ocean reste : les identifiants lac et riviere ne sont plus
+    # attribues depuis le retrait de l'hydrologie, le 18 septembre 2026.
+    eau = bio == ids["ocean"]
     dist_m = ndimage.distance_transform_edt(~eau).astype(np.float32) * mpp
     gy, gx = np.gradient(alt, mpp)
     pente = np.degrees(np.arctan(np.hypot(gx, gy)))
