@@ -79,6 +79,46 @@ struct WORLDSEED_API FWorldseedBiomeRules
 	TArray<FWorldseedWhittakerBand> Bands;
 
 	float TreeLineTempC = 4.0f;
+
+	/**
+	 * Temperature du MOIS LE PLUS CHAUD sous laquelle aucun arbre ne pousse.
+	 *
+	 * C'EST LE VRAI CRITERE DE LA LIMITE DES ARBRES, et c'est celui de Koppen
+	 * (isotherme 10 degres du mois le plus chaud, frontiere ET/Df). Un arbre a
+	 * besoin d'une SAISON DE CROISSANCE, pas d'une moyenne annuelle clemente :
+	 * Iakoutsk est a -11,6 degres de moyenne et porte de la taiga, quand des
+	 * cotes plus douces en moyenne n'ont pas un arbre.
+	 *
+	 * Sans lui, la separation toundra/taiga se faisait sur la moyenne annuelle,
+	 * et AUCUN seuil ne pouvait marcher : le releve reel de Polar_Tundra est
+	 * PLUS CHAUD (-8,4 C) que celui de Subarctic-Severe_Winter (-11,6 C) tout
+	 * en etant de la toundra. Mesure du degat : toundra a 16,1 % des terres
+	 * pour 8 attendus, taiga a 10,2 pour 10.
+	 */
+	float TreeLineWarmestMonthC = 10.0f;
+
+	/**
+	 * Cumul annuel a partir duquel une terre sans arbres en gagne, une fois la
+	 * limite des arbres franchie, en millimetres.
+	 *
+	 * C'est le seuil qui separait deja la toundra de la taiga dans la bande de
+	 * -5 a 5 degres ; il devient explicite parce qu'il ne depend plus de la
+	 * bande ou l'on se trouve.
+	 */
+	float TaigaMinPrecipMm = 350.0f;
+
+	/**
+	 * Moyenne annuelle sous laquelle un desert est FROID, en degres.
+	 *
+	 * 18 degres est la frontiere k/h de Koppen, et elle est sourcee. Le
+	 * diagramme seul ne pouvait pas trancher : le releve reel du Cold_Desert
+	 * est a +17 degres de moyenne annuelle -- un BWk se definit par son HIVER,
+	 * pas par son annee -- et tombait donc dans la bande chaude. Mesure du
+	 * degat : desert froid a 0,31 % des terres, dont 0,00 % dans les deux
+	 * bandes les plus froides, ou il etait pourtant declare.
+	 */
+	float ColdDesertMaxTempC = 18.0f;
+
 	float AlpineMinElevationM = 212.5f;
 	float PermanentIceTempC = 0.0f;
 	float BareRockSlopeDeg = 55.0f;

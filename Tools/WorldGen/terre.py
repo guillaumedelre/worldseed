@@ -79,24 +79,43 @@ def climat_annuel(p: dict) -> tuple:
     return float(t), float(mm)
 
 
-def case_whittaker(t: float, p: float, bandes: list) -> str:
+def case_whittaker(t: float, p: float, bandes: list, regles: dict | None = None) -> str:
+    """La case du diagramme, SURCHARGES COMPRISES.
+
+    LE DIAGRAMME SEUL NE SUFFIT PLUS, et ce controle doit dire ce que fait
+    reellement le classificateur. WorldseedBiomes::Classify applique depuis le
+    18 septembre 2026 une surcharge que la moyenne annuelle ne peut pas porter :
+    un desert dont l'annee est sous coldDesertMaxTempC est FROID, 18 degres etant
+    la frontiere k/h de Koppen. Sans elle ici, le bulletin declarerait un echec
+    la ou le moteur a raison -- exactement le genre de garde-fou qui ment.
+    """
+    case = None
     for b in bandes:
         if t <= b["tMax"]:
             for p_max, nom in b["cuts"]:
                 if p <= p_max:
-                    return nom
-            return b["cuts"][-1][1]
-    return bandes[-1]["cuts"][-1][1]
+                    case = nom
+                    break
+            if case is None:
+                case = b["cuts"][-1][1]
+            break
+    if case is None:
+        case = bandes[-1]["cuts"][-1][1]
+
+    if regles and case == "desert_chaud":
+        if t < float(regles.get("coldDesertMaxTempC", 18.0)):
+            case = "desert_froid"
+    return case
 
 
-def controle_1(livres: dict, bandes: list) -> None:
+def controle_1(livres: dict, bandes: list, regles: dict | None = None) -> None:
     print("=== 1. Les 23 climats REELS passes dans NOTRE diagramme de Whittaker ===")
     print("{:<34} {:>7} {:>8}   {:<24} {}".format(
         "climat reel (ville source)", "T an", "pluie an", "notre case", "verdict"))
     bons = 0
     for nom in sorted(livres):
         t, mm = climat_annuel(livres[nom])
-        case = case_whittaker(t, mm, bandes)
+        case = case_whittaker(t, mm, bandes, regles)
         att = ATTENDU.get(nom, "?")
         ok = case in att.split("_ou_") or case == att or any(
             case == x for x in att.split("_ou_"))
@@ -192,7 +211,7 @@ def run(dossier: Path) -> None:
                            encoding="utf-8").read())
     livres = json.loads((dossier / "uds_presets_livres.json").read_text(encoding="utf-8"))
     bulletin(dossier)
-    controle_1(livres, r["biomes"]["whittakerBands"])
+    controle_1(livres, r["biomes"]["whittakerBands"], r["biomes"])
     controle_2(dossier, livres)
     score(dossier)
 

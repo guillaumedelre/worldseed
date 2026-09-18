@@ -227,6 +227,164 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 	return Summary;
 }
 
+FString UWorldseedProbeLibrary::ProbeBiomes(int32 Seed, float HeightMeters,
+	int32 ResolutionY)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	// LA REFERENCE TERRESTRE, pour les biomes qui en ont une. Ce sont les huit
+	// grands biomes du bulletin de terre.py ; les autres n'ont pas de cible
+	// publiee et se lisent seuls. Un tiret vaut mieux qu'un chiffre invente.
+	struct FCible { EWorldseedBiome Biome; float TerrePct; };
+	static const FCible Cibles[] = {
+		{ EWorldseedBiome::Tundra,             8.0f },
+		{ EWorldseedBiome::Taiga,             10.0f },
+		{ EWorldseedBiome::TemperateForest,   13.0f },
+		{ EWorldseedBiome::Grassland,          8.0f },
+		{ EWorldseedBiome::HotDesert,         21.0f },
+		{ EWorldseedBiome::Savanna,           13.0f },
+		{ EWorldseedBiome::TropicalRainforest, 11.0f },
+		{ EWorldseedBiome::IceCap,            10.0f },
+	};
+
+	auto CibleDe = [](EWorldseedBiome B) -> float
+	{
+		for (const FCible& C : Cibles)
+		{
+			if (C.Biome == B) { return C.TerrePct; }
+		}
+		return -1.0f;
+	};
+
+	TArray<int32> Ordre;
+	for (int32 B = 0; B < static_cast<int32>(EWorldseedBiome::Count); ++B)
+	{
+		Ordre.Add(B);
+	}
+	Ordre.Sort([&World](int32 A, int32 B)
+	{
+		return World.Biomes.LandSharePct[A] > World.Biomes.LandSharePct[B];
+	});
+
+	float Ecart = 0.0f;
+	int32 Comptes = 0;
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- part des terres par biome ---"));
+	for (const int32 B : Ordre)
+	{
+		const float Part = World.Biomes.LandSharePct[B];
+		if (Part <= 0.0f)
+		{
+			continue;
+		}
+		const float Cible = CibleDe(static_cast<EWorldseedBiome>(B));
+		if (Cible > 0.0f)
+		{
+			Ecart += FMath::Abs(Part - Cible) / Cible;
+			++Comptes;
+			UE_LOG(LogTemp, Log, TEXT("[Worldseed]   %-26s %6.2f %%   Terre %5.1f %%   %+6.1f"),
+				WorldseedBiomes::Name(static_cast<EWorldseedBiome>(B)), Part, Cible, Part - Cible);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Worldseed]   %-26s %6.2f %%"),
+				WorldseedBiomes::Name(static_cast<EWorldseedBiome>(B)), Part);
+		}
+	}
+
+	// --- POURQUOI LA LIMITE DES ARBRES NE MORD PAS ---------------------------
+	// Le critere de Koppen porte sur le mois le PLUS CHAUD. Si l'amplitude
+	// saisonniere est trop faible, ce mois reste froid meme sous une moyenne
+	// annuelle clemente, et le critere deshabille des terres qui devraient
+	// porter une foret. Ces trois chiffres disent si c'est le cas, et
+	// pourquoi -- sans eux on regle un seuil a l'aveugle.
+	// bHasClimate ne promet PAS que chaque tableau du climat est rempli : la
+	// sonde a plante la premiere fois sur un Continentality vide. On verifie
+	// chaque tableau qu'on lit, un par un.
+	const int32 Cells = World.Geometry.CellCount();
+	const bool bCont = (World.Climate.Continentality.Num() == Cells);
+	const bool bAmp = (World.Climate.SeasonalAmpC.Num() == Cells);
+	const bool bTMoy = (World.Climate.TempMeanC.Num() == Cells);
+
+	// LE MOIS LE PLUS CHAUD SE RECONSTRUIT, IL NE SE LIT PAS. Sur le chemin
+	// "repris du cache", Climate.TempMaxC revient VIDE : seules la moyenne et
+	// l'amplitude sont transportees. C'est d'ailleurs pour cela que la chaine
+	// le reconstruit elle-meme avant d'appeler Classify. Premiere version de
+	// cette sonde silencieuse pour cette raison.
+	if (World.bHasClimate && bAmp && bTMoy)
+	{
+		TArray<float> Cont;
+		TArray<float> Amp;
+		TArray<float> AmpHaute;   // entre 50 et 70 degres, la ou vit la taiga
+		int32 Terres = 0;
+		int32 EteFroid = 0;
+		int32 EteFroidMaisDoux = 0;
+
+		for (int32 J = 0; J < World.Geometry.NY; ++J)
+		{
+			const float Lat = FMath::Abs(World.Geometry.LatitudeDegForRow(J));
+			for (int32 I = 0; I < World.Geometry.NX; ++I)
+			{
+				const int32 Idx = J * World.Geometry.NX + I;
+				if (Idx >= Cells || World.ElevationM[Idx] <= 0.0f)
+				{
+					continue;
+				}
+				++Terres;
+				if (bCont) { Cont.Add(World.Climate.Continentality[Idx]); }
+				Amp.Add(World.Climate.SeasonalAmpC[Idx]);
+				if (Lat >= 50.0f && Lat <= 70.0f)
+				{
+					AmpHaute.Add(World.Climate.SeasonalAmpC[Idx]);
+				}
+				const float TMax = World.Climate.TempMeanC[Idx]
+					+ World.Climate.SeasonalAmpC[Idx] * 0.5f;
+				if (TMax < 10.0f)
+				{
+					++EteFroid;
+					// Le cas qui fait mal : une annee assez douce pour une foret,
+					// mais un ete trop froid pour un arbre.
+					if (World.Climate.TempMeanC[Idx] > -5.0f) { ++EteFroidMaisDoux; }
+				}
+			}
+		}
+
+		if (Terres > 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   continentalite mediane %.2f | amplitude mediane %.1f C")
+				TEXT(" | amplitude 50-70 deg : mediane %.1f C, p90 %.1f C"),
+				Cont.Num() ? WorldseedGrid::Quantile(Cont, 0.5f) : -1.0f,
+				WorldseedGrid::Quantile(Amp, 0.5f),
+				AmpHaute.Num() ? WorldseedGrid::Quantile(AmpHaute, 0.5f) : 0.0f,
+				AmpHaute.Num() ? WorldseedGrid::Quantile(AmpHaute, 0.9f) : 0.0f);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   ete sous 10 C : %.1f %% des terres, dont %.1f %% ")
+				TEXT("sous une moyenne annuelle superieure a -5 C"),
+				100.0f * EteFroid / Terres, 100.0f * EteFroidMaisDoux / Terres);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed]   substrat : roche a nu %.2f %%, estran %.2f %%"),
+		World.Biomes.CoverSharePct[static_cast<int32>(EWorldseedCover::Rock)],
+		World.Biomes.CoverSharePct[static_cast<int32>(EWorldseedCover::Beach)]);
+
+	const float Moyen = (Comptes > 0) ? 100.0f * Ecart / Comptes : 0.0f;
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   ecart absolu moyen aux %d biomes de reference : %.1f %%"),
+		Comptes, Moyen);
+
+	return FString::Printf(TEXT("ecart absolu moyen %.1f %% sur %d biomes ; detail au journal"),
+		Moyen, Comptes);
+}
+
 FString UWorldseedProbeLibrary::ProbeWhittaker(int32 Seed, float HeightMeters,
 	int32 ResolutionY)
 {

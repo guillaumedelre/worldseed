@@ -79,6 +79,19 @@ public:
 	 * Elle relit les regles du disque, comme les autres : retoucher un seuil du
 	 * diagramme et remesurer doit couter une seconde.
 	 */
+	/**
+	 * Rend la part des terres de CHAQUE biome, et de chaque substrat.
+	 *
+	 * Le journal de la chaine n'en donne que les trois premiers -- de quoi voir
+	 * si la carte est plausible, pas de quoi caler un seuil. Celle-ci donne le
+	 * tableau entier, trie, avec la reference terrestre en regard quand elle
+	 * existe. C'est le juge des reglages de biomes : on change un seuil dans
+	 * les regles, on relance, on compare.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeBiomes(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 1024);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeWhittaker(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);

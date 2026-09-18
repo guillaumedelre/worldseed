@@ -116,6 +116,9 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 	};
 
 	Out.TreeLineTempC = Num(TEXT("treeLineTempC"), 4.0);
+	Out.TreeLineWarmestMonthC = Num(TEXT("treeLineWarmestMonthC"), 10.0);
+	Out.TaigaMinPrecipMm = Num(TEXT("taigaMinPrecipMm"), 350.0);
+	Out.ColdDesertMaxTempC = Num(TEXT("coldDesertMaxTempC"), 18.0);
 	Out.AlpineMinElevationM = Num(TEXT("alpineMinElevationM"), 212.5);
 	Out.PermanentIceTempC = Num(TEXT("permanentIceTempC"), 0.0);
 	Out.BareRockSlopeDeg = Num(TEXT("bareRockSlopeDeg"), 55.0);
@@ -401,6 +404,49 @@ namespace WorldseedBiomes
 						}
 					}
 					break;
+				}
+
+				// --- la limite des arbres se joue sur l'ETE, pas sur l'annee -------
+				//
+				// C'est le critere de Koppen (isotherme 10 degres du mois le plus
+				// chaud) et c'est le seul qui marche : un arbre a besoin d'une
+				// SAISON DE CROISSANCE. Le diagramme, qui ne connait que la
+				// moyenne annuelle, ne peut pas le voir -- le releve reel de la
+				// toundra polaire est PLUS CHAUD en moyenne (-8,4 C) que celui du
+				// subarctique a hiver severe (-11,6 C), qui porte pourtant de la
+				// taiga. Aucun seuil sur l'annee ne separe ces deux-la.
+				//
+				// Le critere joue DANS LES DEUX SENS, sans quoi il ne ferait que
+				// deshabiller les terres froides : sous la limite, une foret
+				// redevient toundra ; au-dessus, une toundra assez arrosee devient
+				// de la taiga.
+				if (bHasTempMax)
+				{
+					const bool bArbresPossibles = TempMaxC[I] >= Rules.TreeLineWarmestMonthC;
+
+					if (!bArbresPossibles)
+					{
+						if (Biome == EWorldseedBiome::Taiga
+							|| Biome == EWorldseedBiome::TemperateForest
+							|| Biome == EWorldseedBiome::TemperateRainforest)
+						{
+							Biome = EWorldseedBiome::Tundra;
+						}
+					}
+					else if (Biome == EWorldseedBiome::Tundra
+						&& P > Rules.TaigaMinPrecipMm)
+					{
+						Biome = EWorldseedBiome::Taiga;
+					}
+				}
+
+				// --- un desert FROID se definit par son hiver -----------------------
+				// 18 degres de moyenne annuelle est la frontiere k/h de Koppen.
+				// Le diagramme ne pouvait pas trancher : le releve reel du
+				// Cold_Desert est a +17 C de moyenne, donc dans la bande chaude.
+				if (Biome == EWorldseedBiome::HotDesert && T < Rules.ColdDesertMaxTempC)
+				{
+					Biome = EWorldseedBiome::ColdDesert;
 				}
 
 				// --- surcharges, de la moins a la plus prioritaire -----------------
