@@ -18,13 +18,21 @@ public class Worldseed : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"ProceduralMeshComponent",
+			// Ocean et lacs : vagues, caustiques, rendu sous-marin, flottabilite
+			// et nage, qu'un maillage nu n'aura jamais. Les rivieres restent
+			// procedurales : une spline se casse sur une cascade.
+			"Water",
+			"SlateCore",
+			"Json"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Worldseed",
+			"Worldseed/Procedural",
 			"Worldseed/Variant_Platforming",
 			"Worldseed/Variant_Platforming/Animation",
 			"Worldseed/Variant_Combat",

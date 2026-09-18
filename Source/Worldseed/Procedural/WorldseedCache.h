@@ -1,0 +1,85 @@
+// Worldseed - cache disque des mondes deja calcules.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Procedural/WorldseedRules.h"
+#include "Procedural/WorldseedWorldData.h"
+
+/**
+ * VERSION DE LA CHAINE DE GENERATION.
+ *
+ * A INCREMENTER DES QU'UN CHANGEMENT DE CODE MODIFIE LE RELIEF PRODUIT :
+ * nouvelle etape, formule corrigee, mise a l'echelle differente. Les mondes en
+ * cache portent la version qui les a produits ; ceux d'une autre version sont
+ * refuses au chargement et signales comme perimes.
+ *
+ * L'empreinte de world_rules.json couvre les REGLAGES, ce compteur couvre le
+ * CODE. Sans lui, corriger une formule laisserait recharger les anciens mondes
+ * en croyant tester la correction — et rien ne le signalerait.
+ *
+ * Historique :
+ *   1 - tectonique + climat + erosion, carte spherique
+ *   2 - mise a l'echelle verticale des regles metriques sous la taille de reference
+ *   3 - flou par boites iterees, erosion thermique en collecte, quantile par selection
+ *   4 - amplitude saisonniere transportee (le relief lui-meme est inchange)
+ *   5 - continentalite transportee, pour l'ecart jour/nuit du ciel
+ */
+#define WORLDSEED_PIPELINE_VERSION 5
+
+/** Ce qu'on sait d'un monde en cache sans le decompresser. */
+struct WORLDSEED_API FWorldseedCacheEntry
+{
+	FString FileName;
+	int32 Seed = 0;
+	int32 NX = 0;
+	int32 NY = 0;
+	float HeightM = 0.0f;
+	int32 PipelineVersion = 0;
+	FString RulesHash;
+	int64 SizeBytes = 0;
+
+	/** Faux si la version de chaine ou les regles ont change depuis. */
+	bool bCompatible = false;
+};
+
+/**
+ * Cache de mondes.
+ *
+ * METTRE EN CACHE N'EST PAS CUIRE. Cuire deplacerait la generation hors-ligne
+ * et le runtime ne saurait plus produire un monde. Ici le runtime sait toujours
+ * tout generer : il saute simplement le calcul quand il a deja la reponse. La
+ * generation par graine reste la source de verite, le fichier n'est qu'un
+ * raccourci.
+ *
+ * Les metadonnees sont ecrites EN CLAIR en tete de fichier, avant la partie
+ * compressee : lister le cache ne demande donc pas de tout decompresser.
+ */
+namespace WorldseedCache
+{
+	constexpr uint32 Magic = 0x57534557;   // "WSEW"
+	constexpr uint32 FormatVersion = 4;
+
+	/** Cle unique pour un jeu de parametres et une version de chaine. */
+	WORLDSEED_API FString MakeKey(int32 Seed, float HeightMeters, int32 ResolutionY,
+		const FString& RulesHash);
+
+	WORLDSEED_API FString PathForKey(const FString& Key);
+
+	/** Charge un monde. Faux si absent, corrompu, perime ou d'un autre format. */
+	WORLDSEED_API bool Load(const FString& Key, FWorldseedWorldData& Out);
+
+	WORLDSEED_API bool Save(const FString& Key, const FString& RulesHash,
+		const FWorldseedWorldData& World);
+
+	/** Inventaire du cache, avec le verdict de compatibilite de chaque entree. */
+	WORLDSEED_API TArray<FWorldseedCacheEntry> ListEntries(const FString& CurrentRulesHash);
+
+	/** Supprime SEULEMENT les mondes devenus incompatibles. */
+	WORLDSEED_API int32 ClearObsolete(const FString& CurrentRulesHash);
+
+	/** Supprime tout. */
+	WORLDSEED_API int32 ClearAll();
+
+	WORLDSEED_API int64 TotalSize();
+}

@@ -1,0 +1,83 @@
+// Worldseed - chaine de generation du monde, pilotee par world_rules.json.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Procedural/WorldseedClimate.h"
+#include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedHydrology.h"
+#include "Procedural/WorldseedJob.h"
+#include "Procedural/WorldseedRules.h"
+
+/**
+ * Point d'entree unique de la generation.
+ *
+ * Reproduit la chaine du generateur Python : tectonique, puis climat, puis
+ * erosion (les etapes suivantes arrivent au fur et a mesure du portage). Toutes
+ * les valeurs viennent de world_rules.json, jamais de constantes C++ : c'est la
+ * regle posee par la documentation du projet, et elle evite que les deux
+ * moities du projet divergent a la premiere retouche.
+ */
+namespace WorldseedPipeline
+{
+	struct WORLDSEED_API FResult
+	{
+		/** Altitude en METRES, 0 = niveau de la mer. Indexe J * N + I. */
+		TArray<float> ElevationM;
+
+		/** Geometrie effective : NX = 2 NY, largeur = 2 hauteur. */
+		FWorldseedGeometry Geometry;
+
+		/** Decalage applique pour amener la mer a zero. */
+		float SeaLevelShiftM = 0.0f;
+
+		/** Part de terres emergees effectivement obtenue. */
+		float LandRatio = 0.0f;
+
+		/** Altitudes extremes, pour le rendu. */
+		float MinElevationM = 0.0f;
+		float MaxElevationM = 0.0f;
+
+		/** Temperature, pluie, vents, continentalite. */
+		FWorldseedClimateResult Climate;
+
+		/** Vrai si l'etape climat a tourne. */
+		bool bHasClimate = false;
+
+		/**
+		 * Rivieres, lacs et cascades.
+		 *
+		 * JAMAIS MIS EN CACHE, et c'est delibere : l'hydrologie derive entierement
+		 * du relief et de la pluie, tous deux deja caches, et ne coute qu'un calcul
+		 * d'ecoulement la ou l'erosion en fait douze. La recalculer a chaque
+		 * chargement evite de faire entrer des polylignes dans un format de fichier
+		 * qui ne connait que des grilles de nombres.
+		 */
+		FWorldseedHydrology Hydrology;
+
+		/** Les 19 biomes, avec la pente qui a servi a les classer. */
+		FWorldseedBiomeMap Biomes;
+
+		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
+		bool bFromCache = false;
+
+		bool IsValid() const { return Geometry.NX >= 2 && ElevationM.Num() == Geometry.CellCount(); }
+	};
+
+	/**
+	 * Genere un monde. MapSizeMeters et Resolution surchargent les valeurs du
+	 * fichier de regles : le joueur les choisit dans L_Menu, tout le reste
+	 * — latitudes, plaques, part emergee, forcage polaire — reste pilote par
+	 * world_rules.json.
+	 */
+	/**
+	 * HeightMeters est la hauteur du monde, d'un pole a l'autre ; la largeur
+	 * vaut le double. ResolutionY est le nombre de lignes ; les colonnes valent
+	 * le double, pour que la carte ait la forme de la sphere.
+	 */
+	WORLDSEED_API bool Generate(int32 Seed, float HeightMeters, int32 ResolutionY,
+		FResult& Out, FString& OutError, FWorldseedJob* Job = nullptr);
+
+	/** Regles chargees, mises en cache. Nullptr si le fichier est introuvable. */
+	WORLDSEED_API UWorldseedRules* GetRules(FString& OutError);
+}

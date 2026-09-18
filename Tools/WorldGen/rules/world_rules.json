@@ -146,7 +146,7 @@
     "depthExponent": 0.4,
     "simplifyToleranceM": 5.0,
     "maxPointsPerRiver": 120,
-    "riparianCells": 2,
+    "_comment_riparian": "Largeur de la ripisylve de part et d'autre d'un chenal, en METRES. Un nombre de cellules ignorerait la resolution : a 31 m par cellule, le chenal lui-meme fait deja 31 m de large pour une riviere qui en fait 3 a 25, et deux cellules de plus la portaient a 155 m (24 % des terres). riparianCells ne sert plus que de plafond, contre une resolution tres fine.", "riparianBandM": 30.0, "riparianCells": 3,
     "runoffCoefficient": 0.35,
     "maxPointSpacingM": 40.0,
     "_comment_trait_de_cote": "TRAIT DE COTE DES LACS. Le contour est trace sur le relief de SORTIE (celui qu'Unreal affiche, detail fractal compris), puis accroche a la berge. POURQUOI : l'ancien contour triait les cellules de bord PAR ANGLE autour du centre, ce qui ne marche que pour une forme en etoile ; des qu'un lac a un bras ou une baie, le polygone zigzaguait a travers le lac. Mesure sur la graine 20260909 : 42 a 69 % du perimetre surplombait un sol situe plus d'un metre SOUS la surface, avec des murs d'eau verticaux jusqu'a 26 m. Apres correction : 1,5 a 5,8 %, mur maximal 4 a 7 m et uniquement sur les deversoirs, ou une chute est physiquement normale. shorelineSearchCells borne la recherche autour de la cuvette : au-dela, la zone inondee descend l'exutoire et emporte une langue d'eau dans la vallee aval. shorelineBankStepsCells et shorelineBankMarginM font grandir le polygone vers la berge UNIQUEMENT par des cellules au-dessus de l'eau ; une marge trop large le fait fuir par les cols (mesure : 20 m de marge fait remonter le defaut de 5 a 27 %). shorelineSnapCells est la distance maximale dont un point est tire jusqu'a la berge.",
