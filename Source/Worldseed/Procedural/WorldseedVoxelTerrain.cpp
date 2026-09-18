@@ -341,6 +341,7 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 	Mesh.Colours.SetNumUninitialized(Count);
 
 	const bool bHasBiomes = (Biomes.Index.Num() == Geometry.CellCount());
+	const bool bHasCover = (Biomes.Cover.Num() == Geometry.CellCount());
 	const double WidthM = Geometry.WidthM();
 	const double HeightM = Geometry.HeightM;
 
@@ -366,8 +367,13 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 		const int32 Row = FMath::Clamp(
 			FMath::FloorToInt(V * Geometry.NY), 0, Geometry.NY - 1);
 
-		const EWorldseedBiome Biome =
-			static_cast<EWorldseedBiome>(Biomes.Index[Row * Geometry.NX + Col]);
+		// LA COULEUR SUIT LE SUBSTRAT QUAND IL Y EN A UN. Depuis que la roche
+		// a nu et l'estran ont quitte l'axe des biomes, l'index porte le climat
+		// meme sur une paroi : le lire seul peindrait la falaise en vert.
+		const int32 Cell = Row * Geometry.NX + Col;
+		const EWorldseedBiome Biome = bHasCover
+			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
+			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]);
 		Mesh.Colours[I] = WorldseedBiomes::Colour(Biome);
 	}
 }

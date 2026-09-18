@@ -1043,8 +1043,16 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 	if (bTexturePack)
 	{
 		const int32 CI = Cell;
-		const EWorldseedBiome Biome =
-			static_cast<EWorldseedBiome>(Biomes.Index[Cell]);
+
+		// LE SUBSTRAT DECIDE DE LA MATIERE, PAS LE CLIMAT. Une paroi en
+		// foret tropicale porte desormais "foret tropicale" dans l'axe
+		// des biomes ; si on lisait cet axe pour choisir les textures,
+		// la falaise se couvrirait d'herbe. AppearanceBiome rend
+		// l'identifiant d'avant la separation des deux axes, donc cette
+		// ligne peint rigoureusement la meme chose qu'avant.
+		const EWorldseedBiome Biome = bHasCover
+			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
+			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]);
 
 		// RGBA porte les POIDS DE MATIERE, jamais une couleur : c'est
 		// le materiau qui melange les quatre textures avec.
@@ -1088,8 +1096,9 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 		// pas : les deux occupent les memes quatre canaux, et un
 		// materiau ne peut pas deviner lequel il recoit.
 		const int32 CI = Cell;
-		FLinearColor Tint = WorldseedBiomes::Colour(
-			static_cast<EWorldseedBiome>(Biomes.Index[Cell]));
+		FLinearColor Tint = WorldseedBiomes::Colour(bHasCover
+			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
+			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]));
 
 		// L'eau se MELE au biome au lieu de l'effacer : c'est tout le
 		// benefice de la separation des deux axes.

@@ -184,6 +184,8 @@ namespace WorldseedBiomes
 		case EWorldseedCover::Ocean: return Colour(EWorldseedBiome::Ocean);
 		case EWorldseedCover::Lake:  return Colour(EWorldseedBiome::Lake);
 		case EWorldseedCover::River: return Colour(EWorldseedBiome::River);
+		case EWorldseedCover::Rock:  return Colour(EWorldseedBiome::BareRock);
+		case EWorldseedCover::Beach: return Colour(EWorldseedBiome::Beach);
 		default:                     return FLinearColor::Transparent;
 		}
 	}
@@ -195,7 +197,21 @@ namespace WorldseedBiomes
 		case EWorldseedCover::Ocean: return TEXT("ocean");
 		case EWorldseedCover::Lake:  return TEXT("lac");
 		case EWorldseedCover::River: return TEXT("riviere");
+		case EWorldseedCover::Rock:  return TEXT("roche nue");
+		case EWorldseedCover::Beach: return TEXT("plage");
 		default:                     return TEXT("a decouvert");
+		}
+	}
+
+	EWorldseedBiome AppearanceBiome(uint8 BiomeIndex, uint8 Cover)
+	{
+		switch (static_cast<EWorldseedCover>(Cover))
+		{
+		case EWorldseedCover::Rock:  return EWorldseedBiome::BareRock;
+		case EWorldseedCover::Beach: return EWorldseedBiome::Beach;
+		default:
+			return static_cast<EWorldseedBiome>(
+				FMath::Clamp<int32>(BiomeIndex, 0, BiomeCount - 1));
 		}
 	}
 
@@ -381,6 +397,13 @@ namespace WorldseedBiomes
 				// ELLES NE VALENT QU'A TERRE : sous la mer, le diagramme dit la
 				// bande climatique de l'eau, et ni la pente du fond ni la
 				// distance au rivage n'ont de sens a lui appliquer.
+				//
+				// DEUX SORTES DE SURCHARGE, ET ELLES NE VONT PLUS AU MEME
+				// ENDROIT. Ce qui releve du CLIMAT -- l'etage alpin, la calotte
+				// -- continue d'ecrire le biome. Ce qui releve de la FORME DU
+				// RELIEF -- la roche a nu, l'estran -- ecrit desormais le
+				// substrat, et laisse le climat intact dessous.
+				EWorldseedCover Substrate = EWorldseedCover::None;
 				if (!bLand)
 				{
 					Out.Index[I] = static_cast<uint8>(Biome);
@@ -397,10 +420,12 @@ namespace WorldseedBiomes
 				}
 
 				// Au-dela de l'angle de tenue, aucune terre ne reste, quel que
-				// soit le climat.
+				// soit le climat. C'est bien ce que dit la phrase : QUEL QUE
+				// SOIT LE CLIMAT -- donc le climat, lui, ne change pas, et il
+				// n'y a aucune raison de l'effacer.
 				if (Slope > Rules.BareRockSlopeDeg)
 				{
-					Biome = EWorldseedBiome::BareRock;
+					Substrate = EWorldseedCover::Rock;
 				}
 
 				// Calotte : meme le mois le PLUS CHAUD reste sous le gel.
@@ -431,7 +456,11 @@ namespace WorldseedBiomes
 
 					if (DistanceToOceanPx[I] * MetresPerPixel <= WidthM)
 					{
-						Biome = EWorldseedBiome::Beach;
+						// L'estran passe APRES la roche et la remplace : une
+						// paroi qui plonge dans la mer se lit comme une plage
+						// de galets, pas comme une falaise. C'est l'ordre
+						// qu'avait deja l'ancienne cascade, garde tel quel.
+						Substrate = EWorldseedCover::Beach;
 					}
 				}
 
@@ -445,7 +474,9 @@ namespace WorldseedBiomes
 
 				// L'EAU N'ECRASE PLUS RIEN : elle se range dans son propre axe.
 				// Une berge reste de la savane, et le sait.
-				EWorldseedCover Cover = EWorldseedCover::None;
+				// L'EAU PASSE AVANT LE SUBSTRAT : sous une nappe, ce qu'on voit
+				// est la nappe, et le fond n'a plus a dire s'il est rocheux.
+				EWorldseedCover Cover = Substrate;
 				if (bHasRivers && RiverMask[I]) { Cover = EWorldseedCover::River; }
 				if (bHasLakes && LakeMask[I]) { Cover = EWorldseedCover::Lake; }
 				Out.Cover[I] = static_cast<uint8>(Cover);
@@ -496,5 +527,14 @@ namespace WorldseedBiomes
 			Name(static_cast<EWorldseedBiome>(Ranked[1])), Out.LandSharePct[Ranked[1]],
 			Name(static_cast<EWorldseedBiome>(Ranked[2])), Out.LandSharePct[Ranked[2]],
 			(FPlatformTime::Seconds() - StartTime) * 1000.0);
+
+		// LE SUBSTRAT A SA PROPRE LIGNE, et il la merite : depuis qu'il ne
+		// mange plus l'index des biomes, la part de roche a nu ne se lit plus
+		// dans le tableau des biomes. La voir baisser ou exploser reste
+		// pourtant le meilleur controle du seuil de pente.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] substrat : roche a nu %.1f %% des terres, estran %.1f %%"),
+			Out.CoverSharePct[static_cast<int32>(EWorldseedCover::Rock)],
+			Out.CoverSharePct[static_cast<int32>(EWorldseedCover::Beach)]);
 	}
 }

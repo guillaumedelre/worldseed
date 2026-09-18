@@ -8,7 +8,25 @@
 #include "Procedural/WorldseedRules.h"
 
 /**
- * Les 19 biomes, dans l'ordre des identifiants de world_rules.json.
+ * Les 19 identifiants, dans l'ordre de world_rules.json.
+ *
+ * ILS NE SONT PAS TOUS DES BIOMES, ET ON NE LES RENUMEROTE PAS. Ces valeurs
+ * sont des CLES : elles indexent surfaces.recipes, les recettes de vegetation
+ * et les tables en dur de ce fichier. Les tasser pour combler les trous
+ * decalerait tout, en silence. Etat reel de chacun :
+ *
+ *   0  Ocean, 1 Lake, 2 River  - plus jamais attribues comme biome : ce sont
+ *      des nappes, elles vivent dans EWorldseedCover. Gardes comme cle de
+ *      palette et de recette pour cet axe-la.
+ *   16 BareRock, 17 Beach      - plus jamais attribues non plus depuis le
+ *      18 septembre 2026 : ce sont des SUBSTRATS, une forme du relief et non
+ *      un climat. Passes eux aussi dans EWorldseedCover. Ils restent la cle
+ *      d'apparence de ce substrat, via AppearanceBiome.
+ *   18 Marsh                   - inatteignable depuis le retrait de
+ *      l'hydrologie : il nait de l'eau douce, qui n'existe plus.
+ *
+ * Restent donc 12 biomes climatiques et l'etage alpin, qui en est un vrai --
+ * il est pose par la limite des arbres, pas par la seule altitude.
  *
  * L'ETAGEMENT ALTITUDINAL N'EST PAS UNE REGLE SEPAREE : il tombe tout seul du
  * gradient adiabatique applique au climat. Un sommet tropical a 3 000 m est a
@@ -98,7 +116,22 @@ enum class EWorldseedCover : uint8
 	Lake = 2,
 	River = 3,
 
-	Count = 4
+	/**
+	 * Roche a nu : la pente depasse l'angle de tenue, plus rien n'y reste.
+	 *
+	 * C'EST UN SUBSTRAT, PAS UN BIOME, et c'est tout l'objet de ce second axe.
+	 * Un versant a 60 degres en foret tropicale reste climatiquement de la
+	 * foret tropicale ; ce qui change, c'est ce qu'on a sous les pieds. Tant
+	 * que "roche nue" occupait l'index des biomes, la carte perdait le climat
+	 * de la paroi -- impossible d'y border la vegetation de la foret qui
+	 * l'entoure, exactement le probleme que l'eau avait avant elle.
+	 */
+	Rock = 4,
+
+	/** Estran : bande littorale. Meme raisonnement -- une forme, pas un climat. */
+	Beach = 5,
+
+	Count = 6
 };
 
 /** Ce que la classification produit. */
@@ -165,6 +198,21 @@ namespace WorldseedBiomes
 	WORLDSEED_API FLinearColor CoverColour(EWorldseedCover Cover);
 
 	WORLDSEED_API const TCHAR* CoverName(EWorldseedCover Cover);
+
+	/**
+	 * Le biome dont il faut prendre l'APPARENCE pour une cellule.
+	 *
+	 * POURQUOI CETTE FONCTION EXISTE. En sortant la roche et la plage de l'axe
+	 * des biomes, on gagne le climat qui regne sous la paroi -- mais le sol,
+	 * lui, doit continuer a ressembler a de la roche et non a la foret qui
+	 * l'entoure. C'est le seul point ou les deux axes se rejoignent : le
+	 * SUBSTRAT decide de la matiere, le BIOME de tout le reste.
+	 *
+	 * Elle rend exactement l'identifiant d'avant la separation, donc le rendu
+	 * ne bouge pas d'un pixel au passage a deux axes. C'etait la condition du
+	 * changement : on ajoute de l'information, on ne retouche pas l'image.
+	 */
+	WORLDSEED_API EWorldseedBiome AppearanceBiome(uint8 BiomeIndex, uint8 Cover);
 
 	/** Nom lisible, pour les journaux. */
 	WORLDSEED_API const TCHAR* Name(EWorldseedBiome Biome);

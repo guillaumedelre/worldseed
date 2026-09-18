@@ -165,8 +165,9 @@ namespace WorldseedGlobeBake
 						FMath::RoundToInt(V * (Geometry.NY - 1)), 0, Geometry.NY - 1);
 					const int32 Cell = Row0 * Geometry.NX + Col0;
 
-					Colour = WorldseedBiomes::Colour(
-						static_cast<EWorldseedBiome>(BiomeIndex[Cell]));
+					Colour = WorldseedBiomes::Colour(bHasCover
+						? WorldseedBiomes::AppearanceBiome(BiomeIndex[Cell], Cover[Cell])
+						: static_cast<EWorldseedBiome>(BiomeIndex[Cell]));
 
 					if (bHasCover)
 					{
