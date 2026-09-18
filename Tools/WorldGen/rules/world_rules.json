@@ -65,7 +65,7 @@
     "oceanModerationFraction": 0.65,
     "oceanModerationC": 6.0,
     "_comment_oceanRange": "Distance caracteristique du passage maritime -> continental : cont = 1 - exp(-d / portee), d etant la distance a l'OCEAN (pas aux lacs ni aux rivieres). CORRIGE LE 11 SEPTEMBRE 2026, ET L'ERREUR PRECEDAIT LA MISE A L'ECHELLE : la valeur n'avait jamais ete calee. Sur Terre le passage du climat maritime au continental se fait sur 300 a 800 km ; rapporte a un monde 5000 fois plus petit que la circonference terrestre, cela donne 0,06 a 0,16 km. La valeur de 0,75 etait donc environ cinq fois trop grande, et la continentalite plafonnait a 0,16 de mediane sur les terres au lieu d'environ 0,6. Consequence : les interieurs continentaux n'existaient pas climatiquement, et ni la taiga ni la toundra n'avaient ou vivre. Verification d'echelle : notre point le plus eloigne d'un ocean est a 0,94 km ; celui de la Terre (Xinjiang) est a 2650 km, soit 0,53 km rapporte a notre echelle -- nos continents sont donc deja plus continentaux que ceux de la Terre. Mesure des biomes froids cumules : portee 0,75 -> 18,7 % des terres ; 0,30 -> 22,4 ; 0,15 -> 25,2 ; 0,10 -> 26,7 (Terre environ 28).",
-    "oceanModerationRangeKm": 0.30,
+    "oceanModerationRangeKm": 0.3,
     "_comment_latitudeExponent": "Exposant du profil zonal de temperature : T = equatorC - (equatorC - poleC) * (|lat| / 90)^k. Cale sur le profil zonal reel de la Terre (0 deg 26 C, 30 deg 20, 45 deg 12, 60 deg 0, 75 deg -12). Ecart absolu moyen mesure : k=2,0 -> 2,29 C ; k=1,9 -> 1,86 ; k=1,8 -> 1,47 ; k=1,7 -> 1,54. Retenu 1,8. Ce que corrige le changement : a 60 degres le modele donnait +3,9 C contre 0 sur Terre, ce qui interdisait a la taiga et a la toundra d'exister sur les continents boreaux.",
     "latitudeExponent": 1.8,
     "_comment_profil": "Forme du profil zonal de temperature. 'cosine' : T = poleC + (equatorC - poleC) * cos(latitude)^cosineExponent. 'power' : T = equatorC - (equatorC - poleC) * (|lat|/90)^latitudeExponent, l'ancienne forme. LE COSINUS EST LA BONNE FORME, et pour deux raisons qui se rejoignent : l'energie solaire recue varie en moyenne annuelle a peu pres comme cos(latitude), donc c'est la forme de premier ordre ; et elle colle mieux au profil zonal reel. Ecart absolu moyen mesure contre la Terre (0 deg 26 C, 30 deg 20, 45 deg 12, 60 deg 0, 75 deg -12) : sin^2 7,02 C ; (lat/90)^2 1,95 ; (lat/90)^1,8 1,11 ; cos 0,84 (0,49 hors pole). latitudeExponent n'est conserve que pour pouvoir revenir a l'ancienne forme.",
@@ -128,14 +128,14 @@
     "voxelSizeM": 1.0,
     "_comment_bande": "Epaisseur creusable sous la surface, en metres. Sous elle la densite est forcee au plein : le socle n'est jamais maille. Ce n'est pas une economie de rendu -- le marching cubes ne maille que les changements de signe -- mais une borne sur la comptabilite des chunks, qui s'etendrait sinon sur les six cents metres d'amplitude du monde.",
     "bandDepthM": 100.0,
-    "_comment_surplombs": "CE TERME EST CE QUI CREE LES SURPLOMBS, et il le fait sans cas particulier : en retranchant un bruit 3D a la distance a la surface, celle-ci cesse d'etre une fonction de x et y. La ou le gradient du bruit depasse la pente du terrain, le relief se replie et l'on passe dessous. Le terme n'agit que la ou il peut changer le signe, donc dans une bande de son amplitude autour de la surface : inutile de l'estomper. La frequence est en cycles par METRE.",
+    "_comment_surplombs": "CE TERME NE PRODUIT PAS DE SURPLOMBS, ET C'EST MESURE. En retranchant un bruit 3D a la distance a la surface, celle-ci ne cesse d'etre une fonction de x et y que si le gradient vertical du bruit depasse 1 -- or un fBm de Perlin normalise n'atteint pas ce gradient aux amplitudes utilisables. Mesures a 512 m de cote, galeries coupees : amplitude 8 m frequence 0,016 -> 0,00 % de colonnes franchissables ; amplitude 16 m -> 0,00 % encore ; amplitude 10 m frequence 0,05 -> 0,02 %, soit un cas sur cinq mille. Monter davantage deformerait le relief de dizaines de metres pour rien. De vrais surplombs demandent un autre mecanisme -- un deplacement HORIZONTAL du point d'echantillonnage du relief, qui replie la surface la ou elle est raide. CE QUE CE TERME FAIT VRAIMENT, et qui est utile : il donne au sol un relief de quelques metres que la grille 2D, a 7,8 m par cellule, ne peut pas porter.",
     "overhangAmplitudeM": 8.0,
     "overhangFrequency": 0.016,
     "overhangOctaves": 3,
-    "_comment_galeries": "Les galeries viennent des CRETES d'un bruit a cretes : les surfaces ou il approche 1 forment des tubes qui se croisent et se ramifient, la ou un fBm seuille donnerait des poches isolees. caveThreshold est le reglage le plus sensible du lot -- un seuil haut donne des tubes fins et rares, un seuil bas donne un gruyere. caveSurfaceFadeM empeche les tubes de perforer le sol partout : sans lui le monde ressemble a une ecumoire.",
+    "_comment_galeries": "Les galeries viennent des CRETES d'un bruit a cretes : les surfaces ou il approche 1 forment des tubes qui se croisent et se ramifient, verifie au fil de fer. caveThreshold est le reglage le plus sensible du lot, et il a ete cale a la mesure sur 16 641 colonnes de terre, en comptant la HAUTEUR LIBRE sous de la roche et non le nombre de traversees -- une ride de quelques centimetres ne fait pas une grotte. Seuil 0,86 -> 43,8 % des colonnes ont 2 m de libre et 7,75 % du volume de la bande est creux : le sous-sol est une eponge. Seuil 0,92 -> 26,2 % et 2,57 %. Seuil 0,96 -> 12,9 % des colonnes, 0,75 % du volume, vide median 4 m, le plus grand 24 m. RETENU 0,96 : on peut s'y tenir debout, on en trouve une colonne sur huit, et les cavernes geantes de 80 m ont disparu avec le reste -- c'est le prix assume.",
     "caveFrequency": 0.008,
     "caveOctaves": 2,
-    "caveThreshold": 0.86,
+    "caveThreshold": 0.96,
     "caveRadiusM": 9.0,
     "caveSurfaceFadeM": 25.0
   },
@@ -159,45 +159,96 @@
         "_comment_desert_froid": "Seuil du DESERT FROID abaisse de 120 a 50 mm (bande 0) et de 150 a 60 mm (bande 1) le 11 septembre 2026. Sur Terre l Arctique siberien recoit 200 a 300 mm et c est de la TOUNDRA, pas un desert ; a 120 mm le desert froid prenait 17,5 % de la bande la plus froide. La bande 2 (5 a 12 degres) garde son seuil de 150 : un desert froid a 7 degres, c est le Gobi.",
         "tMax": -5.0,
         "cuts": [
-          [50.0, "desert_froid"],
-          [1000000.0, "toundra"]
+          [
+            50.0,
+            "desert_froid"
+          ],
+          [
+            1000000.0,
+            "toundra"
+          ]
         ]
       },
       {
         "_comment_taiga": "Limite haute de la bande boreale. Le diagramme de Whittaker classique place la foret boreale entre -5 et +5 degres de moyenne annuelle ; la valeur etait a 3, ce qui reversait en foret temperee une large part des terres de 55 a 60 degres. Mesure : 3 -> 5 fait passer la taiga de 3,7 a 5,1 % des terres.",
         "tMax": 5.0,
         "cuts": [
-          [60.0, "desert_froid"],
-          [350.0, "toundra"],
-          [1000000.0, "taiga"]
+          [
+            60.0,
+            "desert_froid"
+          ],
+          [
+            350.0,
+            "toundra"
+          ],
+          [
+            1000000.0,
+            "taiga"
+          ]
         ]
       },
       {
         "tMax": 12.0,
         "cuts": [
-          [150.0, "desert_froid"],
-          [400.0, "steppe"],
-          [1200.0, "foret_temperee"],
-          [1000000.0, "foret_temperee_humide"]
+          [
+            150.0,
+            "desert_froid"
+          ],
+          [
+            400.0,
+            "steppe"
+          ],
+          [
+            1200.0,
+            "foret_temperee"
+          ],
+          [
+            1000000.0,
+            "foret_temperee_humide"
+          ]
         ]
       },
       {
         "tMax": 20.0,
         "cuts": [
-          [250.0, "desert_chaud"],
-          [600.0, "prairie"],
-          [1500.0, "foret_temperee"],
-          [1000000.0, "foret_temperee_humide"]
+          [
+            250.0,
+            "desert_chaud"
+          ],
+          [
+            600.0,
+            "prairie"
+          ],
+          [
+            1500.0,
+            "foret_temperee"
+          ],
+          [
+            1000000.0,
+            "foret_temperee_humide"
+          ]
         ]
       },
       {
         "_comment": "Bande chaude. Le seuil entre foret tropicale SECHE et HUMIDE est passe de 2000 a 1500 mm le 11 septembre 2026 : la foret tropicale humide au sens des grands referentiels (tropical moist broadleaf forest) englobe les forets de mousson des environ 1500 mm, et notre seuil a 2000 la limitait a 5 % des terres contre environ 11 sur Terre. Mesure : l'ecart absolu moyen aux grands biomes terrestres passe de 17,5 a 13,4 %, la foret tropicale humide de 7,2 a 10,8 % des terres.",
         "tMax": 99.0,
         "cuts": [
-          [300.0, "desert_chaud"],
-          [900.0, "savane"],
-          [1500.0, "foret_tropicale_seche"],
-          [1000000.0, "foret_tropicale_humide"]
+          [
+            300.0,
+            "desert_chaud"
+          ],
+          [
+            900.0,
+            "savane"
+          ],
+          [
+            1500.0,
+            "foret_tropicale_seche"
+          ],
+          [
+            1000000.0,
+            "foret_tropicale_humide"
+          ]
         ]
       }
     ],
@@ -244,52 +295,359 @@
       "18": "Marais"
     },
     "debugColors": {
-      "0": [24, 62, 122],
-      "1": [46, 116, 181],
-      "2": [86, 164, 214],
-      "3": [242, 246, 250],
-      "4": [166, 176, 152],
-      "5": [46, 84, 62],
-      "6": [70, 128, 66],
-      "7": [42, 104, 54],
-      "8": [150, 168, 92],
-      "9": [178, 172, 108],
-      "10": [176, 176, 166],
-      "11": [214, 190, 126],
-      "12": [196, 172, 92],
-      "13": [128, 152, 70],
-      "14": [30, 110, 58],
-      "15": [150, 146, 140],
-      "16": [112, 108, 104],
-      "17": [226, 212, 172],
-      "18": [96, 118, 84]
+      "0": [
+        24,
+        62,
+        122
+      ],
+      "1": [
+        46,
+        116,
+        181
+      ],
+      "2": [
+        86,
+        164,
+        214
+      ],
+      "3": [
+        242,
+        246,
+        250
+      ],
+      "4": [
+        166,
+        176,
+        152
+      ],
+      "5": [
+        46,
+        84,
+        62
+      ],
+      "6": [
+        70,
+        128,
+        66
+      ],
+      "7": [
+        42,
+        104,
+        54
+      ],
+      "8": [
+        150,
+        168,
+        92
+      ],
+      "9": [
+        178,
+        172,
+        108
+      ],
+      "10": [
+        176,
+        176,
+        166
+      ],
+      "11": [
+        214,
+        190,
+        126
+      ],
+      "12": [
+        196,
+        172,
+        92
+      ],
+      "13": [
+        128,
+        152,
+        70
+      ],
+      "14": [
+        30,
+        110,
+        58
+      ],
+      "15": [
+        150,
+        146,
+        140
+      ],
+      "16": [
+        112,
+        108,
+        104
+      ],
+      "17": [
+        226,
+        212,
+        172
+      ],
+      "18": [
+        96,
+        118,
+        84
+      ]
     },
     "alpineMinElevationM": 212.5
   },
   "surfaces": {
     "_comment": "Ordre des 10 couches du materiau M_WorldseedLandscape. Chaque biome est une recette de melange.",
-    "layers": ["Snow", "Stone", "Gravel", "DesertSand", "BiomGrass5", "Grass", "GrassBiom2", "GrassBiom3", "GrassBiom4", "Biom4Gravel"],
-    "layerAssetNames": ["Snow", "Stone", "Gravel", "DesertSand", "Biom Grass 5", "Grass", "Grass Biom 2", "Grass Biom 3", "Grass Biom 4", "Biom 4 Gravel"],
+    "layers": [
+      "Snow",
+      "Stone",
+      "Gravel",
+      "DesertSand",
+      "BiomGrass5",
+      "Grass",
+      "GrassBiom2",
+      "GrassBiom3",
+      "GrassBiom4",
+      "Biom4Gravel"
+    ],
+    "layerAssetNames": [
+      "Snow",
+      "Stone",
+      "Gravel",
+      "DesertSand",
+      "Biom Grass 5",
+      "Grass",
+      "Grass Biom 2",
+      "Grass Biom 3",
+      "Grass Biom 4",
+      "Biom 4 Gravel"
+    ],
     "recipes": {
-      "0": [0.0, 0.1, 0.2, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "1": [0.0, 0.05, 0.25, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
-      "2": [0.0, 0.1, 0.55, 0.2, 0.0, 0.05, 0.0, 0.0, 0.0, 0.1],
-      "3": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "4": [0.28, 0.1, 0.22, 0.0, 0.0, 0.0, 0.0, 0.3, 0.1, 0.0],
-      "5": [0.06, 0.05, 0.1, 0.0, 0.0, 0.05, 0.0, 0.04, 0.55, 0.15],
-      "6": [0.0, 0.05, 0.08, 0.0, 0.02, 0.65, 0.0, 0.1, 0.05, 0.05],
-      "7": [0.0, 0.04, 0.06, 0.0, 0.0, 0.5, 0.2, 0.06, 0.06, 0.08],
-      "8": [0.0, 0.04, 0.1, 0.04, 0.22, 0.6, 0.0, 0.0, 0.0, 0.0],
-      "9": [0.0, 0.08, 0.18, 0.14, 0.48, 0.12, 0.0, 0.0, 0.0, 0.0],
-      "10": [0.1, 0.26, 0.4, 0.16, 0.08, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "11": [0.0, 0.08, 0.14, 0.72, 0.06, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "12": [0.0, 0.05, 0.1, 0.28, 0.52, 0.05, 0.0, 0.0, 0.0, 0.0],
-      "13": [0.0, 0.05, 0.08, 0.1, 0.3, 0.2, 0.22, 0.05, 0.0, 0.0],
-      "14": [0.0, 0.03, 0.05, 0.0, 0.0, 0.1, 0.7, 0.04, 0.04, 0.04],
-      "15": [0.22, 0.3, 0.38, 0.0, 0.04, 0.06, 0.0, 0.0, 0.0, 0.0],
-      "16": [0.0, 0.72, 0.26, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "17": [0.0, 0.04, 0.1, 0.84, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "18": [0.0, 0.02, 0.06, 0.02, 0.0, 0.2, 0.1, 0.05, 0.05, 0.5]
+      "0": [
+        0.0,
+        0.1,
+        0.2,
+        0.7,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "1": [
+        0.0,
+        0.05,
+        0.25,
+        0.2,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.5
+      ],
+      "2": [
+        0.0,
+        0.1,
+        0.55,
+        0.2,
+        0.0,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.1
+      ],
+      "3": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "4": [
+        0.28,
+        0.1,
+        0.22,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3,
+        0.1,
+        0.0
+      ],
+      "5": [
+        0.06,
+        0.05,
+        0.1,
+        0.0,
+        0.0,
+        0.05,
+        0.0,
+        0.04,
+        0.55,
+        0.15
+      ],
+      "6": [
+        0.0,
+        0.05,
+        0.08,
+        0.0,
+        0.02,
+        0.65,
+        0.0,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "7": [
+        0.0,
+        0.04,
+        0.06,
+        0.0,
+        0.0,
+        0.5,
+        0.2,
+        0.06,
+        0.06,
+        0.08
+      ],
+      "8": [
+        0.0,
+        0.04,
+        0.1,
+        0.04,
+        0.22,
+        0.6,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "9": [
+        0.0,
+        0.08,
+        0.18,
+        0.14,
+        0.48,
+        0.12,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "10": [
+        0.1,
+        0.26,
+        0.4,
+        0.16,
+        0.08,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "11": [
+        0.0,
+        0.08,
+        0.14,
+        0.72,
+        0.06,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "12": [
+        0.0,
+        0.05,
+        0.1,
+        0.28,
+        0.52,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "13": [
+        0.0,
+        0.05,
+        0.08,
+        0.1,
+        0.3,
+        0.2,
+        0.22,
+        0.05,
+        0.0,
+        0.0
+      ],
+      "14": [
+        0.0,
+        0.03,
+        0.05,
+        0.0,
+        0.0,
+        0.1,
+        0.7,
+        0.04,
+        0.04,
+        0.04
+      ],
+      "15": [
+        0.22,
+        0.3,
+        0.38,
+        0.0,
+        0.04,
+        0.06,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "16": [
+        0.0,
+        0.72,
+        0.26,
+        0.02,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "17": [
+        0.0,
+        0.04,
+        0.1,
+        0.84,
+        0.02,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "18": [
+        0.0,
+        0.02,
+        0.06,
+        0.02,
+        0.0,
+        0.2,
+        0.1,
+        0.05,
+        0.05,
+        0.5
+      ]
     },
     "slopeRockStartDeg": 22.0,
     "slopeRockFullDeg": 40.0,

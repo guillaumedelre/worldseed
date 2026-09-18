@@ -51,4 +51,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeVoxel(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 256, int32 ChunkSideM = 32, int32 ChunksPerSide = 4);
+
+	/**
+	 * Mesure ce que le bruit 3D produit reellement : galeries et surplombs.
+	 *
+	 * DEUX GRANDEURS, ET ELLES SE SUFFISENT.
+	 *
+	 * Un SURPLOMB, c'est par definition une colonne que la surface traverse
+	 * plus d'une fois : on compte donc les changements de signe du champ le
+	 * long de chaque verticale. Une GALERIE, c'est de l'air sous la surface :
+	 * on compte la part des points de la bande ou le champ est positif.
+	 *
+	 * Rien de tout cela ne se voit a l'oeil -- une grotte est sous terre et il
+	 * y fait noir -- d'ou cette sonde. Elle relit les regles du disque a chaque
+	 * appel, pour qu'un essai coute une seconde et non un redemarrage.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeCaves(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f);
 };

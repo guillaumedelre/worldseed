@@ -33,6 +33,16 @@ namespace WorldseedPipeline
 		const TArray<bool> NoWaterMask;
 	}
 
+	void ReloadRules()
+	{
+		// LES REGLES SONT RELUES UNE FOIS PAR SESSION, et c'est le bon choix
+		// en jeu : le fichier ne bouge pas pendant une partie. Mais pour
+		// REGLER une valeur, relancer l'editeur a chaque essai coute une
+		// minute la ou la mesure en coute une seconde. D'ou cette porte,
+		// reservee au reglage.
+		CachedRules().Reset();
+	}
+
 	UWorldseedRules* GetRules(FString& OutError)
 	{
 		OutError.Reset();

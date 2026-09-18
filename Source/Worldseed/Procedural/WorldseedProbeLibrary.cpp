@@ -226,3 +226,226 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 	UE_LOG(LogTemp, Log, TEXT("[Sonde] %s"), *Summary);
 	return Summary;
 }
+
+FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
+	int32 ResolutionY, float AreaM, float StepM)
+{
+	// Les regles sont relues a chaque appel : c'est ce qui permet d'essayer une
+	// valeur, de mesurer, et de recommencer sans redemarrer l'editeur.
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules)
+	{
+		return FString::Printf(TEXT("regles illisibles : %s"), *Error);
+	}
+
+	const FWorldseedDensityRules R = FWorldseedDensityRules::FromRules(*Rules);
+
+	FWorldseedDensity Density;
+	Density.Init(World.Geometry, World.ElevationM, 1.0f, Seed, R);
+
+	// --- une zone de TERRE, et une zone ordinaire -----------------------------
+	// Le point le plus haut du monde est le plus accidente : il flatterait les
+	// surplombs. On prend la mediane des terres, c'est-a-dire un relief banal,
+	// celui que le joueur verra le plus souvent.
+	TArray<float> Terres;
+	Terres.Reserve(World.ElevationM.Num() / 4);
+	for (const float H : World.ElevationM)
+	{
+		if (H > 0.0f) { Terres.Add(H); }
+	}
+	if (Terres.Num() == 0)
+	{
+		return TEXT("aucune terre emergee");
+	}
+	const float Mediane = WorldseedGrid::Quantile(Terres, 0.5f);
+
+	const int32 NX = World.Geometry.NX;
+	int32 Cellule = INDEX_NONE;
+	float Meilleur = TNumericLimits<float>::Max();
+	for (int32 C = 0; C < World.ElevationM.Num(); ++C)
+	{
+		const float H = World.ElevationM[C];
+		if (H <= 0.0f) { continue; }
+		const float Ecart = FMath::Abs(H - Mediane);
+		if (Ecart < Meilleur)
+		{
+			Meilleur = Ecart;
+			Cellule = C;
+		}
+	}
+
+	const double MetresParCellule = World.Geometry.MetersPerPixel();
+	const double CentreX = (static_cast<double>(Cellule % NX) - NX * 0.5) * MetresParCellule;
+	const double CentreY = (static_cast<double>(Cellule / NX) - World.Geometry.NY * 0.5)
+		* MetresParCellule;
+
+	// --- balayage -------------------------------------------------------------
+	const double Pas = FMath::Max(StepM, 0.5f);
+	const double Demi = FMath::Max(AreaM, Pas * 4.0) * 0.5;
+	const double PasZ = FMath::Max(Pas * 0.5, 0.5);
+
+	int64 PointsBande = 0;
+	int64 PointsAir = 0;
+	int32 Colonnes = 0;
+	int32 ColonnesSurplomb = 0;
+	int32 ColonnesGalerie = 0;
+	int32 ColonnesFranchissables = 0;
+	int32 ColonnesDebout = 0;
+	int32 TraverseesMax = 0;
+	double PlusGrandVideMonde = 0.0;
+
+	/** Hauteur de chaque vide rencontre, pour en donner la distribution. */
+	TArray<double> Hauteurs;
+
+	TArray<FVector> Exemples;
+
+	for (double Y = CentreY - Demi; Y <= CentreY + Demi; Y += Pas)
+	{
+		for (double X = CentreX - Demi; X <= CentreX + Demi; X += Pas)
+		{
+			const float Surface = Density.SurfaceHeightM(X, Y);
+			if (Surface <= 0.0f)
+			{
+				continue;   // on ne mesure pas sous la mer
+			}
+
+			++Colonnes;
+
+			const double Haut = Surface + R.OverhangAmplitudeM * 1.5;
+			const double Bas = Surface - R.BandDepthM;
+
+			// ON MESURE LA HAUTEUR DES VIDES, PAS LEUR NOMBRE.
+			//
+			// Compter les traversees revenait a compter les rides : une
+			// ondulation de quelques centimetres pesait autant qu'une arche de
+			// dix metres. Le premier releve annoncait ainsi 43,8 % de colonnes
+			// « a surplomb » sur un terrain qui, a l'image, paraissait lisse --
+			// les deux etaient vrais, c'est l'indicateur qui ne disait rien.
+			//
+			// Ce qui compte est la HAUTEUR LIBRE sous de la roche : c'est elle
+			// qui decide si l'on peut passer dessous, entrer dedans, s'y tenir
+			// debout.
+			int32 Traversees = 0;
+			bool bAirPrecedent = Density.At(FVector(X, Y, Haut)) > 0.0;
+			bool bGalerie = false;
+			bool bRocheVue = false;
+			double HauteurVide = 0.0;
+			double PlusGrandVide = 0.0;
+
+			for (double Z = Haut - PasZ; Z >= Bas; Z -= PasZ)
+			{
+				const bool bAir = Density.At(FVector(X, Y, Z)) > 0.0;
+				if (bAir != bAirPrecedent)
+				{
+					++Traversees;
+					bAirPrecedent = bAir;
+				}
+
+				if (!bAir)
+				{
+					bRocheVue = true;
+					if (HauteurVide > 0.0)
+					{
+						PlusGrandVide = FMath::Max(PlusGrandVide, HauteurVide);
+						Hauteurs.Add(HauteurVide);
+						HauteurVide = 0.0;
+					}
+				}
+				else if (bRocheVue)
+				{
+					// De l'air SOUS de la roche : un vide, et non le ciel.
+					HauteurVide += PasZ;
+				}
+
+				if (Z < Surface)
+				{
+					++PointsBande;
+					if (bAir)
+					{
+						++PointsAir;
+						bGalerie = true;
+
+						// Quelques adresses pour aller voir, prises en
+						// profondeur : une poche a un metre sous l'herbe ne
+						// prouverait rien.
+						if (Exemples.Num() < 6 && (Surface - Z) > 15.0
+							&& Exemples.Num() * 97 % 7 == PointsAir % 7)
+						{
+							Exemples.Add(FVector(X, Y, Z));
+						}
+					}
+				}
+			}
+			if (HauteurVide > 0.0)
+			{
+				PlusGrandVide = FMath::Max(PlusGrandVide, HauteurVide);
+				Hauteurs.Add(HauteurVide);
+			}
+
+			TraverseesMax = FMath::Max(TraverseesMax, Traversees);
+			if (Traversees > 1) { ++ColonnesSurplomb; }
+			if (bGalerie) { ++ColonnesGalerie; }
+			if (PlusGrandVide >= 2.0) { ++ColonnesFranchissables; }
+			if (PlusGrandVide >= 2.5) { ++ColonnesDebout; }
+			PlusGrandVideMonde = FMath::Max(PlusGrandVideMonde, PlusGrandVide);
+		}
+	}
+
+	const double PartSurplomb = Colonnes > 0
+		? 100.0 * ColonnesSurplomb / Colonnes : 0.0;
+	const double PartGalerieColonnes = Colonnes > 0
+		? 100.0 * ColonnesGalerie / Colonnes : 0.0;
+	const double PartAir = PointsBande > 0
+		? 100.0 * static_cast<double>(PointsAir) / PointsBande : 0.0;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Sonde] formes : relief median %.1f m, zone %.0f m au pas de %.1f m, ")
+		TEXT("%d colonnes de terre"),
+		Mediane, AreaM, Pas, Colonnes);
+	Hauteurs.Sort();
+	const double Mediane2 = Hauteurs.Num() > 0 ? Hauteurs[Hauteurs.Num() / 2] : 0.0;
+	const double PartFranchissable = Colonnes > 0
+		? 100.0 * ColonnesFranchissables / Colonnes : 0.0;
+	const double PartDebout = Colonnes > 0
+		? 100.0 * ColonnesDebout / Colonnes : 0.0;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Sonde] surplombs : %.2f %% des colonnes traversees plus d'une fois ")
+		TEXT("(%d au plus)  |  amplitude %.1f m, frequence %.4f"),
+		PartSurplomb, TraverseesMax, R.OverhangAmplitudeM, R.OverhangFrequency);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Sonde] vides : %d mesures, hauteur mediane %.1f m, la plus grande ")
+		TEXT("%.1f m  |  %.2f %% des colonnes ont 2 m de libre, %.2f %% en ont 2,5"),
+		Hauteurs.Num(), Mediane2, PlusGrandVideMonde, PartFranchissable, PartDebout);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Sonde] galeries : %.2f %% du volume de la bande est creuse, ")
+		TEXT("%.2f %% des colonnes en rencontrent une  |  seuil %.3f, rayon %.1f m, ")
+		TEXT("frequence %.4f"),
+		PartAir, PartGalerieColonnes, R.CaveThreshold, R.CaveRadiusM, R.CaveFrequency);
+
+	for (const FVector& P : Exemples)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Sonde]   galerie a (%.0f, %.0f, %.0f) m, soit %.0f cm monde"),
+			P.X, P.Y, P.Z, P.Z * 100.0);
+	}
+
+	const FString Resume = FString::Printf(
+		TEXT("vides : %.2f %% des colonnes ont 2 m de libre (%.2f %% en ont 2,5), ")
+		TEXT("mediane %.1f m, max %.1f m | air %.2f %% de la bande | ")
+		TEXT("ampl %.1f seuil %.3f rayon %.1f"),
+		PartFranchissable, PartDebout, Mediane2, PlusGrandVideMonde, PartAir,
+		R.OverhangAmplitudeM, R.CaveThreshold, R.CaveRadiusM);
+
+	UE_LOG(LogTemp, Log, TEXT("[Sonde] %s"), *Resume);
+	return Resume;
+}

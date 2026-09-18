@@ -72,4 +72,13 @@ namespace WorldseedPipeline
 
 	/** Regles chargees, mises en cache. Nullptr si le fichier est introuvable. */
 	WORLDSEED_API UWorldseedRules* GetRules(FString& OutError);
+
+	/**
+	 * Oublie les regles en cache, pour qu'elles soient relues du disque.
+	 *
+	 * POUR LE REGLAGE, PAS POUR LE JEU : il permet d'essayer une valeur de
+	 * world_rules.json sans relancer l'editeur. En partie, les regles ne
+	 * changent pas.
+	 */
+	WORLDSEED_API void ReloadRules();
 }
