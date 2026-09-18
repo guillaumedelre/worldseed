@@ -8,7 +8,6 @@
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedTexturePack.h"
-#include "Procedural/WorldseedHydrology.h"
 #include "WorldseedTerrain.generated.h"
 
 class UProceduralMeshComponent;
@@ -143,10 +142,13 @@ public:
 	/**
 	 * Part d'eau melee a la couleur du biome, de 0 a 1.
 	 *
-	 * A ZERO, LE BIOME SEUL : on lit la savane jusque sur la berge, ce qui est
-	 * l'interet d'avoir separe les deux axes. A UN, l'eau recouvre tout et on
-	 * retrouve l'ancien comportement. Entre les deux, on voit une riviere ET
-	 * dans quoi elle coule.
+	 * A ZERO, LE BIOME SEUL : on lit la savane jusque sur la plage, ce qui est
+	 * l'interet d'avoir separe les deux axes. A UN, la mer recouvre tout et on
+	 * retrouve l'ancien comportement. Entre les deux, on voit le rivage ET dans
+	 * quel biome il s'inscrit.
+	 *
+	 * L'axe de couverture ne porte plus que l'ocean : les lacs et les rivieres
+	 * ont ete retires du generateur le 18 septembre 2026.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -356,14 +358,6 @@ protected:
 	 */
 	void BuildGroundProxy();
 
-	/**
-	 * Releve la coupe du cours vise par la camera. Lie a une touche.
-	 *
-	 * Le terrain est le seul a detenir tout ce qu'il faut : le relief affiche,
-	 * l'hydrologie, et la geometrie qui les relie.
-	 */
-	void ProbeRiverSection();
-
 	/** Le materiau correspondant au mode d'apparence courant. */
 	UMaterialInterface* ChooseTerrainMaterial(const FWorldseedAppearance& Mode) const;
 
@@ -419,12 +413,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Ciel")
 	TObjectPtr<class UWorldseedSkyDriverComponent> SkyDriver;
 
-	/** La pose des nappes et des cours d'eau. */
+	/** La pose de l'ocean. */
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Eau")
 	TObjectPtr<class UWorldseedWaterComponent> Water;
-
-	/** Rivieres, lacs et cascades du monde charge. */
-	FWorldseedHydrology Hydrology;
 
 	/** Les 19 biomes du monde charge. */
 	FWorldseedBiomeMap Biomes;

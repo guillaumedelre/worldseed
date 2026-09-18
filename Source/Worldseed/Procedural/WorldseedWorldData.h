@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedBiomes.h"
-#include "Procedural/WorldseedHydrology.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedTexturePack.h"
 
@@ -13,11 +12,9 @@
  * le terrain.
  *
  * POURQUOI UNE STRUCTURE PLUTOT QUE DES PARAMETRES. Chaque grandeur ajoutee au
- * monde devait sinon l'etre a quatre signatures et a tous leurs appelants — et
- * l'hydrologie qui vient n'est meme pas une grille de plus : ce sont des
- * polylignes de rivieres et des contours de lacs, qui n'entrent dans aucun
- * TArray<float> supplementaire. Ici une grandeur s'ajoute a un seul endroit, et
- * les etapes qui ne la connaissent pas la transportent sans y toucher.
+ * monde devait sinon l'etre a quatre signatures et a tous leurs appelants. Ici
+ * une grandeur s'ajoute a un seul endroit, et les etapes qui ne la connaissent
+ * pas la transportent sans y toucher.
  */
 struct WORLDSEED_API FWorldseedWorldData
 {
@@ -53,18 +50,7 @@ struct WORLDSEED_API FWorldseedWorldData
 	 */
 	TArray<float> Continentality;
 
-	/**
-	 * Rivieres, lacs et cascades.
-	 *
-	 * PRESENTE ICI MAIS JAMAIS SERIALISEE : WorldseedCache n'ecrit que les
-	 * grilles nommees plus haut. L'hydrologie derive du relief et de la pluie,
-	 * et se recalcule en quelques dizaines de millisecondes au chargement — bien
-	 * moins cher que de faire entrer des polylignes dans un format de fichier
-	 * qui ne connait que des nombres.
-	 */
-	FWorldseedHydrology Hydrology;
-
-	/** Les 19 biomes. Comme l'hydrologie, recalcules plutot que serialises. */
+	/** Les 19 biomes. Recalcules a chaque chargement plutot que serialises. */
 	FWorldseedBiomeMap Biomes;
 
 	/**

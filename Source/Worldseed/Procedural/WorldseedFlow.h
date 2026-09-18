@@ -24,9 +24,10 @@ struct WORLDSEED_API FWorldseedFlow
 	 *
 	 * ELLE NE DESIGNE PAS UN LAC. Combler une cuvette est une operation de
 	 * ROUTAGE : elle rend le terrain traversable par l'ecoulement, et ne dit
-	 * rien de la presence d'eau libre. C'est WorldseedLakes qui decide, par
-	 * composante connexe et sur des criteres de profondeur et d'etendue, ce qui
-	 * merite de devenir une nappe.
+	 * rien de la presence d'eau libre. Rien n'en tire de nappe depuis le
+	 * retrait de l'hydrologie, le 18 septembre 2026 : ce qui reste ici sert a
+	 * l'erosion, qui a besoin d'un terrain drainable pour son incision par
+	 * puissance de courant.
 	 */
 	TArray<float> LakeDepthM;
 };

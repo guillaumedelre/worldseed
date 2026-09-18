@@ -220,9 +220,6 @@ private:
 	/** Continentalite, pour l'ecart jour/nuit du ciel en jeu. */
 	TArray<float> CachedContinentality;
 
-	/** Rivieres, lacs et cascades du monde affiche. */
-	FWorldseedHydrology CachedHydrology;
-
 	/** Carte des biomes du monde affiche. */
 	FWorldseedBiomeMap CachedBiomes;
 

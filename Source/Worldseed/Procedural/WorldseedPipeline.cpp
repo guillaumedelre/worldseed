@@ -1,19 +1,7 @@
 // Worldseed - chaine de generation du monde, pilotee par world_rules.json.
 
-	/**
-	 * Largeur de cuvette au plus, en metres.
-	 *
-	 * Mesuree APRES creusement : un chenal bien creuse rend ce plafond sans
-	 * objet, puisque les berges arretent la sonde d'elles-memes. S'il mord
-	 * encore, c'est que le troncon est une mare et non un cours — le releve
-	 * "a la butee" le dit, graine par graine.
-	 */
-	constexpr float MaxRiverBasinWidthM = 600.0f;
-
 #include "Procedural/WorldseedPipeline.h"
 
-#include "Procedural/WorldseedRiverCarve.h"
-#include "Procedural/WorldseedRivers.h"
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedErosion.h"
 #include "Procedural/WorldseedGrid.h"
@@ -34,6 +22,15 @@ namespace WorldseedPipeline
 			static TStrongObjectPtr<UWorldseedRules> Instance;
 			return Instance;
 		}
+
+		/**
+		 * Pas de masque d'eau douce : il n'y a plus d'hydrologie.
+		 *
+		 * WorldseedBiomes::Classify degrade proprement sur un tableau vide —
+		 * voir bHasLakes / bHasRivers : les biomes se classent alors sur le
+		 * climat seul, et l'axe de couverture ne porte plus que l'ocean.
+		 */
+		const TArray<bool> NoWaterMask;
 	}
 
 	UWorldseedRules* GetRules(FString& OutError)
@@ -114,27 +111,6 @@ namespace WorldseedPipeline
 			}
 			Out.LandRatio = static_cast<float>(CachedLand) / FMath::Max(Geometry.CellCount(), 1);
 
-			{
-				FString HydError;
-				if (const UWorldseedRules* HydRules = GetRules(HydError))
-				{
-					WorldseedHydrology::Generate(Out.ElevationM, Out.Climate.PrecipMm,
-						Geometry, FWorldseedHydrologyRules::FromRules(*HydRules), Out.Hydrology);
-
-		// LE LIT SE CREUSE APRES L'HYDROLOGIE, ET AVANT LES BIOMES.
-		//
-		// Apres, parce qu'il a besoin du trace et de la surface libre. Avant,
-		// parce que la classification lit l'altitude : le chenal creuse doit
-		// porter sa couverture d'eau, pas la bande qui le debordait.
-		//
-		// Le cache est ecrit AVANT l'hydrologie : le creusement se rejoue donc
-		// a chaque chargement, sur les deux chemins. Il est idempotent, il ne
-		// fait que descendre le relief.
-		WorldseedRiverCarve::Apply(Out.Hydrology.Rivers, Out.Hydrology.LakeMask,
-			Geometry, FWorldseedCarveRules(), Out.ElevationM);
-				}
-			}
-
 			// --- biomes ---------------------------------------------------------
 			// La temperature du mois le plus chaud n'est pas transportee : elle se
 			// RECONSTITUE exactement, le modele climatique la definissant comme la
@@ -161,7 +137,7 @@ namespace WorldseedPipeline
 				{
 					WorldseedBiomes::Classify(Geometry, Out.ElevationM,
 						Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
-						Out.Hydrology.LakeMask, Out.Hydrology.RiverMask,
+						NoWaterMask, NoWaterMask,
 						FWorldseedBiomeRules::FromRules(*BioRules), Out.Biomes);
 				}
 			}
@@ -281,21 +257,6 @@ namespace WorldseedPipeline
 		ToCache.Continentality = Out.Climate.Continentality;
 		WorldseedCache::Save(CacheKey, Rules->SourceHash, ToCache);
 
-		WorldseedHydrology::Generate(Out.ElevationM, Out.Climate.PrecipMm, Geometry,
-			FWorldseedHydrologyRules::FromRules(*Rules), Out.Hydrology);
-
-		// LE LIT SE CREUSE APRES L'HYDROLOGIE, ET AVANT LES BIOMES.
-		//
-		// Apres, parce qu'il a besoin du trace et de la surface libre. Avant,
-		// parce que la classification lit l'altitude : le chenal creuse doit
-		// porter sa couverture d'eau, pas la bande qui le debordait.
-		//
-		// Le cache est ecrit AVANT l'hydrologie : le creusement se rejoue donc
-		// a chaque chargement, sur les deux chemins. Il est idempotent, il ne
-		// fait que descendre le relief.
-		WorldseedRiverCarve::Apply(Out.Hydrology.Rivers, Out.Hydrology.LakeMask,
-			Geometry, FWorldseedCarveRules(), Out.ElevationM);
-
 		// --- biomes ---------------------------------------------------------
 		// La temperature du mois le plus chaud n'est pas transportee : elle se
 		// RECONSTITUE exactement, le modele climatique la definissant comme la
@@ -322,7 +283,7 @@ namespace WorldseedPipeline
 			{
 				WorldseedBiomes::Classify(Geometry, Out.ElevationM,
 					Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
-					Out.Hydrology.LakeMask, Out.Hydrology.RiverMask,
+					NoWaterMask, NoWaterMask,
 					FWorldseedBiomeRules::FromRules(*BioRules), Out.Biomes);
 			}
 		}

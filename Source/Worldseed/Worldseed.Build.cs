@@ -20,9 +20,9 @@ public class Worldseed : ModuleRules
 			"UMG",
 			"Slate",
 			"ProceduralMeshComponent",
-			// Ocean et lacs : vagues, caustiques, rendu sous-marin, flottabilite
-			// et nage, qu'un maillage nu n'aura jamais. Les rivieres restent
-			// procedurales : une spline se casse sur une cascade.
+			// Ocean : vagues, caustiques, rendu sous-marin, flottabilite et
+			// nage, qu'un maillage nu n'aura jamais. C'est le seul corps d'eau
+			// du monde depuis le retrait de l'hydrologie, le 18 septembre 2026.
 			"Water",
 			"SlateCore",
 			"Json"

@@ -320,13 +320,22 @@ namespace WorldseedBiomes
 		}
 
 		// --- eau douce dilatee, pour le marais -----------------------------------
+		//
+		// LE TABLEAU RESTE, LE CALCUL NON. L'hydrologie a ete retiree du
+		// generateur le 18 septembre 2026 : les deux masques arrivent vides, le
+		// marais devient inatteignable, et dilater deux millions de cellules
+		// toutes fausses coute trois passes pour rien. La garde laisse la regle
+		// en place pour le jour ou une source d'eau douce reviendra.
 		TArray<bool> NearFresh;
 		NearFresh.Init(false, Count);
-		for (int32 I = 0; I < Count; ++I)
+		if (bHasLakes || bHasRivers)
 		{
-			NearFresh[I] = (bHasLakes && LakeMask[I]) || (bHasRivers && RiverMask[I]);
+			for (int32 I = 0; I < Count; ++I)
+			{
+				NearFresh[I] = (bHasLakes && LakeMask[I]) || (bHasRivers && RiverMask[I]);
+			}
+			Dilate(NearFresh, NX, NY, 3);
 		}
-		Dilate(NearFresh, NX, NY, 3);
 
 		// --- classification ------------------------------------------------------
 		ParallelFor(NY, [&](int32 Row)
@@ -477,14 +486,15 @@ namespace WorldseedBiomes
 		for (int32 B = 0; B < BiomeCount; ++B) { Ranked.Add(B); }
 		Ranked.Sort([&Out](int32 A, int32 B) { return Out.LandSharePct[A] > Out.LandSharePct[B]; });
 
+		// La couverture d'eau douce ne figure plus au journal : sans hydrologie
+		// elle vaudrait zero a chaque generation, et un zero perpetuel se lit
+		// comme une panne. L'ocean, lui, n'apparait pas dans CoverSharePct, qui
+		// ne compte que les cellules emergees.
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] biomes : %s %.1f %%, %s %.1f %%, %s %.1f %%")
-			TEXT("  |  couverture : lac %.1f %%, riviere %.1f %%  (%.0f ms)"),
+			TEXT("[Worldseed] biomes : %s %.1f %%, %s %.1f %%, %s %.1f %%  (%.0f ms)"),
 			Name(static_cast<EWorldseedBiome>(Ranked[0])), Out.LandSharePct[Ranked[0]],
 			Name(static_cast<EWorldseedBiome>(Ranked[1])), Out.LandSharePct[Ranked[1]],
 			Name(static_cast<EWorldseedBiome>(Ranked[2])), Out.LandSharePct[Ranked[2]],
-			Out.CoverSharePct[static_cast<int32>(EWorldseedCover::Lake)],
-			Out.CoverSharePct[static_cast<int32>(EWorldseedCover::River)],
 			(FPlatformTime::Seconds() - StartTime) * 1000.0);
 	}
 }

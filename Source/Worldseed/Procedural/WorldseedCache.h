@@ -24,8 +24,9 @@
  *   3 - flou par boites iterees, erosion thermique en collecte, quantile par selection
  *   4 - amplitude saisonniere transportee (le relief lui-meme est inchange)
  *   5 - continentalite transportee, pour l'ecart jour/nuit du ciel
+ *   6 - hydrologie retiree : plus de creusement de lit apres chargement
  */
-#define WORLDSEED_PIPELINE_VERSION 5
+#define WORLDSEED_PIPELINE_VERSION 6
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

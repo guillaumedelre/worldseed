@@ -1,10 +1,9 @@
-// Worldseed - pose de l'ocean, des lacs et des cours d'eau dans le monde.
+// Worldseed - pose de l'ocean dans le monde.
 
 #pragma once
 
 #include "Components/ActorComponent.h"
 #include "CoreMinimal.h"
-#include "Procedural/WorldseedHydrology.h"
 #include "Procedural/WorldseedWaterBodies.h"
 #include "Procedural/WorldseedRules.h"
 
@@ -14,17 +13,16 @@ class UMaterialInterface;
 class UProceduralMeshComponent;
 
 /**
- * Donne un corps aux nappes et aux cours d'eau calcules par l'hydrologie.
+ * Donne un corps a la mer.
  *
- * IL NE CALCULE RIEN : il recoit un FWorldseedHydrology tout fait et le
- * transforme en maillages. Ce decoupage permet de sonder l'hydrologie sans
- * moteur de rendu, et de changer la representation sans toucher a l'algorithme.
+ * IL NE CALCULE RIEN : l'altitude zero EST le niveau de la mer, par
+ * construction — toute la chaine de generation cale son quantile dessus. Ce
+ * composant n'a donc rien a chercher, il pose une surface a zero et la confie
+ * au plugin Water.
  *
- * TOUT EST CONSTRUIT EN UNE FOIS, sans streaming. Le calcul le justifie :
- * soixante rivieres de cent vingt points et une quarantaine de lacs tiennent
- * dans quelques dizaines de milliers de triangles — moins qu'un seul chunk de
- * terrain a pleine resolution. Decouper l'eau en morceaux ajouterait de la
- * machinerie pour rien.
+ * IL N'Y A PLUS DE LACS NI DE RIVIERES. L'hydrologie a ete retiree du
+ * generateur le 18 septembre 2026 ; voir CLAUDE.md. Ce qui reste ici est la
+ * mer, et le maillage de secours qui la dessine si le plugin ne repond pas.
  */
 UCLASS(ClassGroup = (Worldseed), meta = (BlueprintSpawnableComponent))
 class WORLDSEED_API UWorldseedWaterComponent : public UActorComponent
@@ -35,11 +33,11 @@ public:
 	UWorldseedWaterComponent();
 
 	/**
-	 * Confie l'ocean et les lacs au plugin Water d'Unreal.
+	 * Confie l'ocean au plugin Water d'Unreal.
 	 *
 	 * On y gagne les vagues, les caustiques, le rendu sous-marin, la
 	 * flottabilite et la nage. Faux, ou si le plugin ne repond pas, on retombe
-	 * sur des nappes en maillage procedural : correctes, mais inertes.
+	 * sur une nappe en maillage procedural : correcte, mais inerte.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
 	bool bUseWaterPlugin = true;
@@ -47,44 +45,6 @@ public:
 	/** Pose l'ocean : un plan a l'altitude zero, qui est le niveau de la mer. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
 	bool bBuildOcean = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	bool bBuildLakes = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	bool bBuildRivers = true;
-
-	/**
-	 * Donne aux cascades leur propre maillage.
-	 *
-	 * ELLES EXISTENT DEJA DANS LE RUBAN DES RIVIERES — le trace suit la ligne de
-	 * plus grande pente, donc il passe forcement par la chute. Mais noyees dans
-	 * le cours, elles s'y lisent comme une nappe tres inclinee et non comme une
-	 * chute. Les sortir dans un maillage a part permet de les eclairer
-	 * autrement : ecume blanche plutot qu'eau calme.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	bool bBuildWaterfalls = true;
-
-	/**
-	 * Elargissement de la chute par rapport au lit, sans dimension.
-	 *
-	 * Une chute s'evase en tombant : garder la largeur du lit donnerait un
-	 * ruban qui se contente de pencher.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau",
-		meta = (ClampMin = "1.0", EditCondition = "bBuildWaterfalls"))
-	float WaterfallWidthScale = 1.6f;
-
-	/**
-	 * Enfoncement du lit sous le terrain, en metres.
-	 *
-	 * Le ruban suit le relief ; sans un leger retrait, il coincide avec le sol
-	 * et les deux surfaces clignotent l'une a travers l'autre.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau",
-		meta = (ClampMin = "0.0"))
-	float RiverBedOffsetM = 0.15f;
 
 	/** Nombre de subdivisions du plan d'ocean, par cote. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau",
@@ -94,25 +54,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
 	TObjectPtr<UMaterialInterface> OceanMaterial;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	TObjectPtr<UMaterialInterface> LakeMaterial;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	TObjectPtr<UMaterialInterface> RiverMaterial;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	TObjectPtr<UMaterialInterface> WaterfallMaterial;
-
 	/**
-	 * Construit toutes les surfaces d'eau du monde.
+	 * Construit la surface d'ocean.
 	 *
-	 * SampleHeightM rend l'altitude du terrain en metres pour une cellule
-	 * donnee : les rivieres en ont besoin pour epouser le fond de vallee.
+	 * ElevationM ne sert qu'a UNE chose, mais elle est essentielle : le point
+	 * le plus bas du monde, qui donne son epaisseur a l'ocean. Voir
+	 * WorldseedWaterBodies::Build.
 	 */
-	void Build(const FWorldseedGeometry& Geometry, const FWorldseedHydrology& Hydrology,
-		const TArray<float>& ElevationM, float HeightExaggeration);
+	void Build(const FWorldseedGeometry& Geometry, const TArray<float>& ElevationM,
+		float HeightExaggeration);
 
-	/** Efface toutes les surfaces posees. */
+	/** Efface la surface posee. */
 	void Clear();
 
 	/**
@@ -134,16 +86,6 @@ public:
 	float HealthDelayS = 5.0f;
 
 	/**
-	 * Trace le reseau hydrographique en lignes de debogage.
-	 *
-	 * Bleu : confie au plugin. Orange : maillage procedural. Blanc : largeur
-	 * du lit. Rouge : la surface d'eau passe AU-DESSUS du terrain. Vert : elle
-	 * passe dessous. Voir WorldseedWaterDebug.h.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Eau")
-	bool bDrawRiverTrace = true;
-
-	/**
 	 * Delai minimal entre deux reconstructions de la texture d'information.
 	 *
 	 * ELLE NE SE RECONSTRUIT PAS GRATUITEMENT : le moteur y redessine tout le
@@ -163,45 +105,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Worldseed|Eau")
 	int32 GetWaterSectionCount() const { return SectionCount; }
 
-	/**
-	 * Position monde du sommet de chaque cascade, la plus haute d'abord.
-	 *
-	 * De quoi aller les voir sans les chercher : sur une grande carte, cent
-	 * quarante chutes se perdent dans le relief.
-	 */
-	UFUNCTION(BlueprintPure, Category = "Worldseed|Eau")
-	const TArray<FVector>& GetWaterfallLocations() const { return WaterfallTops; }
-
 private:
 	/** Cree ou reutilise le composant de maillage d'un usage donne. */
 	UProceduralMeshComponent* EnsureMesh(FName Name,
 		TObjectPtr<UProceduralMeshComponent>& Slot, UMaterialInterface* Material);
 
 	void BuildOcean(const FWorldseedGeometry& Geometry);
-	void BuildLakes(const FWorldseedGeometry& Geometry,
-		const FWorldseedHydrology& Hydrology, float HeightExaggeration);
-	void BuildRivers(const FWorldseedGeometry& Geometry,
-		const FWorldseedHydrology& Hydrology, const TArray<float>& ElevationM,
-		float HeightExaggeration);
-
-	void BuildWaterfalls(const FWorldseedGeometry& Geometry,
-		const FWorldseedHydrology& Hydrology, const TArray<float>& ElevationM,
-		float HeightExaggeration);
 
 	UPROPERTY()
 	TObjectPtr<UProceduralMeshComponent> OceanMesh;
-
-	UPROPERTY()
-	TObjectPtr<UProceduralMeshComponent> LakeMesh;
-
-	UPROPERTY()
-	TObjectPtr<UProceduralMeshComponent> RiverMesh;
-
-	UPROPERTY()
-	TObjectPtr<UProceduralMeshComponent> WaterfallMesh;
-
-	/** Sommets des chutes, en coordonnees monde. */
-	TArray<FVector> WaterfallTops;
 
 	int32 SectionCount = 0;
 

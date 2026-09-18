@@ -1,12 +1,8 @@
-// Worldseed - ocean et lacs confies au plugin Water d'Unreal.
+// Worldseed - l'ocean confie au plugin Water d'Unreal.
 
 #include "Procedural/WorldseedWaterBodies.h"
 
-#include "Procedural/WorldseedPolyline.h"
-#include "Procedural/WorldseedRiverReaches.h"
-#include "Procedural/WorldseedRivers.h"
 
-#include "Algo/Reverse.h"
 
 #include "Components/SceneComponent.h"
 #include "UObject/UnrealType.h"
@@ -15,12 +11,8 @@
 #include "Engine/World.h"
 #include "Components/StaticMeshComponent.h"
 #include "WaterBodyComponent.h"
-#include "WaterBodyLakeActor.h"
 #include "WaterBodyOceanActor.h"
 #include "WaterBodyOceanComponent.h"
-#include "WaterBodyRiverActor.h"
-#include "WaterBodyRiverComponent.h"
-#include "WaterSplineMetadata.h"
 #include "WaterSplineComponent.h"
 #include "WaterZoneActor.h"
 #include "WaterMeshComponent.h"
@@ -35,77 +27,6 @@ namespace WorldseedWaterBodies
 		constexpr float MetersToCm = 100.0f;
 
 		/**
-		 * Points conserves par rivage : un budget PROPORTIONNEL, pas fixe.
-		 *
-		 * Une spline n'est pas une polyligne, elle interpole — mais le nombre
-		 * de points qu'il lui faut depend de la LONGUEUR du rivage, pas d'une
-		 * constante. Trente-deux suffisent a une mare ronde de trois cents
-		 * metres de tour ; sur un ruban sinueux de sept kilometres, cela fait
-		 * un point tous les deux cent trente metres, et la reduction ecrase les
-		 * deux berges l'une sur l'autre. Le polygone garde son perimetre et
-		 * perd son aire : il se triangule encore, mais ne se DILATE plus, et
-		 * l'eau s'arrete net au bord de la nappe.
-		 *
-		 * Ce cas n'a rien d'exotique — une vallee comblee par le routage est
-		 * exactement cela : longue, etroite, et classee comme nappe.
-		 */
-		constexpr float MetresPerShorePoint = 60.0f;
-		constexpr int32 MinLakeSplinePoints = 8;
-		constexpr int32 MaxLakeSplinePoints = 192;
-
-		/**
-		 * Ecart minimal entre deux points de rivage, en cellules.
-		 *
-		 * Un segment de longueur nulle n'a pas de direction : l'offset qui
-		 * dilate la nappe ne saurait pas de quel cote le pousser.
-		 */
-		constexpr float MinShoreSpacingCells = 0.25f;
-
-		/**
-		 * Marge de l'enveloppe vers l'exterieur, en cellules.
-		 *
-		 * Elle doit couvrir l'ecart entre le relief de simulation, sur lequel
-		 * le niveau du lac est calcule, et le relief AFFICHE, qui recoit son
-		 * detail fractal apres l'hydrologie. Mesure : jusqu'a 6,7 m d'ecart
-		 * vertical, soit quelques cellules au sol sur une berge douce.
-		 *
-		 * Trop serree, le mur d'eau revient. Trop large, une depression voisine
-		 * plus basse que la nappe entre dans l'enveloppe et se remplit a tort.
-		 */
-		constexpr float ShoreMarginCells = 3.0f;
-
-		/**
-		 * Distance a laquelle deux aretes non voisines se genent, en cellules.
-		 *
-		 * TRES PETIT, ET C'EST TOUT L'ENJEU. Sur une nappe etroite les deux
-		 * berges sont proches par nature : c'est sa forme. Un seuil genereux —
-		 * un quart de cellule a suffi — les prend pour un defaut, recoud le lac
-		 * en travers et le fait disparaitre. Une nappe perdue coute plus cher
-		 * qu'un rivage un peu raide.
-		 */
-		constexpr float ShoreTouchEpsilonCells = 0.02f;
-
-		/**
-		 * Epaisseur plancher d'une nappe, en centimetres.
-		 *
-		 * L'hydrologie retient des lacs d'a peine quelques decimetres. Leur
-		 * volume de collision serait alors si mince que la sphere de detection
-		 * du plugin le traverserait entre deux images : le voile sous-marin
-		 * clignoterait au lieu de s'installer. Deux metres coutent moins cher
-		 * qu'un clignotement.
-		 */
-		constexpr float MinLakeDepthCm = 200.0f;
-
-		/**
-		 * Epaisseur plafond d'une nappe, en centimetres.
-		 *
-		 * Cent metres : aucune plongee de joueur n'ira l'eprouver, et cela
-		 * garde le plancher de l'intervalle de hauteurs d'eau a une echelle
-		 * comparable au relief plutot qu'a celle de la carte.
-		 */
-		constexpr float MaxLakeDepthCm = 10000.0f;
-
-		/**
 		 * Bornes de l'epaisseur de l'ocean, en centimetres.
 		 *
 		 * Elle sert un seul but : que l'intervalle de hauteurs d'eau partage
@@ -116,53 +37,6 @@ namespace WorldseedWaterBodies
 		 */
 		constexpr float MinOceanDepthCm = 5000.0f;    // cinquante metres
 		constexpr float MaxOceanDepthCm = 50000.0f;   // cinq cents metres
-
-		/**
-		 * Pente au-dela de laquelle une spline ne suit plus, en degres.
-		 *
-		 * Ce n'est pas une preference de rendu : au-dela, la courbe quitte le
-		 * lit et l'eau flotte dans le vide. Trente degres laisse passer les
-		 * rapides et coupe aux ressauts.
-		 */
-		constexpr float MaxSplineSlopeDeg = 30.0f;
-
-		/** En deca, un bief ne vaut pas un acteur. */
-		constexpr int32 MinReachPoints = 6;
-
-		/**
-		 * Nombre de corps de riviere au plus.
-		 *
-		 * Chacun porte sa spline, son maillage et ses composants de collision.
-		 * Ce monde compte jusqu'a soixante cours, decoupes en biefs : sans
-		 * quota, la pose se compterait en centaines d'acteurs.
-		 */
-		constexpr int32 MaxRiverBodies = 96;
-
-		/** Planchers de lit, en metres. Une largeur nulle ne dessine rien. */
-		constexpr float MinRiverWidthM = 2.0f;
-		constexpr float MinRiverDepthM = 0.5f;
-
-		/**
-		 * Rayon dont l'eau deborde de son lit pour aller chercher la berge.
-		 *
-		 * LA SPLINE NE CONNAIT PAS LE RELIEF, et c'est tres bien ainsi : ce
-		 * n'est pas elle qui decide ou l'eau s'arrete. La texture
-		 * d'information compare, pixel par pixel, la hauteur d'eau a celle du
-		 * sol, et l'eau se dessine partout ou la premiere depasse la seconde.
-		 *
-		 * Encore faut-il que le corps ait INSCRIT une hauteur d'eau a cet
-		 * endroit. Hors de son lit il n'inscrit rien, et l'eau s'arrete net au
-		 * bord du ruban — un cordon pose sur le terrain au lieu d'un cours
-		 * loge dans sa vallee. ShapeDilation est ce qui repousse cette
-		 * inscription vers l'exterieur.
-		 *
-		 * Le defaut du plugin, quarante metres, vise des rivieres posees a la
-		 * main dans un terrain sculpte pour elles. Ici le relief est genere
-		 * avant le cours : il faut de quoi traverser une vallee.
-		 */
-		constexpr float RiverDilationPerWidth = 20.0f;
-		constexpr float MinRiverDilationCm = 20000.0f;   // deux cents metres
-		constexpr float MaxRiverDilationCm = 60000.0f;   // six cents metres
 
 		/**
 		 * Cote de l'ile centrale de l'ocean, en centimetres.
@@ -309,81 +183,6 @@ namespace WorldseedWaterBodies
 			}
 		}
 
-
-		/**
-		 * Remplit une courbe de metadonnees de spline, un point par sommet.
-		 *
-		 * SANS CELA LA RIVIERE EST INVISIBLE, et rien ne le signale.
-		 *
-		 * Le maillage lit sa largeur dans RiverWidth, indexee par la CLE
-		 * D'ENTREE de la spline — soit le rang du point. Or SetSplinePoints ne
-		 * touche pas aux metadonnees, et le seul code du plugin qui les
-		 * redimensionne, UWaterSplineMetadata::Fixup, tient tout entier dans un
-		 * #if WITH_EDITORONLY_DATA. Une courbe vide s'evalue a zero : la
-		 * riviere se construit, s'enregistre, se declare en bonne sante, et
-		 * n'a pas un pixel de large.
-		 */
-		void FillCurve(FInterpCurveFloat& Curve, const TArray<float>& Values)
-		{
-			Curve.Points.Reset(Values.Num());
-			for (int32 I = 0; I < Values.Num(); ++I)
-			{
-				Curve.Points.Emplace(static_cast<float>(I), Values[I],
-					0.0f, 0.0f, CIM_Linear);
-			}
-		}
-
-		/** Largeur, profondeur, courant et son, le long du bief. */
-		void ApplyRiverProfile(UWaterBodyRiverComponent* Component,
-			const TArray<float>& WidthsCm, const TArray<float>& DepthsCm)
-		{
-			UWaterSplineMetadata* const Meta =
-				Component ? Component->GetWaterSplineMetadata() : nullptr;
-			if (!Meta)
-			{
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] riviere sans metadonnees : largeur nulle"));
-				return;
-			}
-
-			FillCurve(Meta->RiverWidth, WidthsCm);
-			FillCurve(Meta->Depth, DepthsCm);
-
-			// Le courant et le son ne changent pas le long d'un bief calme :
-			// une seule valeur suffit, mais la courbe doit exister.
-			TArray<float> Uniform;
-			Uniform.Init(1.0f, WidthsCm.Num());
-			FillCurve(Meta->WaterVelocityScalar, Uniform);
-			FillCurve(Meta->AudioIntensity, Uniform);
-		}
-
-		/**
-		 * Les deux materiaux de raccord aux autres nappes.
-		 *
-		 * Une riviere qui se jette dans l'ocean ou dans un lac n'y entre pas
-		 * franche : le plugin fond les deux surfaces l'une dans l'autre, et ces
-		 * materiaux-la sont ce avec quoi il le fait. Absents, la jonction reste
-		 * une arete nette — le meme genre de defaut que les rivages droits
-		 * qu'on a deja corriges.
-		 */
-		void ApplyRiverTransitions(UWaterBodyRiverComponent* Component)
-		{
-			if (!Component)
-			{
-				return;
-			}
-
-			if (UMaterialInterface* M = Load(TEXT("/Water/Materials/WaterSurface/Transitions/")
-				TEXT("Water_Material_River_To_Ocean_Transition.Water_Material_River_To_Ocean_Transition")))
-			{
-				Component->SetOceanTransitionMaterial(M);
-			}
-			if (UMaterialInterface* M = Load(TEXT("/Water/Materials/WaterSurface/Transitions/")
-				TEXT("Water_Material_River_To_Lake_Transition.Water_Material_River_To_Lake_Transition")))
-			{
-				Component->SetLakeTransitionMaterial(M);
-			}
-		}
 		/**
 		 * Applique une forme a un corps d'eau.
 		 *
@@ -430,8 +229,7 @@ namespace WorldseedWaterBodies
 	}
 
 	bool Build(UWorld* World, const FWorldseedGeometry& Geometry,
-		const FWorldseedHydrology& Hydrology, float HeightExaggeration,
-		float SeabedM, FWorldseedWaterBodies& Out)
+		float HeightExaggeration, float SeabedM, FWorldseedWaterBodies& Out)
 	{
 		Clear(Out);
 
@@ -444,12 +242,6 @@ namespace WorldseedWaterBodies
 
 		const float WidthCm = Geometry.WidthM() * MetersToCm;
 		const float HeightCm = Geometry.HeightM * MetersToCm;
-		const float CellCm = Geometry.MetersPerPixel() * MetersToCm;
-		const FVector2D OriginCm(-WidthCm * 0.5f, -HeightCm * 0.5f);
-
-		FActorSpawnParameters Spawn;
-		Spawn.SpawnCollisionHandlingOverride =
-			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 		// --- la zone d'eau --------------------------------------------------
 		// Elle porte le quadtree qui dessine toutes les nappes. Son etendue
@@ -579,388 +371,6 @@ namespace WorldseedWaterBodies
 				MakeMovable(Out.Ocean.Get());
 			}
 		}
-
-		// --- les lacs -------------------------------------------------------
-		int32 ReversedShores = 0;
-		int32 UndoneCrossings = 0;
-		TArray<FVector> Points;
-		for (const FWorldseedLake& Lake : Hydrology.Lakes)
-		{
-			if (Lake.OutlinePx.Num() < 3)
-			{
-				continue;
-			}
-
-			// LE Z DE L'ACTEUR EST LE NIVEAU DE L'EAU.
-			//
-			// UpdateWaterHeight aplatit toute la spline sur la hauteur de
-			// l'acteur, et le maillage se construit en 2D locale : les points
-			// que j'y mets ne portent pas leur altitude. Un lac ne a zero se
-			// dessinait donc au niveau de la mer — enterre sous la montagne qui
-			// le contient, et parfaitement invisible.
-			const float SurfaceCm = Lake.SurfaceM * MetersToCm * HeightExaggeration;
-
-
-			// LA BORNE, ET NON LE RIVAGE.
-			//
-			// Un ocean n'a pas de forme : c'est un plan a une altitude, et le
-			// relief decoupe son trait de cote. Un lac est le meme phenomene a
-			// une autre altitude — son polygone ne dessine pas son rivage, il
-			// BORNE la zone ou son niveau s'applique.
-			//
-			// Mesure sur la graine 20260909 : sur la moitie des points du
-			// rivage extrait, le terrain affiche est DEJA sous la surface du
-			// lac, jusqu'a 6,7 m. Ce contour n'est donc pas la limite de l'eau,
-			// et le poursuivre au point pres ne dessinait rien.
-			//
-			// Une enveloppe convexe elargie fait la borne : simple par
-			// construction, sans pincement ni auto-intersection, quelques
-			// dizaines de points — et assez large pour que la dilatation du
-			// plugin ne soit plus necessaire. C'est elle qui echouait encore
-			// sur une nappe et laissait ce mur d'eau vertical au bord.
-			TArray<FVector2D> Shore = WorldseedPolyline::ConvexHull(Lake.OutlinePx);
-			if (Shore.Num() < 3)
-			{
-				continue;
-			}
-
-			// Marge vers l'exterieur depuis le centroide. Sur un convexe, cette
-			// operation ne peut pas creer de croisement — ce qui n'etait pas le
-			// cas du rentrage qu'elle remplace.
-			{
-				FVector2D Centre = FVector2D::ZeroVector;
-				for (const FVector2D& P : Shore) { Centre += P; }
-				Centre /= Shore.Num();
-
-				for (FVector2D& P : Shore)
-				{
-					P += (P - Centre).GetSafeNormal() * ShoreMarginCells;
-				}
-			}
-
-			const FWorldseedRing RingReduit = WorldseedPolyline::Measure(Shore);
-			const FWorldseedRing RingBrut = WorldseedPolyline::Measure(Lake.OutlinePx);
-
-			// LE CONTOUR DOIT ETRE SIMPLE, PAS SEULEMENT FERME.
-			//
-			// Une corde tendue par la reduction peut traverser une anse, et le
-			// rentrage peut pincer un passage etroit. Le resultat se triangule
-			// quand meme — la regle par enroulement l'encaisse — mais il ne se
-			// DILATE pas, et c'est la dilatation qui laisse l'eau rejoindre la
-			// berge.
-			UndoneCrossings += WorldseedPolyline::MakeSimple(
-				Shore, MinShoreSpacingCells, ShoreTouchEpsilonCells);
-			if (Shore.Num() < 4)
-			{
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] nappe de %.0f ha ecartee : rivage reduit a %d points"),
-					Lake.AreaHa, Shore.Num());
-				continue;
-			}
-
-			// LES QUATRE ETAPES, COTE A COTE.
-			//
-			// Tout est ici en CELLULES converties en metres par le meme
-			// facteur : c'est la comparaison entre colonnes qui porte
-			// l'information, pas la valeur absolue de l'une d'elles.
-			{
-				const FWorldseedRing RingSimple = WorldseedPolyline::Measure(Shore);
-				const float M = Geometry.MetersPerPixel();
-				const float HaPerCell2 = M * M / 10000.0f;
-
-				auto Ligne = [&](const TCHAR* Etape, const FWorldseedRing& R)
-				{
-					UE_LOG(LogTemp, Log,
-						TEXT("[Worldseed]     %-8s %4d pts  perimetre %6.0f m  aire %6.1f ha  ")
-						TEXT("ecart mini %5.1f m  %d alignes"),
-						Etape, R.Points, R.Perimeter * M,
-						FMath::Abs(R.SignedArea) * HaPerCell2,
-						R.MinVertexGap * M, R.Collinear);
-				};
-
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed]   rivage %d : masque %.0f ha, marge %.0f m"),
-					Out.Lakes.Num(), Lake.AreaHa,
-					ShoreMarginCells * Geometry.MetersPerPixel());
-				Ligne(TEXT("brut"), RingBrut);
-				Ligne(TEXT("enveloppe"), RingReduit);
-				Ligne(TEXT("simple"), RingSimple);
-			}
-
-			Points.Reset(Shore.Num());
-			for (const FVector2D& Cell : Shore)
-			{
-				Points.Emplace(
-					OriginCm.X + Cell.X * CellCm,
-					OriginCm.Y + Cell.Y * CellCm,
-					SurfaceCm);
-			}
-
-			// L'ACTEUR NAIT AU CENTRE DE SA NAPPE, ET NON A L'ORIGINE.
-			//
-			// La spline se stocke en coordonnees LOCALES, et c'est sur elles
-			// que le plugin dilate le contour. Un lac ne a l'origine porte donc
-			// une spline aux coordonnees du monde — jusqu'a huit cent mille
-			// centimetres sur une carte de seize kilometres. L'offset qui
-			// dilate travaille en virgule fixe : a cette echelle il ne rend
-			// plus rien, la triangulation du maillage dilate echoue faute
-			// d'entree, et l'eau s'arrete net au bord de la nappe.
-			//
-			// Centre sur son lac, le meme contour tient dans quelques
-			// centaines de metres.
-			FVector Middle(0.0f, 0.0f, SurfaceCm);
-			for (const FVector& P : Points)
-			{
-				Middle.X += P.X;
-				Middle.Y += P.Y;
-			}
-			Middle.X /= Points.Num();
-			Middle.Y /= Points.Num();
-
-			const FTransform At(FRotator::ZeroRotator, Middle);
-
-			AWaterBodyLake* Body = World->SpawnActorDeferred<AWaterBodyLake>(
-				AWaterBodyLake::StaticClass(), At, nullptr, nullptr,
-				ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-			if (!Body)
-			{
-				continue;
-			}
-
-			MakeMovable(Body);
-			Body->FinishSpawning(At);
-			MakeMovable(Body);
-
-			UWaterBodyComponent* Component = Body->GetWaterBodyComponent();
-			UWaterSplineComponent* Spline = Component ? Component->GetWaterSpline() : nullptr;
-			if (!Spline)
-			{
-				Body->Destroy();
-				continue;
-			}
-
-			// LA MESURE DOIT ETRE COHERENTE AVEC ELLE-MEME.
-			//
-			// Emprise, perimetre et aire sont pris sur LE MEME tableau, celui
-			// qu'on s'apprete a donner au plugin. Un contour ferme ne peut pas
-			// avoir un perimetre inferieur au double de sa plus grande
-			// dimension : si ces trois nombres se contredisent, c'est le
-			// nettoyage en amont qui a recousu le contour de travers, et non le
-			// plugin qui refuse un polygone sain.
-			{
-				FVector2D MinLocal(TNumericLimits<float>::Max());
-				FVector2D MaxLocal(TNumericLimits<float>::Lowest());
-				float ShortestCm = TNumericLimits<float>::Max();
-				double PerimeterCm = 0.0;
-				double TwiceAreaCm2 = 0.0;
-
-				for (int32 I = 0, N = Points.Num(); I < N; ++I)
-				{
-					const FVector2D Here(Points[I].X, Points[I].Y);
-					const FVector2D Next(Points[(I + 1) % N].X, Points[(I + 1) % N].Y);
-
-					MinLocal = FVector2D::Min(MinLocal, Here);
-					MaxLocal = FVector2D::Max(MaxLocal, Here);
-
-					const float EdgeCm = static_cast<float>((Next - Here).Size());
-					ShortestCm = FMath::Min(ShortestCm, EdgeCm);
-					PerimeterCm += EdgeCm;
-					TwiceAreaCm2 += (Here.X * Next.Y) - (Next.X * Here.Y);
-				}
-
-				const FVector2D Span = MaxLocal - MinLocal;
-				const double AreaHa = FMath::Abs(TwiceAreaCm2) * 0.5 / 1.0e8;
-
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed]   rivage %d : %d points, emprise %.0f x %.0f m, ")
-					TEXT("perimetre %.0f m, aire %.1f ha (masque %.0f ha), arete mini %.1f m"),
-					Out.Lakes.Num(), Points.Num(),
-					Span.X / MetersToCm, Span.Y / MetersToCm,
-					PerimeterCm / MetersToCm, AreaHa, Lake.AreaHa,
-					ShortestCm / MetersToCm);
-			}
-			Spline->SetSplinePoints(Points, ESplineCoordinateSpace::World, true);
-
-			// Un rivage est une boucle, pas un trajet.
-			Spline->SetClosedLoop(true, true);
-
-			// Des tangentes lineaires : une spline de Bezier sur un contour
-			// mesure au pixel deborderait dans les baies etroites.
-			for (int32 I = 0; I < Spline->GetNumberOfSplinePoints(); ++I)
-			{
-				Spline->SetSplinePointType(I, ESplinePointType::Linear, false);
-			}
-			Spline->UpdateSpline();
-
-			ApplyMaterials(Component,
-				TEXT("/Water/Materials/WaterSurface/Water_Material_Lake.Water_Material_Lake"),
-				TEXT("/Water/Materials/WaterSurface/LODs/Water_Material_Lake_LOD.Water_Material_Lake_LOD"));
-
-			// EPAISSEUR DE LA NAPPE, ET NON DECOR.
-			//
-			// Elle donne sa hauteur au volume de collision du lac, qui descend
-			// de ChannelDepth sous la surface. Le plugin la laisse a ZERO tant
-			// qu'on ne sculpte pas de paysage avec : le volume devient une
-			// feuille posee sur l'eau, et tout ce qui demande d'etre DEDANS —
-			// le voile sous-marin, la nage, la flottabilite — s'eteint des le
-			// premier metre de plongee.
-			//
-			// Elle se paie en PRECISION, en revanche : elle descend les bornes
-			// du corps, donc le plancher de l'intervalle ou la texture
-			// d'information normalise toutes les hauteurs d'eau (voir l'ocean
-			// plus haut). La profondeur reelle d'un lac reste sans commune
-			// mesure avec l'etendue de la carte, mais un bassin aberrant ne
-			// doit pas pouvoir elargir seul l'intervalle commun : d'ou le
-			// plafond.
-			Component->CurveSettings.ChannelDepth = FMath::Clamp(
-				Lake.MaxDepthM * MetersToCm * HeightExaggeration,
-				MinLakeDepthCm, MaxLakeDepthCm);
-
-			PushShape(Component);
-			MakeMovable(Body);
-			Out.Lakes.Add(Body);
-		}
-
-
-
-		if (ReversedShores > 0 || UndoneCrossings > 0)
-		{
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] lacs : %d rivages sur %d retournes, %d croisements defaits"),
-				ReversedShores, Out.Lakes.Num(), UndoneCrossings);
-		}
-		// --- les biefs calmes, confies au plugin ---------------------------
-		{
-			TArray<FWorldseedReach> Reaches;
-			WorldseedRiverReaches::Split(Hydrology.Rivers, Geometry,
-				MaxSplineSlopeDeg, MinReachPoints, Reaches);
-
-			// Les plus longs d'abord : si le quota tranche, il doit garder ce
-			// qui se parcourt.
-			Reaches.Sort([](const FWorldseedReach& A, const FWorldseedReach& B)
-				{ return A.Num() > B.Num(); });
-			if (Reaches.Num() > MaxRiverBodies)
-			{
-				Reaches.SetNum(MaxRiverBodies);
-			}
-
-			TArray<FVector> ReachPoints;
-			TArray<float> Widths;
-			TArray<float> Depths;
-
-			for (const FWorldseedReach& Reach : Reaches)
-			{
-				const FWorldseedRiver& River = Hydrology.Rivers[Reach.RiverIndex];
-
-				// UNE RIVIERE N'EST PAS PLATE : le composant l'affirme par un
-				// check(!IsFlatSurface()). Sa spline garde donc le Z de chaque
-				// point, et l'acteur peut rester a l'origine — la ou un lac
-				// devait naitre a la hauteur de sa nappe.
-				AWaterBodyRiver* const Body = World->SpawnActorDeferred<AWaterBodyRiver>(
-					AWaterBodyRiver::StaticClass(), FTransform::Identity, nullptr, nullptr,
-					ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-				if (!Body)
-				{
-					continue;
-				}
-
-				MakeMovable(Body);
-				Body->FinishSpawning(FTransform::Identity);
-				MakeMovable(Body);
-
-				UWaterBodyRiverComponent* const Component =
-					Cast<UWaterBodyRiverComponent>(Body->GetWaterBodyComponent());
-				UWaterSplineComponent* const Spline =
-					Component ? Component->GetWaterSpline() : nullptr;
-				if (!Spline)
-				{
-					Body->Destroy();
-					continue;
-				}
-
-				ReachPoints.Reset(Reach.Num());
-				Widths.Reset(Reach.Num());
-				Depths.Reset(Reach.Num());
-
-				float DeepestM = 0.0f;
-				for (int32 I = Reach.First; I <= Reach.Last; ++I)
-				{
-					const FVector2D& P = River.PointsPx[I];
-					ReachPoints.Emplace(
-						OriginCm.X + P.X * CellCm,
-						OriginCm.Y + P.Y * CellCm,
-						River.SurfaceM[I] * MetersToCm * HeightExaggeration);
-
-					// L'EMPRISE, ET NON LE LIT.
-					//
-					// Le corps d'eau ne dessine de l'eau que dans son emprise.
-					// La dilatation ne l'etend pas : son shader enfonce sous le
-					// sol toute eau dilatee qui passerait au-dessus du terrain.
-					// Pour qu'un cours remplisse la cuvette qu'il traverse, c'est
-					// donc sa LARGEUR qui doit valoir celle de la cuvette.
-					//
-					// Largeur TOTALE : l'en-tete du plugin annonce "from center
-					// in each direction", mais son maillage divise par deux ce
-					// qu'il lit. On suit le code.
-					const float BasinM = River.BasinWidthM.IsValidIndex(I)
-						? River.BasinWidthM[I] : 0.0f;
-					Widths.Add(FMath::Max3(River.WidthM[I], BasinM, MinRiverWidthM)
-						* MetersToCm);
-
-					const float DepthM = River.DepthM.IsValidIndex(I)
-						? River.DepthM[I] : MinRiverDepthM;
-					Depths.Add(FMath::Max(DepthM, MinRiverDepthM) * MetersToCm);
-					DeepestM = FMath::Max(DeepestM, DepthM);
-				}
-
-				Spline->SetSplinePoints(ReachPoints, ESplineCoordinateSpace::World, false);
-				Spline->SetClosedLoop(false, false);
-
-				// DES TANGENTES BRIDEES, ET NON LIBRES. Une Bezier libre
-				// depasse dans les meandres serres : le lit sortirait de son
-				// fond a chaque coude. La variante bridee garde la courbe
-				// dans l'enveloppe de ses points tout en restant lisse.
-				for (int32 I = 0; I < Spline->GetNumberOfSplinePoints(); ++I)
-				{
-					Spline->SetSplinePointType(I, ESplinePointType::CurveClamped, false);
-				}
-				Spline->UpdateSpline();
-
-				ApplyRiverProfile(Component, Widths, Depths);
-
-				// L'eau va chercher la berge : voir RiverDilationPerWidth.
-				// Un lit large draine une vallee large, d'ou la proportion.
-				float MeanWidthM = 0.0f;
-				for (const float WidthCmValue : Widths)
-				{
-					MeanWidthM += WidthCmValue / MetersToCm;
-				}
-				MeanWidthM /= FMath::Max(Widths.Num(), 1);
-
-				Component->ShapeDilation = FMath::Clamp(
-					MeanWidthM * RiverDilationPerWidth * MetersToCm,
-					MinRiverDilationCm, MaxRiverDilationCm);
-
-				ApplyMaterials(Component,
-					TEXT("/Water/Materials/WaterSurface/Water_Material_River.Water_Material_River"),
-					TEXT("/Water/Materials/WaterSurface/LODs/Water_Material_River_LOD.Water_Material_River_LOD"));
-				ApplyRiverTransitions(Component);
-
-				// Epaisseur du lit : elle donne sa hauteur aux bornes du corps,
-				// et participe donc a l'intervalle commun. Bornee pour les
-				// memes raisons que l'ocean et les lacs.
-				Component->CurveSettings.ChannelDepth = FMath::Clamp(
-					DeepestM * MetersToCm * HeightExaggeration,
-					MinLakeDepthCm, MaxLakeDepthCm);
-
-				PushShape(Component);
-				MakeMovable(Body);
-				Out.Rivers.Add(Body);
-			}
-
-			WorldseedRiverReaches::MarkTakenSegments(
-				Hydrology.Rivers, Reaches, Out.TakenRiverSegments);
-		}
 		// LA ZONE NE SE RECONSTRUIT PAS TOUTE SEULE.
 		//
 		// Elle porte le quadtree qui dessine l'eau et la texture d'information
@@ -1027,46 +437,12 @@ namespace WorldseedWaterBodies
 		{
 			Report(TEXT("ocean"), Out.Ocean.Get(), Out.Ocean->GetWaterBodyComponent());
 		}
-		for (int32 I = 0; I < FMath::Min(Out.Lakes.Num(), 3); ++I)
-		{
-			if (Out.Lakes[I].IsValid())
-			{
-				Report(*FString::Printf(TEXT("lac %d"), I), Out.Lakes[I].Get(),
-					Out.Lakes[I]->GetWaterBodyComponent());
-			}
-		}
-		for (int32 I = 0; I < FMath::Min(Out.Rivers.Num(), 3); ++I)
-		{
-			if (!Out.Rivers[I].IsValid())
-			{
-				continue;
-			}
-
-			UWaterBodyRiverComponent* const Component =
-				Cast<UWaterBodyRiverComponent>(Out.Rivers[I]->GetWaterBodyComponent());
-			Report(*FString::Printf(TEXT("bief %d"), I), Out.Rivers[I].Get(), Component);
-
-			// LA CONDITION PROPRE A LA RIVIERE, et la seule qu'un rapport
-			// generique ne verrait pas : une courbe de largeur vide donne un
-			// lit de zero metre. Le corps est alors parfaitement sain sur tous
-			// les autres criteres, et invisible.
-			if (const UWaterSplineMetadata* Meta =
-				Component ? Component->GetWaterSplineMetadata() : nullptr)
-			{
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed]     profil : %d largeurs, %d profondeurs, ")
-					TEXT("lit %.1f m au premier point"),
-					Meta->RiverWidth.Points.Num(), Meta->Depth.Points.Num(),
-					Component->GetRiverWidthAtSplineInputKey(0.0f) / MetersToCm);
-			}
-		}
-
 
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] plugin Water : zone %.1f x %.1f km, fenetre=%s, ocean=%d, %d lacs, %d biefs  (%.0f ms)"),
+			TEXT("[Worldseed] plugin Water : zone %.1f x %.1f km, fenetre=%s, ocean=%d  (%.0f ms)"),
 			Geometry.WidthM() / 1000.0f, Geometry.HeightM / 1000.0f,
 			bLocalWindow ? TEXT("glissante 4 km") : TEXT("globale"),
-			Out.Ocean.IsValid() ? 1 : 0, Out.Lakes.Num(), Out.Rivers.Num(),
+			Out.Ocean.IsValid() ? 1 : 0,
 			(FPlatformTime::Seconds() - StartTime) * 1000.0);
 
 		return true;
@@ -1158,25 +534,6 @@ namespace WorldseedWaterBodies
 
 	void Clear(FWorldseedWaterBodies& Bodies)
 	{
-		for (TWeakObjectPtr<AWaterBodyRiver>& River : Bodies.Rivers)
-		{
-			if (River.IsValid())
-			{
-				River->Destroy();
-			}
-		}
-		Bodies.Rivers.Reset();
-		Bodies.TakenRiverSegments.Reset();
-
-		for (TWeakObjectPtr<AWaterBodyLake>& Lake : Bodies.Lakes)
-		{
-			if (Lake.IsValid())
-			{
-				Lake->Destroy();
-			}
-		}
-		Bodies.Lakes.Reset();
-
 		if (Bodies.Ocean.IsValid())
 		{
 			Bodies.Ocean->Destroy();

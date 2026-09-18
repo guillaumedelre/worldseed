@@ -26,15 +26,6 @@ class WORLDSEED_API UWorldseedProbeLibrary : public UBlueprintFunctionLibrary
 
 public:
 	/**
-	 * Genere un monde et journalise ce que l'hydrologie en tire.
-	 *
-	 * Rend un resume d'une ligne, pour l'appelant qui ne lit pas les journaux.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
-	static FString ProbeHydrology(int32 Seed = 20260909, float HeightMeters = 8000.0f,
-		int32 ResolutionY = 256);
-
-	/**
 	 * Chronometre le rendu du globe d'apercu.
 	 *
 	 * La taille de la texture ne change pas avec celle du monde : si le temps

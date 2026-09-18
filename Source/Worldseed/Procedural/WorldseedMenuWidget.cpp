@@ -680,7 +680,6 @@ void UWorldseedMenuWidget::PollGeneration()
 		CachedPrecipMm = MoveTemp(PendingResult->Climate.PrecipMm);
 		CachedSeasonalAmpC = MoveTemp(PendingResult->Climate.SeasonalAmpC);
 		CachedContinentality = MoveTemp(PendingResult->Climate.Continentality);
-		CachedHydrology = MoveTemp(PendingResult->Hydrology);
 		CachedBiomes = MoveTemp(PendingResult->Biomes);
 		BuildPreviewField();
 
@@ -1190,7 +1189,6 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 		ToPlay.PrecipMm = CachedPrecipMm;
 		ToPlay.SeasonalAmpC = CachedSeasonalAmpC;
 		ToPlay.Continentality = CachedContinentality;
-		ToPlay.Hydrology = CachedHydrology;
 		ToPlay.Biomes = CachedBiomes;
 		ToPlay.TexturePack = SelectedPack;
 		GI->StoreWorld(ToPlay);

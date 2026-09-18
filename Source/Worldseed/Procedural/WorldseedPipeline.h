@@ -5,18 +5,21 @@
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedBiomes.h"
-#include "Procedural/WorldseedHydrology.h"
 #include "Procedural/WorldseedJob.h"
 #include "Procedural/WorldseedRules.h"
 
 /**
  * Point d'entree unique de la generation.
  *
- * Reproduit la chaine du generateur Python : tectonique, puis climat, puis
- * erosion (les etapes suivantes arrivent au fur et a mesure du portage). Toutes
- * les valeurs viennent de world_rules.json, jamais de constantes C++ : c'est la
- * regle posee par la documentation du projet, et elle evite que les deux
- * moities du projet divergent a la premiere retouche.
+ * La chaine, dans l'ordre : tectonique, climat, erosion, recalage du niveau
+ * marin, climat une seconde fois, puis biomes. L'HYDROLOGIE N'EN FAIT PLUS
+ * PARTIE — rivieres, cascades et lacs ont ete retires le 18 septembre 2026,
+ * CLAUDE.md porte les mesures qui l'ont motive. Le relief n'est donc plus
+ * retouche apres le cache : ce qui sort du cache est ce qui s'affiche.
+ *
+ * Toutes les valeurs viennent de world_rules.json, jamais de constantes C++ :
+ * c'est la regle posee par la documentation du projet, et elle evite que les
+ * deux moities du projet divergent a la premiere retouche.
  */
 namespace WorldseedPipeline
 {
@@ -43,17 +46,6 @@ namespace WorldseedPipeline
 
 		/** Vrai si l'etape climat a tourne. */
 		bool bHasClimate = false;
-
-		/**
-		 * Rivieres, lacs et cascades.
-		 *
-		 * JAMAIS MIS EN CACHE, et c'est delibere : l'hydrologie derive entierement
-		 * du relief et de la pluie, tous deux deja caches, et ne coute qu'un calcul
-		 * d'ecoulement la ou l'erosion en fait douze. La recalculer a chaque
-		 * chargement evite de faire entrer des polylignes dans un format de fichier
-		 * qui ne connait que des grilles de nombres.
-		 */
-		FWorldseedHydrology Hydrology;
 
 		/** Les 19 biomes, avec la pente qui a servi a les classer. */
 		FWorldseedBiomeMap Biomes;

@@ -5,13 +5,10 @@
 #include "Procedural/WorldseedSkyDriverComponent.h"
 #include "Procedural/WorldseedWaterComponent.h"
 #include "Procedural/WorldseedGroundProxy.h"
-#include "Procedural/WorldseedRiverSection.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPipeline.h"
 
 #include "GameFramework/Pawn.h"
-#include "GameFramework/PlayerController.h"
-#include "Components/InputComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
@@ -47,21 +44,6 @@ void AWorldseedTerrain::BeginPlay()
 			&AWorldseedTerrain::UpdateChunks, FMath::Max(UpdatePeriod, 0.05f), true);
 	}
 
-	// LA TOUCHE DE SONDE.
-	//
-	// Pas un clic souris : en partie, la souris pilote la camera. Une touche
-	// laisse viser puis declencher, donc sonder une berge d'en face ou un
-	// endroit inaccessible sans avoir a y marcher.
-	if (APlayerController* const PC = GetWorld()
-		? GetWorld()->GetFirstPlayerController() : nullptr)
-	{
-		EnableInput(PC);
-		if (InputComponent)
-		{
-			InputComponent->BindKey(EKeys::F9, IE_Pressed, this,
-				&AWorldseedTerrain::ProbeRiverSection);
-		}
-	}
 
 	if (bPlacePlayerAfterGenerate)
 	{
@@ -103,7 +85,6 @@ bool AWorldseedTerrain::AcquireWorld()
 			PrecipMm = MoveTemp(Loaded.PrecipMm);
 			SeasonalAmpC = MoveTemp(Loaded.SeasonalAmpC);
 			ContinentalityGrid = MoveTemp(Loaded.Continentality);
-			Hydrology = MoveTemp(Loaded.Hydrology);
 			Biomes = MoveTemp(Loaded.Biomes);
 			TexturePack = Loaded.TexturePack;
 			Colouring = (TexturePack == EWorldseedTexturePack::BiomeColour)
@@ -135,7 +116,6 @@ bool AWorldseedTerrain::AcquireWorld()
 	PrecipMm = MoveTemp(World.Climate.PrecipMm);
 	SeasonalAmpC = MoveTemp(World.Climate.SeasonalAmpC);
 	ContinentalityGrid = MoveTemp(World.Climate.Continentality);
-	Hydrology = MoveTemp(World.Hydrology);
 	Biomes = MoveTemp(World.Biomes);
 	return true;
 }
@@ -172,11 +152,11 @@ void AWorldseedTerrain::Rebuild()
 
 	UpdateChunks();
 
-	// L'eau vient APRES les chunks : elle se pose sur un relief deja connu, et
+	// L'ocean vient APRES les chunks : il se pose sur un relief deja connu, et
 	// n'a pas besoin d'etre refaite quand les chunks changent de resolution.
 	if (Water)
 	{
-		Water->Build(Geometry, Hydrology, HeightsM, HeightExaggeration);
+		Water->Build(Geometry, HeightsM, HeightExaggeration);
 	}
 }
 
@@ -1211,30 +1191,4 @@ float AWorldseedTerrain::GetHeightAtWorldXY(float WorldX, float WorldY) const
 
 	const float HeightM = WorldseedGrid::SampleUV(HeightsM, Geometry.NX, Geometry.NY, U, V);
 	return GetActorLocation().Z + HeightM * MetersToCm * HeightExaggeration;
-}
-
-void AWorldseedTerrain::ProbeRiverSection()
-{
-	APlayerController* const PC = GetWorld()
-		? GetWorld()->GetFirstPlayerController() : nullptr;
-	if (!PC)
-	{
-		return;
-	}
-
-	FVector Eye;
-	FRotator Look;
-	PC->GetPlayerViewPoint(Eye, Look);
-
-	FVector Hit;
-	if (!WorldseedRiverSection::TraceGround(HeightsM, Geometry, HeightExaggeration,
-		Eye, Look.Vector(), Hit))
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Worldseed] coupe : le regard ne rencontre pas le sol"));
-		return;
-	}
-
-	WorldseedRiverSection::Probe(GetWorld(), HeightsM, Geometry, Hydrology,
-		HeightExaggeration, Hit);
 }
