@@ -2888,3 +2888,107 @@ Sans elles, la couche traverse sans ajouter un seul noeud. Le graphe passe de
 `editor_request_end_play()` et un chargement d'asset dans le meme script.**
 `build_world()` a rendu « texture de biomes absente » et construit un graphe
 vide. Deux appels separes.
+
+### Le monde se calcule maintenant DANS LE JEU, en C++ (14-15 septembre 2026)
+
+La chaine de generation a ete portee de Python vers C++ : elle ne tourne plus
+hors du moteur pour ecrire des PNG importes ensuite, elle **tourne a
+l'execution**, depuis une graine choisie dans `L_Menu`, et le relief est un
+maillage procedural par chunks au lieu d'un Landscape. `Source/Worldseed/Procedural/`
+en porte tout le code ; la carte de jeu est `L_Worldseed_Proc`.
+
+**`Tools/WorldGen` est donc LEGATAIRE.** Aucun code du jeu ne l'appelle. Le seul
+lien entre les deux moities est `world_rules.json`, lu par les deux. Ne pas
+croire, en lisant `pipeline.py`, qu'on lit ce que le jeu execute : le fichier
+qui fait foi est `WorldseedPipeline.cpp`.
+
+Mesures de la chaine C++ (18 septembre, graine 22169, 2048x1024) : tectonique
+855 ms, climat 9212, erosion 8241, climat 9247, **total 27,6 s**, cache 21,5 Mo.
+
+### L'hydrologie a ete RETIREE du generateur (18 septembre 2026)
+
+**Decision du proprietaire.** Rivieres, cascades et lacs ne sont plus produits.
+L'ocean reste, confie au plugin Water. Ne pas rouvrir ce chantier sans relire
+ce qui suit : c'est l'etat MESURE au moment du retrait, pas un souvenir.
+
+| constat | mesure |
+|---|---|
+| lits de riviere enterres | **0 sur 1156 points** -- ce point-la etait bon |
+| tranchee creusee | **198 m de large en moyenne** (594 au pire) **pour un lit de 7 m** |
+| rivage des lacs | terrain sous la surface sur **32 a 62 %** des points, 14,6 m au pire |
+| couverture d'eau douce | **12,2 % du monde** (lac 6,0, riviere 6,2) pour une cible ~2 % |
+| relief retouche apres le cache | **78 711 cellules abaissees de 1,69 m**, 53,7 m au plus |
+
+**Les deux impasses a ne pas refaire a l'identique :**
+
+- **Le creusement du lit mutilait le relief.** `WorldseedRiverCarve::Apply`
+  ecrivait dans `ElevationM` APRES le cache, donc a chaque chargement. Une
+  tranchee vingt-huit fois plus large que le lit qu'elle porte n'est pas un
+  reglage a affiner, c'est une methode qui ne tient pas.
+- **Le trace des rives de lac n'a jamais ete porte a parite avec la version
+  Python** (0,3-3,5 % de surplomb la-bas, 32-62 % ici). Les quatre cles
+  `shoreline*` de `world_rules.json` n'etaient d'ailleurs lues que par le
+  Python : le portage n'avait jamais repris l'accrochage a la berge.
+
+**CE QUI EST GARDE, ET IL NE FAUT PAS LE SUPPRIMER :**
+
+- **`WorldseedFlow`** (et son miroir `worldgen/flow.py`). Le comblement des
+  depressions et l'accumulation de flux ne sont PAS de l'hydrologie : c'est du
+  ROUTAGE, et l'erosion s'en sert pour son incision par puissance de courant.
+  Sans lui, plus de vallees. `FWorldseedFlow::LakeDepthM` porte un nom trompeur :
+  c'est la hauteur comblee, pas une nappe.
+- **`WorldseedPolyline` et `WorldseedLabel`**, briques geometriques generiques
+  gardees sans appelant, en vue d'une reprise eventuelle.
+- **Les identifiants positionnels.** `EWorldseedCover` (0 None, 1 Ocean, 2 Lake,
+  3 River) et les ids de biome (0 ocean, 1 lac, 2 riviere, 18 marais) ne sont PAS
+  renumerotes : ils servent de cles a `surfaces.recipes` et aux tables en dur de
+  `WorldseedBiomes.cpp`. Ils ne sont simplement plus attribues.
+
+**LE PIEGE QUI TUE L'OCEAN, et il est desormais notre cas nominal.** La
+`WaterZone` agrege les bornes en Z de TOUS les corps d'eau en un seul
+intervalle, dans lequel la texture d'information normalise chaque hauteur. Un
+ocean d'epaisseur nulle donne un intervalle `[0, 0]` **des qu'il est le seul
+corps d'eau** -- ce qui est maintenant toujours vrai -- et l'eau cesse de se
+dessiner, sans le moindre avertissement. `SeabedM` (le point le plus bas du
+monde) lui donne cette epaisseur via `CurveSettings.ChannelDepth` : cette chaine
+est PORTANTE, pas defensive. Le controle qui tranche est la ligne de journal
+`eau : ... hauteurs d'eau [%.0f .. %.0f] m` -- elle doit valoir [-296 .. 296] et
+jamais [0 .. 0].
+
+**Consequences assumees :** le biome **marais** devient inatteignable (il
+naissait de l'eau douce dilatee, il pesait 0,01 % des terres) ; la couche
+**`Biom4Gravel`** n'est plus jamais dominante (elle ne l'etait que dans les
+recettes Lac et Marais, a 0,5 ; ailleurs c'est un accent a 0,04-0,15). Le
+rapport du generateur Python signale ce second point : c'est la consequence,
+pas un defaut.
+
+**CE QUE LES REGLES SUPPRIMEES AVAIENT APPRIS**, recopie ici parce que la
+section `hydrology` de `world_rules.json` est partie avec ses commentaires :
+
+- *Le lit doit etre echantillonne sur le relief de SORTIE*, pas sur celui de la
+  simulation : le detail fractal est ajoute APRES l'hydrologie, et un lit cale
+  sur la simulation se retrouve tantot enterre, tantot suspendu. Mesure avant
+  correction, 1226 noeuds : 46,4 % enterres de plus d'un metre (jusqu'a -21,7 m)
+  et 22,8 % flottants (jusqu'a +8,2 m, soit un mur d'eau).
+- *La vraie cause etait en amont* : le detail deposait jusqu'a 21 m de bosses
+  dans le fond de vallee, au point qu'un cours d'eau REMONTAIT de 18,8 m en
+  cumule (mediane), un quart de sa descente.
+- *Une moyenne glissante le long du cours a ete ESSAYEE PUIS ABANDONNEE* : sur
+  une cascade descendant 224 m en 451 m, elle etalait la marche et suspendait
+  l'eau a **+70 m** dans le vide.
+- *Le contour d'un lac ne se trie pas par angle autour du centre* : cela ne vaut
+  que pour une forme en etoile, et le polygone zigzague des qu'il y a une baie.
+  Suivi de contour puis accrochage a la berge ; une marge trop large fait fuir
+  le polygone par les cols (20 m de marge : le defaut remontait de 5 a 27 %).
+
+**`fillEpsilonM` et `aridPrecipThresholdMm` ont demenage sous `erosion`** : ce
+sont des reglages de ROUTAGE, et l'erosion est leur seul consommateur restant.
+
+**PIEGE DE VERIFICATION, paye comptant.** Pour juger le monde en PIE, ne pas
+teleporter le pion loin de sa position : les chunks de terrain se construisent
+AUTOUR DU JOUEUR, donc il tombe a travers le vide et se retrouve sous la mer --
+mesure, **-1396 m** apres deux captures trompeuses ou tout etait bleu-vert. Le
+voile sous-marin donne alors a croire a un defaut de rendu de l'eau, alors que
+la surface est exactement a Z = 0. Remede : passer le pion en vol
+(`CharacterMovementComponent.set_movement_mode(MOVE_FLYING)` + `gravity_scale = 0`)
+avant de se deplacer, et juger de haut.

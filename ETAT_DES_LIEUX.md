@@ -5,6 +5,31 @@ Document de reprise, **réécrit le 12 septembre 2026**, mis à jour le 13. Il r
 seulement incomplètes — elles sont listées au §8 pour que personne ne reparte
 dessus.
 
+> ## ⚠ Ce document décrit l'ANCIENNE architecture
+>
+> **Deux changements de fond, postérieurs à sa rédaction, en invalident une
+> bonne part. Les lire AVANT le reste.**
+>
+> **1. Le monde se calcule maintenant dans le jeu (14-15 septembre 2026).** La
+> chaîne a été portée en C++ dans `Source/Worldseed/Procedural/` : elle tourne à
+> l'exécution depuis une graine choisie dans `L_Menu`, et le relief est un
+> maillage procédural par chunks, pas un Landscape. La carte de jeu est
+> **`L_Worldseed_Proc`**. Tout ce que ce document dit du Landscape, des couches
+> peintes, du semis PCG et des scripts de `Tools/UE` décrit **`L_Worldseed`**,
+> l'ancienne carte, qui existe toujours mais n'est plus la cible.
+> `Tools/WorldGen` est désormais **légataire** : plus rien du jeu ne l'appelle,
+> il ne sert que de banc de calibration.
+>
+> **2. L'hydrologie a été retirée (18 septembre 2026).** Rivières, cascades et
+> lacs ne sont plus générés du tout ; il ne reste que l'**océan**, confié au
+> plugin Water. La section « Eau » ci-dessous décrit donc un état révolu. Les
+> mesures qui ont motivé ce retrait, et les impasses à ne pas refaire, sont dans
+> `CLAUDE.md`.
+>
+> Ce qui reste VRAI et utile ici : tout le calage climatique (§3), les
+> références terrestres, les décisions à ne pas défaire (§7) et les pièges de
+> méthode. La refonte complète du document reste à faire.
+
 Trois documents, trois rôles, et il ne faut pas les confondre :
 
 - **`CLAUDE.md`** est la mémoire des **pièges** et des impasses, accumulée session

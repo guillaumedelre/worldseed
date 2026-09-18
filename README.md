@@ -1,9 +1,13 @@
 # Worldseed
 
-Générateur de monde procédural pour **Unreal Engine 5.8**. Un monde de 8 km de
-côté qui va d'un pôle à l'autre : tectonique, climat, érosion, hydrologie,
-biomes et surfaces sont simulés hors du moteur, puis importés en relief, en eau,
-en végétation et en météo dynamique.
+Générateur de monde procédural pour **Unreal Engine 5.8**. Un monde qui va d'un
+pôle à l'autre : tectonique, climat, érosion, biomes et surfaces. Depuis le
+14 septembre 2026 la chaîne est **portée en C++ et tourne dans le jeu**, à
+partir d'une graine choisie au menu ; `Tools/WorldGen`, le générateur Python
+d'origine, reste comme référence de calibration mais n'alimente plus le jeu.
+
+L'eau se limite à l'**océan** : rivières, cascades et lacs ont été retirés le
+18 septembre 2026 — `CLAUDE.md` porte les mesures qui l'ont motivé.
 
 Le climat n'est pas décoratif : il est calé sur des mesures terrestres et se
 vérifie par des outils dédiés. Le monde est déterministe — une graine donne
@@ -230,7 +234,6 @@ $P Tools/WorldGen/terre.py               # bulletin de conformité terrestre
 $P Tools/WorldGen/metrics.py <monde>     # relevé complet
 $P Tools/WorldGen/metrics.py --diff avant.json apres.json
 $P Tools/WorldGen/diag_uds_climat.py     # cohérence climat / biomes / UDS
-$P Tools/WorldGen/diag_eau.py <monde>    # ajustement de l'eau au relief
 ```
 
 `terre.py` est l'instrument principal. Il compare le monde à des références
