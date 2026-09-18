@@ -3207,3 +3207,93 @@ mediterraneen).
   EST une foret dans un diagramme de Whittaker ; le releve inclut l'equivalent
   en eau de la neige, ce qui le gonfle. Probablement un artefact du releve, a
   ne pas corriger par un seuil.
+
+## C. Arbitrages du proprietaire, 18 septembre 2026
+
+Dix-sept decisions prises apres la session voxel, la revision des biomes et la
+lecture de deux documents de conception. Consignees ici parce que plusieurs ne
+seront pas mises en oeuvre avant longtemps, et qu'une decision oubliee se
+reprend a zero.
+
+**A -- le voxel.**
+1. **La carte RESTE MODIFIABLE en jeu.** Le second document de conception pose
+   l'inverse et en deduit que persistance et re-maillage incrementaux sortent du
+   perimetre ; cette premisse ne s'applique pas ici. M4 (creuser, avec
+   persistance) reste au plan.
+2. On garde `UProceduralMeshComponent`. **A tester apres le creusement** :
+   RealtimeMeshComponent Core (MIT, 5.8, API identique a Pro), pour sa cuisson de
+   collision asynchrone -- c'est la que la cuisson synchrone actuelle fera des
+   a-coups.
+3. **Transvoxel** pour une vue lointaine sans fissures, mais **ne coder le LOD
+   que si la distance de vue l'exige** (mesure : 1,57 ms par chunk et 182 FPS a
+   250 m SANS LOD). Repli sur des colliers a resolution uniforme si la licence
+   des tables de Lengyel ne convient pas.
+4. **La taille de region suit la plus longue galerie, qui suit la taille de la
+   carte.** Cible a terme : **64 x 32 km**, soit seize fois la surface actuelle.
+   Ma recommandation d'une region unique etait fondee sur 16 x 8 km et ne tient
+   pas a cette echelle.
+
+**B -- les grottes.**
+5. **Passe macro** : Poisson 3D pour les chambres, arbre couvrant minimal pour la
+   connexite, A* pour le routage sous contraintes. Le bruit seul ne garantit rien
+   -- nos galeries actuelles sont credibles mais rien n'assure qu'elles
+   communiquent ni qu'on puisse y entrer.
+6. **Un compromis entre maximum dur et union lisse**, ce qui est exactement un
+   `raccordK` cale bas : l'union lisse degenere vers le maximum dur quand son
+   rayon tend vers zero.
+7. **Les cavites dependent d'une LITHOLOGIE derivee de la tectonique**, jamais du
+   biome. Le climat n'entre que par la pluie, qui dissout. Motif : une grotte est
+   de la geometrie, et faire decider l'etiquette de biome violerait la regle qui
+   veut qu'elle ne serve qu'a lier des assets. Et un massif calcaire est
+   karstique sous une foret tropicale comme sous un maquis.
+8. **La sortie de la passe macro est conservee dans le cache du monde**,
+   interrogeable au runtime pour le butin, l'audio et les quetes.
+
+**C -- biomes et climat.**
+9. Ajouter la **foret subtropicale humide**, identifiant 20, puis s'arreter.
+10. Le desequilibre des terres froides : **plus tard, apres la vegetation**.
+11. **Quinze biomes, et la regle est gravee : aucun nouveau biome sans un releve
+    reel qui tombe mal.**
+
+**D -- la vegetation.**
+12. **Courbes de tolerance par espece** sur les champs continus -- temperature,
+    pluie, humidite du sol, ensoleillement, pente, altitude -- et non des listes
+    par biome. Les biomes emergent au lieu d'etre imposes.
+13. **Un volume d'override** qui force ou interdit des especes dans une zone,
+    prevu des la conception.
+
+**E -- le fichier de regles.** Les quatre sont faits : registre unique lu par le
+C++, releve des cles absentes, section `substrat`, convention d'origine
+(`SOURCE` / `CALIBRE` / `ARBITRAIRE` en premier mot du commentaire).
+
+### La foret subtropicale humide, et une limite du diagramme (18 septembre 2026)
+
+Entre 12 et 20 degres de moyenne annuelle, une foret n'est plus temperee : c'est
+la Floride, le sud de la Chine, le sud du Japon. Cette bande declarait pourtant
+"foret temperee" de 600 a 1500 mm puis "foret temperee humide" au-dela -- **deux
+etiquettes fausses pour la meme chose**, et le seuil de 1500 qui les separait a
+disparu avec elles.
+
+Mesure : la nouvelle case porte **2,42 % des terres**, et les deux releves
+`Humid_Subtropical` tombent enfin juste.
+
+**LE SCORE NE BOUGE PAS POUR AUTANT : 19 sur 23 avant, 19 apres.** Deux releves
+passent, deux autres basculent -- `Subtropical_Highland` (16,5 C, 1130 mm) et sa
+variante a hiver sec, que la table attend en foret temperee et qui tombent
+desormais en subtropicale.
+
+**ET C'EST UNE LIMITE DE FOND, pas un reglage a affiner.** Le fait qui tranche :
+`Subtropical_Highland` est a **16,5 degres** de moyenne annuelle quand
+`Humid_Subtropical` est a **14,0** -- le climat d'ALTITUDE est le PLUS CHAUD des
+deux. Aucun seuil sur le couple temperature-pluie ne peut donc separer une foret
+subtropicale de plaine d'une foret de montagne subtropicale : ce qui les
+distingue est l'amplitude diurne et la photoperiode, que le diagramme ne connait
+pas. Ne pas chercher a corriger cela par un seuil.
+
+**Effet de bord assume** : la foret pluviale temperee tombe a **0,03 %** des
+terres, contre ~0,3 % sur Terre. Sa part de 12 a 20 degres etait en realite de la
+foret subtropicale ; ce qui reste est la vraie foret pluviale temperee, et nous
+en avons dix fois trop peu -- meme cause que la foret temperee mixte a 1,97 %
+pour 13 attendus, c'est-a-dire le manque de terres temperees documente plus haut.
+L'ecart absolu moyen passe de 36,0 a 37,8 % : **le vocabulaire gagne, le score
+perd**, et c'est le vocabulaire qui avait ete demande.

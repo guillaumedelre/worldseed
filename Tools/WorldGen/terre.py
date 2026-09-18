@@ -50,8 +50,8 @@ ATTENDU = {
     "Subarctic-Severe_Winter": "taiga",
     "Subpolar_Oceanic": "taiga_ou_foret_temperee",
     "Oceanic": "foret_temperee",
-    "Humid_Subtropical": "foret_temperee_humide",
-    "Humid_Subtropical-Dry_Winter": "foret_temperee_humide",
+    "Humid_Subtropical": "foret_subtropicale_humide",
+    "Humid_Subtropical-Dry_Winter": "foret_subtropicale_humide",
     "Hot_Summer_Continental": "foret_temperee",
     "Warm_Summer_Continental": "foret_temperee",
     "Mediterranean_Hot_Summer": "mediterraneen",
@@ -126,7 +126,7 @@ def case_whittaker(t: float, p: float, bandes: list, regles: dict | None = None,
         case = bandes[-1]["cuts"][-1][1]
 
     if regles and frac_ete is not None and case in (
-            "foret_temperee", "prairie", "steppe"):
+            "foret_temperee", "foret_subtropicale_humide", "prairie", "steppe"):
         if (frac_ete < FRAC_ETE_MEDITERRANEENNE
                 and float(regles.get("mediterraneanMinTempC", 7.0)) <= t
                 <= float(regles.get("mediterraneanMaxTempC", 18.0))

@@ -66,7 +66,14 @@ enum class EWorldseedBiome : uint8
 	 */
 	Mediterranean = 19,
 
-	Count = 20
+	/**
+	 * Foret subtropicale humide : la Floride, le sud de la Chine, le sud du
+	 * Japon. Entre 12 et 20 degres de moyenne annuelle, une foret n'est plus
+	 * temperee -- et ce sont les releves reels qui l'ont dit, pas une intuition.
+	 */
+	SubtropicalForest = 20,
+
+	Count = 21
 };
 
 /** Un seuil du diagramme de Whittaker : jusqu'a tant de pluie, ce biome. */

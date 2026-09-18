@@ -216,14 +216,11 @@
             "prairie"
           ],
           [
-            1500.0,
-            "foret_temperee"
-          ],
-          [
             1000000.0,
-            "foret_temperee_humide"
+            "foret_subtropicale_humide"
           ]
-        ]
+        ],
+        "_comment_subtropical": "CALIBRE sur les releves reels. Cette bande declarait 'foret temperee' de 600 a 1500 mm puis 'foret temperee humide' au-dela -- deux etiquettes fausses pour la meme chose. Entre 12 et 20 degres de moyenne annuelle, une foret n'est plus temperee, elle est SUBTROPICALE : c'est la Floride, le sud de la Chine, le sud du Japon. Les deux releves livres avec Ultra Dynamic Sky le disaient -- Humid_Subtropical a 14,0 degres et 673 mm, sa variante a hiver sec a 14,4 et 1364 -- et tombaient tous deux en foret temperee. Le seuil de 1500 mm disparait avec eux : il separait deux noms pour un seul biome."
       },
       {
         "_comment": "Bande chaude. Le seuil entre foret tropicale SECHE et HUMIDE est passe de 2000 a 1500 mm le 11 septembre 2026 : la foret tropicale humide au sens des grands referentiels (tropical moist broadleaf forest) englobe les forets de mousson des environ 1500 mm, et notre seuil a 2000 la limitait a 5 % des terres contre environ 11 sur Terre. Mesure : l'ecart absolu moyen aux grands biomes terrestres passe de 17,5 a 13,4 %, la foret tropicale humide de 7,2 a 10,8 % des terres.",
@@ -603,6 +600,23 @@
           0.4,
           0.15,
           0.05
+        ],
+        "attribue": true
+      },
+      {
+        "cle": "foret_subtropicale_humide",
+        "id": 20,
+        "libelle": "Forêt subtropicale humide",
+        "couleur": [
+          86,
+          132,
+          72
+        ],
+        "matieres": [
+          0.75,
+          0.0,
+          0.05,
+          0.2
         ],
         "attribue": true
       }
