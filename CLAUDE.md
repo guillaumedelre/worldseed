@@ -3517,3 +3517,44 @@ etre suspect.
 s'il reste, ce sont les couleurs de sommet ou le materiau. A faire AVANT de
 soupconner quoi que ce soit d'autre -- j'ai perdu deux hypotheses faute de
 commencer par la.
+
+### Le sens d'une normale n'est PAS une propriete globale du chunk (18 septembre 2026)
+
+Suite du defaut precedent, et il a fallu trois formes pour y arriver. Toutes
+partaient de la meme idee : le gradient du champ croit vers l'air, donc il donne
+le dehors. C'est juste. Ce qui etait faux, c'est de croire qu'un seul verdict
+vaut pour tout un chunk.
+
+1. **Un seul sommet**, `MC.Vertices[0]`. Une grande plaque noire, qui clignote.
+2. **Un vote pondere sur soixante-quatre sommets.** La grande plaque disparait,
+   mais il en reste : une majorite n'est pas une preuve, et il suffit qu'une
+   partie de la surface d'un chunk soit orientee autrement pour que le vote la
+   sacrifie.
+3. **Chaque sommet tranche pour lui-meme.** On garde la normale moyennee des
+   faces, qui est lisse et continue le long des aretes partagees, et on ne
+   corrige que son SENS avec le gradient local.
+
+**COUT MESURE** : 1,27 -> **2,62 ms par chunk**, geometrie identique au triangle
+pres (96 729 des deux cotes). C'est le prix de l'exactitude, et il etait bien
+place : le defaut rendait le jeu inregardable.
+
+**UN PIEGE DE MESURE QUI A FAILLI M'EGARER.** J'ai voulu diagnostiquer en lisant
+`impact_normal` d'un `line_trace`. La zone sombre rendait **-0,96** tracee depuis
+la camera et **+0,96** tracee d'en haut, au meme point : **Chaos oriente la
+normale FACE AU RAYON**. Cette valeur ne dit donc rien du sens de la geometrie,
+et rien du tout des normales de SOMMETS, que la collision ne connait pas.
+
+**ET IL Y AVAIT DEUX PHENOMENES SOMBRES DIFFERENTS, que j'ai confondus** -- ce
+qui explique pourquoi la premiere correction semblait incomplete :
+
+- la grande plaque sur laquelle le joueur MARCHE, a une altitude positive :
+  c'etaient les normales, corrigees ici ;
+- une zone sombre au loin, qui s'est revelee etre de la geometrie voxel a
+  **-41 m, sous la mer** : le fond d'une baie vu a travers quarante metres
+  d'eau, que l'absorption de l'ocean rend presque noir. **Ce n'est pas un
+  defaut.** Le test qui l'a montre : masquer le sol de fond fait apparaitre la
+  surface de l'eau avec ses reflets.
+
+**LA LECON DE METHODE** : avant de chercher une cause, s'assurer qu'on regarde
+UN seul phenomene. Deux taches noires ne sont pas forcement la meme tache noire,
+et corriger la premiere donne alors l'impression de n'avoir rien corrige.

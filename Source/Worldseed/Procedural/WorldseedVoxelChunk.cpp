@@ -256,32 +256,30 @@ namespace WorldseedVoxelChunk
 		// Plutot que de figer une convention et d'esperer, on la MESURE : le
 		// gradient du champ croit vers l'air, donc il donne le dehors.
 		//
-		// MAIS PAS SUR UN SEUL SOMMET, et c'est la correction du 18 septembre
-		// 2026. La premiere version lisait le gradient au sommet numero zero et
-		// en tirait le sens de TOUT le chunk ; son commentaire annoncait meme
-		// "la reponse est exacte". Elle ne l'est pas : si ce sommet tombe la ou
-		// le gradient est presque perpendiculaire a la normale, ou sur un
-		// plafond de galerie, le produit scalaire change de signe et le chunk
-		// ENTIER se retourne. Il devient alors noir -- eclaire par-derriere --
-		// et il clignote, parce qu'un chunk remaille en marchant ne retombe pas
-		// forcement du meme cote.
+		// ET ON L'ORIENTE SOMMET PAR SOMMET, pas une fois pour tout le chunk.
+		// Deux versions ont echoue avant celle-ci, et leur echec disait la meme
+		// chose : le sens des normales n'est PAS une propriete globale du chunk
+		// sur laquelle on peut voter.
 		//
-		// On VOTE donc sur un echantillon reparti dans le chunk, en sommant les
-		// produits scalaires : un sommet dont le gradient est faible ou presque
-		// perpendiculaire pese peu, un sommet franc pese beaucoup. C'est
-		// exactement la ponderation qu'on veut, et elle sort gratuitement de la
-		// somme.
+		//   1. Un seul sommet, le numero zero. Si ce sommet tombe la ou le
+		//      gradient est presque perpendiculaire a la normale, le chunk
+		//      ENTIER se retourne, devient noir -- eclaire par-derriere -- et
+		//      clignote, un chunk remaille en marchant ne retombant pas
+		//      forcement du meme cote.
+		//   2. Un vote pondere sur soixante-quatre sommets. Beaucoup mieux : la
+		//      grande plaque noire a disparu. Mais il en restait, parce qu'une
+		//      majorite n'est pas une preuve -- il suffit qu'une partie de la
+		//      surface d'un chunk soit orientee autrement pour que le vote la
+		//      sacrifie.
+		//
+		// La forme correcte est locale : chaque sommet a SON gradient, et il
+		// tranche pour lui seul. On garde la normale moyennee des faces, qui est
+		// lisse et continue le long des aretes partagees, et on ne corrige que
+		// son SENS. Cout : six evaluations par sommet, mesure ci-dessous.
 		{
 			const double H = FMath::Max(VoxelSizeM * 0.5f, 0.05f);
 
-			// Au plus soixante-quatre sommets : le cout suit l'echantillon, pas
-			// la taille du chunk. Six evaluations chacun, soit moins de dix pour
-			// cent du cout de maillage d'un chunk typique.
-			constexpr int32 MaxEchantillons = 64;
-			const int32 Pas = FMath::Max(1, VertexCount / MaxEchantillons);
-
-			double Vote = 0.0;
-			for (int32 I = 0; I < VertexCount; I += Pas)
+			for (int32 I = 0; I < VertexCount; ++I)
 			{
 				const FVector3d& V = MC.Vertices[I];
 				const FVector Gradient(
@@ -289,17 +287,13 @@ namespace WorldseedVoxelChunk
 					Density.At(FVector(V.X, V.Y + H, V.Z)) - Density.At(FVector(V.X, V.Y - H, V.Z)),
 					Density.At(FVector(V.X, V.Y, V.Z + H)) - Density.At(FVector(V.X, V.Y, V.Z - H)));
 
-				OutStats.FieldSamples += 6;
-				Vote += FVector::DotProduct(Gradient, Out.Normals[I]);
-			}
-
-			if (Vote < 0.0)
-			{
-				for (int32 I = 0; I < VertexCount; ++I)
+				if (FVector::DotProduct(Gradient, Out.Normals[I]) < 0.0)
 				{
 					Out.Normals[I] = -Out.Normals[I];
 				}
 			}
+
+			OutStats.FieldSamples += VertexCount * 6;
 		}
 
 		OutStats.NormalMs = (FPlatformTime::Seconds() - NormalStart) * 1000.0;
