@@ -122,6 +122,23 @@ class WORLDSEED_API UWorldseedRules : public UObject
 
 public:
 	/**
+	 * Journalise UNE FOIS chaque cle demandee et absente du fichier.
+	 *
+	 * POURQUOI. Num(), Int() et Str() rendent leur valeur de repli SANS UN MOT
+	 * quand la cle manque. Une faute de frappe, une cle renommee d'un seul cote,
+	 * une section absente : le jeu tourne sur la valeur codee en dur et le
+	 * fichier de regles a l'air respecte. Ce depot a deja paye trois fois cette
+	 * famille de defaut -- un materiau de terrain qui pointait le maitre au lieu
+	 * de l'instance, une propriete mal orthographiee par Epic, une constante
+	 * dupliquee entre deux fichiers.
+	 *
+	 * Le releve est fait au vol, sans verrou sur le chemin nominal : seule
+	 * l'insertion d'une cle MANQUANTE prend le verrou, et elle est rare par
+	 * construction.
+	 */
+	void ReportMissingKeys() const;
+
+	/**
 	 * Charge les regles. Cherche d'abord Tools/WorldGen/rules/world_rules.json
 	 * (la source unique, suivie par git), puis se rabat sur une copie dans
 	 * Content pour les builds packages.
@@ -171,6 +188,12 @@ public:
 		const FString& Key) const;
 
 private:
+	/** Cles demandees et absentes, pour ReportMissingKeys. */
+	void NoteMissing(const FString& Section, const FString& Key) const;
+
+	mutable TSet<FString> MissingKeys;
+	mutable FCriticalSection MissingKeysLock;
+
 	TSharedPtr<FJsonObject> Root;
 
 	const TSharedPtr<FJsonObject>* FindSection(const FString& Section) const;

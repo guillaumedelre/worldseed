@@ -83,9 +83,44 @@ struct WORLDSEED_API FWorldseedWhittakerBand
 	TArray<FWorldseedWhittakerCut> Cuts;
 };
 
+/**
+ * Une entree du registre des biomes, lue dans world_rules.json.
+ *
+ * ELLE REMPLACE QUATRE TABLES RECOPIEES A LA MAIN en C++ -- les cles, les noms,
+ * les couleurs et les poids de matiere -- plus trois tables paralleles cote JSON.
+ * Ajouter un biome demandait d'ecrire le meme fait a HUIT endroits, dont trois
+ * que le C++ ne lisait meme pas : il recopiait les couleurs dans un tableau
+ * d'octets, et rien ne verifiait l'accord des deux cotes.
+ */
+struct WORLDSEED_API FWorldseedBiomeEntry
+{
+	FString Key;
+	FString Label;
+	FLinearColor Colour = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
+
+	/** Poids des quatre matieres : herbe, aride, roche, mousse. Somme a un. */
+	FLinearColor Slots = FLinearColor(1.0f, 0.0f, 0.0f, 0.0f);
+
+	/**
+	 * Faux pour un identifiant que la classification ne pose plus.
+	 *
+	 * Nappes d'eau et substrats vivent sur l'axe EWorldseedCover ; le marais est
+	 * inatteignable sans hydrologie. Ils gardent palette et matieres, qui
+	 * servent a l'apparence de cet autre axe.
+	 */
+	bool bAssigned = true;
+};
+
 /** Section "biomes" de world_rules.json. */
 struct WORLDSEED_API FWorldseedBiomeRules
 {
+	/**
+	 * Le registre, INDEXE PAR IDENTIFIANT. Les trous sont possibles : un
+	 * identifiant absent du fichier garde une entree neutre plutot que de
+	 * decaler tous les suivants.
+	 */
+	TArray<FWorldseedBiomeEntry> Registre;
+
 	TArray<FWorldseedWhittakerBand> Bands;
 
 	float TreeLineTempC = 4.0f;

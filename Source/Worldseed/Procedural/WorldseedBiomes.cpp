@@ -8,6 +8,8 @@
 #include "Procedural/WorldseedWind.h"
 
 #include "Async/ParallelFor.h"
+
+#include <atomic>
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
@@ -15,54 +17,50 @@ namespace
 {
 	const TCHAR* BIO = TEXT("biomes");
 
+	/**
+	 * Le SUBSTRAT a sa propre section, et ce n'est pas cosmetique : la roche a
+	 * nu est posee par la PENTE, l'estran par l'ALTITUDE. Ni l'une ni l'autre
+	 * ne sort du diagramme de Whittaker, et les laisser sous "biomes"
+	 * entretenait exactement la confusion qu'on a corrigee dans le code.
+	 */
+	const TCHAR* SUB = TEXT("substrat");
+
 	constexpr int32 BiomeCount = static_cast<int32>(EWorldseedBiome::Count);
 
-	/** Les noms des identifiants, dans l'ordre de world_rules.json. */
-	const TCHAR* BiomeKeys[BiomeCount] = {
-		TEXT("ocean"), TEXT("lac"), TEXT("riviere"), TEXT("calotte"),
-		TEXT("toundra"), TEXT("taiga"), TEXT("foret_temperee"),
-		TEXT("foret_temperee_humide"), TEXT("prairie"), TEXT("steppe"),
-		TEXT("desert_froid"), TEXT("desert_chaud"), TEXT("savane"),
-		TEXT("foret_tropicale_seche"), TEXT("foret_tropicale_humide"),
-		TEXT("alpin"), TEXT("roche_nue"), TEXT("plage"), TEXT("marais"),
-		TEXT("mediterraneen"),
-	};
-
 	/**
-	 * Les noms LISIBLES, alignes sur la nomenclature terrestre.
+	 * LE REGISTRE PUBLIE, source unique des noms, couleurs et matieres.
 	 *
-	 * Trois etiquettes corrigees le 18 septembre 2026, et la premiere est la
-	 * plus parlante : l'identifiant 7 s'appelle TemperateRainforest dans le
-	 * code depuis le debut, mais "foret temperee humide" au journal -- si bien
-	 * qu'on cherchait une foret un peu mouillee la ou il y a une foret
-	 * PLUVIALE, biome rare sur Terre (cote pacifique, Valdivia, Tasmanie) et
-	 * rare ici aussi : 0,67 % des terres, ce qui est juste.
+	 * Il remplace quatre tables qui etaient recopiees a la main ici. Il est
+	 * rempli UNE FOIS, a la lecture des regles, et lu ensuite sans verrou : les
+	 * fils de maillage l'interrogent pour peindre leurs sommets, et ils ne
+	 * demarrent jamais avant la classification. C'est la seule facon de le
+	 * rendre lisible depuis les fonctions libres Colour(), Name() et
+	 * SlotWeights() sans changer la signature de leurs quarante appelants.
+	 *
+	 * Tant qu'il n'est pas publie, les fonctions rendent des valeurs neutres
+	 * plutot qu'un tableau code en dur : un gris et un nom vide se voient, une
+	 * valeur par defaut plausible se cache.
 	 */
-	const TCHAR* BiomeNames[BiomeCount] = {
-		TEXT("ocean"), TEXT("lac"), TEXT("riviere"), TEXT("calotte glaciaire"),
-		TEXT("toundra"), TEXT("taiga"), TEXT("foret temperee mixte"),
-		TEXT("foret pluviale temperee"), TEXT("prairie"), TEXT("steppe"),
-		TEXT("desert froid"), TEXT("desert chaud"), TEXT("savane"),
-		TEXT("foret tropicale seche"), TEXT("foret tropicale humide"),
-		TEXT("pelouse alpine"), TEXT("roche nue"), TEXT("plage"), TEXT("marais"),
-		TEXT("mediterraneen"),
-	};
+	TArray<FWorldseedBiomeEntry> RegistrePublie;
+	std::atomic<bool> bRegistrePret{ false };
 
-	/** debugColors de world_rules.json, en octets. */
-	const uint8 BiomeRgb[BiomeCount][3] = {
-		{  24,  62, 122 }, {  46, 116, 181 }, {  86, 164, 214 }, { 242, 246, 250 },
-		{ 166, 176, 152 }, {  46,  84,  62 }, {  70, 128,  66 }, {  42, 104,  54 },
-		{ 150, 168,  92 }, { 178, 172, 108 }, { 176, 176, 166 }, { 214, 190, 126 },
-		{ 196, 172,  92 }, { 128, 152,  70 }, {  30, 110,  58 }, { 150, 146, 140 },
-		{ 112, 108, 104 }, { 226, 212, 172 }, {  96, 118,  84 },
-		{ 158, 148, 112 },
-	};
-
-	EWorldseedBiome BiomeFromKey(const FString& Key)
+	const FWorldseedBiomeEntry& EntreeDe(int32 Id)
 	{
-		for (int32 I = 0; I < BiomeCount; ++I)
+		static const FWorldseedBiomeEntry Neutre;
+		if (!bRegistrePret.load(std::memory_order_acquire)
+			|| !RegistrePublie.IsValidIndex(Id))
 		{
-			if (Key == BiomeKeys[I])
+			return Neutre;
+		}
+		return RegistrePublie[Id];
+	}
+
+	EWorldseedBiome BiomeFromKey(const TArray<FWorldseedBiomeEntry>& Registre,
+		const FString& Key)
+	{
+		for (int32 I = 0; I < Registre.Num(); ++I)
+		{
+			if (Key == Registre[I].Key)
 			{
 				return static_cast<EWorldseedBiome>(I);
 			}
@@ -120,19 +118,76 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 		return static_cast<float>(Rules.Num(BIO, Key, Fallback));
 	};
 
+	// --- le registre, EN PREMIER ----------------------------------------------
+	// Le diagramme de Whittaker nomme ses biomes par leur CLE : sans registre,
+	// BiomeFromKey ne saurait pas les resoudre et tout retomberait sur la
+	// prairie, en silence.
+	Out.Registre.SetNum(BiomeCount);
+	if (const TArray<TSharedPtr<FJsonValue>>* Entrees =
+		Rules.Array(BIO, TEXT("registre")))
+	{
+		for (const TSharedPtr<FJsonValue>& Valeur : *Entrees)
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!Valeur.IsValid() || !Valeur->TryGetObject(Obj) || !Obj) { continue; }
+
+			int32 Id = -1;
+			if (!(*Obj)->TryGetNumberField(TEXT("id"), Id)
+				|| !Out.Registre.IsValidIndex(Id))
+			{
+				continue;
+			}
+
+			FWorldseedBiomeEntry& E = Out.Registre[Id];
+			(*Obj)->TryGetStringField(TEXT("cle"), E.Key);
+			(*Obj)->TryGetStringField(TEXT("libelle"), E.Label);
+			(*Obj)->TryGetBoolField(TEXT("attribue"), E.bAssigned);
+
+			const TArray<TSharedPtr<FJsonValue>>* Couleur = nullptr;
+			if ((*Obj)->TryGetArrayField(TEXT("couleur"), Couleur) && Couleur->Num() >= 3)
+			{
+				E.Colour = FLinearColor(FColor(
+					static_cast<uint8>((*Couleur)[0]->AsNumber()),
+					static_cast<uint8>((*Couleur)[1]->AsNumber()),
+					static_cast<uint8>((*Couleur)[2]->AsNumber()), 255));
+			}
+
+			const TArray<TSharedPtr<FJsonValue>>* Matieres = nullptr;
+			if ((*Obj)->TryGetArrayField(TEXT("matieres"), Matieres) && Matieres->Num() >= 4)
+			{
+				E.Slots = FLinearColor(
+					static_cast<float>((*Matieres)[0]->AsNumber()),
+					static_cast<float>((*Matieres)[1]->AsNumber()),
+					static_cast<float>((*Matieres)[2]->AsNumber()),
+					static_cast<float>((*Matieres)[3]->AsNumber()));
+			}
+		}
+	}
+
+	// PUBLICATION, une fois pour toutes. Les fils de maillage liront ce tableau
+	// sans verrou ; ils ne demarrent jamais avant la classification, qui passe
+	// forcement par ici.
+	RegistrePublie = Out.Registre;
+	bRegistrePret.store(true, std::memory_order_release);
+
 	Out.TreeLineTempC = Num(TEXT("treeLineTempC"), 4.0);
 	Out.TreeLineWarmestMonthC = Num(TEXT("treeLineWarmestMonthC"), 10.0);
 	Out.TaigaMinPrecipMm = Num(TEXT("taigaMinPrecipMm"), 350.0);
 	Out.ColdDesertMaxTempC = Num(TEXT("coldDesertMaxTempC"), 18.0);
 	Out.AlpineMinElevationM = Num(TEXT("alpineMinElevationM"), 212.5);
 	Out.PermanentIceTempC = Num(TEXT("permanentIceTempC"), 0.0);
-	Out.BareRockSlopeDeg = Num(TEXT("bareRockSlopeDeg"), 55.0);
+	auto Sub = [&Rules](const TCHAR* Key, double Fallback)
+	{
+		return static_cast<float>(Rules.Num(SUB, Key, Fallback));
+	};
 
-	Out.BeachElevationM = Num(TEXT("beachElevationM"), 3.75);
-	Out.BeachWidthM = Num(TEXT("beachWidthM"), 37.5);
-	Out.BeachSlopeFlatDeg = Num(TEXT("beachSlopeFlatDeg"), 8.0);
-	Out.BeachSlopeSteepDeg = Num(TEXT("beachSlopeSteepDeg"), 30.0);
-	Out.BeachWindwardBonus = Num(TEXT("beachWindwardBonus"), 0.6);
+	Out.BareRockSlopeDeg = Sub(TEXT("bareRockSlopeDeg"), 55.0);
+
+	Out.BeachElevationM = Sub(TEXT("beachElevationM"), 3.75);
+	Out.BeachWidthM = Sub(TEXT("beachWidthM"), 37.5);
+	Out.BeachSlopeFlatDeg = Sub(TEXT("beachSlopeFlatDeg"), 8.0);
+	Out.BeachSlopeSteepDeg = Sub(TEXT("beachSlopeSteepDeg"), 30.0);
+	Out.BeachWindwardBonus = Sub(TEXT("beachWindwardBonus"), 0.6);
 
 	Out.MarshMaxSlopeDeg = Num(TEXT("marshMaxSlopeDeg"), 2.0);
 	Out.MarshMinPrecipMm = Num(TEXT("marshMinPrecipMm"), 900.0);
@@ -187,7 +242,7 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 
 				FWorldseedWhittakerCut Cut;
 				Cut.MaxPrecipMm = static_cast<float>((*Pair)[0]->AsNumber());
-				Cut.Biome = BiomeFromKey((*Pair)[1]->AsString());
+				Cut.Biome = BiomeFromKey(Out.Registre, (*Pair)[1]->AsString());
 				Band.Cuts.Add(Cut);
 			}
 
@@ -205,8 +260,7 @@ namespace WorldseedBiomes
 {
 	FLinearColor Colour(EWorldseedBiome Biome)
 	{
-		const int32 I = FMath::Clamp(static_cast<int32>(Biome), 0, BiomeCount - 1);
-		return FLinearColor(FColor(BiomeRgb[I][0], BiomeRgb[I][1], BiomeRgb[I][2], 255));
+		return EntreeDe(FMath::Clamp(static_cast<int32>(Biome), 0, BiomeCount - 1)).Colour;
 	}
 
 	FLinearColor CoverColour(EWorldseedCover Cover)
@@ -251,49 +305,21 @@ namespace WorldseedBiomes
 
 	const TCHAR* Name(EWorldseedBiome Biome)
 	{
-		const int32 I = FMath::Clamp(static_cast<int32>(Biome), 0, BiomeCount - 1);
-		return BiomeNames[I];
+		// LA CHAINE DOIT SURVIVRE A L'APPELANT : les journaux la passent par %s
+		// longtemps apres le retour. Le registre, lui, ne bouge plus une fois
+		// publie, donc sa chaine est stable.
+		return *EntreeDe(FMath::Clamp(static_cast<int32>(Biome), 0, BiomeCount - 1)).Label;
 	}
 
 	FLinearColor SlotWeights(EWorldseedBiome Biome)
 	{
-		// Ordre : herbe, aride, roche, mousse.
-		//
-		// LES MELANGES NE SONT PAS DECORATIFS. Une savane est de l'herbe qui
-		// laisse voir la terre, une steppe l'inverse ; un etage alpin est de la
-		// roche que la mousse colonise par plaques. Ce sont ces proportions qui
-		// font qu'on reconnait un biome sans lire son nom.
-		switch (Biome)
-		{
-		case EWorldseedBiome::IceCap:              return FLinearColor(0.00f, 0.00f, 1.00f, 0.00f);
-		case EWorldseedBiome::Tundra:              return FLinearColor(0.00f, 0.10f, 0.25f, 0.65f);
-		case EWorldseedBiome::Taiga:               return FLinearColor(0.70f, 0.00f, 0.10f, 0.20f);
-		case EWorldseedBiome::TemperateForest:     return FLinearColor(0.90f, 0.00f, 0.05f, 0.05f);
-		case EWorldseedBiome::TemperateRainforest: return FLinearColor(0.70f, 0.00f, 0.00f, 0.30f);
-		case EWorldseedBiome::Grassland:           return FLinearColor(1.00f, 0.00f, 0.00f, 0.00f);
-		case EWorldseedBiome::Steppe:              return FLinearColor(0.45f, 0.50f, 0.05f, 0.00f);
-		case EWorldseedBiome::ColdDesert:          return FLinearColor(0.05f, 0.60f, 0.35f, 0.00f);
-		case EWorldseedBiome::HotDesert:           return FLinearColor(0.00f, 1.00f, 0.00f, 0.00f);
-		case EWorldseedBiome::Savanna:             return FLinearColor(0.40f, 0.55f, 0.05f, 0.00f);
-		case EWorldseedBiome::TropicalDryForest:   return FLinearColor(0.60f, 0.35f, 0.05f, 0.00f);
-		case EWorldseedBiome::TropicalRainforest:  return FLinearColor(0.80f, 0.00f, 0.00f, 0.20f);
-		case EWorldseedBiome::Alpine:              return FLinearColor(0.05f, 0.10f, 0.65f, 0.20f);
-		case EWorldseedBiome::BareRock:            return FLinearColor(0.00f, 0.05f, 0.95f, 0.00f);
-		case EWorldseedBiome::Beach:               return FLinearColor(0.00f, 1.00f, 0.00f, 0.00f);
-		case EWorldseedBiome::Marsh:               return FLinearColor(0.20f, 0.00f, 0.00f, 0.80f);
-
-		// Un maquis n'est ni une prairie ni un desert : de l'herbe rase et des
-		// arbustes sur une terre seche et caillouteuse, qui se voit entre eux.
-		case EWorldseedBiome::Mediterranean:       return FLinearColor(0.40f, 0.40f, 0.15f, 0.05f);
-
-		// L'eau : le composant d'eau pose sa nappe par-dessus, mais le fond
-		// doit tout de meme ressembler a quelque chose.
-		case EWorldseedBiome::Ocean:
-		case EWorldseedBiome::Lake:                return FLinearColor(0.00f, 0.55f, 0.45f, 0.00f);
-		case EWorldseedBiome::River:               return FLinearColor(0.10f, 0.45f, 0.35f, 0.10f);
-
-		default:                                   return FLinearColor(1.00f, 0.00f, 0.00f, 0.00f);
-		}
+		// LES MELANGES NE SONT PAS DECORATIFS, et ils vivent maintenant dans le
+		// registre. Une savane est de l'herbe qui laisse voir la terre, une
+		// steppe l'inverse ; un etage alpin est de la roche que la mousse
+		// colonise par plaques. Ce sont ces proportions qui font qu'on
+		// reconnait un biome sans lire son nom -- raison de plus pour qu'elles
+		// soient reglables sans recompiler.
+		return EntreeDe(FMath::Clamp(static_cast<int32>(Biome), 0, BiomeCount - 1)).Slots;
 	}
 
 	void SlopeDegrees(const TArray<float>& ElevationM, const FWorldseedGeometry& Geometry,

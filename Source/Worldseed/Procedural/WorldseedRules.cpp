@@ -204,16 +204,52 @@ bool UWorldseedRules::Has(const FString& Section, const FString& Key) const
 	return Obj && (*Obj).IsValid() && (*Obj)->HasField(Key);
 }
 
+void UWorldseedRules::NoteMissing(const FString& Section, const FString& Key) const
+{
+	// LE VERROU N'EST PRIS QUE SUR LE CHEMIN FAUTIF. Num() est appele dans des
+	// boucles paralleles -- SeasonalAmplitude le fait par cellule -- donc le
+	// chemin nominal, celui ou la cle existe, ne doit rien verrouiller du tout.
+	FScopeLock Lock(&MissingKeysLock);
+	MissingKeys.Add(Section + TEXT(".") + Key);
+}
+
+void UWorldseedRules::ReportMissingKeys() const
+{
+	FScopeLock Lock(&MissingKeysLock);
+	if (MissingKeys.Num() == 0)
+	{
+		return;
+	}
+
+	TArray<FString> Triees = MissingKeys.Array();
+	Triees.Sort();
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] regles : %d cle(s) demandee(s) et ABSENTE(S) du fichier ; ")
+		TEXT("la valeur codee en dur a servi a la place."), Triees.Num());
+	for (const FString& K : Triees)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Worldseed]   manquante : %s"), *K);
+	}
+}
+
 double UWorldseedRules::Num(const FString& Section, const FString& Key, double Fallback) const
 {
 	const TSharedPtr<FJsonObject>* Obj = FindSection(Section);
 	if (!Obj || !(*Obj).IsValid())
 	{
+		NoteMissing(Section, Key);
 		return Fallback;
 	}
 
 	double Value = Fallback;
-	return (*Obj)->TryGetNumberField(Key, Value) ? Value : Fallback;
+	if ((*Obj)->TryGetNumberField(Key, Value))
+	{
+		return Value;
+	}
+
+	NoteMissing(Section, Key);
+	return Fallback;
 }
 
 int32 UWorldseedRules::Int(const FString& Section, const FString& Key, int32 Fallback) const
@@ -228,9 +264,16 @@ FString UWorldseedRules::Str(const FString& Section, const FString& Key,
 	const TSharedPtr<FJsonObject>* Obj = FindSection(Section);
 	if (!Obj || !(*Obj).IsValid())
 	{
+		NoteMissing(Section, Key);
 		return Fallback;
 	}
 
 	FString Value;
-	return (*Obj)->TryGetStringField(Key, Value) ? Value : Fallback;
+	if ((*Obj)->TryGetStringField(Key, Value))
+	{
+		return Value;
+	}
+
+	NoteMissing(Section, Key);
+	return Fallback;
 }

@@ -153,10 +153,18 @@ namespace WorldseedPipeline
 					WorldseedFields::Compute(Geometry, Out.ElevationM,
 						Out.Climate.PrecipMm,
 						FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
+
+					// LE RELEVE VIENT ICI ET NULLE PART AILLEURS : c'est la seule
+					// place ou TOUTES les cles ont ete demandees. Pose plus haut,
+					// il ne voyait rien de ce que la classification et les champs
+					// du sol allaient lire -- premiere version silencieuse pour
+					// cette raison, alors qu'une cle etait cassee expres.
+					BioRules->ReportMissingKeys();
 				}
 			}
 
 			if (Job) { Job->Report(1.0f, EWorldseedStage::Done); }
+
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] monde repris du cache : seed=%d  %dx%d  (%.0f ms)"),
 				Seed, Geometry.NX, Geometry.NY,
@@ -303,6 +311,8 @@ namespace WorldseedPipeline
 				WorldseedFields::Compute(Geometry, Out.ElevationM,
 					Out.Climate.PrecipMm,
 					FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
+
+				BioRules->ReportMissingKeys();
 			}
 		}
 
