@@ -461,6 +461,78 @@ FIntVector AWorldseedVoxelTerrain::KeyForPoint(double X, double Y, double Z) con
 		FMath::FloorToInt(Z / ChunkSideM));
 }
 
+bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
+	double& OutX, double& OutY, float& OutSurfaceM, float& OutSlopeDeg) const
+{
+	// Spirale carree autour du point demande : on prend le PREMIER endroit
+	// acceptable, donc le plus proche, et non le meilleur du monde.
+	constexpr double PasM = 16.0;
+	constexpr int32 Anneaux = 24;
+	constexpr double SondeM = 6.0;        // ecart pour estimer la pente
+	constexpr float PenteMaxDeg = 12.0f;
+
+	auto Convient = [this](double X, double Y, float& Surface, float& PenteDeg) -> bool
+	{
+		Surface = Density.SurfaceHeightM(X, Y);
+		if (Surface < 2.0f)
+		{
+			return false;   // sous la mer, ou tout juste au bord
+		}
+
+		const float HX = Density.SurfaceHeightM(X + SondeM, Y)
+			- Density.SurfaceHeightM(X - SondeM, Y);
+		const float HY = Density.SurfaceHeightM(X, Y + SondeM)
+			- Density.SurfaceHeightM(X, Y - SondeM);
+		const float Pente = FMath::Sqrt(HX * HX + HY * HY) / (2.0f * SondeM);
+		PenteDeg = FMath::RadiansToDegrees(FMath::Atan(Pente));
+		if (PenteDeg > PenteMaxDeg)
+		{
+			return false;
+		}
+
+		// PLEIN SOUS LES PIEDS, sur toute la hauteur d'une galerie typique :
+		// un plancher de deux metres au-dessus d'un vide ne tient pas.
+		for (double Profondeur = 1.0; Profondeur <= 12.0; Profondeur += 2.0)
+		{
+			if (Density.At(FVector(X, Y, Surface - Profondeur)) > 0.0)
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	for (int32 Anneau = 0; Anneau <= Anneaux; ++Anneau)
+	{
+		for (int32 DY = -Anneau; DY <= Anneau; ++DY)
+		{
+			for (int32 DX = -Anneau; DX <= Anneau; ++DX)
+			{
+				// Seulement le bord de l'anneau : l'interieur a deja ete vu.
+				if (Anneau > 0 && FMath::Abs(DX) != Anneau && FMath::Abs(DY) != Anneau)
+				{
+					continue;
+				}
+
+				const double X = AroundM.X + DX * PasM;
+				const double Y = AroundM.Y + DY * PasM;
+
+				float Surface = 0.0f;
+				float PenteDeg = 0.0f;
+				if (Convient(X, Y, Surface, PenteDeg))
+				{
+					OutX = X;
+					OutY = Y;
+					OutSurfaceM = Surface;
+					OutSlopeDeg = PenteDeg;
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 {
 	if (!bHoldPlayer || bPlayerReleased || !bWorldReady)
@@ -481,19 +553,47 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		Pawn->FindComponentByClass<UCharacterMovementComponent>();
 
 	const FVector PosCm = Pawn->GetActorLocation() - GetActorLocation();
-	const double X = PosCm.X / WorldseedMetersToCm;
-	const double Y = PosCm.Y / WorldseedMetersToCm;
-	const float SurfaceM = Density.SurfaceHeightM(X, Y);
+	double X = PosCm.X / WorldseedMetersToCm;
+	double Y = PosCm.Y / WorldseedMetersToCm;
+	float SurfaceM = Density.SurfaceHeightM(X, Y);
 
-	// Marge au-dessus du relief : le surplomb peut avoir remonte la surface de
-	// son amplitude, et on ne veut pas naitre a l'interieur de la roche.
+	if (!bPlayerHeld)
+	{
+		// ON CHOISIT L'ENDROIT, ON NE SE CONTENTE PAS DE CELUI DU PlayerStart.
+		// Il faut du plat, de l'emerge, et du plein dessous : une colonne sur
+		// huit porte une galerie, et naitre au-dessus revient a tomber dedans.
+		float PenteDeg = 0.0f;
+		double FX = X;
+		double FY = Y;
+		float FSurface = SurfaceM;
+		if (FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg))
+		{
+			X = FX;
+			Y = FY;
+			SurfaceM = FSurface;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : sol plat trouve a (%.0f, %.0f) m, ")
+				TEXT("altitude %.1f m, pente %.1f deg"),
+				X, Y, SurfaceM, PenteDeg);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] voxel : aucun sol plat autour du depart, ")
+				TEXT("pose sur place"));
+		}
+	}
+
+	// Marge au-dessus du relief : le deplacement 3D peut avoir remonte la
+	// surface, et on ne veut pas naitre a l'interieur de la roche.
 	const double PoseZCm = GetActorLocation().Z
 		+ (SurfaceM + DensityRules.OverhangAmplitudeM + 3.0) * WorldseedMetersToCm;
 
 	if (!bPlayerHeld)
 	{
 		Pawn->SetActorLocation(
-			FVector(Pawn->GetActorLocation().X, Pawn->GetActorLocation().Y, PoseZCm),
+			FVector(GetActorLocation().X + X * WorldseedMetersToCm,
+				GetActorLocation().Y + Y * WorldseedMetersToCm, PoseZCm),
 			false, nullptr, ETeleportType::TeleportPhysics);
 
 		if (Move)

@@ -203,6 +203,19 @@ private:
 	/** Clef du chunk qui porte un point donne, en metres repere acteur. */
 	FIntVector KeyForPoint(double X, double Y, double Z) const;
 
+	/**
+	 * Cherche un endroit ou POSER le joueur : plat, emerge, et plein dessous.
+	 *
+	 * Les trois criteres comptent. Emerge, sinon on nait dans la mer. Plat,
+	 * sinon on glisse. Et surtout PLEIN DESSOUS : depuis que les galeries
+	 * existent, une colonne sur huit porte un vide, et le pion tombe dedans --
+	 * mesure, il s'est retrouve a 47 m sous terre au premier essai.
+	 *
+	 * Faux si rien ne convient dans le rayon fouille.
+	 */
+	bool FindFlatGround(const FVector2D& AroundM, double& OutX, double& OutY,
+		float& OutSurfaceM, float& OutSlopeDeg) const;
+
 	UPROPERTY()
 	TObjectPtr<USceneComponent> RootScene;
 
