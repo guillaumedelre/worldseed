@@ -35,4 +35,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeGlobe(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 256, int32 Frames = 20);
+
+	/**
+	 * Maille des chunks de voxels et rend ce qu'ils ont coute.
+	 *
+	 * C'EST LA MESURE QUI DECIDE DE LA TAILLE DU VOXEL ET DU CHUNK, et elle
+	 * vient avant tout le reste : streaming, collision et creusement se
+	 * dimensionnent sur elle. Sans moteur de rendu, sans acteur, sans PIE --
+	 * donc reproductible et comparable d'une session a l'autre.
+	 *
+	 * Les chunks sont pris en tuile autour d'un point de TERRE, sans quoi on
+	 * mesurerait le cout du vide : au-dessus de l'ocean il n'y a pas de
+	 * surface a mailler, et le releve serait flatteur autant qu'inutile.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeVoxel(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 256, int32 ChunkSideM = 32, int32 ChunksPerSide = 4);
 };

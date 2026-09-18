@@ -14,12 +14,6 @@
 #include "ProceduralMeshComponent.h"
 #include "TimerManager.h"
 
-namespace
-{
-	/** Le monde raisonne en metres, la scene en centimetres. */
-	constexpr float MetersToCm = 100.0f;
-
-}
 
 AWorldseedTerrain::AWorldseedTerrain()
 {
@@ -185,9 +179,9 @@ int32 AWorldseedTerrain::StrideForDistance(float DistanceM) const
 
 FVector2D AWorldseedTerrain::ChunkCenterCm(const FIntPoint& Key) const
 {
-	const float CellCm = Geometry.MetersPerPixel() * MetersToCm;
-	const float OriginX = -Geometry.WidthM() * MetersToCm * 0.5f;
-	const float OriginY = -Geometry.HeightM * MetersToCm * 0.5f;
+	const float CellCm = Geometry.MetersPerPixel() * WorldseedMetersToCm;
+	const float OriginX = -Geometry.WidthM() * WorldseedMetersToCm * 0.5f;
+	const float OriginY = -Geometry.HeightM * WorldseedMetersToCm * 0.5f;
 	const int32 Cells = FMath::Max(ChunkCells, 16);
 
 	return FVector2D(
@@ -213,7 +207,7 @@ void AWorldseedTerrain::UpdateChunks()
 	TArray<FIntPoint> ToRelease;
 	for (const TPair<FIntPoint, FWorldseedChunk>& Pair : Chunks)
 	{
-		const float DistM = FVector2D::Distance(OriginXY, ChunkCenterCm(Pair.Key)) / MetersToCm;
+		const float DistM = FVector2D::Distance(OriginXY, ChunkCenterCm(Pair.Key)) / WorldseedMetersToCm;
 		if (DistM > UnloadRadiusM)
 		{
 			ToRelease.Add(Pair.Key);
@@ -233,7 +227,7 @@ void AWorldseedTerrain::UpdateChunks()
 		for (int32 CX = 0; CX < ChunksX; ++CX)
 		{
 			const FIntPoint Key(CX, CY);
-			const float DistM = FVector2D::Distance(OriginXY, ChunkCenterCm(Key)) / MetersToCm;
+			const float DistM = FVector2D::Distance(OriginXY, ChunkCenterCm(Key)) / WorldseedMetersToCm;
 			if (DistM > LoadRadiusM)
 			{
 				continue;
@@ -294,10 +288,10 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 		return;
 	}
 
-	const float CellCm = Geometry.MetersPerPixel() * MetersToCm;
+	const float CellCm = Geometry.MetersPerPixel() * WorldseedMetersToCm;
 	const float StepCm = CellCm * Stride;
-	const float OriginX = -Geometry.WidthM() * MetersToCm * 0.5f;
-	const float OriginY = -Geometry.HeightM * MetersToCm * 0.5f;
+	const float OriginX = -Geometry.WidthM() * WorldseedMetersToCm * 0.5f;
+	const float OriginY = -Geometry.HeightM * WorldseedMetersToCm * 0.5f;
 
 	// X s'enroule : la carte fait le tour de la sphere, le chunk du bord est
 	// est voisin de celui du bord ouest. Y se borne, un pole n ayant pas de
@@ -390,7 +384,7 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 			Vertices[Index] = FVector(
 				OriginX + SX * CellCm,
 				OriginY + SY * CellCm,
-				SampleM(SX, SY) * MetersToCm * HeightExaggeration);
+				SampleM(SX, SY) * WorldseedMetersToCm * HeightExaggeration);
 
 			UVs[Index] = FVector2D(
 				static_cast<float>(SX) / static_cast<float>(Geometry.NX),
@@ -404,8 +398,8 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 			const float HD = SampleM(SX, SY - Stride);
 			const float HU = SampleM(SX, SY + Stride);
 
-			const float DZDX = (HR - HL) * MetersToCm * HeightExaggeration / (2.0f * StepCm);
-			const float DZDY = (HU - HD) * MetersToCm * HeightExaggeration / (2.0f * StepCm);
+			const float DZDX = (HR - HL) * WorldseedMetersToCm * HeightExaggeration / (2.0f * StepCm);
+			const float DZDY = (HU - HD) * WorldseedMetersToCm * HeightExaggeration / (2.0f * StepCm);
 
 			const FVector N = FVector(-DZDX, -DZDY, 1.0f).GetSafeNormal();
 			Normals[Index] = N;
@@ -447,7 +441,7 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 	// bouche sans avoir a raccorder les maillages entre eux.
 	if (SkirtDepthM > 0.0f)
 	{
-		const float Drop = SkirtDepthM * MetersToCm;
+		const float Drop = SkirtDepthM * WorldseedMetersToCm;
 
 		auto AddSkirt = [&](int32 EdgeIndex)
 		{
@@ -660,7 +654,7 @@ void AWorldseedTerrain::FeedSky(float DeltaSeconds)
 
 	// L'altitude du joueur, en metres depuis le niveau de la mer.
 	const float AltitudeM =
-		static_cast<float>(Origin.Z - GetActorLocation().Z) / MetersToCm
+		static_cast<float>(Origin.Z - GetActorLocation().Z) / WorldseedMetersToCm
 		/ FMath::Max(HeightExaggeration, KINDA_SMALL_NUMBER);
 
 	SkyDriver->Drive(Sample, LongitudeDeg, AltitudeM, Geometry.LatSpanDeg,
@@ -680,8 +674,8 @@ bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,
 	const FVector Local = GetActorTransform().InverseTransformPosition(
 		FVector(WorldX, WorldY, 0.0f));
 
-	const float WidthCm = Geometry.WidthM() * MetersToCm;
-	const float HeightCm = Geometry.HeightM * MetersToCm;
+	const float WidthCm = Geometry.WidthM() * WorldseedMetersToCm;
+	const float HeightCm = Geometry.HeightM * WorldseedMetersToCm;
 
 	float U = static_cast<float>(Local.X) / WidthCm + 0.5f;
 	U -= FMath::FloorToFloat(U);
@@ -752,10 +746,10 @@ void AWorldseedTerrain::BuildGroundProxy()
 			/ static_cast<float>(FMath::Max(Geometry.NX, 1))),
 		16, Geometry.NY);
 
-	const float CellCm = Geometry.MetersPerPixel() * MetersToCm;
-	const float OriginX = -Geometry.WidthM() * MetersToCm * 0.5f;
-	const float OriginY = -Geometry.HeightM * MetersToCm * 0.5f;
-	const float DropCm = GroundProxyDropM * MetersToCm * HeightExaggeration;
+	const float CellCm = Geometry.MetersPerPixel() * WorldseedMetersToCm;
+	const float OriginX = -Geometry.WidthM() * WorldseedMetersToCm * 0.5f;
+	const float OriginY = -Geometry.HeightM * WorldseedMetersToCm * 0.5f;
+	const float DropCm = GroundProxyDropM * WorldseedMetersToCm * HeightExaggeration;
 
 	const int32 Verts = CountX * CountY;
 
@@ -864,7 +858,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 			Vertices[Index] = FVector(
 				OriginX + SX * CellCm,
 				OriginY + SY * CellCm,
-				FloorM * MetersToCm * HeightExaggeration - DropCm);
+				FloorM * WorldseedMetersToCm * HeightExaggeration - DropCm);
 
 
 			// Normale au PAS DU SOL DE FOND, pas a celui de la grille : prise
@@ -1154,8 +1148,8 @@ void AWorldseedTerrain::GetLonLatAtWorldXY(float WorldX, float WorldY,
 	const FVector Local = GetActorTransform().InverseTransformPosition(
 		FVector(WorldX, WorldY, 0.0f));
 
-	const float WidthCm = Geometry.WidthM() * MetersToCm;
-	const float HeightCm = Geometry.HeightM * MetersToCm;
+	const float WidthCm = Geometry.WidthM() * WorldseedMetersToCm;
+	const float HeightCm = Geometry.HeightM * WorldseedMetersToCm;
 	if (WidthCm <= SMALL_NUMBER || HeightCm <= SMALL_NUMBER)
 	{
 		return;
@@ -1182,13 +1176,13 @@ float AWorldseedTerrain::GetHeightAtWorldXY(float WorldX, float WorldY) const
 	const FVector Local = GetActorTransform().InverseTransformPosition(
 		FVector(WorldX, WorldY, 0.0f));
 
-	const float WidthCm = Geometry.WidthM() * MetersToCm;
-	const float HeightCm = Geometry.HeightM * MetersToCm;
+	const float WidthCm = Geometry.WidthM() * WorldseedMetersToCm;
+	const float HeightCm = Geometry.HeightM * WorldseedMetersToCm;
 
 	float U = static_cast<float>(Local.X) / WidthCm + 0.5f;
 	U -= FMath::FloorToFloat(U);
 	const float V = FMath::Clamp(static_cast<float>(Local.Y) / HeightCm + 0.5f, 0.0f, 1.0f);
 
 	const float HeightM = WorldseedGrid::SampleUV(HeightsM, Geometry.NX, Geometry.NY, U, V);
-	return GetActorLocation().Z + HeightM * MetersToCm * HeightExaggeration;
+	return GetActorLocation().Z + HeightM * WorldseedMetersToCm * HeightExaggeration;
 }

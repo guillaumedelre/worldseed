@@ -11,9 +11,6 @@
 
 namespace
 {
-	/** Le monde raisonne en metres, la scene en centimetres. */
-	constexpr float MetersToCm = 100.0f;
-
 	/**
 	 * Debord du plan d'ocean au-dela de la carte.
 	 *
@@ -169,8 +166,8 @@ void UWorldseedWaterComponent::BuildOcean(const FWorldseedGeometry& Geometry)
 	// de generation cale son quantile dessus. L'ocean n'a donc rien a chercher,
 	// il se pose a zero.
 	WorldseedWaterMesh::BuildPlane(
-		Geometry.WidthM() * MetersToCm * OceanOversize,
-		Geometry.HeightM * MetersToCm * OceanOversize,
+		Geometry.WidthM() * WorldseedMetersToCm * OceanOversize,
+		Geometry.HeightM * WorldseedMetersToCm * OceanOversize,
 		0.0f, OceanSubdivisions, Buffer);
 
 	if (Buffer.IsEmpty())

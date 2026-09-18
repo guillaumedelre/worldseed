@@ -9,6 +9,19 @@
 class FJsonObject;
 
 /**
+ * Le monde raisonne en METRES, la scene d'Unreal en centimetres.
+ *
+ * DEFINIE UNE SEULE FOIS, ET C'EST LE FOND DE L'AFFAIRE. Quatre fichiers la
+ * portaient chacun dans leur namespace anonyme. Deux d'entre eux se sont
+ * retrouves dans la meme unite de traduction le jour ou deux fichiers ont ete
+ * ajoutes au module : le build unifie d'Unreal concatene les .cpp, et deux
+ * namespaces anonymes n'en font alors qu'un. La collision ne dependait donc pas
+ * du code ecrit mais du REGROUPEMENT choisi par UBT -- elle dormait depuis des
+ * semaines et s'est reveillee sur un fichier que personne n'avait touche.
+ */
+inline constexpr float WorldseedMetersToCm = 100.0f;
+
+/**
  * Geometrie du monde : taille, resolution, et surtout correspondance
  * ligne <-> latitude.
  *

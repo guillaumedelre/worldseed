@@ -68,6 +68,39 @@ namespace WorldseedPerlin
 	/** Bruit de Perlin 3D par gradients haches. Environ [-1..1]. */
 	WORLDSEED_API float Perlin3D(float X, float Y, float Z, int32 Seed);
 
+	// --------------------------------------------------- fractales PONCTUELLES
+	//
+	// LES VARIANTES CI-DESSOUS RENDENT UNE VALEUR, PAS UNE GRILLE, et c'est
+	// toute la difference. FBMSphere et consorts remplissent un tableau de
+	// NX * NY cellules : c'est ce qu'il faut pour une etape de la chaine, qui
+	// traite le monde entier d'un coup. Un champ de densite voxel, lui, est
+	// interroge en un POINT quelconque de l'espace, des millions de fois, et
+	// depuis plusieurs fils a la fois. Il ne peut rien faire d'une grille.
+	//
+	// Ces deux fonctions sont pures : aucun etat, aucune allocation, la graine
+	// est explicite. Elles s'appellent donc sans precaution depuis un fil de
+	// travail.
+
+	/**
+	 * Somme fractale 3D en un point. Environ [-1..1].
+	 *
+	 * La frequence est en CYCLES PAR UNITE des coordonnees recues : appeler
+	 * avec des metres et une frequence de 1/40 donne un motif de quarante
+	 * metres. C'est a l'appelant de choisir son unite et de s'y tenir.
+	 */
+	WORLDSEED_API float Fbm3D(float X, float Y, float Z, float Frequency,
+		int32 Octaves, int32 Seed, float Lacunarity = 2.0f, float Gain = 0.5f);
+
+	/**
+	 * Bruit a cretes 3D en un point, dans [0..1].
+	 *
+	 * Les cretes valent 1. C'est ce qui en fait l'outil des GALERIES : les
+	 * surfaces ou le bruit approche 1 forment des tubes qui se croisent et se
+	 * ramifient, la ou un fBm seuille donnerait des poches isolees.
+	 */
+	WORLDSEED_API float Ridged3D(float X, float Y, float Z, float Frequency,
+		int32 Octaves, int32 Seed, float Lacunarity = 2.0f, float Gain = 0.5f);
+
 	/**
 	 * Point de la sphere unite correspondant a une cellule de carte.
 	 * La latitude passe par la correspondance equivalente-aire, donc les

@@ -289,6 +289,76 @@ namespace WorldseedPerlin
 		return FMath::Lerp(Y0V, Y1V, W) * 1.4142135f;
 	}
 
+	namespace
+	{
+		/** Somme des amplitudes, pour ramener une fractale dans sa plage. */
+		float OctaveNormalisation(int32 Octaves, float Gain)
+		{
+			float Somme = 0.0f;
+			float A = 1.0f;
+			for (int32 O = 0; O < Octaves; ++O)
+			{
+				Somme += A;
+				A *= Gain;
+			}
+			return 1.0f / FMath::Max(Somme, 1e-6f);
+		}
+	}
+
+	float Fbm3D(float X, float Y, float Z, float Frequency, int32 Octaves,
+		int32 Seed, float Lacunarity, float Gain)
+	{
+		if (Octaves < 1)
+		{
+			return 0.0f;
+		}
+
+		float Amplitude = 1.0f;
+		float Scale = Frequency;
+		float Sum = 0.0f;
+
+		for (int32 Octave = 0; Octave < Octaves; ++Octave)
+		{
+			// Meme decalage de graine par octave que les versions spheriques :
+			// deux octaves qui partagent leur graine se superposent au lieu de
+			// s'ajouter, et le relief y gagne des marches au lieu du grain.
+			Sum += Amplitude * Perlin3D(X * Scale, Y * Scale, Z * Scale,
+				Seed + Octave * 7919);
+
+			Amplitude *= Gain;
+			Scale *= Lacunarity;
+		}
+
+		return Sum * OctaveNormalisation(Octaves, Gain);
+	}
+
+	float Ridged3D(float X, float Y, float Z, float Frequency, int32 Octaves,
+		int32 Seed, float Lacunarity, float Gain)
+	{
+		if (Octaves < 1)
+		{
+			return 0.0f;
+		}
+
+		float Amplitude = 1.0f;
+		float Scale = Frequency;
+		float Sum = 0.0f;
+
+		for (int32 Octave = 0; Octave < Octaves; ++Octave)
+		{
+			const float Value = 1.0f - FMath::Abs(Perlin3D(
+				X * Scale, Y * Scale, Z * Scale, Seed + Octave * 6791));
+
+			// Le carre resserre les cretes : sans lui elles s'etalent et les
+			// galeries deviennent des cavernes molles.
+			Sum += Amplitude * (Value * Value);
+			Amplitude *= Gain;
+			Scale *= Lacunarity;
+		}
+
+		return Sum * OctaveNormalisation(Octaves, Gain);
+	}
+
 	FVector SpherePoint(const FWorldseedGeometry& Geo, int32 I, int32 J)
 	{
 		const float LonRad = 2.0f * PI * static_cast<float>(I)

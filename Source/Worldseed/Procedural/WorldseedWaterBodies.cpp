@@ -23,8 +23,6 @@ namespace WorldseedWaterBodies
 {
 	namespace
 	{
-		/** Le monde raisonne en metres, la scene en centimetres. */
-		constexpr float MetersToCm = 100.0f;
 
 		/**
 		 * Bornes de l'epaisseur de l'ocean, en centimetres.
@@ -240,8 +238,8 @@ namespace WorldseedWaterBodies
 
 		const double StartTime = FPlatformTime::Seconds();
 
-		const float WidthCm = Geometry.WidthM() * MetersToCm;
-		const float HeightCm = Geometry.HeightM * MetersToCm;
+		const float WidthCm = Geometry.WidthM() * WorldseedMetersToCm;
+		const float HeightCm = Geometry.HeightM * WorldseedMetersToCm;
 
 		// --- la zone d'eau --------------------------------------------------
 		// Elle porte le quadtree qui dessine toutes les nappes. Son etendue
@@ -309,7 +307,7 @@ namespace WorldseedWaterBodies
 				// mis dans ChannelDepth, a fait disparaitre toute l'eau — on ne
 				// laisse pas traîner le meme piege deux fois.
 				const float OceanDepthCm = FMath::Clamp(
-					-SeabedM * MetersToCm * HeightExaggeration,
+					-SeabedM * WorldseedMetersToCm * HeightExaggeration,
 					MinOceanDepthCm, MaxOceanDepthCm);
 
 				Component->SetOceanExtent(FVector2D(WidthCm, HeightCm));
@@ -430,7 +428,7 @@ namespace WorldseedWaterBodies
 				Spline ? Spline->GetNumberOfSplineSegments() : -1,
 				Component->Mobility == EComponentMobility::Movable
 					? TEXT("Movable") : TEXT("STATIC"),
-				Component->ShapeDilation / MetersToCm, *Maillages);
+				Component->ShapeDilation / WorldseedMetersToCm, *Maillages);
 		};
 
 		if (Out.Ocean.IsValid())

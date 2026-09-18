@@ -123,6 +123,22 @@
     "_comment_endoreisme": "Sous ce cumul annuel, un bassin ferme est plausible : l'evaporation consomme l'apport avant qu'il ne deborde (mer d'Aral, lac Tchad). Au-dessus, un bassin qui ne deverse pas signale une erreur de routage. Plage utile : 150 a 400 mm.",
     "aridPrecipThresholdMm": 250.0
   },
+  "voxel": {
+    "_comment": "REPRESENTATION DU TERRAIN A L'EXECUTION. Le relief n'est plus une carte d'altitude maillee telle quelle mais un CHAMP DE DENSITE : negatif dans la roche, positif dans l'air, la surface etant l'isovaleur zero. Il n'existe aucune grille 3D en memoire et il ne peut pas en exister -- a un metre de cote, ce monde ferait soixante-seize milliards de voxels. Le champ est une fonction de la grille 2D deja calculee plus du bruit 3D ; seules les modifications du joueur sont stockees.",
+    "voxelSizeM": 1.0,
+    "_comment_bande": "Epaisseur creusable sous la surface, en metres. Sous elle la densite est forcee au plein : le socle n'est jamais maille. Ce n'est pas une economie de rendu -- le marching cubes ne maille que les changements de signe -- mais une borne sur la comptabilite des chunks, qui s'etendrait sinon sur les six cents metres d'amplitude du monde.",
+    "bandDepthM": 100.0,
+    "_comment_surplombs": "CE TERME EST CE QUI CREE LES SURPLOMBS, et il le fait sans cas particulier : en retranchant un bruit 3D a la distance a la surface, celle-ci cesse d'etre une fonction de x et y. La ou le gradient du bruit depasse la pente du terrain, le relief se replie et l'on passe dessous. Le terme n'agit que la ou il peut changer le signe, donc dans une bande de son amplitude autour de la surface : inutile de l'estomper. La frequence est en cycles par METRE.",
+    "overhangAmplitudeM": 8.0,
+    "overhangFrequency": 0.016,
+    "overhangOctaves": 3,
+    "_comment_galeries": "Les galeries viennent des CRETES d'un bruit a cretes : les surfaces ou il approche 1 forment des tubes qui se croisent et se ramifient, la ou un fBm seuille donnerait des poches isolees. caveThreshold est le reglage le plus sensible du lot -- un seuil haut donne des tubes fins et rares, un seuil bas donne un gruyere. caveSurfaceFadeM empeche les tubes de perforer le sol partout : sans lui le monde ressemble a une ecumoire.",
+    "caveFrequency": 0.008,
+    "caveOctaves": 2,
+    "caveThreshold": 0.86,
+    "caveRadiusM": 9.0,
+    "caveSurfaceFadeM": 25.0
+  },
   "biomes": {
     "treeLineTempC": 4.0,
     "_comment_calotte": "Seuil de gel permanent, compare au mois le PLUS CHAUD. Le critere de Koppen pour la calotte glaciaire (classe EF) est : mois le plus chaud sous 0 degre. La valeur etait a -6, bien plus severe que le critere reel, ce qui rabotait la calotte. Mesure : -6 -> 0 fait passer la calotte de 3,4 a 6,2 % des terres (Terre : environ 10 %).",

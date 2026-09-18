@@ -1,0 +1,231 @@
+// Worldseed - le champ de densite : ce qui est roche, ce qui est air.
+
+#include "Procedural/WorldseedDensity.h"
+
+#include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedPerlin.h"
+
+namespace
+{
+	const TCHAR* VOX = TEXT("voxel");
+}
+
+FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& Rules)
+{
+	FWorldseedDensityRules Out;
+
+	auto Num = [&Rules](const TCHAR* Key, double Fallback)
+	{
+		return static_cast<float>(Rules.Num(VOX, Key, Fallback));
+	};
+	auto Int = [&Rules](const TCHAR* Key, int32 Fallback)
+	{
+		return Rules.Int(VOX, Key, Fallback);
+	};
+
+	Out.VoxelSizeM = Num(TEXT("voxelSizeM"), 1.0);
+	Out.BandDepthM = Num(TEXT("bandDepthM"), 100.0);
+
+	Out.OverhangAmplitudeM = Num(TEXT("overhangAmplitudeM"), 8.0);
+	Out.OverhangFrequency = Num(TEXT("overhangFrequency"), 0.016);
+	Out.OverhangOctaves = Int(TEXT("overhangOctaves"), 3);
+
+	Out.CaveFrequency = Num(TEXT("caveFrequency"), 0.008);
+	Out.CaveOctaves = Int(TEXT("caveOctaves"), 2);
+	Out.CaveThreshold = Num(TEXT("caveThreshold"), 0.86);
+	Out.CaveRadiusM = Num(TEXT("caveRadiusM"), 9.0);
+	Out.CaveSurfaceFadeM = Num(TEXT("caveSurfaceFadeM"), 25.0);
+
+	return Out;
+}
+
+void FWorldseedDensity::Init(const FWorldseedGeometry& InGeometry,
+	const TArray<float>& InElevationM, float InHeightExaggeration, int32 InSeed,
+	const FWorldseedDensityRules& InRules)
+{
+	Geometry = InGeometry;
+	ElevationM = &InElevationM;
+	HeightExaggeration = FMath::Max(InHeightExaggeration, 0.01f);
+	Seed = InSeed;
+	Rules = InRules;
+}
+
+bool FWorldseedDensity::IsValid() const
+{
+	return ElevationM != nullptr
+		&& Geometry.NX >= 2
+		&& ElevationM->Num() == Geometry.CellCount();
+}
+
+float FWorldseedDensity::SurfaceHeightM(double X, double Y) const
+{
+	if (!IsValid())
+	{
+		return 0.0f;
+	}
+
+	// LA LONGITUDE S'ENROULE, LA LATITUDE SE BORNE. C'est la meme convention
+	// que GetHeightAtWorldXY et que SampleUV : le monde est une sphere
+	// deroulee, ses bords est et ouest sont le meme meridien.
+	const double WidthM = Geometry.WidthM();
+	const double HeightM = Geometry.HeightM;
+
+	double U = X / WidthM + 0.5;
+	U -= FMath::FloorToDouble(U);
+	const double V = FMath::Clamp(Y / HeightM + 0.5, 0.0, 1.0);
+
+	const float Raw = WorldseedGrid::SampleUV(*ElevationM, Geometry.NX, Geometry.NY,
+		static_cast<float>(U), static_cast<float>(V));
+
+	return Raw * HeightExaggeration;
+}
+
+void FWorldseedDensity::SurfaceRangeM(double MinX, double MinY, double MaxX,
+	double MaxY, float& OutMinM, float& OutMaxM) const
+{
+	OutMinM = 0.0f;
+	OutMaxM = 0.0f;
+	if (!IsValid())
+	{
+		return;
+	}
+
+	// ON ECHANTILLONNE LA GRILLE, PAS LE CHAMP. Un pas d'une cellule suffit :
+	// la surface macro ne peut pas varier plus vite que sa propre resolution,
+	// et c'est precisement ce que cette borne doit encadrer.
+	const double StepM = FMath::Max(Geometry.MetersPerPixel(), 1.0f);
+
+	float Lo = TNumericLimits<float>::Max();
+	float Hi = TNumericLimits<float>::Lowest();
+
+	for (double Y = MinY; Y <= MaxY + StepM * 0.5; Y += StepM)
+	{
+		for (double X = MinX; X <= MaxX + StepM * 0.5; X += StepM)
+		{
+			const float H = SurfaceHeightM(FMath::Min(X, MaxX), FMath::Min(Y, MaxY));
+			Lo = FMath::Min(Lo, H);
+			Hi = FMath::Max(Hi, H);
+		}
+	}
+
+	// Le deplacement 3D peut porter la surface d'autant, dans les deux sens.
+	OutMinM = Lo - Rules.OverhangAmplitudeM;
+	OutMaxM = Hi + Rules.OverhangAmplitudeM;
+}
+
+double FWorldseedDensity::CaveAt(const FVector& PosM, double DepthM) const
+{
+	if (Rules.CaveRadiusM <= 0.0f || Rules.CaveThreshold >= 1.0f)
+	{
+		return 0.0;
+	}
+
+	// PAS DE GALERIE PRES DE LA SURFACE NI SOUS LA BANDE. La premiere borne
+	// evite que le sol ne soit perfore partout ; la seconde ferme le fond, sans
+	// quoi une galerie rencontrerait le plein force et s'y terminerait par un
+	// plancher parfaitement plat.
+	const double Haut = WorldseedPerlin::Smoothstep(
+		0.0f, Rules.CaveSurfaceFadeM, static_cast<float>(DepthM));
+	const double Bas = 1.0 - WorldseedPerlin::Smoothstep(
+		Rules.BandDepthM * 0.75f, Rules.BandDepthM, static_cast<float>(DepthM));
+
+	const double Fondu = Haut * Bas;
+	if (Fondu <= 0.0)
+	{
+		return 0.0;
+	}
+
+	const float Crete = WorldseedPerlin::Ridged3D(
+		static_cast<float>(PosM.X), static_cast<float>(PosM.Y),
+		static_cast<float>(PosM.Z), Rules.CaveFrequency, Rules.CaveOctaves,
+		Seed + 40961);
+
+	const double Depassement = Crete - Rules.CaveThreshold;
+	if (Depassement <= 0.0)
+	{
+		return 0.0;
+	}
+
+	// Le depassement est ramene sur [0..1] avant de donner un rayon : sans
+	// cela le rayon dependrait du seuil choisi, et regler l'un deregler
+	// l'autre.
+	const double Normalise = Depassement / FMath::Max(1.0 - Rules.CaveThreshold, 1e-4);
+	return Normalise * Rules.CaveRadiusM * Fondu;
+}
+
+double FWorldseedDensity::At(const FVector& PosM) const
+{
+	if (!IsValid())
+	{
+		return 1.0;
+	}
+
+	const float Surface = SurfaceHeightM(PosM.X, PosM.Y);
+
+	// Distance signee a la surface macro : negative sous terre.
+	double D = PosM.Z - Surface;
+
+	// --- sortie rapide ------------------------------------------------------
+	//
+	// LOIN DE LA SURFACE, LE BRUIT NE PEUT PLUS CHANGER LE SIGNE, donc il ne
+	// peut plus deplacer l'isovaleur zero : le calculer serait payer pour un
+	// resultat que personne ne regarde. Le deplacement des surplombs est borne
+	// par son amplitude, le creusement des galeries par leur rayon ; au-dela de
+	// la somme des deux, la distance macro decide seule.
+	//
+	// Ce n'est pas une approximation du resultat : la valeur rendue diffère de
+	// la valeur exacte, mais seulement la ou le marching cubes ne s'en sert que
+	// pour un test de signe. Pres de la surface -- la ou il interpole -- le
+	// champ complet est calcule.
+	//
+	// MESURE QUI A MOTIVE CETTE SORTIE : 45 082 evaluations par chunk de 32 m a
+	// 0,52 microseconde piece, soit 23,4 ms par chunk. Dans un chunk de 32 m
+	// centre sur le relief, la bande utile n'en fait que 17.
+	const double PorteeUtile = Rules.OverhangAmplitudeM + Rules.CaveRadiusM;
+	if (D > PorteeUtile || D < -PorteeUtile - Rules.BandDepthM)
+	{
+		return D;
+	}
+
+	// --- surplombs ----------------------------------------------------------
+	// Le bruit 3D deplace la surface ; la ou son gradient depasse la pente du
+	// terrain, celle-ci se replie et devient franchissable par-dessous.
+	//
+	// MEME RAISONNEMENT QUE LA SORTIE RAPIDE, applique au seul terme de
+	// surplomb : il ne deplace la surface que dans une bande de son amplitude.
+	// Au fond de la bande creusable -- l'essentiel du volume -- il ne peut rien
+	// changer, et c'est trois des cinq bruits du calcul. La marge de 20 % evite
+	// de rogner les surplombs qui atteignent tout juste l'amplitude.
+	const bool bPresDeLaSurface =
+		FMath::Abs(D) <= Rules.OverhangAmplitudeM * 1.2;
+
+	if (bPresDeLaSurface && Rules.OverhangAmplitudeM > 0.0f && Rules.OverhangOctaves > 0)
+	{
+		D -= Rules.OverhangAmplitudeM * WorldseedPerlin::Fbm3D(
+			static_cast<float>(PosM.X), static_cast<float>(PosM.Y),
+			static_cast<float>(PosM.Z), Rules.OverhangFrequency,
+			Rules.OverhangOctaves, Seed + 1733);
+	}
+
+	const double DepthM = -D;
+
+	// --- le socle -----------------------------------------------------------
+	// Sous la bande, plein, et sans transition : aucun changement de signe donc
+	// aucune surface, donc rien a mailler.
+	if (DepthM > Rules.BandDepthM)
+	{
+		return -1.0;
+	}
+
+	// --- galeries -----------------------------------------------------------
+	const double Vide = CaveAt(PosM, DepthM);
+	if (Vide > 0.0)
+	{
+		// On PREND LE MAXIMUM plutot qu'on n'additionne : une galerie creuse le
+		// vide, elle ne repousse pas la roche. L'addition ferait remonter le
+		// sol au-dessus du tube.
+		D = FMath::Max(D, Vide);
+	}
+
+	return D;
+}

@@ -20,6 +20,10 @@ public class Worldseed : ModuleRules
 			"UMG",
 			"Slate",
 			"ProceduralMeshComponent",
+			// Marching cubes et structures de grille, pour le terrain voxel.
+			// C'est un module d'EXECUTION -- Engine et Chaos en dependent --
+			// donc rien a activer, pas de plugin, et cela part en build final.
+			"GeometryCore",
 			// Ocean : vagues, caustiques, rendu sous-marin, flottabilite et
 			// nage, qu'un maillage nu n'aura jamais. C'est le seul corps d'eau
 			// du monde depuis le retrait de l'hydrologie, le 18 septembre 2026.
