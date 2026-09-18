@@ -2992,3 +2992,79 @@ voile sous-marin donne alors a croire a un defaut de rendu de l'eau, alors que
 la surface est exactement a Z = 0. Remede : passer le pion en vol
 (`CharacterMovementComponent.set_movement_mode(MOVE_FLYING)` + `gravity_scale = 0`)
 avant de se deplacer, et juger de haut.
+
+### Terrain voxel : ce que coute un chunk, et les trois leviers (18 septembre 2026)
+
+Le terrain passe d'une carte d'altitude a un CHAMP DE DENSITE maille par
+marching cubes : negatif dans la roche, positif dans l'air, la surface est
+l'isovaleur zero. Decisions du proprietaire : voxel de **1 m**, bande creusable
+de **100 m**, rendu **lisse**, raccord **Transvoxel**, remplacement du terrain
+actuel.
+
+**IL N'Y A PAS DE GRILLE 3D, ET IL NE PEUT PAS Y EN AVOIR.** A un metre de cote,
+ce monde ferait **soixante-seize milliards de voxels**. Le champ est une
+FONCTION batie sur la grille 2D que la chaine calcule deja, plus du bruit 3D.
+Seules les modifications du joueur seront stockees.
+
+**MESURES, 95 chunks de 32 m au point le plus haut du monde, grille 2048x1024 :**
+
+|                                       | ms/chunk | au pire | evaluations | triangles |
+|---------------------------------------|---------:|--------:|------------:|----------:|
+| premiere version                       |    23,43 |   39,08 |      45 101 |   172 233 |
+| + sortie rapide loin de la surface     |     9,93 |   23,05 |      45 101 |   172 807 |
+| + normales moyennees des faces         |     7,83 |   15,69 |      39 304 |   172 807 |
+| + suivi de surface depuis des germes   |  **1,57** |  6,66 |   **3 733** |   172 548 |
+
+Quinze fois plus rapide **pour la meme surface a 0,15 % pres**. C'est LE
+controle : une optimisation qui change la geometrie n'est pas une optimisation.
+
+- **La sortie rapide** part du fait que loin de la surface, le bruit ne peut plus
+  changer le SIGNE du champ, donc plus deplacer l'isovaleur zero. Le mailleur n'y
+  lit qu'un signe : calculer la valeur exacte etait payer pour rien. Seuil =
+  amplitude des surplombs + rayon des galeries.
+- **Les normales au gradient du champ coutent six evaluations par sommet**, soit
+  195 ms sur 943 mesurees. La moyenne des faces incidentes, ponderee par leur
+  aire, tombe a **1 ms** : le marching cubes partage ses sommets le long des
+  aretes, donc elle est deja continue. Le gradient reste dans l'historique git
+  si l'eclairage montre un jour des facettes.
+- **`FMarchingCubes::GenerateContinuation(Germes)` est le gros levier**, et il
+  est dans le moteur. `Generate()` evalue chaque cellule du chunk -- 32 768 pour
+  un cube de 32 m -- alors que la surface n'en traverse qu'une coque. La
+  continuation part de germes et propage. Les germes viennent d'un balayage
+  grossier (un point sur quatre par axe, 729 evaluations), qui tranche du meme
+  coup le cas des chunks VIDES : les deux tiers du volume ne coutent plus que ce
+  balayage.
+  **CE QU'IL COUTE** : une poche entierement contenue entre deux points du
+  balayage -- moins de 4 m ici -- n'est pas vue. Mesure : **un chunk sur 95** a
+  bascule de « avec surface » a « vide », pour 259 triangles.
+
+**GeometryCore est un module d'EXECUTION** (`Engine` et `Chaos` en dependent) :
+une ligne dans le `.Build.cs` suffit, aucun plugin a activer, et cela part en
+build final. `FMarchingCubes` prend une `TFunction`, sait s'annuler (`CancelF`)
+et tourne depuis n'importe quel fil.
+
+**`ProceduralMeshComponent` n'accepte que des positions en DOUBLE precision.**
+Stocker des flottants n'economise rien, cela ajoute une conversion. Et les
+octets rapportes par un tampon de construction ne sont PAS le cout resident :
+ce tampon se reutilise d'un chunk a l'autre, le vrai cout est la copie interne
+du composant (de l'ordre de 190 Ko par chunk ici).
+
+**PIEGE DU BUILD UNIFIE, paye comptant.** `WorldseedMetersToCm` etait defini
+dans quatre namespaces ANONYMES. UBT concatene les `.cpp` en une seule unite de
+traduction, ou deux namespaces anonymes n'en font qu'un : l'ajout de deux
+fichiers a suffi a faire tomber deux fichiers EXISTANTS dans le meme groupe, et
+la compilation a casse sur un fichier que personne n'avait touche. **La
+collision ne dependait pas du code ecrit mais du REGROUPEMENT choisi par UBT.**
+La constante est desormais unique, dans `WorldseedRules.h`.
+
+**MESURER SANS MCP.** Le lien MCP tombe quand l'editeur est tue et relance
+plusieurs fois de suite (ce que fait chaque compilation), et il ne se retablit
+pas tout seul dans la session. La sonde tourne alors en commandlet :
+
+    UnrealEditor-Cmd.exe Worldseed.uproject -run=pythonscript -script="<fichier>" -unattended -nopause -nosplash
+
+**L'EDITEUR DOIT ETRE ARRETE D'ABORD** : le plugin ecoute sur le port 8000, et le
+commandlet echoue sur « HttpListener unable to bind to 127.0.0.1:8000 » -- une
+erreur qui fait echouer tout le commandlet, pas seulement l'ecoute. Le resultat
+se lit dans `Saved/Logs/Worldseed.log`, la sortie standard de PowerShell ne le
+capture pas.
