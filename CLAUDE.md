@@ -3358,3 +3358,66 @@ parait trop present.
 changerait le relief de tous les mondes, donc les rivieres, les biomes et le
 point d'apparition. C'est un arbitrage a part entiere, pas un effet de bord de
 l'ajout d'un catalogue.
+
+### Le voxel est branche sur la carte de JEU (18 septembre 2026)
+
+Jalon M5 du plan voxel, et il manquait a tout le reste : `AWorldseedVoxelTerrain`
+n'etait reference NULLE PART ailleurs que dans ses propres fichiers. Il n'existait
+que pose a la main sur le banc `L_Voxel_Bench`, pendant que la carte de jeu
+`L_Worldseed_Proc` -- celle que le menu ouvre -- tournait toujours sur l'ancien
+mailleur en carte d'altitude, donc sans grottes.
+
+**LA BASCULE NE DEPLACE PAS LES SERVICES, ET C'EST TOUT L'INTERET.**
+`AWorldseedTerrain` ne fait pas que mailler : il batit le sol de fond -- qui
+remplit l'horizon ET nourrit la texture d'information du plugin Water --, nourrit
+le ciel en climat, repond aux questions de latitude et d'altitude, et pose
+l'ocean. Le mailleur n'est qu'une de ses fonctions, et c'est la SEULE que le
+voxel remplace. Un drapeau `bUseVoxelMesher` et trente lignes, la ou deplacer ces
+services aurait demande sept cents lignes et tout l'etat qui va avec, d'un coup,
+sans filet. Ca se defait en posant le drapeau a faux -- ce qui a d'ailleurs servi
+a mesurer l'A/B ci-dessous.
+
+**TROIS DEFAUTS TROUVES EN BRANCHANT, dont deux silencieux :**
+
+- *Les deux acteurs generaient DEUX MONDES DIFFERENTS.* Sans monde en attente
+  dans l'instance de jeu -- c'est le cas d'un PIE lance depuis l'editeur, sans
+  passer par le menu -- chacun tombait sur sa generation de secours, et les
+  resolutions ne sont pas les memes : **512 x 256 pour le terrain, 2048 x 1024
+  pour le voxel**. Meme graine, relief different : le sol de fond decrivait un
+  autre monde que celui qu'on a sous les pieds. Corrige par `AdoptWorld`, appele
+  entre `SpawnActorDeferred` et `FinishSpawning` -- apres, il est trop tard,
+  BeginPlay a deja charge.
+- *L'exageration verticale n'etait pas transmise.* Le champ de densite tournait a
+  1,0 quel que soit le reglage du terrain : la jonction entre l'horizon et le sol
+  proche se serait vue comme une marche des que ce reglage bouge.
+- *Le materiau non plus.* Les chunks voxel prenaient le gris par defaut, qui ne
+  lit pas la couleur de sommet. **Visible a l'image** : relief proche
+  uniformement gris, horizon colore.
+
+**ET LE PIEGE DU BUILD UNIFIE EST REVENU**, exactement comme annonce dans la
+section sur le cout d'un chunk : `SUB` etait defini dans deux namespaces ANONYMES
+-- biomes et lithologie -- qu'UBT a fusionnes. Les noms de section vivent
+desormais dans `WorldseedSection`, une seule fois, comme `WorldseedMetersToCm`.
+
+**CE QUE CA COUTE, mesure proprement sur la meme carte et le meme monde**, trois
+lectures stables de chaque cote (la sonde rend la DERNIERE image rendue : une
+lecture isolee juste apres un changement est du bruit -- mes trois premieres
+mesures se contredisaient, 20,6 / 30,3 / 51,1 ms) :
+
+| | GPU | fil de jeu | fil de rendu | images/s |
+|---|---|---|---|---|
+| ancien mailleur | **30,25 ms** | 7,06 | 4,88 | **33,1** |
+| voxel | **47,92 ms** | 5,83 | 4,58 | **20,9** |
+
+**Le voxel coute +17,7 ms de GPU, soit 58 % de plus.** Les fils de jeu et de
+rendu, eux, ne bougent pas -- le streaming ne coute rien. La cause est la
+geometrie : **461 chunks affiches, tous avec collision**, a 1 m de voxel sur un
+rayon de 250 m et SANS AUCUN NIVEAU DE DETAIL, la ou l'ancien mailleur dessinait
+une grille de 512 x 256 -- 31 m par cellule -- avec trois niveaux de LOD.
+
+**CELA TRANCHE L'ARBITRAGE A3 : le LOD n'est pas optionnel a ce rayon.** Le banc
+donnait 182 FPS parce qu'il n'avait ni nuages volumetriques ni ocean ; la vraie
+carte est deja limitee par le GPU a 33 FPS AVANT le voxel, ce qui est un probleme
+distinct et anterieur -- Ultra Dynamic Sky et son ciel volumetrique. Les leviers,
+dans l'ordre : reduire `LoadRadiusM`, puis le LOD (Transvoxel ou colliers), puis
+s'attaquer au cout du ciel.

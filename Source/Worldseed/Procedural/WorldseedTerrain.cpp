@@ -32,17 +32,24 @@ void AWorldseedTerrain::BeginPlay()
 
 	Rebuild();
 
-	if (UWorld* World = GetWorld())
+	// LE MINUTEUR ET LE PLACEMENT APPARTIENNENT AU MAILLEUR, donc au voxel
+	// quand c'est lui qui tient le relief. Les laisser tourner ferait defiler
+	// des chunks de carte d'altitude sous ceux du voxel, et poserait le joueur
+	// sur une surface qui n'est plus celle qu'il voit -- "surface + 150 cm" n'a
+	// d'ailleurs aucun sens dans une grotte.
+	if (!bUseVoxelMesher)
 	{
-		World->GetTimerManager().SetTimer(UpdateTimer, this,
-			&AWorldseedTerrain::UpdateChunks, FMath::Max(UpdatePeriod, 0.05f), true);
-	}
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(UpdateTimer, this,
+				&AWorldseedTerrain::UpdateChunks, FMath::Max(UpdatePeriod, 0.05f), true);
+		}
 
-
-	if (bPlacePlayerAfterGenerate)
-	{
-		GetWorldTimerManager().SetTimerForNextTick(
-			this, &AWorldseedTerrain::PlacePlayerOnTerrain);
+		if (bPlacePlayerAfterGenerate)
+		{
+			GetWorldTimerManager().SetTimerForNextTick(
+				this, &AWorldseedTerrain::PlacePlayerOnTerrain);
+		}
 	}
 }
 
@@ -58,6 +65,12 @@ void AWorldseedTerrain::EndPlay(const EEndPlayReason::Type Reason)
 	{
 		GroundProxy->Destroy();
 		GroundProxy = nullptr;
+	}
+
+	if (VoxelTerrain)
+	{
+		VoxelTerrain->Destroy();
+		VoxelTerrain = nullptr;
 	}
 
 	Super::EndPlay(Reason);
@@ -144,7 +157,17 @@ void AWorldseedTerrain::Rebuild()
 	// qu'un rayon autour du joueur.
 	BuildGroundProxy();
 
-	UpdateChunks();
+	if (bUseVoxelMesher)
+	{
+		// LE VOXEL NE REMPLACE QUE LE MAILLAGE. Le sol de fond vient d'etre
+		// bati, l'ocean suit, le ciel et les questions de climat restent ici :
+		// seule la geometrie proche change de main.
+		SpawnVoxelTerrain();
+	}
+	else
+	{
+		UpdateChunks();
+	}
 
 	// L'ocean vient APRES les chunks : il se pose sur un relief deja connu, et
 	// n'a pas besoin d'etre refaite quand les chunks changent de resolution.
@@ -152,6 +175,71 @@ void AWorldseedTerrain::Rebuild()
 	{
 		Water->Build(Geometry, HeightsM, HeightExaggeration);
 	}
+}
+
+void AWorldseedTerrain::SpawnVoxelTerrain()
+{
+	UWorld* World = GetWorld();
+	if (!World || VoxelTerrain)
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// MEME TRANSFORM QUE CE TERRAIN : les deux travaillent dans le meme repere,
+	// et le champ de densite est exprime en metres dans celui de l'acteur.
+	UClass* Classe = VoxelTerrainClass ? VoxelTerrainClass.Get()
+		: AWorldseedVoxelTerrain::StaticClass();
+	// POSE DIFFEREE, ET C'EST INDISPENSABLE. BeginPlay charge le monde ; il faut
+	// donc lui donner le notre AVANT, sans quoi il en genere un autre -- et sans
+	// monde en attente dans l'instance de jeu, sa generation de secours ne
+	// tourne pas a la meme resolution que la notre. Meme graine, relief
+	// different, et le sol de fond decrivait alors un autre monde que celui
+	// qu'on a sous les pieds.
+	VoxelTerrain = World->SpawnActorDeferred<AWorldseedVoxelTerrain>(
+		Classe, GetActorTransform(), this, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
+	if (VoxelTerrain)
+	{
+		VoxelTerrain->AdoptWorld(WorldSeed, Geometry, HeightsM, Biomes,
+			HeightExaggeration);
+
+		// LE MATERIAU AUSSI SE TRANSMET. Sans lui les chunks voxel prennent le
+		// gris par defaut, qui ne lit pas la couleur de sommet : le relief
+		// proche devenait uniformement gris pendant que le sol de fond, lui,
+		// gardait ses couleurs de biome. La difference se voyait a l'horizon.
+		FWorldseedAppearance Mode;
+		Mode.bTexturePack = (Colouring == EWorldseedTerrainColouring::TexturePack)
+			&& (TexturePack != EWorldseedTexturePack::BiomeColour)
+			&& (Biomes.Index.Num() == Geometry.CellCount());
+		Mode.bColourByBiome = (Colouring == EWorldseedTerrainColouring::BiomeColour)
+			&& (Biomes.Index.Num() == Geometry.CellCount());
+
+		if (UMaterialInterface* Material = ChooseTerrainMaterial(Mode))
+		{
+			VoxelTerrain->TerrainMaterial = Material;
+		}
+
+		VoxelTerrain->FinishSpawning(GetActorTransform());
+	}
+
+	if (!VoxelTerrain)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] terrain : le mailleur voxel n'a pas pu etre pose, "
+				 "retour a la carte d'altitude"));
+		bUseVoxelMesher = false;
+		UpdateChunks();
+		return;
+	}
+
+	VoxelTerrain->SetActorLabel(TEXT("Worldseed_Voxel"));
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] terrain : le relief proche passe au VOXEL"));
 }
 
 FVector AWorldseedTerrain::GetStreamingOrigin() const

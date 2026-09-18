@@ -22,6 +22,25 @@ class FJsonObject;
 inline constexpr float WorldseedMetersToCm = 100.0f;
 
 /**
+ * Les noms de SECTION du fichier de regles, definis UNE SEULE FOIS.
+ *
+ * POURQUOI ILS SONT ICI. Chaque module declarait le sien dans un namespace
+ * ANONYME, et UBT concatene les .cpp en une seule unite de traduction ou deux
+ * namespaces anonymes n'en font qu'un : ajouter la lithologie a suffi a faire
+ * tomber la compilation sur un "SUB" deja defini par les biomes. Ce depot avait
+ * deja paye ce piege avec WorldseedMetersToCm, pour exactement la meme raison,
+ * et la collision ne depend pas du code ecrit mais du REGROUPEMENT choisi par
+ * UBT -- donc elle revient sans prevenir.
+ */
+namespace WorldseedSection
+{
+	inline constexpr const TCHAR* Biomes = TEXT("biomes");
+	inline constexpr const TCHAR* Substrat = TEXT("substrat");
+	inline constexpr const TCHAR* Sol = TEXT("ground");
+	inline constexpr const TCHAR* Voxel = TEXT("voxel");
+}
+
+/**
  * Geometrie du monde : taille, resolution, et surtout correspondance
  * ligne <-> latitude.
  *

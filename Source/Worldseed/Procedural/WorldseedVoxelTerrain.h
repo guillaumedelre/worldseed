@@ -163,6 +163,18 @@ public:
 	 * chunk porte une collision pour le poser etait circulaire : il etait deja
 	 * trop loin pour qu'on en construise un.
 	 */
+	/**
+	 * Exageration verticale du relief, reprise de l'acteur qui pose celui-ci.
+	 *
+	 * ELLE DOIT ETRE LA MEME DES DEUX COTES : le sol de fond et l'ocean sont
+	 * batis avec celle du terrain, et un champ de densite qui l'ignorerait
+	 * decrirait un relief a une autre echelle verticale -- la jonction entre
+	 * l'horizon et le sol proche se verrait comme une marche.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde",
+		meta = (ClampMin = "0.01"))
+	float HeightExaggeration = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde")
 	bool bHoldPlayer = true;
 
@@ -174,6 +186,27 @@ public:
 
 private:
 	bool LoadWorld();
+
+public:
+	/**
+	 * Reprend TEL QUEL le monde de l'acteur qui pose celui-ci.
+	 *
+	 * SANS CELA, LES DEUX EN GENERENT DEUX DIFFERENTS, en silence. Quand aucun
+	 * monde n'attend dans l'instance de jeu -- c'est le cas d'un PIE lance
+	 * depuis l'editeur, sans passer par le menu -- chaque acteur tombe sur sa
+	 * generation de secours, et leurs resolutions ne sont pas les memes : 512 x
+	 * 256 pour le terrain, 2048 x 1024 ici. Meme graine, relief different. Le
+	 * sol de fond decrivait donc un autre monde que celui qu'on a sous les
+	 * pieds, sans le moindre avertissement.
+	 *
+	 * A appeler AVANT FinishSpawning : BeginPlay charge le monde, et il est
+	 * trop tard apres.
+	 */
+	void AdoptWorld(int32 InSeed, const FWorldseedGeometry& InGeometry,
+		const TArray<float>& InHeightsM, const FWorldseedBiomeMap& InBiomes,
+		float InHeightExaggeration);
+
+private:
 
 	void UpdateChunks();
 
@@ -231,6 +264,7 @@ private:
 
 	FTimerHandle UpdateTimer;
 
+	bool bWorldAdopted = false;
 	bool bWorldReady = false;
 	bool bPlayerHeld = false;
 	bool bPlayerReleased = false;

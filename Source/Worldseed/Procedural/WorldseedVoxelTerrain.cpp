@@ -25,8 +25,30 @@ AWorldseedVoxelTerrain::AWorldseedVoxelTerrain()
 
 // ---------------------------------------------------------------- chargement
 
+void AWorldseedVoxelTerrain::AdoptWorld(int32 InSeed,
+	const FWorldseedGeometry& InGeometry, const TArray<float>& InHeightsM,
+	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration)
+{
+	WorldSeed = InSeed;
+	Geometry = InGeometry;
+	HeightsM = InHeightsM;
+	Biomes = InBiomes;
+	HeightExaggeration = InHeightExaggeration;
+	bWorldAdopted = true;
+}
+
 bool AWorldseedVoxelTerrain::LoadWorld()
 {
+	// UN MONDE ADOPTE NE SE RECHARGE PAS. C'est celui de l'acteur qui a pose
+	// celui-ci, donc celui que le sol de fond et l'ocean decrivent deja.
+	if (bWorldAdopted && Geometry.NX >= 2 && HeightsM.Num() == Geometry.CellCount())
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : monde repris du terrain, seed=%d  %dx%d"),
+			WorldSeed, Geometry.NX, Geometry.NY);
+		return true;
+	}
+
 	if (const UWorldseedGameInstance* GI =
 		UWorldseedGameInstance::GetWorldseedGameInstance(this))
 	{
@@ -87,7 +109,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			TEXT("[Worldseed] voxel : regles illisibles (%s), valeurs par defaut"), *Error);
 	}
 
-	Density.Init(Geometry, HeightsM, 1.0f, WorldSeed, DensityRules);
+	Density.Init(Geometry, HeightsM, HeightExaggeration, WorldSeed, DensityRules);
 	bWorldReady = Density.IsValid();
 
 	if (!bWorldReady)

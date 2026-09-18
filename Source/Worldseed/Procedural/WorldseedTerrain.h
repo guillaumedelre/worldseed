@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedVoxelTerrain.h"
 #include "Procedural/WorldseedTexturePack.h"
 #include "WorldseedTerrain.generated.h"
 
@@ -266,6 +267,31 @@ public:
 
 	// ------------------------------------------------------------ joueur
 
+	/**
+	 * Confier le relief proche au mailleur VOXEL plutot qu'a la carte d'altitude.
+	 *
+	 * POURQUOI LA BASCULE PREND CETTE FORME. Cet acteur ne fait pas que mailler :
+	 * il batit le sol de fond — qui remplit l'horizon ET nourrit la texture
+	 * d'information du plugin Water —, nourrit le ciel en climat, repond aux
+	 * questions de latitude et d'altitude, et pose l'ocean. Le mailleur n'est
+	 * qu'une de ses fonctions, et c'est la SEULE que le voxel remplace.
+	 *
+	 * Deplacer ces services vers l'acteur voxel aurait demande de deplacer sept
+	 * cents lignes et tout l'etat qui va avec, d'un coup, sans filet. Les laisser
+	 * ici et n'echanger que le mailleur tient en trente lignes, se verifie a
+	 * l'image, et se defait en posant ce drapeau a faux.
+	 *
+	 * Ce qui est ASSUME le temps de la bascule : les deux acteurs lisent le monde
+	 * chacun de leur cote, donc la grille d'altitudes existe en double — environ
+	 * huit megaoctets a 2048 x 1024. A supprimer quand l'ancien mailleur partira.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
+	bool bUseVoxelMesher = true;
+
+	/** Classe de l'acteur voxel a poser. Vide : la classe native. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
+	TSubclassOf<AWorldseedVoxelTerrain> VoxelTerrainClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Joueur")
 	bool bPlacePlayerAfterGenerate = true;
 
@@ -311,6 +337,9 @@ protected:
 
 	/** Reevalue quels chunks doivent exister, et a quel niveau. */
 	void UpdateChunks();
+
+	/** Pose l'acteur voxel qui prend le relief proche en charge. */
+	void SpawnVoxelTerrain();
 
 	/** Echantillonne le climat sous le joueur et le pousse au ciel. */
 	void FeedSky(float DeltaSeconds);
@@ -420,6 +449,11 @@ protected:
 	/** Les 19 biomes du monde charge. */
 	FWorldseedBiomeMap Biomes;
 
+	/** L'acteur voxel pose par cet acteur, quand bUseVoxelMesher est vrai. */
+	UPROPERTY()
+	TObjectPtr<AWorldseedVoxelTerrain> VoxelTerrain;
+
 	int32 ChunksX = 0;
 	int32 ChunksY = 0;
 };
+

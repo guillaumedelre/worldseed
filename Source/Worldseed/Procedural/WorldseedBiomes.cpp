@@ -23,7 +23,6 @@ namespace
 	 * ne sort du diagramme de Whittaker, et les laisser sous "biomes"
 	 * entretenait exactement la confusion qu'on a corrigee dans le code.
 	 */
-	const TCHAR* SUB = TEXT("substrat");
 
 	constexpr int32 BiomeCount = static_cast<int32>(EWorldseedBiome::Count);
 
@@ -178,7 +177,7 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 	Out.PermanentIceTempC = Num(TEXT("permanentIceTempC"), 0.0);
 	auto Sub = [&Rules](const TCHAR* Key, double Fallback)
 	{
-		return static_cast<float>(Rules.Num(SUB, Key, Fallback));
+		return static_cast<float>(Rules.Num(WorldseedSection::Substrat, Key, Fallback));
 	};
 
 	Out.BareRockSlopeDeg = Sub(TEXT("bareRockSlopeDeg"), 55.0);

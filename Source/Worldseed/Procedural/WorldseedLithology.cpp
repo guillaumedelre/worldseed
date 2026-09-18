@@ -11,8 +11,6 @@
 
 namespace
 {
-	const TCHAR* SUB = TEXT("substrat");
-
 	int32 IdDeCle(const TArray<FWorldseedLithologyEntry>& Catalogue, const FString& Cle)
 	{
 		for (int32 I = 0; I < Catalogue.Num(); ++I)
@@ -29,7 +27,7 @@ FWorldseedLithologyRules FWorldseedLithologyRules::FromRules(const UWorldseedRul
 
 	// --- le catalogue, sur le meme patron que le registre des biomes ---------
 	if (const TArray<TSharedPtr<FJsonValue>>* Entrees =
-		Rules.Array(SUB, TEXT("lithologies")))
+		Rules.Array(WorldseedSection::Substrat, TEXT("lithologies")))
 	{
 		int32 MaxId = -1;
 		for (const TSharedPtr<FJsonValue>& V : *Entrees)
@@ -82,21 +80,21 @@ FWorldseedLithologyRules FWorldseedLithologyRules::FromRules(const UWorldseedRul
 
 	// --- l'attribution --------------------------------------------------------
 	Out.SocleConvergence = static_cast<float>(
-		Rules.Num(SUB, TEXT("lithologieSocleConvergence"), 0.35));
+		Rules.Num(WorldseedSection::Substrat, TEXT("lithologieSocleConvergence"), 0.35));
 	Out.SocleElevationM = static_cast<float>(
-		Rules.Num(SUB, TEXT("lithologieSocleElevationM"), 150.0));
+		Rules.Num(WorldseedSection::Substrat, TEXT("lithologieSocleElevationM"), 150.0));
 	Out.MotifFrequency = static_cast<float>(
-		Rules.Num(SUB, TEXT("lithologieMotifFrequency"), 6.0));
-	Out.MotifOctaves = Rules.Int(SUB, TEXT("lithologieMotifOctaves"), 3);
+		Rules.Num(WorldseedSection::Substrat, TEXT("lithologieMotifFrequency"), 6.0));
+	Out.MotifOctaves = Rules.Int(WorldseedSection::Substrat, TEXT("lithologieMotifOctaves"), 3);
 
 	Out.IdOceanique = IdDeCle(Out.Catalogue,
-		Rules.Str(SUB, TEXT("lithologieOceanique"), TEXT("basalte")));
+		Rules.Str(WorldseedSection::Substrat, TEXT("lithologieOceanique"), TEXT("basalte")));
 	Out.IdSocle = IdDeCle(Out.Catalogue,
-		Rules.Str(SUB, TEXT("lithologieSocle"), TEXT("granite")));
+		Rules.Str(WorldseedSection::Substrat, TEXT("lithologieSocle"), TEXT("granite")));
 
 	// Les roches de bassin et leurs proportions, dans l'ordre du fichier.
 	if (const TArray<TSharedPtr<FJsonValue>>* Bassin =
-		Rules.Array(SUB, TEXT("lithologieBassin")))
+		Rules.Array(WorldseedSection::Substrat, TEXT("lithologieBassin")))
 	{
 		for (const TSharedPtr<FJsonValue>& V : *Bassin)
 		{
