@@ -29,6 +29,8 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.OverhangAmplitudeM = Num(TEXT("overhangAmplitudeM"), 8.0);
 	Out.OverhangFrequency = Num(TEXT("overhangFrequency"), 0.016);
 	Out.OverhangOctaves = Int(TEXT("overhangOctaves"), 3);
+	Out.OverhangWarpM = Num(TEXT("overhangWarpM"), 25.0);
+	Out.OverhangWarpFrequency = Num(TEXT("overhangWarpFrequency"), 0.012);
 
 	Out.CaveFrequency = Num(TEXT("caveFrequency"), 0.008);
 	Out.CaveOctaves = Int(TEXT("caveOctaves"), 2);
@@ -108,7 +110,24 @@ void FWorldseedDensity::SurfaceRangeM(double MinX, double MinY, double MaxX,
 		}
 	}
 
-	// Le deplacement 3D peut porter la surface d'autant, dans les deux sens.
+	// Le deplacement VERTICAL porte la surface de son amplitude, dans les deux
+	// sens. Le deplacement HORIZONTAL, lui, fait lire le relief jusqu'a sa
+	// portee plus loin : la plage doit donc couvrir le voisinage elargi, sans
+	// quoi le streaming manquerait les chunks ou la surface s'est repliee.
+	if (Rules.OverhangWarpM > 0.0f)
+	{
+		const double Marge = Rules.OverhangWarpM;
+		for (double Y = MinY - Marge; Y <= MaxY + Marge + StepM * 0.5; Y += StepM)
+		{
+			for (double X = MinX - Marge; X <= MaxX + Marge + StepM * 0.5; X += StepM)
+			{
+				const float H = SurfaceHeightM(X, Y);
+				Lo = FMath::Min(Lo, H);
+				Hi = FMath::Max(Hi, H);
+			}
+		}
+	}
+
 	OutMinM = Lo - Rules.OverhangAmplitudeM;
 	OutMaxM = Hi + Rules.OverhangAmplitudeM;
 }
@@ -160,7 +179,34 @@ double FWorldseedDensity::At(const FVector& PosM) const
 		return 1.0;
 	}
 
-	const float Surface = SurfaceHeightM(PosM.X, PosM.Y);
+	float Surface = SurfaceHeightM(PosM.X, PosM.Y);
+
+	// --- surplombs, par deplacement HORIZONTAL ------------------------------
+	//
+	// A chaque altitude on va lire le relief un peu plus loin, et le decalage
+	// tourne avec Z. Sur du plat cela ne change presque rien ; sur une falaise,
+	// deux altitudes voisines lisent des endroits dont l'altitude differe de
+	// dizaines de metres, et la surface se replie.
+	//
+	// LE DEPLACEMENT N'EST CALCULE QUE PRES DE LA SURFACE, et c'est une
+	// economie qui compte : les deux tiers des evaluations tombent loin d'elle,
+	// dans le plein ou dans l'air, ou le relief exact n'a aucune importance.
+	// La borne est large -- la bande entiere -- pour qu'un point juste au-dessus
+	// d'une falaise ne bascule pas d'un cote a l'autre du test.
+	if (Rules.OverhangWarpM > 0.0f
+		&& FMath::Abs(PosM.Z - Surface) < Rules.BandDepthM)
+	{
+		const float FX = static_cast<float>(PosM.X);
+		const float FY = static_cast<float>(PosM.Y);
+		const float FZ = static_cast<float>(PosM.Z);
+
+		const double DecalageX = Rules.OverhangWarpM * WorldseedPerlin::Fbm3D(
+			FX, FY, FZ, Rules.OverhangWarpFrequency, 2, Seed + 9001);
+		const double DecalageY = Rules.OverhangWarpM * WorldseedPerlin::Fbm3D(
+			FX, FY, FZ, Rules.OverhangWarpFrequency, 2, Seed + 9002);
+
+		Surface = SurfaceHeightM(PosM.X + DecalageX, PosM.Y + DecalageY);
+	}
 
 	// Distance signee a la surface macro : negative sous terre.
 	double D = PosM.Z - Surface;

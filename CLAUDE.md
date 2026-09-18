@@ -3068,3 +3068,74 @@ commandlet echoue sur « HttpListener unable to bind to 127.0.0.1:8000 » -- une
 erreur qui fait echouer tout le commandlet, pas seulement l'ecoute. Le resultat
 se lit dans `Saved/Logs/Worldseed.log`, la sortie standard de PowerShell ne le
 capture pas.
+
+### Les surplombs ne se font PAS en deformant une carte d'altitude (18 septembre 2026)
+
+Deux mecanismes essayes, mesures, et **tous deux abandonnes**. Ne pas les refaire.
+
+**1. Deplacement VERTICAL** (`overhangAmplitudeM`, toujours en place et utile pour
+le grain, mais inutile pour les surplombs). Ajouter un fBm 3D a la distance a la
+surface ne replie rien : il faudrait que le gradient vertical du bruit depasse 1,
+or un fBm de Perlin normalise reste tres en dessous. Mesure : **0,00 % de colonnes
+franchissables meme a seize metres d'amplitude.**
+
+**2. Deplacement HORIZONTAL du point de lecture** (`overhangWarpM`). L'idee etait
+de lire le relief un peu plus loin a chaque altitude, pour qu'une falaise se
+replie. **Mesure sur la collision REELLE** (relevé de planchers par sondes
+verticales, 3013 colonnes communes, meme graine, meme grille) :
+
+| | colonnes a repli | visieres 2-12 m | vide median |
+|---|---|---|---|
+| sans deplacement | 16,06 % | 5,11 % | 22,6 m |
+| deplacement 25 m | 16,03 % | 5,18 % | 22,1 m |
+
+**Aucun gain.** Les 16 % de colonnes ou l'on passe sous la roche viennent des
+GALERIES, pas du deplacement. Ce que le deplacement fait vraiment : il remue le
+relief macro — montee mediane du sommet 0,00 m mais p90 a +6,95 m, maximum
++115 m, et 371 colonnes gagnent de la roche la ou il n'y en avait pas.
+
+**LE PIEGE DE MESURE QUI M'A FAIT CROIRE A UNE REUSSITE** : la sonde de densite
+rapportait « air dans la bande 0,64 % -> 2,17 % », soit 3,4 fois plus, et j'en ai
+conclu a un succes. **L'air en volume n'est pas un surplomb.** La meme sonde
+disait par ailleurs « 12,35 % des colonnes ont 2 m de libre » dans les DEUX etats
+— c'etait la bonne colonne du tableau, et je ne l'avais pas lue.
+
+**MONTER LA FREQUENCE DECHIRE LE TERRAIN.** Le repli demande
+`amplitude x frequence x pente > 1` ; a 25 m et 0,012 cycle/m le produit vaut
+0,3, d'ou l'absence d'effet. En montant la frequence :
+
+    0,012  ->  12,35 % de colonnes a 2 m de libre  (= l'etat sans deplacement)
+    0,025  ->  18,52 %
+    0,045  ->  35,80 %
+
+mais **l'image condamne 0,045** : le deplacement n'est plus inversible, la surface
+se replie sur elle-meme et part en ECAILLES DETACHEES qui flottent dans le ciel,
+le pre du premier plan se delaminant en rubans qui se chevauchent. Un deplacement
+de domaine ne reste une deformation valide que tant que son jacobien ne s'annule
+pas ; passe cette limite, il ne plie pas la surface, il la dechire.
+
+**Le code est garde, inerte** (`overhangWarpM: 0` dans les regles, et le terme est
+court-circuite a zero), pour que la mesure reste reproductible.
+
+**LA BONNE PISTE, pour quand on y reviendra** : ne pas deformer la surface mais
+CREUSER sous elle. Un terme soustractif ne peut pas produire de lambeau, parce
+qu'il enleve de la matiere a un solide au lieu de deplacer une frontiere — c'est
+exactement ce que fait deja `CaveAt`, et c'est pourquoi les galeries, elles,
+tiennent. Un bruit en NAPPES horizontales estompe pres de la surface donnerait des
+visieres et des abris sous roche sans toucher au relief macro.
+
+**PIEGE DE PROTOCOLE, paye comptant sur cet A/B.** Ma premiere paire d'images
+etait invalide : la session A n'avait pas ete montee comme la B (auto-exposition
+non coupee, SkyLight en capture temps reel recapture entre-temps). Le TEMOIN l'a
+dit — le pre du premier plan, qui ne peut pas avoir bouge, avait gagne 54 % de
+luminance. Recette d'A/B valable, verifiee : meme suite d'appels des deux cotes
+(arret du PIE, ecriture de la regle, sonde qui relit les regles, relance,
+`r.EyeAdaptationQuality 0`, meme position, meme attente), puis controle sur TROIS
+temoins avant de regarder la zone d'interet — ciel 0,02 % de pixels modifies,
+personnage 102,2 contre 101,0 de luminance.
+
+**ETENDRE LA COLLISION POUR MESURER.** `collision_radius_m` vaut 120 m en jeu ;
+le porter a la valeur de `load_radius_m` (250) donne de la geometrie physique sur
+tout le rayon charge, donc des sondes verticales partout. Compter **~16 s** apres
+le changement pour que la cuisson suive : un premier relevé fait a 10 s n'a couvert
+que 662 colonnes contre 3576, et les pourcentages n'etaient pas comparables.

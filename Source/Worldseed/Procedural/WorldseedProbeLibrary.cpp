@@ -228,7 +228,7 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 }
 
 FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
-	int32 ResolutionY, float AreaM, float StepM)
+	int32 ResolutionY, float AreaM, float StepM, bool bSteepest)
 {
 	// Les regles sont relues a chaque appel : c'est ce qui permet d'essayer une
 	// valeur, de mesurer, et de recommencer sans redemarrer l'editeur.
@@ -269,18 +269,51 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 	const float Mediane = WorldseedGrid::Quantile(Terres, 0.5f);
 
 	const int32 NX = World.Geometry.NX;
+	const int32 NYG = World.Geometry.NY;
 	int32 Cellule = INDEX_NONE;
-	float Meilleur = TNumericLimits<float>::Max();
-	for (int32 C = 0; C < World.ElevationM.Num(); ++C)
+
+	if (bSteepest)
 	{
-		const float H = World.ElevationM[C];
-		if (H <= 0.0f) { continue; }
-		const float Ecart = FMath::Abs(H - Mediane);
-		if (Ecart < Meilleur)
+		// LE DEPLACEMENT HORIZONTAL N'AGIT QUE SUR LE RAIDE, par construction :
+		// sur du plat, lire le relief vingt metres plus loin donne la meme
+		// altitude. Le mesurer sur un relief median reviendrait donc a conclure
+		// qu'il ne fait rien -- ce qui serait vrai, et sans interet.
+		float PlusRaide = -1.0f;
+		for (int32 J = 1; J < NYG - 1; ++J)
 		{
-			Meilleur = Ecart;
-			Cellule = C;
+			for (int32 I = 1; I < NX - 1; ++I)
+			{
+				const int32 C = J * NX + I;
+				if (World.ElevationM[C] <= 0.0f) { continue; }
+				const float DX = World.ElevationM[C + 1] - World.ElevationM[C - 1];
+				const float DY = World.ElevationM[C + NX] - World.ElevationM[C - NX];
+				const float G = DX * DX + DY * DY;
+				if (G > PlusRaide)
+				{
+					PlusRaide = G;
+					Cellule = C;
+				}
+			}
 		}
+	}
+	else
+	{
+		float Meilleur = TNumericLimits<float>::Max();
+		for (int32 C = 0; C < World.ElevationM.Num(); ++C)
+		{
+			const float H = World.ElevationM[C];
+			if (H <= 0.0f) { continue; }
+			const float Ecart = FMath::Abs(H - Mediane);
+			if (Ecart < Meilleur)
+			{
+				Meilleur = Ecart;
+				Cellule = C;
+			}
+		}
+	}
+	if (Cellule == INDEX_NONE)
+	{
+		return TEXT("aucune cellule de terre retenue");
 	}
 
 	const double MetresParCellule = World.Geometry.MetersPerPixel();
@@ -408,9 +441,10 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 		? 100.0 * static_cast<double>(PointsAir) / PointsBande : 0.0;
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[Sonde] formes : relief median %.1f m, zone %.0f m au pas de %.1f m, ")
-		TEXT("%d colonnes de terre"),
-		Mediane, AreaM, Pas, Colonnes);
+		TEXT("[Sonde] formes : relief median %.1f m, zone %.0f m au pas de %.1f m ")
+		TEXT("centree sur (%.0f, %.0f) m [%s], %d colonnes de terre"),
+		Mediane, AreaM, Pas, CentreX, CentreY,
+		bSteepest ? TEXT("le plus raide") : TEXT("relief median"), Colonnes);
 	Hauteurs.Sort();
 	const double Mediane2 = Hauteurs.Num() > 0 ? Hauteurs[Hauteurs.Num() / 2] : 0.0;
 	const double PartFranchissable = Colonnes > 0

@@ -137,7 +137,9 @@
     "caveOctaves": 2,
     "caveThreshold": 0.96,
     "caveRadiusM": 9.0,
-    "caveSurfaceFadeM": 25.0
+    "caveSurfaceFadeM": 25.0,
+    "overhangWarpM": 0.0,
+    "overhangWarpFrequency": 0.012
   },
   "biomes": {
     "treeLineTempC": 4.0,

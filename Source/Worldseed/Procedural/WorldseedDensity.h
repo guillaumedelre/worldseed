@@ -47,6 +47,27 @@ struct WORLDSEED_API FWorldseedDensityRules
 	int32 OverhangOctaves = 3;
 
 	/**
+	 * Deplacement HORIZONTAL du point ou l'on lit le relief, en metres.
+	 *
+	 * C'EST LUI QUI FAIT LES VRAIS SURPLOMBS, et le terme vertical ci-dessus
+	 * n'y arrive pas -- mesure : 0,00 % de colonnes franchissables meme a
+	 * seize metres d'amplitude, parce qu'un fBm de Perlin normalise n'atteint
+	 * jamais le gradient vertical de 1 qu'il faudrait.
+	 *
+	 * Le principe est different : a chaque altitude, on va lire le relief un
+	 * peu PLUS LOIN, et le decalage tourne avec Z. Sur un terrain plat cela ne
+	 * change presque rien -- le relief y est le meme a vingt metres pres. Sur
+	 * une falaise, deux altitudes voisines lisent des endroits dont les
+	 * altitudes different de dizaines de metres : la surface se replie, et l'on
+	 * peut passer dessous. Les surplombs naissent donc exactement la ou ils
+	 * sont credibles, sans qu'on ait eu a le demander.
+	 */
+	float OverhangWarpM = 25.0f;
+
+	/** Frequence du deplacement horizontal, en cycles par metre. */
+	float OverhangWarpFrequency = 0.012f;
+
+	/**
 	 * Frequence des galeries, en cycles par metre.
 	 *
 	 * Une valeur de 1/120 donne des tubes d'une centaine de metres de portee.

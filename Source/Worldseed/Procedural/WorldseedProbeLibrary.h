@@ -68,5 +68,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeCaves(int32 Seed = 20260909, float HeightMeters = 8000.0f,
-		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f);
+		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f,
+		bool bSteepest = false);
 };
