@@ -55,6 +55,32 @@ namespace WorldseedCache
 			return Out.Magic == Magic;
 		}
 
+		void WriteBytes(FArchive& Ar, const TArray<uint8>& Data)
+		{
+			int32 Num = Data.Num();
+			Ar << Num;
+			if (Num > 0)
+			{
+				Ar.Serialize(const_cast<uint8*>(Data.GetData()), Num);
+			}
+		}
+
+		bool ReadBytes(FArchive& Ar, TArray<uint8>& Data)
+		{
+			int32 Num = 0;
+			Ar << Num;
+			if (Num < 0 || Num > 400000000)
+			{
+				return false;
+			}
+			Data.SetNumUninitialized(Num);
+			if (Num > 0)
+			{
+				Ar.Serialize(Data.GetData(), Num);
+			}
+			return true;
+		}
+
 		void WriteFloats(FArchive& Ar, const TArray<float>& Data)
 		{
 			int32 Num = Data.Num();
@@ -161,7 +187,8 @@ namespace WorldseedCache
 		// anterieure n'arrive jamais jusqu'ici, l'en-tete l'a deja refuse.
 		if (!ReadFloats(Ar, Out.ElevationM) || !ReadFloats(Ar, Out.TempC)
 			|| !ReadFloats(Ar, Out.PrecipMm) || !ReadFloats(Ar, Out.SeasonalAmpC)
-			|| !ReadFloats(Ar, Out.Continentality))
+			|| !ReadFloats(Ar, Out.Continentality)
+			|| !ReadBytes(Ar, Out.LithologyId))
 		{
 			return false;
 		}
@@ -199,6 +226,7 @@ namespace WorldseedCache
 		WriteFloats(Raw, World.PrecipMm);
 		WriteFloats(Raw, World.SeasonalAmpC);
 		WriteFloats(Raw, World.Continentality);
+		WriteBytes(Raw, World.LithologyId);
 
 		// Trois champs tres correles spatialement : zlib les reduit d'un facteur
 		// 2 a 3. Sans compression, un monde de reference pese une centaine de Mo.

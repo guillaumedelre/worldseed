@@ -5,6 +5,7 @@
 #include "Procedural/WorldseedDensity.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 
@@ -225,6 +226,86 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 
 	UE_LOG(LogTemp, Log, TEXT("[Sonde] %s"), *Summary);
 	return Summary;
+}
+
+FString UWorldseedProbeLibrary::ProbeLithology(int32 Seed, float HeightMeters,
+	int32 ResolutionY)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const int32 Count = World.Geometry.CellCount();
+	if (!World.Lithology.IsValid(Count))
+	{
+		return TEXT("la lithologie n'a pas ete calculee");
+	}
+
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules)
+	{
+		return FString::Printf(TEXT("regles illisibles : %s"), *Error);
+	}
+	const FWorldseedLithologyRules Litho = FWorldseedLithologyRules::FromRules(*Rules);
+	const int32 Roches = Litho.Catalogue.Num();
+
+	TArray<int32> TotalMer;   TotalMer.Init(0, Roches);
+	TArray<int32> TotalTerre; TotalTerre.Init(0, Roches);
+	TArray<double> SommeAlt;  SommeAlt.Init(0.0, Roches);
+	int32 Mer = 0;
+	int32 Terre = 0;
+
+	for (int32 I = 0; I < Count; ++I)
+	{
+		const int32 R = World.Lithology.Id[I];
+		if (!TotalMer.IsValidIndex(R)) { continue; }
+		if (World.ElevationM[I] > 0.0f)
+		{
+			++TotalTerre[R]; ++Terre;
+			SommeAlt[R] += World.ElevationM[I];
+		}
+		else
+		{
+			++TotalMer[R]; ++Mer;
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- lithologie ---"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   %-10s %10s %10s %14s %10s"),
+		TEXT("roche"), TEXT("des terres"), TEXT("des mers"),
+		TEXT("altitude moy."), TEXT("karst"));
+
+	for (int32 R = 0; R < Roches; ++R)
+	{
+		if (TotalTerre[R] == 0 && TotalMer[R] == 0) { continue; }
+		const double Alt = (TotalTerre[R] > 0) ? SommeAlt[R] / TotalTerre[R] : 0.0;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   %-10s %9.2f %% %9.2f %% %11.0f m %10.2f"),
+			WorldseedLithology::Name(Litho, static_cast<uint8>(R)),
+			100.0 * TotalTerre[R] / FMath::Max(Terre, 1),
+			100.0 * TotalMer[R] / FMath::Max(Mer, 1),
+			Alt, Litho.Catalogue[R].Karstifiable);
+	}
+
+	// LA PART KARSTIFIABLE DES TERRES : c'est elle qui dira, quand les grottes
+	// arriveront, quelle fraction du monde peut porter un reseau de dissolution.
+	double Karst = 0.0;
+	for (int32 R = 0; R < Roches; ++R)
+	{
+		Karst += Litho.Catalogue[R].Karstifiable * TotalTerre[R];
+	}
+	const double KarstPct = 100.0 * Karst / FMath::Max(Terre, 1);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   terres karstifiables : %.2f %%"), KarstPct);
+
+	return FString::Printf(TEXT("%d roches ; %.2f %% des terres karstifiables ; detail au journal"),
+		Roches, KarstPct);
 }
 
 FString UWorldseedProbeLibrary::ProbeGroundFields(int32 Seed, float HeightMeters,

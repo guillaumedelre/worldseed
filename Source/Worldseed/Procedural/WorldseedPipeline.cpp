@@ -107,6 +107,7 @@ namespace WorldseedPipeline
 			Out.Climate.PrecipMm = MoveTemp(Cached.PrecipMm);
 			Out.Climate.SeasonalAmpC = MoveTemp(Cached.SeasonalAmpC);
 			Out.Climate.Continentality = MoveTemp(Cached.Continentality);
+			Out.Lithology.Id = MoveTemp(Cached.LithologyId);
 			Out.bHasClimate = (Out.Climate.TempMeanC.Num() == Geometry.CellCount());
 			Out.bFromCache = true;
 
@@ -184,6 +185,14 @@ namespace WorldseedPipeline
 			OutError = TEXT("la tectonique n'a pas produit de heightfield exploitable");
 			return false;
 		}
+
+		// LA LITHOLOGIE SE LIT SUR LA TECTONIQUE, ET MAINTENANT. Elle a besoin de
+		// la croute et de la convergence, que seule cette etape connait ; et le
+		// faire AVANT l'erosion est correct, l'erosion ne transformant pas du
+		// granite en calcaire.
+		WorldseedLithology::Compute(Geometry, Tectonic.ElevationM,
+			Tectonic.IsContinental, Tectonic.Convergence,
+			FWorldseedLithologyRules::FromRules(*Rules), Seed, Out.Lithology);
 
 		Out.ElevationM = MoveTemp(Tectonic.ElevationM);
 		Out.Geometry = Geometry;
@@ -277,6 +286,7 @@ namespace WorldseedPipeline
 		ToCache.PrecipMm = Out.Climate.PrecipMm;
 		ToCache.SeasonalAmpC = Out.Climate.SeasonalAmpC;
 		ToCache.Continentality = Out.Climate.Continentality;
+		ToCache.LithologyId = Out.Lithology.Id;
 		WorldseedCache::Save(CacheKey, Rules->SourceHash, ToCache);
 
 		// --- biomes ---------------------------------------------------------

@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedFields.h"
+#include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedJob.h"
 #include "Procedural/WorldseedRules.h"
 
@@ -60,6 +61,15 @@ namespace WorldseedPipeline
 		 * cote pour lier des assets.
 		 */
 		FWorldseedGroundFields Ground;
+
+		/**
+		 * De quelle roche est fait le sous-sol.
+		 *
+		 * Calculee depuis la TECTONIQUE et AVANT l'erosion : les plaques ne
+		 * bougent pas quand la surface se creuse. C'est elle, et non le biome,
+		 * qui gouvernera les reseaux de grottes.
+		 */
+		FWorldseedLithology Lithology;
 
 		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
 		bool bFromCache = false;

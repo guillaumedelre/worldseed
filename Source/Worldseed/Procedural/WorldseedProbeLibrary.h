@@ -97,6 +97,19 @@ public:
 	 * sauf a comparer les DEUX hemispheres, ou l'asymetrie doit s'inverser. Elle
 	 * ne s'inverse pas si le signe est faux, et c'est immediat a lire.
 	 */
+	/**
+	 * Verifie la lithologie : les parts, et surtout leur PLACE.
+	 *
+	 * Les parts seules ne prouvent rien -- un tirage au hasard donnerait les
+	 * memes. Ce qui tranche est le croisement avec l'altitude et la mer : le
+	 * basalte doit etre sous l'eau, le granite en hauteur, le calcaire et le
+	 * gres dans les bas pays. Une erreur d'attribution se lit immediatement
+	 * dans ce tableau, et nulle part ailleurs.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeLithology(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 1024);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeGroundFields(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);

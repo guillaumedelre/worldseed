@@ -25,8 +25,12 @@
  *   4 - amplitude saisonniere transportee (le relief lui-meme est inchange)
  *   5 - continentalite transportee, pour l'ecart jour/nuit du ciel
  *   6 - hydrologie retiree : plus de creusement de lit apres chargement
+ *   7 - la lithologie est calculee et TRANSPORTEE, donc son code entre dans ce
+ *       compteur : une correction de l'attribution des roches doit desormais
+ *       invalider les mondes en cache, sinon ils rendent l'ancienne carte des
+ *       roches sans le signaler. Paye comptant le jour de son ajout.
  */
-#define WORLDSEED_PIPELINE_VERSION 6
+#define WORLDSEED_PIPELINE_VERSION 7
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry
@@ -59,7 +63,14 @@ struct WORLDSEED_API FWorldseedCacheEntry
 namespace WorldseedCache
 {
 	constexpr uint32 Magic = 0x57534557;   // "WSEW"
-	constexpr uint32 FormatVersion = 4;
+	/**
+	 * 5 : la lithologie voyage avec le monde.
+	 *
+	 * Elle depend de grandeurs que seule la tectonique connait, et le cache ne
+	 * les portait pas. Le passage a 5 REFUSE tous les mondes deja en cache : ils
+	 * se regenerent une fois, en une trentaine de secondes chacun.
+	 */
+	constexpr uint32 FormatVersion = 5;
 
 	/** Cle unique pour un jeu de parametres et une version de chaine. */
 	WORLDSEED_API FString MakeKey(int32 Seed, float HeightMeters, int32 ResolutionY,

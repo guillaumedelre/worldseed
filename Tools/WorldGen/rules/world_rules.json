@@ -931,7 +931,91 @@
     "beachSlopeSteepDeg": 30.0,
     "beachWindwardBonus": 0.6,
     "_comment_plage": "Bande littorale. Sa largeur n'est pas fixe : elle vaut beachWidthM module par la pente (pleine sous beachSlopeFlatDeg, nulle au-dela de beachSlopeSteepDeg) et majoree de beachWindwardBonus sur les cotes au vent. beachElevationM plafonne l'altitude atteinte, dune comprise. Largeur et altitude divisees par 4 en passant de 32 a 8 km : en cellules de simulation la bande est exactement la meme (9,6 cellules), donc la part de plage sur les terres ne bouge pas. Mesure a 32 km sur la graine 20260909 : 150 m et 15 m donnaient 1,5 % des terres ; 40 m et 6 m n'en donnaient que 0,5 %.",
-    "bareRockSlopeDeg": 55.0
+    "bareRockSlopeDeg": 55.0,
+    "_comment_lithologie": "LA LITHOLOGIE : de quelle ROCHE est fait le sous-sol. Ajoutee le 18 septembre 2026. CE QUI GOUVERNE UN RESEAU DE GROTTES, C'EST LA ROCHE, PAS LE CLIMAT DE SURFACE -- un massif calcaire est karstique sous une foret tropicale comme sous un maquis. Faire dependre les cavites du biome reviendrait a laisser une ETIQUETTE decider d'une geometrie, ce que l'architecture interdit : l'etiquette ne sert qu'a lier des assets. Elle est 2D pour l'instant, une roche dominante par colonne ; un vrai sous-sol est feuillete et une galerie qui descend traverse des couches, mais decider comment les couches se deposent est un chantier a part. Elle se calcule DEPUIS LA TECTONIQUE ET AVANT L'EROSION : les plaques ne bougent pas quand la surface se creuse, et l'erosion ne transforme pas du granite en calcaire. 'durete' n'est PAS branchee sur l'erosion, et c'est delibere -- la brancher changerait le relief de tous les mondes existants, donc les rivieres, les biomes et le point d'apparition. C'est un arbitrage a part entiere.",
+    "lithologies": [
+      {
+        "cle": "basalte",
+        "id": 0,
+        "libelle": "Basalte",
+        "couleur": [
+          64,
+          66,
+          72
+        ],
+        "karstifiable": 0.0,
+        "durete": 0.85
+      },
+      {
+        "cle": "granite",
+        "id": 1,
+        "libelle": "Granite",
+        "couleur": [
+          176,
+          166,
+          158
+        ],
+        "karstifiable": 0.0,
+        "durete": 0.95
+      },
+      {
+        "cle": "calcaire",
+        "id": 2,
+        "libelle": "Calcaire",
+        "couleur": [
+          214,
+          206,
+          180
+        ],
+        "karstifiable": 1.0,
+        "durete": 0.45
+      },
+      {
+        "cle": "gres",
+        "id": 3,
+        "libelle": "Grès",
+        "couleur": [
+          194,
+          152,
+          112
+        ],
+        "karstifiable": 0.15,
+        "durete": 0.55
+      },
+      {
+        "cle": "schiste",
+        "id": 4,
+        "libelle": "Schiste",
+        "couleur": [
+          108,
+          106,
+          116
+        ],
+        "karstifiable": 0.1,
+        "durete": 0.35
+      }
+    ],
+    "_comment_lithologieAttribution": "CALIBRE. Trois regles, dans cet ordre. (1) La croute OCEANIQUE est basaltique : vrai partout sur Terre, aucun reglage. (2) Un OROGENE expose son socle -- soulevement et decapage emportent la couverture sedimentaire -- d'ou un basculement vers le cristallin au-dela d'une convergence ou d'une altitude. (3) Le reste est un BASSIN, dont la roche suit un bruit coherent : les bassins sont des ensembles etendus, un calcaire poivre au hasard dans du gres ne donnerait jamais le massif d'un seul tenant dont un reseau karstique a besoin. Les proportions sont tenues par QUANTILE et non par seuil en dur, sans quoi elles bougeraient a chaque changement de frequence ou d'octave.",
+    "lithologieOceanique": "basalte",
+    "lithologieSocle": "granite",
+    "lithologieSocleConvergence": 0.35,
+    "lithologieSocleElevationM": 150.0,
+    "lithologieMotifFrequency": 6.0,
+    "lithologieMotifOctaves": 3,
+    "lithologieBassin": [
+      {
+        "cle": "calcaire",
+        "part": 0.45
+      },
+      {
+        "cle": "gres",
+        "part": 0.35
+      },
+      {
+        "cle": "schiste",
+        "part": 0.2
+      }
+    ]
   },
   "_comment_origine": "CONVENTION D'ORIGINE, posee le 18 septembre 2026. Tout commentaire de reglage qui a tranche un arbitrage commence par UN MOT FIXE : SOURCE (la valeur vient d'une reference publiee et ne se deplace pas pour ameliorer un score), CALIBRE (la valeur a ete reglee sur notre monde, elle se rediscute quand le monde change), ou ARBITRAIRE (personne ne l'a jamais mesuree). Ce depot a refuse trois fois de bouger une valeur SOURCE pour gagner quelques dixiemes : 0,25 plutot que 0,20 pour le mediterraneen, 10 degres plutot que 8 pour la limite des arbres, et saturationScaleC laisse en place en septembre. Sans ce mot, la difference ne se lit qu'en relisant tout le commentaire."
 }

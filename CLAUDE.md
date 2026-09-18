@@ -3297,3 +3297,64 @@ en avons dix fois trop peu -- meme cause que la foret temperee mixte a 1,97 %
 pour 13 attendus, c'est-a-dire le manque de terres temperees documente plus haut.
 L'ecart absolu moyen passe de 36,0 a 37,8 % : **le vocabulaire gagne, le score
 perd**, et c'est le vocabulaire qui avait ete demande.
+
+### La lithologie : de quelle roche est fait le sous-sol (18 septembre 2026)
+
+Arbitrage B7 du proprietaire. **Ce qui gouverne un reseau de grottes, c'est la
+ROCHE, pas le climat de surface** : un massif calcaire est karstique sous une
+foret tropicale comme sous un maquis. Faire dependre les cavites du biome
+reviendrait a laisser une ETIQUETTE decider d'une geometrie, ce que
+l'architecture interdit -- l'etiquette ne sert qu'a lier des assets.
+
+Cinq roches au catalogue, chacune avec son aptitude a la dissolution et sa
+durete. Trois regles d'attribution, dans cet ordre : la croute **oceanique** est
+basaltique (vrai partout sur Terre, aucun reglage) ; un **orogene** expose son
+socle, soulevement et decapage ayant emporte la couverture ; le reste est un
+**bassin**, dont la roche suit un bruit coherent -- un calcaire poivre au hasard
+dans du gres ne donnerait jamais le massif d'un seul tenant dont un reseau
+karstique a besoin.
+
+**Calculee depuis la TECTONIQUE et AVANT l'erosion** : les plaques ne bougent pas
+quand la surface se creuse, et l'erosion ne transforme pas du granite en
+calcaire. **2D pour l'instant**, une roche dominante par colonne.
+
+| roche | des terres | des mers | altitude moyenne | karst |
+|---|---|---|---|---|
+| Basalte | 18,17 % | **80,86 %** | 42 m | 0,00 |
+| Granite | 30,88 % | 0,07 % | **180 m** | 0,00 |
+| Calcaire | 22,98 % | 9,85 % | 37 m | 1,00 |
+| Gres | 17,87 % | 5,46 % | 32 m | 0,15 |
+| Schiste | 10,10 % | 3,75 % | 35 m | 0,10 |
+
+**LE CONTROLE N'EST PAS LA PART, C'EST LA PLACE.** Des parts seules ne prouvent
+rien : un tirage au hasard donnerait les memes. Ce qui tranche est le croisement
+avec l'altitude et la mer -- basalte sous l'eau a 81 %, granite le plus haut a
+180 m de moyenne, roches de bassin dans les bas pays a 32-37 m. **26,67 % des
+terres sont karstifiables** ; sur Terre le karst couvre 15 a 20 % des terres
+libres de glace. Cout : **54 ms**.
+
+**DEUX PIEGES PAYES COMPTANT :**
+
+- *Les quantiles portaient sur le mauvais domaine.* J'echantillonnais le bruit
+  sur toute la terre continentale, alors que la regle du socle en emporte une
+  partie juste apres : les proportions demandees n'etaient pas tenues --
+  40,8 / 38,1 / 21,1 % pour 45 / 35 / 20. Corrige en n'echantillonnant que le
+  domaine qui restera au bassin : 45,1 / 35,1 / 19,8.
+- *Corriger le code de la lithologie N'INVALIDAIT PAS le cache.* Le monde
+  revenait avec l'ancienne carte des roches et la sonde rendait le meme chiffre
+  qu'avant correction, sans le moindre signe. C'est exactement ce que
+  `WORLDSEED_PIPELINE_VERSION` existe pour couvrir -- l'empreinte de
+  `world_rules.json` couvre les REGLAGES, ce compteur couvre le CODE. Porte a 7.
+  **Toute correction future de l'attribution des roches doit le bumper.**
+
+**A SURVEILLER** : 18,17 % des terres reposent sur de la croute oceanique, donc
+du basalte, a 42 m d'altitude moyenne. Sur Terre les terres emergees de croute
+oceanique sont marginales -- l'Islande, Hawai. Ce n'est pas un defaut de la
+lithologie, qui lit fidelement la tectonique : c'est le modele tectonique qui
+emerge beaucoup de croute oceanique. A reprendre de ce cote-la si le basalte
+parait trop present.
+
+**`durete` N'EST PAS BRANCHEE SUR L'EROSION, et c'est delibere.** La brancher
+changerait le relief de tous les mondes, donc les rivieres, les biomes et le
+point d'apparition. C'est un arbitrage a part entiere, pas un effet de bord de
+l'ajout d'un catalogue.

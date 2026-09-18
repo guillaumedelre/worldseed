@@ -50,7 +50,18 @@ struct WORLDSEED_API FWorldseedWorldData
 	 */
 	TArray<float> Continentality;
 
-	/** Les 19 biomes. Recalcules a chaque chargement plutot que serialises. */
+	/**
+	 * De quelle roche est fait le sous-sol, par cellule.
+	 *
+	 * TRANSPORTEE PLUTOT QUE RECALCULEE, comme l'amplitude saisonniere et la
+	 * continentalite, et pour la meme raison : elle depend de grandeurs que
+	 * SEULE la tectonique connait -- croute continentale ou oceanique, et
+	 * convergence des plaques -- et le cache ne les porte pas. La recalculer a
+	 * l'arrivee demanderait de rejouer la tectonique entiere.
+	 */
+	TArray<uint8> LithologyId;
+
+	/** Les biomes. Recalcules a chaque chargement plutot que serialises. */
 	FWorldseedBiomeMap Biomes;
 
 	/**
