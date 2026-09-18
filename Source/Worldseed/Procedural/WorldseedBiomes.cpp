@@ -26,13 +26,23 @@ namespace
 		TEXT("alpin"), TEXT("roche_nue"), TEXT("plage"), TEXT("marais"),
 	};
 
+	/**
+	 * Les noms LISIBLES, alignes sur la nomenclature terrestre.
+	 *
+	 * Trois etiquettes corrigees le 18 septembre 2026, et la premiere est la
+	 * plus parlante : l'identifiant 7 s'appelle TemperateRainforest dans le
+	 * code depuis le debut, mais "foret temperee humide" au journal -- si bien
+	 * qu'on cherchait une foret un peu mouillee la ou il y a une foret
+	 * PLUVIALE, biome rare sur Terre (cote pacifique, Valdivia, Tasmanie) et
+	 * rare ici aussi : 0,67 % des terres, ce qui est juste.
+	 */
 	const TCHAR* BiomeNames[BiomeCount] = {
 		TEXT("ocean"), TEXT("lac"), TEXT("riviere"), TEXT("calotte glaciaire"),
-		TEXT("toundra"), TEXT("taiga"), TEXT("foret temperee"),
-		TEXT("foret temperee humide"), TEXT("prairie"), TEXT("steppe"),
+		TEXT("toundra"), TEXT("taiga"), TEXT("foret temperee mixte"),
+		TEXT("foret pluviale temperee"), TEXT("prairie"), TEXT("steppe"),
 		TEXT("desert froid"), TEXT("desert chaud"), TEXT("savane"),
 		TEXT("foret tropicale seche"), TEXT("foret tropicale humide"),
-		TEXT("alpin"), TEXT("roche nue"), TEXT("plage"), TEXT("marais"),
+		TEXT("pelouse alpine"), TEXT("roche nue"), TEXT("plage"), TEXT("marais"),
 	};
 
 	/** debugColors de world_rules.json, en octets. */

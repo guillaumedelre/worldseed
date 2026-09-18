@@ -201,14 +201,15 @@
             "steppe"
           ],
           [
-            1200.0,
+            1500.0,
             "foret_temperee"
           ],
           [
             1000000.0,
             "foret_temperee_humide"
           ]
-        ]
+        ],
+        "_comment_pluviale": "Seuil de la foret PLUVIALE temperee porte de 1200 a 1500 mm le 18 septembre 2026. MOTIF, et il vient du releve des villes d'UDS : Warm_Summer_Continental -- un continental a ete doux, 6,5 C et 1223 mm -- tombait en foret pluviale, alors que c'est une foret temperee ordinaire. Une foret PLUVIALE temperee est un biome rare (cote pacifique, Valdivia, Tasmanie) et son seuil doit l'etre aussi. 1500 aligne cette bande sur celle de 12 a 20 degres, ou le meme seuil vaut deja 1500."
       },
       {
         "tMax": 20.0,
@@ -282,8 +283,8 @@
       "3": "Calotte glaciaire",
       "4": "Toundra",
       "5": "Taïga",
-      "6": "Forêt tempérée",
-      "7": "Forêt tempérée humide",
+      "6": "Foret temperee mixte",
+      "7": "Foret pluviale temperee",
       "8": "Prairie",
       "9": "Steppe",
       "10": "Désert froid",
@@ -291,7 +292,7 @@
       "12": "Savane",
       "13": "Forêt tropicale sèche",
       "14": "Forêt tropicale humide",
-      "15": "Alpin",
+      "15": "Pelouse alpine",
       "16": "Roche nue",
       "17": "Plage",
       "18": "Marais"
@@ -393,7 +394,8 @@
         84
       ]
     },
-    "alpineMinElevationM": 212.5
+    "alpineMinElevationM": 212.5,
+    "_comment_labels": "ETIQUETTES alignees sur la nomenclature terrestre le 18 septembre 2026. Les CLES de 'ids', elles, ne changent JAMAIS : elles indexent surfaces.recipes, les recettes de vegetation et les tables en dur de WorldseedBiomes.cpp. Trois corrections : 'Foret temperee humide' cachait une foret PLUVIALE temperee (le code l'appelle TemperateRainforest depuis le debut, l'etiquette ne le disait pas) ; 'Foret temperee' est la foret feuillue et mixte des referentiels ; 'Alpin' est un adjectif, pas un nom de biome -- la reference dit pelouses et landes d'altitude. Les identifiants 0, 1, 2 (nappes), 16 et 17 (substrats) et 18 (marais, inatteignable sans hydrologie) ne sont plus attribues comme biomes."
   },
   "surfaces": {
     "_comment": "Ordre des 10 couches du materiau M_WorldseedLandscape. Chaque biome est une recette de melange.",
