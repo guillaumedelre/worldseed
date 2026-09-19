@@ -136,7 +136,27 @@ int32 UWorldseedPhotographe::AjouterLesArches(int32 Combien)
 		// ON REGARDE DANS L'AXE DU PERCEMENT, sans quoi on photographie une
 		// paroi pleine et l'on conclut a tort que l'arche n'existe pas.
 		E.DepuisM = A.TraversM.GetSafeNormal();
-		E.DistanceM = FMath::Clamp(A.EpaisseurM * 1.6f, 80.0f, 200.0f);
+
+		// ET L'ON SE TIENT JUSTE EN SORTIE DU TUNNEL, PAS A DEUX CENTS METRES.
+		//
+		// La distance etait calee sur `EpaisseurM * 1,6`, c'est-a-dire sur la
+		// largeur du CAP -- jusqu'a 200 m. A cette distance une ouverture de
+		// trente metres ne fait plus que dix degres, et le jour qui passe au
+		// bout d'un tunnel de quatre-vingts metres ne se distingue plus d'une
+		// simple tache sombre dans une falaise. Le proprietaire a signale, sur
+		// les photos, que « l'arche n'a plus l'air traversante » : la mesure dit
+		// pourtant 22 posees, 22 TRAVERSANTES, 22 avec un pont. Ce n'etait donc
+		// pas la geometrie, c'etait le CADRAGE.
+		//
+		// On se place a une soixantaine de metres de la bouche, soit la
+		// demi-largeur du cap plus cette marge : l'ouverture remplit alors le
+		// cadre et l'on voit, ou non, le jour au travers.
+		E.DistanceM = FMath::Clamp(A.EpaisseurM * 0.5f + 60.0f, 70.0f, 130.0f);
+
+		// A LA HAUTEUR DE L'AXE, ET NON DEUX METRES AU-DESSUS. Deux metres sur
+		// une ouverture qui descend sous le niveau de la mer suffisent a viser
+		// la voute plutot que le passage.
+		E.HauteurM = 0.0f;
 		Tournee.Add(E);
 		++Ajoutees;
 	}
