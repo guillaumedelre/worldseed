@@ -53,6 +53,34 @@ public:
 		int32 ResolutionY = 256, int32 ChunkSideM = 32, int32 ChunksPerSide = 4);
 
 	/**
+	 * Confronte le mailleur Transvoxel a celui du moteur, sur les memes chunks.
+	 *
+	 * LA QUESTION N.EST PAS « COMBIEN CA COUTE » MAIS « EST-CE LA MEME SURFACE ».
+	 * A resolution uniforme et sans aucune cellule de transition, les deux
+	 * mailleurs decrivent la meme isovaleur du meme champ : ils doivent donc
+	 * rendre la meme geometrie. Un mailleur maison qui deplace la surface n.est
+	 * pas un mailleur, c.est un defaut -- et il empoisonnerait en silence tout ce
+	 * qui viendra se poser dessus.
+	 *
+	 * QUATRE GRANDEURS, ET AUCUNE NE SUPPOSE QUE L.AUTRE MAILLEUR A RAISON :
+	 *
+	 *  - l.AIRE de la surface, qui est la grandeur geometrique a comparer. Le
+	 *    nombre de triangles, lui, ne prouve rien : deux maillages corrects de la
+	 *    meme surface n.ont aucune raison d.avoir le meme decoupage ;
+	 *  - la DENSITE AUX SOMMETS. Chaque sommet est cense etre POSE sur
+	 *    l.isovaleur zero : |densite| doit y etre quasi nulle. Ce controle-la ne
+	 *    compare rien du tout, il juge chaque mailleur dans l.absolu ;
+	 *  - les ARETES DE BORD, celles qui n.appartiennent qu.a un seul triangle.
+	 *    Sur un chunk elles doivent toutes se trouver sur la paroi de la boite ;
+	 *    ailleurs, c.est un trou. C.est le controle qui verra les fissures le
+	 *    jour ou les cellules de transition arriveront ;
+	 *  - l.ENROULEMENT, confronte aux normales issues du gradient.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeTransvoxel(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 256, int32 ChunkSideM = 32, int32 ChunksPerSide = 3);
+
+	/**
 	 * Mesure ce que le bruit 3D produit reellement : galeries et surplombs.
 	 *
 	 * DEUX GRANDEURS, ET ELLES SE SUFFISENT.

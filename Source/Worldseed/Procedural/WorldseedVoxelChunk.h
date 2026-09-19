@@ -66,6 +66,18 @@ struct WORLDSEED_API FWorldseedVoxelStats
 	/** Germes semes par le balayage grossier. Zero explique tout ; beaucoup, rien. */
 	int32 Seeds = 0;
 
+	/**
+	 * Part des triangles dont l.enroulement s.accorde avec la normale sortante.
+	 *
+	 * L.ORDRE DES SOMMETS EST LA SEULE CHOSE QU.UN MAILLEUR NE PEUT PAS DEVINER.
+	 * Se tromper ne casse rien dans la geometrie et rend pourtant le terrain
+	 * invisible de l.exterieur, ou noir. Les normales, elles, viennent du
+	 * GRADIENT du champ et ne doivent rien a une convention : les confronter a
+	 * l.enroulement donne donc une reponse qui ne suppose rien. Un ou zero, la
+	 * reponse est nette ; entre les deux, c.est autre chose qui ne va pas.
+	 */
+	float FacesEndroit = 0.0f;
+
 	enum class ECause : uint8 { Maille, SansTraversee, Annule, MaillageVide };
 	ECause Cause = ECause::Maille;
 };
@@ -98,5 +110,5 @@ namespace WorldseedVoxelChunk
 	WORLDSEED_API bool Build(const FWorldseedDensity& Density,
 		const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
 		float VoxelSizeM, FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
-		TFunction<bool()> ShouldStop = nullptr);
+		TFunction<bool()> ShouldStop = nullptr, bool bTransvoxel = false);
 }

@@ -22,6 +22,18 @@ struct WORLDSEED_API FWorldseedDensityRules
 	float VoxelSizeM = 1.0f;
 
 	/**
+	 * Mailler avec Transvoxel plutot qu.avec FMarchingCubes du moteur.
+	 *
+	 * A RESOLUTION UNIFORME LES DEUX DOIVENT RENDRE LA MEME SURFACE, et c.est
+	 * precisement ce que ce drapeau sert a verifier : il rend l.A/B possible
+	 * sans recompiler, donc comparable. Transvoxel n.apporte rien de visible
+	 * tant que les anneaux de resolution ne sont pas poses -- il apporte le
+	 * mailleur qui saura les raccorder sans fissure, ce que le mailleur du
+	 * moteur ne peut pas faire.
+	 */
+	bool bTransvoxel = false;
+
+	/**
 	 * Epaisseur de la bande creusable sous la surface, en metres.
 	 *
 	 * Sous elle, la densite est forcee au plein : le socle n'est JAMAIS maille.

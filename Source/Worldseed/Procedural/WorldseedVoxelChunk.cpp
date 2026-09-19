@@ -5,6 +5,8 @@
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedDensity.h"
 
+#include "Procedural/WorldseedTransvoxel.h"
+
 #include "Generators/MarchingCubes.h"
 
 #include <atomic>
@@ -21,9 +23,21 @@ namespace WorldseedVoxelChunk
 	bool Build(const FWorldseedDensity& Density,
 		const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
 		float VoxelSizeM, FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
-		TFunction<bool()> ShouldStop)
+		TFunction<bool()> ShouldStop, bool bTransvoxel)
 	{
 		using namespace UE::Geometry;
+
+		// AIGUILLAGE, ET UN SEUL POINT D.ENTREE. Les deux mailleurs sont
+		// appelables depuis le meme endroit, avec les memes arguments et les
+		// memes statistiques en retour : c.est ce qui rend l.A/B honnete. Le
+		// masque de transition est nul ici -- le terrain est a resolution
+		// uniforme, et c.est justement dans cet etat que les deux mailleurs
+		// doivent rendre la MEME surface.
+		if (bTransvoxel)
+		{
+			return WorldseedTransvoxel::Mailler(Density, Caves, BoundsM, VoxelSizeM,
+				WorldseedTransvoxel::AucuneFace, Out, OutStats, ShouldStop);
+		}
 
 		Out.Reset();
 		OutStats = FWorldseedVoxelStats();

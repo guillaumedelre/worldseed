@@ -481,6 +481,7 @@ void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
 	// l'acteur : il peut mourir avant la fin du travail.
 	const FWorldseedDensity* const Champ = &Density;
 	const float VoxelSizeM = DensityRules.VoxelSizeM;
+	const bool bTransvoxel = DensityRules.bTransvoxel;
 
 	// L'EXTRACTION SE FAIT ICI, SUR LE FIL DE JEU, ET UNE SEULE FOIS. Le chunk
 	// est elargi du rayon de raccordement : une capsule qui ne touche pas la
@@ -490,13 +491,14 @@ void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
 		CaveNetwork.Query(Job->BoundsM.ExpandBy(DensityRules.CaveBlendM + 4.0f), Job->Caves);
 	}
 
-	Async(EAsyncExecution::ThreadPool, [Job, Champ, VoxelSizeM]()
+	Async(EAsyncExecution::ThreadPool, [Job, Champ, VoxelSizeM, bTransvoxel]()
 	{
 		if (!Job->bCancel.load(std::memory_order_acquire))
 		{
 			Job->bHasSurface = WorldseedVoxelChunk::Build(
 				*Champ, &Job->Caves, Job->BoundsM, VoxelSizeM, Job->Mesh, Job->Stats,
-				[Job]() { return Job->bCancel.load(std::memory_order_acquire); });
+				[Job]() { return Job->bCancel.load(std::memory_order_acquire); },
+				bTransvoxel);
 		}
 
 		// EN DERNIER, ET EN LIBERATION : tout ce qui precede doit etre visible
