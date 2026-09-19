@@ -1022,11 +1022,11 @@
     "_comment": "LE RESEAU DE GROTTES, passe MACRO ajoutee le 19 septembre 2026. Arbitrages B5 a B8 du proprietaire. LE BRUIT SEUL NE GARANTIT AUCUNE PROPRIETE GLOBALE : le bruit a cretes deja en place produit des conduits credibles -- 12,35 % des colonnes avec 2 m de libre, verifies en fil de fer -- mais rien n'assure qu'ils communiquent, ni qu'un seul debouche a l'air libre. Cette passe seme des chambres a distance minimale, puis les relie par un ARBRE COUVRANT MINIMAL : la connexite est alors acquise PAR CONSTRUCTION, donc jamais a verifier. On ajoute ensuite quelques aretes courtes, sans quoi un arbre n'a aucun cycle et le joueur revient toujours sur ses pas. ELLE NE PEUT PAS SE CALCULER PAR CHUNK -- une galerie traverse les frontieres -- donc elle tourne une fois par monde, a basse resolution, et son resultat devient un PARAMETRE de la fonction de densite, qui reste sans etat. OU : c'est la ROCHE qui decide, pas le biome. Un karst se creuse par dissolution, il lui faut du calcaire et de l'eau ; le climat n'entre donc que par la pluie, qui est un champ continu. Faire dependre les cavites de l'etiquette de biome reviendrait a lui laisser decider d'une geometrie.",
     "_comment_chambreEspacementM": "CALIBRE. Distance minimale entre deux chambres. Un tirage uniforme donne des amas et des vides ; l'espacement minimal donne la repartition reguliere qu'on attend d'un reseau. Il fixe aussi, a lui seul, le NOMBRE de chambres : le semis s'arrete quand le refus domine.",
     "chambreEspacementM": 180.0,
-    "profondeurMinM": 20.0,
-    "profondeurMaxM": 90.0,
+    "profondeurMinM": 12.0,
+    "profondeurMaxM": 45.0,
     "_comment_profondeur": "CALIBRE. Profondeur des chambres sous la surface. Le maximum doit rester sous voxel.bandDepthM (100 m), sinon les chambres tombent dans le socle force au plein et n'existent pas.",
     "chambreRayonMinM": 6.0,
-    "chambreRayonMaxM": 22.0,
+    "chambreRayonMaxM": 16.0,
     "_comment_pluieMinMm": "SOURCE (dissolution). Un karst se creuse a l'eau : sous ce cumul annuel, aucune chambre n'est semee, quelle que soit la roche.",
     "pluieMinMm": 600.0,
     "_comment_karstifiableMin": "CALIBRE. Aptitude minimale de la roche a se dissoudre, lue dans substrat.lithologies. A 0,5 seul le calcaire passe ; l'abaisser ouvrirait les grottes au gres.",
@@ -1045,6 +1045,12 @@
     "routagePenteCout": 1.6,
     "routageRocheCout": 2.0,
     "routageMutualisation": 0.45,
-    "routageSimplifieM": 3.0
+    "routageSimplifieM": 3.0,
+    "_comment_entrees": "LES ENTREES. Sans elles le reseau est HERMETIQUE, et c'est exactement ce qu'il etait a sa premiere version : chambres a vingt metres sous terre au moins, routage qui INTERDIT au plafond d'atteindre la surface, bruit qui s'estompe a vingt-cinq metres du sol. La connexite garantie etait purement interne -- tout communiquait avec tout, et rien avec le dehors. Signale par le proprietaire le 19 septembre 2026. UNE GROTTE S'OUVRE SUR UN ESCARPEMENT, et c'est une raison de geometrie avant d'etre une question de gout : en penetrant horizontalement dans un versant raide, on gagne de la profondeur en quelques metres. La meme galerie sur un terrain plat resterait a fleur de sol sur des dizaines de metres et eventrerait le paysage. La bouche se place donc sur la cellule la plus RAIDE du voisinage d'une chambre, et s'enfonce vers l'AMONT.",
+    "entreePenteMinDeg": 35.0,
+    "entreeParChambres": 4.0,
+    "entreeEnfoncementM": 14.0,
+    "_comment_niveauMerMargeM": "RIEN NE SE CREUSE SOUS LA MER, decision du proprietaire le 19 septembre 2026, pour simplifier. Une chambre sous le niveau marin est noyee par le plugin Water, qui applique son rendu sous-marin a tout ce qui passe sous zero : physiquement defendable, mais personne ne l'avait decide. La contrainte est posee AU SEMIS pour les chambres et dans le COUT pour le routage, jamais corrigee apres coup.",
+    "niveauMerMargeM": 5.0
   }
 }

@@ -125,6 +125,11 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.RouteRockCost = Num(TEXT("routageRocheCout"), 2.0);
 	Out.RouteShareBonus = Num(TEXT("routageMutualisation"), 0.45);
 	Out.RouteSimplifyM = Num(TEXT("routageSimplifieM"), 3.0);
+
+	Out.EntranceSlopeDeg = Num(TEXT("entreePenteMinDeg"), 35.0);
+	Out.EntrancePerChambers = Num(TEXT("entreeParChambres"), 10.0);
+	Out.EntranceDepthM = Num(TEXT("entreeEnfoncementM"), 14.0);
+	Out.SeaMarginM = Num(TEXT("niveauMerMargeM"), 5.0);
 	return Out;
 }
 
@@ -295,6 +300,13 @@ namespace
 			// sans routage du tout -- autant dire que le routage ne servait a
 			// rien.
 			if (Profondeur <= Rules->TunnelRadiusMaxM + 1.0)
+			{
+				return TNumericLimits<double>::Max();
+			}
+
+			// RIEN NE SE CREUSE SOUS LA MER : une galerie noyee serait rendue
+			// sous-marine par le plugin Water, ce que personne n'a decide.
+			if (P.Z - Rules->TunnelRadiusMaxM < Rules->SeaMarginM)
 			{
 				return TNumericLimits<double>::Max();
 			}
@@ -560,6 +572,13 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		const FVector P(X, Y, Surface - Profondeur);
 		const float Rayon = Tirage.Entre(Rules.ChamberRadiusMinM, Rules.ChamberRadiusMaxM);
 
+		// Une chambre dont le plancher passe sous la mer est refusee : la
+		// contrainte est posee ICI, au semis, et non corrigee apres coup.
+		if (P.Z - Rayon < Rules.SeaMarginM)
+		{
+			continue;
+		}
+
 		// Refus : trop pres d'une chambre deja posee ?
 		bool bTropPres = false;
 		const int32 Ci = FMath::Clamp(FMath::FloorToInt(P.X / CelluleM) - Out.Min.X, 0, Out.Size.X - 1);
@@ -804,6 +823,135 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		}
 	}
 
+	// --- 5 bis. LES ENTREES ---------------------------------------------------
+	//
+	// SANS ELLES LE RESEAU EST HERMETIQUE, et c'est exactement ce qu'il etait :
+	// chambres a vingt metres sous terre au moins, routage qui INTERDIT au
+	// plafond d'atteindre la surface, bruit qui s'estompe a vingt-cinq metres du
+	// sol. La connexite garantie etait donc purement interne -- tout communiquait
+	// avec tout, et rien avec le dehors.
+	//
+	// UNE GROTTE S'OUVRE SUR UN ESCARPEMENT, et c'est une raison de geometrie
+	// avant d'etre une question de gout : en penetrant horizontalement dans un
+	// versant raide, on gagne de la profondeur en quelques metres. La meme
+	// galerie sur un terrain plat resterait a fleur de sol sur des dizaines de
+	// metres et eventrerait le paysage.
+	int32 Entrees = 0;
+	const int32 EntreesVoulues = (Rules.EntrancePerChambers > 0.0f)
+		? FMath::Max(1, FMath::RoundToInt(N / Rules.EntrancePerChambers)) : 0;
+
+	if (EntreesVoulues > 0)
+	{
+		TArray<float> DY;
+		TArray<float> DX;
+		WorldseedGrid::Gradient(ElevationM, NX, NY, MetresParPixel, DY, DX);
+
+		const float PenteMin = FMath::Tan(FMath::DegreesToRadians(Rules.EntranceSlopeDeg));
+
+		// Une bouche par chambre au plus, et on commence par les chambres les
+		// moins profondes : ce sont elles qui ont une chance d'atteindre un
+		// versant sans creuser la moitie du massif.
+		TArray<int32> Ordre;
+		for (int32 I = 0; I < N; ++I) { Ordre.Add(I); }
+		Ordre.Sort([&](int32 A2, int32 B2)
+		{
+			return Out.Chambers[A2].CentreM.Z > Out.Chambers[B2].CentreM.Z;
+		});
+
+		for (const int32 Ic : Ordre)
+		{
+			if (Entrees >= EntreesVoulues) { break; }
+			const FWorldseedCaveChamber& C = Out.Chambers[Ic];
+
+			// On cherche, autour de la chambre, la cellule la plus RAIDE.
+			const int32 Col0 = FMath::Clamp(
+				FMath::FloorToInt((C.CentreM.X / Geometry.WidthM() + 0.5) * NX), 0, NX - 1);
+			const int32 Row0 = FMath::Clamp(
+				FMath::FloorToInt((C.CentreM.Y / Geometry.HeightM + 0.5) * NY), 0, NY - 1);
+			const int32 Rayon = FMath::Max(2, FMath::CeilToInt(Espacement / MetresParPixel));
+
+			float MeilleurePente = PenteMin;
+			int32 MeilleureCellule = INDEX_NONE;
+			for (int32 dj = -Rayon; dj <= Rayon; ++dj)
+			{
+				const int32 Rj = Row0 + dj;
+				if (Rj < 0 || Rj >= NY) { continue; }
+				for (int32 di = -Rayon; di <= Rayon; ++di)
+				{
+					const int32 Ci = (Col0 + di + NX) % NX;
+					const int32 Cell2 = Rj * NX + Ci;
+					if (ElevationM[Cell2] <= Rules.SeaMarginM) { continue; }
+					const float Pente = FMath::Sqrt(DX[Cell2] * DX[Cell2] + DY[Cell2] * DY[Cell2]);
+					if (Pente > MeilleurePente)
+					{
+						MeilleurePente = Pente;
+						MeilleureCellule = Cell2;
+					}
+				}
+			}
+			if (MeilleureCellule == INDEX_NONE) { continue; }
+
+			const int32 Ce = MeilleureCellule % NX;
+			const int32 Re = MeilleureCellule / NX;
+			const double Xe = (static_cast<double>(Ce) / NX - 0.5) * Geometry.WidthM();
+			const double Ye = (static_cast<double>(Re) / NY - 0.5) * Geometry.HeightM;
+			const double Ze = Ctx.SurfaceA(Xe, Ye);
+
+			// LA BOUCHE EST A LA JONCTION DE LA PAROI ET DU SOL, et on s'enfonce
+			// vers l'AMONT : c'est la direction ou le terrain monte, donc celle
+			// qui enfouit la galerie le plus vite.
+			const float Gx = DX[MeilleureCellule];
+			const float Gy = DY[MeilleureCellule];
+			const float Norme = FMath::Max(FMath::Sqrt(Gx * Gx + Gy * Gy), 1e-4f);
+			const FVector Amont(Gx / Norme, Gy / Norme, 0.0);
+
+			const float RayonBouche = Rules.TunnelRadiusMaxM;
+			const FVector Bouche(Xe, Ye, Ze - RayonBouche * 0.5);
+			FVector Fond = Bouche + Amont * Rules.EntranceDepthM;
+			Fond.Z = FMath::Min(Fond.Z,
+				Ctx.SurfaceA(Fond.X, Fond.Y) - RayonBouche - Rules.RouteSurfaceM * 0.5);
+
+			if (Fond.Z - RayonBouche < Rules.SeaMarginM) { continue; }
+
+			TArray<FVector> Acces = Router(Ctx, Fond, C.CentreM, 40000);
+			if (Acces.Num() < 2)
+			{
+				continue;
+			}
+			Acces[0] = Fond;
+			Acces.Last() = C.CentreM;
+
+			// Le troncon de bouche, lui, PERCE volontairement : c'est l'ouverture.
+			FWorldseedCaveSegment Ouverture;
+			Ouverture.AM = Bouche;
+			Ouverture.BM = Fond;
+			Ouverture.RadiusAM = RayonBouche;
+			Ouverture.RadiusBM = RayonBouche;
+			Out.Segments.Add(Ouverture);
+
+			for (int32 K = 0; K + 1 < Acces.Num(); ++K)
+			{
+				FWorldseedCaveSegment S;
+				S.AM = Acces[K];
+				S.BM = Acces[K + 1];
+				S.RadiusAM = RayonBouche;
+				S.RadiusBM = RayonBouche;
+				Out.Segments.Add(S);
+			}
+			// LA POSITION DE CHAQUE BOUCHE EST JOURNALISEE, et ce n'est pas du
+			// debogage : une grotte qu'on ne sait pas trouver n'existe pas pour
+			// le joueur. C'est aussi ce que le gameplay voudra interroger pour
+			// y poser du butin ou une ambiance sonore.
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] grottes : entree %d a (%.0f, %.0f) m, altitude %.0f m, ")
+				TEXT("pente %.0f deg"),
+				Entrees + 1, Bouche.X, Bouche.Y, Bouche.Z,
+				FMath::RadiansToDegrees(FMath::Atan(MeilleurePente)));
+
+			++Entrees;
+		}
+	}
+
 	// --- 6. l'index spatial ---------------------------------------------------
 	Out.ChamberBuckets.SetNum(Cases);
 	Out.SegmentBuckets.SetNum(Cases);
@@ -878,8 +1026,8 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
-		TEXT("%d troncons routes, %d repliees sur la droite  (%.0f ms)"),
+		TEXT("%d troncons, %d repliees, %d ENTREES  (%.0f ms)"),
 		Out.Chambers.Num(), Aretes.Num(), ABoucler,
-		Out.Segments.Num(), Droites,
+		Out.Segments.Num(), Droites, Entrees,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
 }

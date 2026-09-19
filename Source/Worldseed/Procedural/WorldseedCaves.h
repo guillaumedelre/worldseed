@@ -153,6 +153,35 @@ struct WORLDSEED_API FWorldseedCaveRules
 	/** Tolerance de simplification du chemin, en metres. */
 	float RouteSimplifyM = 3.0f;
 
+	// --- entrees ---------------------------------------------------------------
+
+	/**
+	 * Pente minimale d'une bouche de grotte, en degres.
+	 *
+	 * UNE GROTTE S'OUVRE SUR UN ESCARPEMENT, et ce n'est pas une question de
+	 * gout : en penetrant horizontalement dans un versant raide, on gagne de la
+	 * profondeur en quelques metres. Sur un terrain plat, la meme galerie
+	 * resterait a fleur de sol sur des dizaines de metres et eventrerait le
+	 * paysage. La pente est donc la condition, pas la decoration.
+	 */
+	float EntranceSlopeDeg = 35.0f;
+
+	/** Une entree pour tant de chambres. A zero, le reseau reste ferme. */
+	float EntrancePerChambers = 10.0f;
+
+	/** Enfoncement horizontal de la bouche dans le versant, en metres. */
+	float EntranceDepthM = 14.0f;
+
+	/**
+	 * Marge au-dessus du niveau de la mer, en metres.
+	 *
+	 * RIEN NE SE CREUSE SOUS LA MER. Une chambre sous le niveau marin est noyee
+	 * par le plugin Water, qui applique son rendu sous-marin a tout ce qui passe
+	 * sous zero ; ce n'est pas absurde physiquement, mais personne ne l'a decide
+	 * et ca complique tout. On s'en tient donc au-dessus.
+	 */
+	float SeaMarginM = 5.0f;
+
 	/**
 	 * Rayon de raccordement de l'union lisse, en metres.
 	 *

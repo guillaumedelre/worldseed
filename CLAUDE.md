@@ -3722,3 +3722,42 @@ connexite est tout l'objet de la passe -- ni se contenter d'une droite. Le repli
 abaisse donc chaque echantillon de la droite autant qu'il faut pour que le
 plafond reste enfoui. Ce n'est pas un itineraire intelligent, il ne contourne
 rien, mais il ne perce plus et il relie : 0,00 % lui aussi.
+
+### Le reseau n'avait AUCUNE entree (19 septembre 2026)
+
+Signale par le proprietaire : « l'entree des galeries doit se faire sur une pente
+raide d'une paroi a sa jonction avec le sol ». Il avait raison sur le fond, et
+au-dela de ce qu'il visait : **le reseau etait hermetique**. Chambres a vingt
+metres sous terre au minimum, routage qui INTERDIT au plafond d'atteindre la
+surface, bruit qui s'estompe a vingt-cinq metres du sol. La connexite garantie
+etait purement INTERNE -- tout communiquait avec tout, et rien avec le dehors.
+Je ne l'avais pas pense, et aucune des mesures precedentes ne pouvait le dire :
+elles comptaient des vides, pas des acces.
+
+**POURQUOI L'ESCARPEMENT EST LA BONNE REPONSE, et ce n'est pas une question de
+gout** : en penetrant horizontalement dans un versant raide, on gagne de la
+profondeur en quelques metres. La meme galerie sur un terrain plat resterait a
+fleur de sol sur des dizaines de metres et eventrerait le paysage. La bouche se
+place donc sur la cellule la plus RAIDE du voisinage d'une chambre, et s'enfonce
+vers l'AMONT. Le troncon de bouche est le seul du reseau qui perce
+volontairement : c'est l'ouverture.
+
+Releve : sept entrees, sur des pentes de **36 a 47 degres**, entre 35 et 102 m
+d'altitude, et leurs positions sont journalisees -- une grotte qu'on ne sait pas
+trouver n'existe pas pour le joueur, et c'est aussi ce que le gameplay voudra
+interroger.
+
+**RIEN NE SE CREUSE SOUS LA MER**, decision du proprietaire pour simplifier. La
+contrainte est posee AU SEMIS pour les chambres et dans le COUT pour le routage,
+jamais corrigee apres coup. **Elle mord beaucoup plus qu'il n'y parait** : une
+chambre a quatre-vingt-dix metres de profondeur avec vingt-deux metres de rayon
+exige plus de cent dix-sept metres d'altitude, et ce monde est bas. Mesure :
+**70 chambres avant, 21 apres**. La bande a donc ete resserree a 12-45 m et le
+rayon maximal a 16 m, ce qui redonne **28 chambres et 7 entrees**. C'est le vrai
+arbitrage cache derriere « pas de grottes sous la mer » : moins profond, ou moins
+de grottes.
+
+**DEFAUT CONNU, non corrige** : deux chambres voisines peuvent elire la MEME
+cellule la plus raide et y poser deux bouches superposees. Vu sur les entrees 1
+et 3, a la meme position au metre pres. Il faudrait marquer les cellules deja
+employees, comme le routage le fait pour ses troncs communs.
