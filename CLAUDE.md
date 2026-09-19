@@ -4604,3 +4604,118 @@ chaque chargement et jamais serialise, aucun impact sur le cache.
 **RESTE OUVERT** : une arche sur dix a son pont perce (0 m a deux metres du
 centre) -- probablement une chambre ou une galerie qui passe juste au-dessus.
 Et rien n'a encore ete REGARDE en jeu.
+
+### Assainissement : ce qui a ete decoupe, et ce qui reste (19 septembre 2026)
+
+Question du proprietaire : « on est d'accord que tout ces calculs sont fait en
+C++ et le code est bien decoupe de maniere atomique au niveau des classes et
+des responsabilites ? » La reponse mesuree etait **oui pour le C++, non pour
+trois fichiers**, et il a demande l'assainissement.
+
+**LE C++ : SANS RESERVE.** Toute la chaine que le jeu execute est dans
+`Source/Worldseed/Procedural/`. Les 5 770 lignes de Python de `Tools/WorldGen`
+sont LEGATAIRES : aucune ligne du jeu ne les appelle, le seul lien est
+`world_rules.json` lu par les deux (`WorldseedRules.cpp:99`). En lisant
+`worldgen/climate.py`, on ne lit PAS ce que le jeu execute.
+
+**CE QUI ETAIT PROPRE, et c'est la majorite.** Chaque passe de la chaine est un
+module autonome : un espace de noms, une structure de regles chargee du JSON,
+et UN point d'entree -- `Tectonics::Generate`, `Climate::Generate`,
+`Erosion::Run`, `Lithology::Compute`, `Coast::Build`, `Biomes::Classify`,
+`Fins::SlotAt`. Elles prennent des entrees, rendent des sorties, ne gardent
+aucun etat cache, et tournent depuis n'importe quel fil. C'est ce qui a permis
+d'inserer la passe littorale en une ligne au bon endroit.
+
+**TROIS CHANTIERS FAITS, chacun verifie par un releve identique au chiffre
+pres :**
+
+1. **`WorldseedCaves::Build`, 1 254 lignes dans UNE fonction** portant onze
+   responsabilites. Decoupee en DIX TEMPS NOMMES -- `Semer`, `Relier`,
+   `Creuser`, `Composantes`, `Effondrer`, `Dissoudre`, `Ouvrir`, `Percer`,
+   `Indexer`, `Verifier` -- portes par un CHANTIER (`FChantierGrottes`).
+   Plus longue fonction du fichier : **1 254 -> 311 lignes**.
+
+   *Pourquoi une structure et non dix fonctions libres* : la passe porte une
+   trentaine de grandeurs qui traversent les temps. Les faire circuler en
+   parametres donnerait des signatures de vingt arguments, moins lisibles que
+   le probleme. Les nommer une fois DIT ce qui est commun.
+
+   *Trois promotions imposees par le compilateur, et elles sont instructives* :
+   `TropPres` et `Trouver` deviennent des methodes (les quatre formes
+   d'ouverture s'en servent), `Ctx` traverse jusqu'a la verification finale.
+   Chacune designait une grandeur reellement partagee que la fonction unique
+   masquait.
+
+   *Collision de noms* : `Router()` existait deja comme fonction libre -- c'est
+   l'A* lui-meme. Le TEMPS qui l'emploie s'appelle donc `Creuser`.
+
+2. **La tournee photo sortie de `AWorldseedVoxelTerrain`**, en
+   `UTickableWorldSubsystem`. Elle y vivait par COMMODITE -- le minuteur du
+   terrain offrait un fil du temps -- pas par decision : un acteur qui diffuse
+   des chunks n'a pas a savoir cadrer une photo. Terrain **426 + 1 490 ->
+   395 + 1 148** lignes.
+
+   Le terrain expose en echange ce qu'il possede legitimement, en lecture
+   seule : geometrie, altitudes, reseau de grottes, champ de densite, etat du
+   filet du joueur.
+
+   **PIEGE DU SOUS-SYSTEME, paye comptant** : `OnWorldBeginPlay` arrive AVANT
+   celui des acteurs. Le terrain n'existe pas encore, et surtout son monde
+   n'est pas charge -- une minute a la premiere generation. Construire la
+   tournee la donnait zero vue ET AUCUNE LIGNE DE JOURNAL, parce que tout
+   sortait sur le premier test de validite. On ARME au begin play, on CONSTRUIT
+   au premier tick ou le monde est la. Et l'on compte des SECONDES, pas des
+   tics : le tick d'un sous-systeme suit la trame, qui varie.
+
+3. **`WorldseedProbeLibrary`, 1 661 lignes de fourre-tout**, eclate par domaine
+   en quatre fichiers (monde 2D 455, voxel 150, roche 363, cavites 674), avec
+   un socle commun `FWorldseedSonde::Preparer`.
+
+   *Le socle n'est pas qu'une economie de lignes* : les huit sondes repetaient
+   le meme preambule de vingt lignes, et le depot a deja paye ce que cela
+   coute -- `probe_voxel` avait OUBLIE `SetLithology`, annoncait « 2,67 ms par
+   chunk, le bruit est gratuit », et mesurait le monde d'avant. Le vrai chiffre
+   etait 3,65.
+
+**PIEGE D'OUTILLAGE DU REFACTOR, paye deux fois** : decouper par BORNES DE
+LIGNES ne tient pas -- les numeros bougent des qu'on touche au fichier, et deux
+tentatives ont produit des coupes en plein milieu d'une declaration. Le
+decoupage par NOM DE FONCTION, en suivant les accolades, est robuste : c'est
+celui qui a marche.
+
+**ET LA VERIFICATION D'UN REFACTOR SE PREND AVANT DE TOUCHER AU FICHIER.** La
+mesure de reference a ete relevee en premier ; sans elle, « ca compile » n'est
+pas une preuve. Releve identique avant et apres les trois chantiers :
+
+    822 chambres, 944 liaisons (123 de boucle), 14145 troncons,
+    14 abandonnees, 8 reseaux, 66 bouches, 574 GOUFFRES, 154 DOLINES, 9 ARCHES
+    9 traversantes, 8 avec un pont, 8 VRAIES ARCHES
+
+**CE QUI RESTE, ET POURQUOI JE M'ARRETE LA :**
+
+- **`AWorldseedTerrain`, 1 413 lignes et six roles** : maillage legataire, sol
+  de fond, ciel, requetes climat/latitude, ponte de l'acteur voxel, visibilite
+  du proxy. C'est un god-actor ASSUME et deja documente -- quand le voxel a
+  remplace le mailleur, deplacer ces services aurait demande sept cents lignes
+  d'un coup, sans filet ; un drapeau et trente lignes ont suffi.
+
+  **Le gros du poids est le mailleur LEGATAIRE** : `BuildChunk` (357),
+  `UpdateChunks` (71), `ReleaseChunk`, `StrideForDistance`, soit environ
+  450 lignes derriere `bUseVoxelMesher`. Ce N'EST PAS du code mort : c'est un
+  REPLI si l'acteur voxel ne se pose pas (`WorldseedTerrain.cpp:364`). Le
+  supprimer est une decision de conception -- garder ou non ce filet -- et non
+  un refactor : elle revient au proprietaire.
+
+  `ComputeVertexAppearance` (140) est PARTAGE entre le mailleur legataire et le
+  sol de fond : il reste quoi qu'il arrive.
+
+- **`BuildGroundProxy` (253) et `UpdateGroundProxyVisibility` (84) appartiennent
+  a `AWorldseedGroundProxy`**, qui existe deja comme acteur. Mais le premier
+  appelle `ComputeVertexAppearance` : le deplacer proprement demande de decider
+  ou vit ce calcul d'apparence. A faire avec la decision precedente.
+
+- **`ProbeLithology` (363) et `ProbeArches` (381) posent chacune PLUSIEURS
+  questions** -- j'y ai empile trois mesures dans la journee. Elles gagneraient
+  a etre eclatees par question posee, ce qui est le vrai critere pour une
+  sonde : lithologie / relief / diaclases d'un cote, cretes / couverture des
+  lames / verification des arches de l'autre.
