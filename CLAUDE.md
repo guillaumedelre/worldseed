@@ -3757,7 +3757,14 @@ rayon maximal a 16 m, ce qui redonne **28 chambres et 7 entrees**. C'est le vrai
 arbitrage cache derriere « pas de grottes sous la mer » : moins profond, ou moins
 de grottes.
 
-**DEFAUT CONNU, non corrige** : deux chambres voisines peuvent elire la MEME
-cellule la plus raide et y poser deux bouches superposees. Vu sur les entrees 1
-et 3, a la meme position au metre pres. Il faudrait marquer les cellules deja
-employees, comme le routage le fait pour ses troncs communs.
+**LES BOUCHES EN DOUBLE, corrigees le 19 septembre.** Deux chambres voisines
+elisaient la MEME cellule la plus raide : elles cherchent chacune l'escarpement
+de leur voisinage, et ces voisinages se recouvrent, si bien que la meme paroi
+gagnait deux fois. Constate sur deux entrees a la meme position AU METRE PRES.
+
+**Le point qui fait la difference : on ecarte les candidates PENDANT la
+recherche, pas apres.** Refuser a la fin aurait simplement fait perdre l'entree ;
+ecarter en cours de route laisse la recherche trouver le SECOND escarpement du
+voisinage, qui fait tres bien l'affaire. Mesure : toujours **sept** entrees, donc
+aucune perdue, et la paire la plus proche passe a **125 m** pour un minimum exige
+de 120 -- aucun doublon sous cinq metres.

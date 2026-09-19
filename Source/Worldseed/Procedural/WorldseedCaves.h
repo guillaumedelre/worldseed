@@ -173,6 +173,17 @@ struct WORLDSEED_API FWorldseedCaveRules
 	float EntranceDepthM = 14.0f;
 
 	/**
+	 * Distance minimale entre deux bouches, en metres.
+	 *
+	 * SANS ELLE, DEUX CHAMBRES VOISINES ELISENT LA MEME PAROI. Elles cherchent
+	 * chacune la cellule la plus raide de leur voisinage, et ces voisinages se
+	 * recouvrent : le meme escarpement gagne deux fois, et l'on pose deux
+	 * bouches superposees. Constate sur deux entrees a la meme position au
+	 * metre pres.
+	 */
+	float EntranceSpacingM = 120.0f;
+
+	/**
 	 * Marge au-dessus du niveau de la mer, en metres.
 	 *
 	 * RIEN NE SE CREUSE SOUS LA MER. Une chambre sous le niveau marin est noyee

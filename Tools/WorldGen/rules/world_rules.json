@@ -1051,6 +1051,8 @@
     "entreeParChambres": 4.0,
     "entreeEnfoncementM": 14.0,
     "_comment_niveauMerMargeM": "RIEN NE SE CREUSE SOUS LA MER, decision du proprietaire le 19 septembre 2026, pour simplifier. Une chambre sous le niveau marin est noyee par le plugin Water, qui applique son rendu sous-marin a tout ce qui passe sous zero : physiquement defendable, mais personne ne l'avait decide. La contrainte est posee AU SEMIS pour les chambres et dans le COUT pour le routage, jamais corrigee apres coup.",
-    "niveauMerMargeM": 5.0
+    "niveauMerMargeM": 5.0,
+    "_comment_entreeEspacementM": "CALIBRE. Distance minimale entre deux bouches. SANS ELLE, DEUX CHAMBRES VOISINES ELISENT LA MEME PAROI : elles cherchent chacune la cellule la plus raide de leur voisinage, et ces voisinages se recouvrent, si bien que le meme escarpement gagne deux fois et que deux bouches se superposent -- constate sur deux entrees a la meme position au metre pres. Les candidates sont ecartees PENDANT la recherche et non apres : refuser a la fin ferait perdre l entree, alors qu ecarter en cours de route laisse trouver le SECOND escarpement du voisinage, qui fait tres bien l affaire.",
+    "entreeEspacementM": 120.0
   }
 }

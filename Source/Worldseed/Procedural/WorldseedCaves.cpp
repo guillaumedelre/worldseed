@@ -129,6 +129,7 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.EntranceSlopeDeg = Num(TEXT("entreePenteMinDeg"), 35.0);
 	Out.EntrancePerChambers = Num(TEXT("entreeParChambres"), 10.0);
 	Out.EntranceDepthM = Num(TEXT("entreeEnfoncementM"), 14.0);
+	Out.EntranceSpacingM = Num(TEXT("entreeEspacementM"), 120.0);
 	Out.SeaMarginM = Num(TEXT("niveauMerMargeM"), 5.0);
 	return Out;
 }
@@ -858,6 +859,13 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			return Out.Chambers[A2].CentreM.Z > Out.Chambers[B2].CentreM.Z;
 		});
 
+		// LES BOUCHES DEJA POSEES, pour qu'une paroi ne serve qu'une fois. On
+		// ECARTE LES CANDIDATES PENDANT LA RECHERCHE plutot qu'apres : refuser
+		// a la fin ferait simplement perdre l'entree, alors qu'ecarter en cours
+		// de route laisse la recherche trouver le SECOND escarpement du
+		// voisinage, qui fait tres bien l'affaire.
+		TArray<FVector2D> BouchesPosees;
+
 		for (const int32 Ic : Ordre)
 		{
 			if (Entrees >= EntreesVoulues) { break; }
@@ -881,6 +889,22 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 					const int32 Ci = (Col0 + di + NX) % NX;
 					const int32 Cell2 = Rj * NX + Ci;
 					if (ElevationM[Cell2] <= Rules.SeaMarginM) { continue; }
+
+					const FVector2D Ici(
+						(static_cast<double>(Ci) / NX - 0.5) * Geometry.WidthM(),
+						(static_cast<double>(Rj) / NY - 0.5) * Geometry.HeightM);
+
+					bool bDejaPrise = false;
+					for (const FVector2D& B2 : BouchesPosees)
+					{
+						if (FVector2D::Distance(Ici, B2) < Rules.EntranceSpacingM)
+						{
+							bDejaPrise = true;
+							break;
+						}
+					}
+					if (bDejaPrise) { continue; }
+
 					const float Pente = FMath::Sqrt(DX[Cell2] * DX[Cell2] + DY[Cell2] * DY[Cell2]);
 					if (Pente > MeilleurePente)
 					{
@@ -948,6 +972,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 				Entrees + 1, Bouche.X, Bouche.Y, Bouche.Z,
 				FMath::RadiansToDegrees(FMath::Atan(MeilleurePente)));
 
+			BouchesPosees.Add(FVector2D(Bouche.X, Bouche.Y));
 			++Entrees;
 		}
 	}
