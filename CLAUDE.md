@@ -3768,3 +3768,38 @@ ecarter en cours de route laisse la recherche trouver le SECOND escarpement du
 voisinage, qui fait tres bien l'affaire. Mesure : toujours **sept** entrees, donc
 aucune perdue, et la paire la plus proche passe a **125 m** pour un minimum exige
 de 120 -- aucun doublon sous cinq metres.
+
+### Huit liaisons increusables, et pourquoi il y a PLUSIEURS reseaux (19 septembre 2026)
+
+Neuf liaisons sur trente et une se repliaient faute de chemin. **Le diagnostic a
+d'abord consiste a separer deux causes que je confondais**, et elles appellent
+des remedes opposes : la file de l'A* qui se VIDE dit qu'aucun chemin n'existe
+dans le couloir ; le plafond de noeuds atteint dit que la recherche a manque de
+souffle. Releve : **7 sans issue, 2 trop longues**.
+
+- *Trop longues* : plafond porte de 40 000 a 150 000 noeuds. **2 -> 0.**
+- *Sans issue* : l'interdit employait le rayon MAXIMAL du catalogue, quatre
+  metres, pour toutes les galeries -- alors qu'une galerie donnee en fait 1,5 a
+  4. On barrait des passages qu'un tunnel etroit franchit. Corrige : le contexte
+  porte le rayon de la galerie en cours. **Mais le compte est passe de 7 a 8** :
+  avec plus de souffle, la recherche a PROUVE qu'un de ces chemins n'existait
+  pas. Ce n'etait donc pas un manque de moyens.
+
+**DEUX BRICOLAGES ESSAYES ET MESURES COMME PIRES.** Draper la galerie sous la
+surface la fait passer SOUS LA MER, ce que la regle venait d'interdire. La borner
+au-dessus de la mer la fait PERCER LE SOL : **70,43 % de ses points au-dessus du
+terrain**, et 4062 troncons au lieu de 297. Le second est tellement mauvais qu'il
+tranche la question.
+
+**LA BONNE REPONSE EST GEOLOGIQUE : il n'y a pas UN reseau, il y en a
+PLUSIEURS.** Deux massifs separes par une baie ont deux systemes karstiques
+distincts -- c'est vrai sur Terre. Les liaisons sans issue sont donc ABANDONNEES,
+le graphe se separe, et chaque morceau garde sa connexite interne par
+construction. Il suffit alors de donner **une entree a chacun** : le nombre
+demande devient un PLANCHER de densite, pas un plafond d'accessibilite, et
+l'attribution tourne entre les composantes -- sans quoi la plus haute raflerait
+toutes les entrees et les autres resteraient murees.
+
+**ETAT FINAL** : 28 chambres, 31 liaisons dont 8 abandonnees, **5 reseaux**,
+**7 entrees**, 297 troncons, 466 ms. Percement **0,29 %**, soit exactement les
+sept bouches, qui percent a dessein. Le repli drape n'est plus jamais employe.

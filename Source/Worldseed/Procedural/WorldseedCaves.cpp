@@ -125,6 +125,7 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.RouteRockCost = Num(TEXT("routageRocheCout"), 2.0);
 	Out.RouteShareBonus = Num(TEXT("routageMutualisation"), 0.45);
 	Out.RouteSimplifyM = Num(TEXT("routageSimplifieM"), 3.0);
+	Out.RouteNodeCap = Rules.Int(TEXT("cavites"), TEXT("routagePlafondNoeuds"), 150000);
 
 	Out.EntranceSlopeDeg = Num(TEXT("entreePenteMinDeg"), 35.0);
 	Out.EntrancePerChambers = Num(TEXT("entreeParChambres"), 10.0);
@@ -227,6 +228,19 @@ namespace
 		float Exageration = 1.0f;
 
 		/**
+		 * Rayon de la galerie en cours de routage, en metres.
+		 *
+		 * IL FAUT LE RAYON REEL, PAS LE MAXIMUM DU CATALOGUE. Premiere version
+		 * fautive : l'interdit employait TunnelRadiusMaxM pour toutes les
+		 * galeries, donc quatre metres, alors qu'une galerie donnee en fait 1,5
+		 * a 4. On barrait ainsi des passages qu'un tunnel etroit franchit sans
+		 * peine -- et comme la bande utile est coincee entre la surface et le
+		 * niveau de la mer, deux metres de trop suffisent a la fermer. Mesure du
+		 * defaut : 7 liaisons sur 31 declarees SANS ISSUE.
+		 */
+		float RayonCourant = 4.0f;
+
+		/**
 		 * Les cellules deja empruntees par une galerie.
 		 *
 		 * C'EST CE QUI FAIT UN RESEAU PLUTOT QU'UN PLAT DE SPAGHETTIS : deux
@@ -300,14 +314,14 @@ namespace
 			// points de galerie au-dessus du sol APRES routage, contre 24,93 %
 			// sans routage du tout -- autant dire que le routage ne servait a
 			// rien.
-			if (Profondeur <= Rules->TunnelRadiusMaxM + 1.0)
+			if (Profondeur <= RayonCourant + 1.0)
 			{
 				return TNumericLimits<double>::Max();
 			}
 
 			// RIEN NE SE CREUSE SOUS LA MER : une galerie noyee serait rendue
 			// sous-marine par le plugin Water, ce que personne n'a decide.
-			if (P.Z - Rules->TunnelRadiusMaxM < Rules->SeaMarginM)
+			if (P.Z - RayonCourant < Rules->SeaMarginM)
 			{
 				return TNumericLimits<double>::Max();
 			}
@@ -367,9 +381,20 @@ namespace
 	 * Rend un chemin vide si la recherche echoue ou depasse son plafond : c'est
 	 * a l'appelant de decider quoi en faire, et il le signale.
 	 */
-	TArray<FVector> Router(const FContexteRoutage& Ctx, const FVector& Depart,
-		const FVector& Arrivee, int32 PlafondNoeuds)
+	/** Pourquoi un routage a echoue. Deux causes, deux remedes opposes. */
+	enum class EEchec : uint8
 	{
+		Aucun,
+		/** La file s'est VIDEE : il n'existe aucun chemin dans le couloir. */
+		SansIssue,
+		/** Le plafond de noeuds a ete atteint : le chemin existe peut-etre. */
+		TropLong,
+	};
+
+	TArray<FVector> Router(const FContexteRoutage& Ctx, const FVector& Depart,
+		const FVector& Arrivee, int32 PlafondNoeuds, EEchec& OutEchec)
+	{
+		OutEchec = EEchec::Aucun;
 		const FIntVector CD = Ctx.CelluleDe(Depart);
 		const FIntVector CA = Ctx.CelluleDe(Arrivee);
 		const double Couloir = Ctx.Rules->RouteCorridorM;
@@ -444,7 +469,16 @@ namespace
 		}
 
 		TArray<FVector> Chemin;
-		if (!bTrouve) { return Chemin; }
+		if (!bTrouve)
+		{
+			// LA DISTINCTION COMPTE, et elle appelle des remedes opposes : une
+			// file vide dit qu'AUCUN chemin n'existe dans le couloir -- il faut
+			// l'elargir ou relacher une contrainte ; un plafond atteint dit que
+			// la recherche a manque de souffle -- il faut le relever. Confondre
+			// les deux fait regler le mauvais bouton.
+			OutEchec = (File.Num() == 0) ? EEchec::SansIssue : EEchec::TropLong;
+			return Chemin;
+		}
 
 		FIntVector C = CA;
 		TArray<FIntVector> Cellules;
@@ -627,6 +661,39 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	//
 	// Prim sur le graphe complet serait en N carre ; on se contente des voisins
 	// les plus proches, ce qui suffit largement a un semis regulier.
+	// Le contexte de routage est monte AVANT l'arbre : c'est lui qui sait lire
+	// la surface, et l'arbre en a besoin pour juger ce qui est creusable.
+	FContexteRoutage Ctx;
+	Ctx.Geo = &Geometry;
+	Ctx.ElevationM = &ElevationM;
+	Ctx.Litho = &Lithology;
+	Ctx.LithoRules = &LithoRules;
+	Ctx.Rules = &Rules;
+	Ctx.Exageration = HeightExaggeration;
+
+	// L'ARBRE DOIT SAVOIR CE QUI EST CREUSABLE, sans quoi il choisit la liaison
+	// la plus COURTE et non la plus praticable -- et l'A* se retrouve ensuite a
+	// devoir creuser sous une baie, ce qui n'existe pas. Une arete dont la
+	// droite franchit un terrain trop bas pour loger une galerie entre la
+	// surface et le niveau de la mer est donc lourdement penalisee : le tri la
+	// rejette d'office s'il existe une autre route, et ne la garde qu'en dernier
+	// recours, ou la connexite l'emporte sur le realisme.
+	const float HauteurUtile = Rules.SeaMarginM + 2.0f * Rules.TunnelRadiusMaxM + 2.0f;
+	auto CoutArete = [&](const FVector& A2, const FVector& B2) -> float
+	{
+		const float D = FVector::Dist(A2, B2);
+		const int32 Pas = FMath::Max(4, FMath::CeilToInt(D / 40.0f));
+		for (int32 K = 0; K <= Pas; ++K)
+		{
+			const FVector P = FMath::Lerp(A2, B2, static_cast<float>(K) / Pas);
+			if (Ctx.SurfaceA(P.X, P.Y) < HauteurUtile)
+			{
+				return D * 1000.0f;
+			}
+		}
+		return D;
+	};
+
 	TArray<float> MeilleureArete;
 	TArray<int32> Parent;
 	TArray<bool> Dedans;
@@ -661,7 +728,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		for (int32 I = 0; I < N; ++I)
 		{
 			if (Dedans[I]) { continue; }
-			const float D = FVector::Dist(Out.Chambers[Meilleur].CentreM, Out.Chambers[I].CentreM);
+			const float D = CoutArete(Out.Chambers[Meilleur].CentreM, Out.Chambers[I].CentreM);
 			if (D < MeilleureArete[I])
 			{
 				MeilleureArete[I] = D;
@@ -716,15 +783,11 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// calcaire, et monter d'une pente impraticable. L'A* encode ces trois regles
 	// dans son COUT -- interdit au-dessus du sol, tres cher pres de la surface,
 	// surcout de la roche dure, penalite de denivele -- et n'a plus qu'a obeir.
-	FContexteRoutage Ctx;
-	Ctx.Geo = &Geometry;
-	Ctx.ElevationM = &ElevationM;
-	Ctx.Litho = &Lithology;
-	Ctx.LithoRules = &LithoRules;
-	Ctx.Rules = &Rules;
-	Ctx.Exageration = HeightExaggeration;
-
 	int32 Droites = 0;
+	int32 SansIssue = 0;
+	int32 TropLong = 0;
+	int32 Abandonnees = 0;
+	TArray<bool> AreteGardee;
 	// On note ou commencent les troncons de chaque liaison, pour pouvoir compter
 	// les percements SEPAREMENT selon qu'ils viennent d'un chemin route ou d'un
 	// repli sur la droite. Sans cette separation on mesure un melange, et aucune
@@ -741,9 +804,41 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		const float RA = Tirage.Entre(Rules.TunnelRadiusMinM, Rules.TunnelRadiusMaxM);
 		const float RB = Tirage.Entre(Rules.TunnelRadiusMinM, Rules.TunnelRadiusMaxM);
 
-		TArray<FVector> Chemin = Router(Ctx, A, B, 40000);
+		Ctx.RayonCourant = FMath::Max(RA, RB);
+
+		EEchec Echec = EEchec::Aucun;
+		TArray<FVector> Chemin = Router(Ctx, A, B, Rules.RouteNodeCap, Echec);
+		if (Echec == EEchec::SansIssue) { ++SansIssue; }
+		else if (Echec == EEchec::TropLong) { ++TropLong; }
 		DebutTroncon.Add(Out.Segments.Num());
 		EstRepli.Add(Chemin.Num() < 2);
+		AreteGardee.Add(true);
+
+		if (Chemin.Num() < 2 && Echec == EEchec::SansIssue)
+		{
+			// ON ABANDONNE LA LIAISON, ET C'EST LA BONNE REPONSE.
+			//
+			// "Sans issue" ne veut pas dire que la recherche a manque de
+			// souffle : elle a EPUISE le couloir et prouve qu'aucun chemin
+			// n'existe. Le terrain entre les deux chambres est trop bas pour
+			// loger une galerie entre la surface et le niveau de la mer.
+			//
+			// Les deux bricolages essayes avant celui-ci sont pires, et mesures
+			// comme tels : draper la galerie sous la surface la fait passer sous
+			// la mer -- ce que la regle interdit -- et la borner au-dessus de la
+			// mer la fait percer le sol sur 70,43 % de ses points.
+			//
+			// ABANDONNER N'EST PAS RENONCER A LA CONNEXITE, c'est reconnaitre
+			// qu'il y a PLUSIEURS reseaux. Deux massifs separes par une baie ont
+			// deux systemes karstiques distincts : c'est vrai sur Terre, et
+			// chacun garde sa connexite interne par construction. Il suffit alors
+			// de donner une entree a chacun.
+			DebutTroncon.Add(Out.Segments.Num());
+			EstRepli.Add(false);
+			AreteGardee.Add(false);
+			++Abandonnees;
+			continue;
+		}
 
 		if (Chemin.Num() < 2)
 		{
@@ -769,6 +864,9 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 			const int32 Pas = FMath::Max(2, FMath::CeilToInt(FVector::Dist(A, B) / Rules.RouteCellM));
 			const float Rayon = FMath::Max(RA, RB);
+			// Ce repli ne sert plus qu'aux liaisons trop longues pour le
+			// plafond de noeuds, jamais a celles qui n'ont pas d'issue : draper
+			// sous la surface suffit, puisqu'un chemin existe.
 			for (int32 K = 0; K <= Pas; ++K)
 			{
 				FVector P = FMath::Lerp(A, B, static_cast<float>(K) / Pas);
@@ -837,9 +935,44 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// versant raide, on gagne de la profondeur en quelques metres. La meme
 	// galerie sur un terrain plat resterait a fleur de sol sur des dizaines de
 	// metres et eventrerait le paysage.
+	// --- LES COMPOSANTES : il n'y a plus UN reseau, mais PLUSIEURS -----------
+	//
+	// Abandonner les liaisons sans issue separe le graphe. Chaque morceau garde
+	// sa connexite interne -- c'est l'arbre couvrant qui la lui donne -- mais il
+	// lui faut SA PROPRE ENTREE, sans quoi il reste inaccessible. Un reseau
+	// qu'on ne peut pas atteindre ne vaut pas mieux qu'un reseau qui n'existe
+	// pas, et c'est exactement le defaut qu'on vient de corriger.
+	TArray<int32> Racine;
+	Racine.SetNum(N);
+	for (int32 I = 0; I < N; ++I) { Racine[I] = I; }
+
+	TFunction<int32(int32)> Trouver = [&Racine, &Trouver](int32 I) -> int32
+	{
+		while (Racine[I] != I) { Racine[I] = Racine[Racine[I]]; I = Racine[I]; }
+		return I;
+	};
+
+	for (int32 K = 0; K < Aretes.Num(); ++K)
+	{
+		if (!AreteGardee.IsValidIndex(K) || !AreteGardee[K]) { continue; }
+		const int32 Ra = Trouver(Aretes[K].Key);
+		const int32 Rb = Trouver(Aretes[K].Value);
+		if (Ra != Rb) { Racine[Ra] = Rb; }
+	}
+
+	TMap<int32, TArray<int32>> ParComposante;
+	for (int32 I = 0; I < N; ++I)
+	{
+		ParComposante.FindOrAdd(Trouver(I)).Add(I);
+	}
+
 	int32 Entrees = 0;
-	const int32 EntreesVoulues = (Rules.EntrancePerChambers > 0.0f)
+	const int32 Souhaitees = (Rules.EntrancePerChambers > 0.0f)
 		? FMath::Max(1, FMath::RoundToInt(N / Rules.EntrancePerChambers)) : 0;
+	// AU MOINS UNE PAR COMPOSANTE : le nombre demande est un PLANCHER de
+	// densite, pas un plafond d'accessibilite.
+	const int32 EntreesVoulues = (Souhaitees > 0)
+		? FMath::Max(Souhaitees, ParComposante.Num()) : 0;
 
 	if (EntreesVoulues > 0)
 	{
@@ -852,12 +985,33 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		// Une bouche par chambre au plus, et on commence par les chambres les
 		// moins profondes : ce sont elles qui ont une chance d'atteindre un
 		// versant sans creuser la moitie du massif.
-		TArray<int32> Ordre;
-		for (int32 I = 0; I < N; ++I) { Ordre.Add(I); }
-		Ordre.Sort([&](int32 A2, int32 B2)
+		// ON TOURNE ENTRE LES COMPOSANTES avant d'en resservir une : sans cela,
+		// la composante la plus haute raflerait toutes les entrees et les autres
+		// resteraient murees.
+		TArray<TArray<int32>> Files;
+		for (TPair<int32, TArray<int32>>& Paire : ParComposante)
 		{
-			return Out.Chambers[A2].CentreM.Z > Out.Chambers[B2].CentreM.Z;
+			Paire.Value.Sort([&](int32 A2, int32 B2)
+			{
+				return Out.Chambers[A2].CentreM.Z > Out.Chambers[B2].CentreM.Z;
+			});
+			Files.Add(Paire.Value);
+		}
+		Files.Sort([](const TArray<int32>& A2, const TArray<int32>& B2)
+		{
+			return A2.Num() > B2.Num();
 		});
+
+		TArray<int32> Ordre;
+		for (int32 Rang = 0; ; ++Rang)
+		{
+			bool bEncore = false;
+			for (const TArray<int32>& F : Files)
+			{
+				if (F.IsValidIndex(Rang)) { Ordre.Add(F[Rang]); bEncore = true; }
+			}
+			if (!bEncore) { break; }
+		}
 
 		// LES BOUCHES DEJA POSEES, pour qu'une paroi ne serve qu'une fois. On
 		// ECARTE LES CANDIDATES PENDANT LA RECHERCHE plutot qu'apres : refuser
@@ -937,7 +1091,9 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 			if (Fond.Z - RayonBouche < Rules.SeaMarginM) { continue; }
 
-			TArray<FVector> Acces = Router(Ctx, Fond, C.CentreM, 40000);
+			Ctx.RayonCourant = RayonBouche;
+			EEchec EchecEntree = EEchec::Aucun;
+			TArray<FVector> Acces = Router(Ctx, Fond, C.CentreM, Rules.RouteNodeCap, EchecEntree);
 			if (Acces.Num() < 2)
 			{
 				continue;
@@ -1051,8 +1207,8 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
-		TEXT("%d troncons, %d repliees, %d ENTREES  (%.0f ms)"),
+		TEXT("%d troncons, %d abandonnees, %d drapees, %d reseaux, %d ENTREES  (%.0f ms)"),
 		Out.Chambers.Num(), Aretes.Num(), ABoucler,
-		Out.Segments.Num(), Droites, Entrees,
+		Out.Segments.Num(), Abandonnees, Droites, ParComposante.Num(), Entrees,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
 }

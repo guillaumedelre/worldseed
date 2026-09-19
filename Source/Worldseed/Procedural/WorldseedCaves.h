@@ -153,6 +153,16 @@ struct WORLDSEED_API FWorldseedCaveRules
 	/** Tolerance de simplification du chemin, en metres. */
 	float RouteSimplifyM = 3.0f;
 
+	/**
+	 * Plafond de noeuds explores par liaison.
+	 *
+	 * Il protege d'une recherche pathologique, au prix d'un repli. Le distinguer
+	 * de l'echec "sans issue" est essentiel : l'un se corrige en relevant ce
+	 * plafond, l'autre en relachant une contrainte, et confondre les deux fait
+	 * regler le mauvais bouton.
+	 */
+	int32 RouteNodeCap = 150000;
+
 	// --- entrees ---------------------------------------------------------------
 
 	/**
