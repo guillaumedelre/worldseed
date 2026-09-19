@@ -118,6 +118,54 @@ FWorldseedLithologyRules FWorldseedLithologyRules::FromRules(const UWorldseedRul
 	return Out;
 }
 
+void WorldseedLithology::Erodibility(const FWorldseedLithology& Lithology,
+	const FWorldseedLithologyRules& Rules, float Weight, TArray<float>& Out)
+{
+	Out.Reset();
+	if (Weight <= 0.0f || Lithology.Id.Num() == 0 || Rules.Catalogue.Num() == 0)
+	{
+		return;
+	}
+
+	// LA MOYENNE SE PREND SUR LE MONDE, PAS SUR LE CATALOGUE : deux roches qui
+	// couvrent 1 % et 40 % des terres ne pesent pas pareil dans le bilan, et
+	// c'est le bilan qu'on veut laisser inchange.
+	double Somme = 0.0;
+	int32 N = 0;
+	for (const uint8 Id : Lithology.Id)
+	{
+		if (Rules.Catalogue.IsValidIndex(Id))
+		{
+			Somme += Rules.Catalogue[Id].Hardness;
+			++N;
+		}
+	}
+	if (N == 0)
+	{
+		return;
+	}
+	const float Moyenne = static_cast<float>(Somme / N);
+
+	Out.SetNumUninitialized(Lithology.Id.Num());
+	for (int32 I = 0; I < Lithology.Id.Num(); ++I)
+	{
+		const uint8 Id = Lithology.Id[I];
+		const float Durete = Rules.Catalogue.IsValidIndex(Id)
+			? Rules.Catalogue[Id].Hardness : Moyenne;
+
+		// Plus dur que la moyenne : on s'use moins. Borne des deux cotes pour
+		// qu'aucune cellule ne devienne indestructible ni ne fonde.
+		Out[I] = FMath::Clamp(1.0f + Weight * (Moyenne - Durete), 0.15f, 2.5f);
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] erodabilite : durete moyenne %.2f, poids %.2f, ")
+		TEXT("K de %.2f a %.2f"),
+		Moyenne, Weight,
+		FMath::Clamp(1.0f + Weight * (Moyenne - 1.0f), 0.15f, 2.5f),
+		FMath::Clamp(1.0f + Weight * Moyenne, 0.15f, 2.5f));
+}
+
 const TCHAR* WorldseedLithology::Name(const FWorldseedLithologyRules& Rules, uint8 Id)
 {
 	return Rules.Catalogue.IsValidIndex(Id) ? *Rules.Catalogue[Id].Label : TEXT("inconnue");

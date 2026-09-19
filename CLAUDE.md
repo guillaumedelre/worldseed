@@ -4280,3 +4280,68 @@ n'existait pas :
 **Procedure de placement, desormais obligatoire avant toute capture** : sonder
 vers le bas pour trouver le sol, poser dessus avec une marge, puis sonder vers
 le HAUT pour confirmer le ciel libre.
+
+### La durete est branchee sur l'erosion, et ca ne change rien (19 septembre 2026)
+
+Arbitrage ouvert par le proprietaire : adapter le relief a la lithologie pour
+avoir les bons reliefs aux bons endroits. Le terme est ecrit, il est au bon
+endroit, il est mesure -- **et son effet est de quatre a sept centimetres**.
+
+**OU IL ENTRE, ET POURQUOI LA.** Dans la loi de puissance de courant
+`E = K . A^m . S^n`, c'est K -- l'erodabilite -- qui porte la resistance du
+substrat. Le mettre dans l'exposant ou en post-traitement reviendrait a bricoler
+un resultat au lieu de decrire une cause. L'erodabilite est **rapportee a la
+moyenne du monde**, ponderee par la surface reellement couverte : une
+erodabilite absolue changerait la quantite TOTALE d'erosion, donc l'amplitude du
+relief, donc tout le calage terrestre, pour une question qui ne porte que sur sa
+REPARTITION.
+
+**MESURE, temoin avec/sans, perte moyenne par roche sur les terres :**
+
+    roche      durete   poids 1    temoin    ecart
+    Granite     0,95    +5,37 m    +5,44 m   -0,07   (erode moins : le SIGNE est bon)
+    Basalte     0,85    -0,27 m    -0,23 m   -0,04
+    Gres        0,55    -0,56 m    -0,58 m   +0,02
+    Calcaire    0,45    -0,62 m    -0,66 m   +0,04
+    Schiste     0,35    -0,38 m    -0,43 m   +0,05
+
+Les signes sont tous justes. Les amplitudes sont nulles.
+
+**DEUX HYPOTHESES ELIMINEES PAR LA MESURE, dans cet ordre :**
+
+- *le plafond d'incision saturerait et effacerait K* -- le journal disait
+  « incision max 1.5 m », soit exactement `maxIncisionPerStepM`. Compte fait :
+  **3 cellules sur 7 864 320**, soit 0,00 %. Le plafond n'y est pour rien. (Il
+  est desormais mis a l'echelle de la roche quand meme, `MaxStep * K` : un
+  garde-fou numerique ne doit pas manger la physique qu'il protege.)
+- *l'erosion serait trop faible* -- taux d'incision **quadruple**, de 0,25 a
+  1,0 : la perte du granite passe de 5,37 a **6,27 m**. Dix-sept pour cent pour
+  un facteur quatre.
+
+**LA VRAIE CAUSE, ET ELLE EST STRUCTURELLE : L'EROSION N'EST PAS CE QUI FAIT LE
+RELIEF DE CE MONDE.** Elle en retire cinq a six metres, quoi qu'on fasse, sur
+une amplitude de plusieurs centaines. Le relief vient de la TECTONIQUE et de son
+bruit a cretes ; l'erosion organise le drainage et arrondit les aretes -- c'est
+d'ailleurs ce que dit son propre commentaire, « c'est elle qui rend le relief
+ORGANIQUE ». Elle est une passe de finition, pas une passe de sculpture.
+
+Et sans soulevement continu, K ne fait que **reechelonner le temps** : la
+relaxation d'un relief sans apport converge vers la meme forme, un peu plus tot
+ou un peu plus tard. Les escarpements et les corniches du monde reel naissent
+d'un soulevement qui alimente l'erosion pendant qu'elle decape -- les couches
+dures tiennent, les tendres sont emportees. Sans cette boucle, il n'y a rien a
+tenir.
+
+**CE QU'IL FAUDRAIT POUR QUE CA MORDE** : faire de l'erosion le processus
+DOMINANT du relief, c'est-a-dire une boucle soulevement/erosion couplee. Ce
+n'est pas un terme a ajouter, c'est la generation du relief a refaire.
+
+**LE TERME EST GARDE, `duretePoids` a 1,0.** Il est physiquement juste, il ne
+coute rien, et il sera deja en place le jour ou le relief changera de methode. A
+zero, le comportement est celui d'avant, a l'identique.
+
+**ET LA LECON DE METRIQUE, payee deux fois de suite** : ni l'altitude moyenne
+par roche ni la perte brute par roche ne mesurent l'erosion differentielle.
+Toutes deux sont dominees par la POSITION -- le granite est haut parce que la
+regle d'attribution le pose sur les orogenes, et il perd le plus parce qu'il est
+raide et arrose. Seul l'ECART AU TEMOIN isole le terme qu'on teste.

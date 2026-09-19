@@ -34,8 +34,20 @@ struct WORLDSEED_API FWorldseedErosionReport
 namespace WorldseedErosion
 {
 	/** Rend faux si le calcul a ete interrompu. */
+	/**
+	 * Erodabilite : facteur multiplicatif du taux d'incision, par cellule.
+	 *
+	 * C'EST LE COEFFICIENT K DE LA LOI DE PUISSANCE DE COURANT, et c'est le
+	 * seul endroit juste pour y mettre la roche : `E = K . A^m . S^n`, ou K
+	 * porte la resistance du substrat. Le mettre ailleurs -- dans l'exposant,
+	 * ou en post-traitement -- reviendrait a bricoler un resultat au lieu de
+	 * decrire une cause.
+	 *
+	 * Tableau vide : comportement d'avant, a l'identique.
+	 */
 	WORLDSEED_API bool Run(const UWorldseedRules& Rules, const FWorldseedGeometry& Geometry,
-		const TArray<float>& PrecipMm, TArray<float>& InOutElevationM,
+		const TArray<float>& PrecipMm, const TArray<float>& Erodibility,
+		TArray<float>& InOutElevationM,
 		FWorldseedErosionReport& OutReport,
 		const FWorldseedProgressScope& Progress = FWorldseedProgressScope());
 }

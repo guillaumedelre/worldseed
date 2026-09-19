@@ -100,4 +100,20 @@ namespace WorldseedLithology
 
 	/** Nom lisible d'une roche, pour les journaux. */
 	WORLDSEED_API const TCHAR* Name(const FWorldseedLithologyRules& Rules, uint8 Id);
+
+	/**
+	 * Erodabilite par cellule : le coefficient K de la puissance de courant.
+	 *
+	 * RAPPORTEE A LA MOYENNE, ET C'EST DELIBERE. Une erodabilite absolue
+	 * changerait la quantite TOTALE d'erosion du monde, donc l'amplitude du
+	 * relief, donc tout le calage terrestre -- pour une question qui ne porte
+	 * que sur sa REPARTITION. En centrant sur la moyenne, on redistribue
+	 * l'erosion de la roche tendre vers la roche dure sans changer son volume
+	 * au premier ordre, et le bulletin terrestre ne bouge que de ce qu'on
+	 * voulait vraiment changer.
+	 *
+	 * Poids a zero : tableau vide, donc comportement d'avant a l'identique.
+	 */
+	WORLDSEED_API void Erodibility(const FWorldseedLithology& Lithology,
+		const FWorldseedLithologyRules& Rules, float Weight, TArray<float>& Out);
 }

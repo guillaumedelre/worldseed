@@ -226,12 +226,58 @@ namespace WorldseedPipeline
 		// C est elle qui rend le relief ORGANIQUE. Le bruit a cretes du melange
 		// tectonique (ridgedMix) produit des aretes coupantes par construction ;
 		// sans erosion elles restent en l etat et le paysage parait dechire.
+		// LA ROCHE ENTRE DANS L'EROSION, arbitre par le proprietaire le
+		// 19 septembre 2026. Jusqu'ici la durete du catalogue n'etait lue par
+		// personne : le relief etait organique mais INDIFFERENCIE, sa raideur
+		// un accident du bruit plutot qu'une consequence de la roche. La
+		// lithologie est deja calculee a ce stade -- elle vient de la
+		// tectonique, avant l'erosion -- il ne manquait que le branchement.
+		// Le relief AVANT erosion, pour mesurer ce que chaque roche a perdu.
+		// L'ALTITUDE MOYENNE PAR ROCHE NE MESURE PAS L'EROSION : le granite est
+		// haut parce que la regle d'attribution le pose sur les orogenes, pas
+		// parce qu'il resiste. Seule la PERTE dit si l'erosion differentielle
+		// mord -- et elle ne se voit qu'en comparant avant et apres.
+		TArray<float> AvantErosion = Out.ElevationM;
+
+		TArray<float> Erodabilite;
+		WorldseedLithology::Erodibility(Out.Lithology,
+			FWorldseedLithologyRules::FromRules(*Rules),
+			static_cast<float>(Rules->Num(TEXT("erosion"), TEXT("duretePoids"), 0.0)),
+			Erodabilite);
+
 		FWorldseedErosionReport ErosionReport;
-		if (!WorldseedErosion::Run(*Rules, Geometry, Out.Climate.PrecipMm,
+		if (!WorldseedErosion::Run(*Rules, Geometry, Out.Climate.PrecipMm, Erodabilite,
 			Out.ElevationM, ErosionReport, ErosionScope))
 		{
 			OutError = TEXT("generation interrompue");
 			return false;
+		}
+
+		// --- CE QUE CHAQUE ROCHE A PERDU -------------------------------------
+		if (Out.Lithology.Id.Num() == Out.ElevationM.Num())
+		{
+			const FWorldseedLithologyRules LR = FWorldseedLithologyRules::FromRules(*Rules);
+			TArray<double> Perte; Perte.Init(0.0, LR.Catalogue.Num());
+			TArray<int32> Compte; Compte.Init(0, LR.Catalogue.Num());
+
+			for (int32 I = 0; I < Out.ElevationM.Num(); ++I)
+			{
+				if (AvantErosion[I] <= 0.0f) { continue; }
+				const uint8 R = Out.Lithology.Id[I];
+				if (!Perte.IsValidIndex(R)) { continue; }
+				Perte[R] += AvantErosion[I] - Out.ElevationM[I];
+				++Compte[R];
+			}
+
+			FString Ligne;
+			for (int32 R = 0; R < LR.Catalogue.Num(); ++R)
+			{
+				if (Compte[R] == 0) { continue; }
+				Ligne += FString::Printf(TEXT("  %s %.2f m"),
+					*LR.Catalogue[R].Label, Perte[R] / Compte[R]);
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] erosion : perte moyenne par roche --%s"), *Ligne);
 		}
 
 		// --- recalage du niveau marin apres erosion --------------------------

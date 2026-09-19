@@ -138,7 +138,8 @@ namespace WorldseedErosion
 	}
 
 	bool Run(const UWorldseedRules& Rules, const FWorldseedGeometry& Geo,
-		const TArray<float>& PrecipMm, TArray<float>& Dem,
+		const TArray<float>& PrecipMm, const TArray<float>& Erodibility,
+		TArray<float>& Dem,
 		FWorldseedErosionReport& OutReport, const FWorldseedProgressScope& Progress)
 	{
 		const int32 NX = Geo.NX;
@@ -148,6 +149,17 @@ namespace WorldseedErosion
 		{
 			return false;
 		}
+
+		// Tableau vide : comportement d'avant, a l'identique. C'est ce qui
+		// permet de revenir en arriere sans toucher au code.
+		const bool bAvecRoche = (Erodibility.Num() == Count);
+
+		// SATURER N'EST PAS ANODIN : la ou le plafond mord, la loi cesse de
+		// s'appliquer et tout terme qu'elle porte -- la roche comprise -- est
+		// efface. Sans ce compte au journal, on regle un coefficient qui ne
+		// sert a rien sur la moitie du monde sans jamais le savoir.
+		int64 SaturesTotal = 0;
+		int32 PassesComptees = 0;
 
 		const double StartTime = FPlatformTime::Seconds();
 		const float Spacing = Geo.MetersPerPixel();
@@ -255,6 +267,7 @@ namespace WorldseedErosion
 			// --- incision par puissance de courant ---------------------------
 			double ErodedTotal = 0.0;
 			float MaxIncisionThisStep = 0.0f;
+			int32 Satures = 0;
 			for (int32 I = 0; I < Count; ++I)
 			{
 				if (Dem[I] <= SeaLevel)
@@ -263,9 +276,32 @@ namespace WorldseedErosion
 					continue;
 				}
 				const float SlopeNorm = Slope[I] / SlopeRef;
-				const float Value = FMath::Clamp(
-					Rate * FMath::Pow(AreaNorm[I], M) * FMath::Pow(SlopeNorm, NExp),
-					0.0f, MaxStep);
+
+				// LA ROCHE ENTRE ICI, ET NULLE PART AILLEURS. Dans la loi de
+				// puissance de courant `E = K . A^m . S^n`, c'est K qui porte
+				// la resistance du substrat : un granite s'use moins vite
+				// qu'un schiste sous le meme debit et la meme pente. C'est de
+				// cette difference que naissent les escarpements, les
+				// corniches et les marges raides de plateau. Le mettre
+				// ailleurs -- dans l'exposant, ou en post-traitement --
+				// reviendrait a bricoler un resultat au lieu de decrire une
+				// cause.
+				const float K = bAvecRoche ? Erodibility[I] : 1.0f;
+
+				// LE PLAFOND SUIT LA ROCHE, LUI AUSSI. Premiere version : un
+				// plafond FIXE. Or il sature precisement sur les cellules
+				// raides et bien drainees -- celles qui font le relief -- et la
+				// ou il sature, l'erodabilite est purement et simplement
+				// effacee. Mesure : le terme etait branche au bon endroit et ne
+				// deplacait que quatre a sept CENTIMETRES sur une erosion
+				// entiere. Un garde-fou numerique ne doit pas manger la
+				// physique qu'il protege : il se met a l'echelle avec elle.
+				const float Brut = Rate * K
+					* FMath::Pow(AreaNorm[I], M) * FMath::Pow(SlopeNorm, NExp);
+				const float Plafond = MaxStep * K;
+				if (Brut > Plafond) { ++Satures; }
+
+				const float Value = FMath::Clamp(Brut, 0.0f, Plafond);
 
 				Incision[I] = Value;
 				ErodedTotal += Value;
@@ -276,6 +312,8 @@ namespace WorldseedErosion
 			{
 				Dem[I] -= Incision[I];
 			}
+			SaturesTotal += Satures;
+			PassesComptees += 1;
 
 			// --- depot ---------------------------------------------------------
 			// La matiere arrachee se redepose dans les fonds de vallee, la ou la
@@ -315,6 +353,15 @@ namespace WorldseedErosion
 
 			OutReport.TotalIncisionM += static_cast<float>(ErodedTotal);
 			OutReport.MaxIncisionM = FMath::Max(OutReport.MaxIncisionM, MaxIncisionThisStep);
+		}
+
+		if (PassesComptees > 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] erosion : %.2f %% des cellules saturent le plafond ")
+				TEXT("par passe (%lld sur %lld)"),
+				100.0 * SaturesTotal / FMath::Max<int64>(int64(PassesComptees) * Count, 1),
+				SaturesTotal, int64(PassesComptees) * Count);
 		}
 
 		HillslopeDiffusion(Dem, NX, NY, Kappa, HillslopeIters);
