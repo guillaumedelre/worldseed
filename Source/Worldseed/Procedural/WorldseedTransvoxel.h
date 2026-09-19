@@ -66,15 +66,23 @@ namespace WorldseedTransvoxel
 	/**
 	 * Maille l'isovaleur zero du champ dans une boite, en metres.
 	 *
-	 * MasqueTransition dit quelles faces bordent un voisin deux fois plus
-	 * grossier. A zero, le maillage est purement regulier.
+	 * MasqueTransition dit quelles faces bordent un voisin deux fois plus FIN.
+	 * A zero, le maillage est purement regulier.
+	 *
+	 * LargeurTransition est l'epaisseur de la dalle de transition, en FRACTION
+	 * d'une cellule de ce chunk -- jamais en metres, sans quoi elle cesserait de
+	 * suivre le niveau de detail. Les cellules regulieres de bord se retractent
+	 * d'autant pour lui ceder la place. Une epaisseur nulle raccorde
+	 * geometriquement sans fissure mais « leads to severe shading problems »
+	 * (Lengyel, section 4.3) : les triangles lateraux degenerent et leurs
+	 * normales n'ont plus de sens.
 	 *
 	 * Rend faux si la boite ne porte aucune surface, ou si ShouldStop a demande
 	 * l'arret. Caves peut etre nul.
 	 */
 	WORLDSEED_API bool Mailler(const FWorldseedDensity& Density,
 		const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
-		float VoxelSizeM, uint8 MasqueTransition,
+		float VoxelSizeM, uint8 MasqueTransition, float LargeurTransition,
 		FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
 		TFunction<bool()> ShouldStop = nullptr);
 }

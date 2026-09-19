@@ -21,48 +21,94 @@ namespace
 	constexpr int32 CoinDZ[8] = { 0, 0, 0, 0, 1, 1, 1, 1 };
 
 	/**
+	 * L'ORDRE DES BITS DU CODE DE CAS D'UNE CELLULE DE TRANSITION.
+	 *
+	 * Echantillons de la face pleine resolution, en ligne (figure 4.16) :
+	 *
+	 *     0 1 2
+	 *     3 4 5
+	 *     6 7 8
+	 *
+	 * et le code parcourt le PERIMETRE, le centre en poids fort. Cet ordre n'est
+	 * ecrit nulle part en clair -- il est dans une figure -- il a donc ete DERIVE
+	 * des tables, exhaustivement sur les 512 cas : zero faute sur 4 096 aretes,
+	 * contre 37,5 % pour l'ordre sequentiel. Rejouable par
+	 * `perl Tools/Transvoxel/ordre_bits.pl`.
+	 */
+	constexpr int32 BitVersEchantillon[9] = { 0, 1, 2, 5, 8, 7, 6, 3, 4 };
+
+	/**
+	 * LES QUATRE ECHANTILLONS DEMI-RESOLUTION NE SONT PAS DES INCONNUES.
+	 *
+	 * Section 4.5 : « the voxel values for locations 0 and 9 are the same, as are
+	 * those for locations 2 and A, 6 and B, and 8 and C ». C'est ce qui ramene
+	 * treize echantillons a NEUF bits -- et c'est aussi ce qui fait que la face
+	 * demi-resolution d'une cellule de transition porte exactement les valeurs de
+	 * la grille grossiere, donc qu'elle se soude aux cellules regulieres.
+	 */
+	constexpr int32 DemiVersPlein[4] = { 0, 2, 6, 8 };   // 9 -> 0, A -> 2, B -> 6, C -> 8
+
+	/**
+	 * Les six faces d'un chunk : l'axe normal, son signe, et les deux tangentes.
+	 *
+	 * LA REGLE QUI FIXE LES TANGENTES EST `U x V = NORMALE SORTANTE`. Sans elle,
+	 * trois faces sur six auraient la main inverse et leurs triangles
+	 * sortiraient a l'envers -- un defaut qui ne casse rien dans la geometrie et
+	 * rend le terrain noir, comme le depot l'a deja paye deux fois.
+	 */
+	struct FFace
+	{
+		int32 AxeN; int32 SigneN;   // normale sortante
+		int32 AxeU; int32 AxeV;     // tangentes, toutes deux de signe +1
+	};
+	constexpr FFace Faces[6] =
+	{
+		{ 0, -1, 2, 1 },   // -X : Z x Y = -X
+		{ 0, +1, 1, 2 },   // +X : Y x Z = +X
+		{ 1, -1, 0, 2 },   // -Y : X x Z = -Y
+		{ 1, +1, 2, 0 },   // +Y : Z x X = +Y
+		{ 2, -1, 1, 0 },   // -Z : Y x X = -Z
+		{ 2, +1, 0, 1 },   // +Z : X x Y = +Z
+	};
+
+	/**
 	 * L'ENROULEMENT DES TRIANGLES, ET POURQUOI IL EST MESURE ET NON DEVINE.
 	 *
-	 * L'ordre des sommets decide de la face avant. Se tromper ne casse rien de
-	 * visible dans la geometrie -- les triangles sont tous la -- mais le terrain
-	 * disparait vu de l'exterieur, ou devient noir. Le depot a deja paye cette
-	 * lecon deux fois sur le mailleur du moteur.
-	 *
-	 * Deux conventions se superposent ici, et elles se compensent peut-etre :
-	 * Lengyel travaille en repere DIRECT avec le solide en negatif, Unreal en
-	 * repere INDIRECT. Raisonner sur le produit des deux est exactement le genre
-	 * de deduction qui a une chance sur deux d'etre juste.
-	 *
-	 * On MESURE donc. `FacesEndroit`, dans les statistiques, rend la part des
-	 * triangles dont l'enroulement s'accorde avec la normale sortante -- laquelle
-	 * est etablie par le GRADIENT du champ et ne doit rien a aucune convention.
-	 * Zero ou cent pour cent, la reponse est nette ; entre les deux, c'est autre
-	 * chose qui ne va pas.
+	 * MESURE, sonde ProbeTransvoxel du 19 septembre 2026 : a `true`, 0,1 % des
+	 * faces seulement s'accordaient avec la normale sortante. La reponse d'une
+	 * telle mesure est binaire, et elle l'a ete -- ce n'est donc pas un reglage a
+	 * affiner mais une convention a poser, et la voici posee.
 	 */
-	// MESURE, sonde ProbeTransvoxel du 19 septembre 2026 : a `true`, 0,1 % des
-	// faces seulement s.accordaient avec la normale sortante. La reponse d.une
-	// telle mesure est binaire, et elle l.a ete -- ce n.est donc pas un reglage
-	// a affiner mais une convention a poser, et la voici posee.
 	constexpr bool bInverserEnroulement = false;
+
+	/**
+	 * ET LES CELLULES DE TRANSITION ONT LEUR PROPRE CONVENTION DE BASE.
+	 *
+	 * Mesure du 20 septembre 2026, sonde ProbeTransition : cellules regulieres
+	 * 99,6 % de faces a l'endroit, cellules de transition **0,0 %**. Toutes a
+	 * l'envers, sans exception -- donc ce n'est pas le bit d'inversion des tables
+	 * qui est mal lu, c'est la convention de DEPART qui differe.
+	 *
+	 * La raison probable est le sens de la base tangentielle : j'ai pose
+	 * `U x V = normale SORTANTE`, et Lengyel regarde vraisemblablement la face
+	 * depuis l'exterieur du bloc grossier, c'est-a-dire depuis le bloc fin.
+	 * MAIS CE N'EST QU'UNE EXPLICATION, PAS LA PREUVE : ce qui tranche est le
+	 * chiffre, et un zero pour cent ne laisse aucune place au doute.
+	 *
+	 * IL A FALLU SEPARER LES DEUX FAMILLES POUR LE VOIR. Melangees, elles
+	 * donnaient 94,7 % -- une degradation vague qu'on aurait pu mettre sur le
+	 * compte d'un detail geometrique, et qui masquait une convention entierement
+	 * fausse sur la petite des deux populations.
+	 */
+	constexpr bool bInverserEnroulementTransition = true;
 
 	/**
 	 * Le mailleur d'un chunk.
 	 *
 	 * IL NE REMPLIT PAS LA BOITE, IL SUIT LA SURFACE -- c'est le levier qui a
 	 * fait passer le maillage de 23 a 1,6 ms par chunk, et il n'est pas question
-	 * de le perdre en changeant de mailleur. Deux mecanismes s'y emploient :
-	 *
-	 *   - le cache de coins est PARESSEUX. Un chunk de 32 m a 33^3 = 35 937
-	 *     coins ; la surface n'en touche qu'une coque. On n'evalue que ce qu'on
-	 *     lit, et le compteur d'evaluations reste la grandeur qui explique le
-	 *     cout ;
-	 *   - la propagation part de germes et ne visite que les cellules
-	 *     traversees, comme GenerateContinuation du moteur -- avec la meme
-	 *     limite, dite franchement : une poche entierement contenue entre deux
-	 *     points du balayage grossier n'est pas vue.
-	 *
-	 * Les deux ensemble donnent le meme profil de cout que le mailleur du
-	 * moteur, ce qui est la condition pour que la comparaison ait un sens.
+	 * de le perdre en changeant de mailleur. Cache de coins PARESSEUX, et
+	 * propagation depuis des germes.
 	 */
 	struct FMailleur
 	{
@@ -74,6 +120,12 @@ namespace
 		int32 N = 0;    // cellules par cote
 		int32 NP = 0;   // coins par cote = N + 1
 
+		/** Faces bordant un voisin PLUS FIN, donc portant des cellules de transition. */
+		uint8 Masque = AucuneFace;
+
+		/** Epaisseur de la dalle de transition, en metres. */
+		double Largeur = 0.0;
+
 		TArray<float> Valeurs;
 		TArray<bool> Connu;
 		int32 Evaluations = 0;
@@ -81,18 +133,20 @@ namespace
 		/**
 		 * Un sommet par ARETE DE GRILLE, et c'est ce qui soude le maillage.
 		 *
-		 * Lengyel resout le meme probleme par ses tables de REUTILISATION
-		 * (figures 3.8 et 4.17), qui disent de quelle cellule deja maillee
-		 * reprendre un sommet. C'est plus rapide, et cela demande de tenir un
-		 * cache indexe par cellule dans un balayage ORDONNE -- ce qu'une
-		 * propagation depuis des germes ne fait justement pas.
+		 * Deux espaces de cles, parce qu'il y a deux nappes et qu'elles ne
+		 * partagent AUCUN sommet -- verifie dans les tables, `Tools/Transvoxel/
+		 * aretes.pl` : les seize aretes d'une cellule de transition sont douze
+		 * sur la face pleine resolution et quatre sur la demi, jamais une
+		 * laterale.
 		 *
-		 * Or l'identite d'un sommet est de toute facon celle de son arete : deux
-		 * cellules voisines qui partagent une arete partagent le sommet qui s'y
-		 * trouve. On indexe donc par l'arete, ce qui donne exactement le meme
-		 * maillage soude sans imposer d'ordre de parcours.
+		 *  - `SommetParArete` porte la grille GROSSIERE : cellules regulieres, et
+		 *    face demi-resolution des cellules de transition. Les deux doivent
+		 *    partager leurs sommets, c'est la couture qui empeche la fissure.
+		 *  - `SommetParAreteFine` porte la grille FINE sur le plan de frontiere,
+		 *    ou seules vivent les faces pleine resolution.
 		 */
 		TMap<int32, int32> SommetParArete;
+		TMap<int64, int32> SommetParAreteFine;
 
 		FWorldseedVoxelMesh& Sortie;
 
@@ -125,7 +179,56 @@ namespace
 			return Valeurs[Idx];
 		}
 
-		/** Le code de cas d'une cellule : un bit par coin, arme si le coin est SOLIDE. */
+		/**
+		 * LA RETRACTION : les cellules regulieres cedent la place a la dalle.
+		 *
+		 * Une cellule de transition occupe une tranche d'epaisseur `Largeur`
+		 * contre la face ; si les cellules regulieres occupaient encore tout le
+		 * chunk, les deux se chevaucheraient. Lengyel (section 4.4) « scale les
+		 * cellules de bord pour laisser la place a une a trois cellules de
+		 * transition », et garde pour cela DEUX positions par sommet de bord,
+		 * primaire et secondaire, qu'un programme de sommet choisit selon le
+		 * niveau des voisins.
+		 *
+		 * ON S'EN ECARTE ICI, ET C'EST ASSUME. Notre diffuseur REMAILLE un chunk
+		 * quand son voisinage change de niveau : on peut donc cuire directement
+		 * la bonne position au lieu d'en transporter deux et de trancher sur le
+		 * GPU. C'est plus simple et cela coute un remaillage quand une frontiere
+		 * d'anneau se deplace -- ce que le chunk fait de toute facon.
+		 *
+		 * La transformation est confinee a la PREMIERE COUCHE de cellules, elle
+		 * envoie le plan de frontiere sur `Largeur` et laisse tout le reste
+		 * identique. Elle est donc continue partout : pas de fissure interne.
+		 */
+		FVector Retracter(FVector P) const
+		{
+			if (Masque == AucuneFace || Largeur <= 0.0)
+			{
+				return P;
+			}
+
+			const double Cote = Voxel;   // une cellule de ce chunk
+			const double Taille = N * Voxel;
+
+			for (int32 F = 0; F < 6; ++F)
+			{
+				if ((Masque & (1 << F)) == 0) { continue; }
+
+				const FFace& Fa = Faces[F];
+				const double Local = P[Fa.AxeN] - MinM[Fa.AxeN];
+
+				// Distance a la face, mesuree vers l'interieur du chunk.
+				const double D = (Fa.SigneN > 0) ? (Taille - Local) : Local;
+				if (D >= Cote) { continue; }
+
+				const double Neuf = Largeur + D * (Cote - Largeur) / Cote;
+				P[Fa.AxeN] = MinM[Fa.AxeN] +
+					((Fa.SigneN > 0) ? (Taille - Neuf) : Neuf);
+			}
+			return P;
+		}
+
+		/** Le code de cas d'une cellule reguliere : un bit par coin, arme si SOLIDE. */
 		int32 CodeDeCas(int32 X, int32 Y, int32 Z, float Densites[8])
 		{
 			int32 Code = 0;
@@ -144,20 +247,25 @@ namespace
 			return Code;
 		}
 
-		/**
-		 * Le sommet porte par l'arete reliant deux coins de la cellule.
-		 *
-		 * Rend un indice dans Sortie.Positions, en creant le sommet a la
-		 * premiere rencontre seulement.
-		 */
-		int32 SommetSurArete(int32 X, int32 Y, int32 Z, int32 C0, int32 C1,
-			const float Densites[8])
+		/** Interpole le point de traversee d'une arete, en parametre. */
+		static double Parametre(float D0, float D1)
 		{
-			int32 I0 = X + CoinDX[C0], J0 = Y + CoinDY[C0], K0 = Z + CoinDZ[C0];
-			int32 I1 = X + CoinDX[C1], J1 = Y + CoinDY[C1], K1 = Z + CoinDZ[C1];
-			float D0 = Densites[C0];
-			float D1 = Densites[C1];
+			const float Ecart = D0 - D1;
+			return (FMath::Abs(Ecart) > UE_SMALL_NUMBER)
+				? FMath::Clamp(static_cast<double>(D0) / static_cast<double>(Ecart), 0.0, 1.0)
+				: 0.5;
+		}
 
+		/**
+		 * Le sommet porte par une arete de la grille GROSSIERE.
+		 *
+		 * Sert aux cellules regulieres ET a la face demi-resolution des cellules
+		 * de transition : c'est le MEME appel, donc le meme sommet, donc la
+		 * couture est acquise et non esperee.
+		 */
+		int32 SommetSurAreteGrossiere(int32 I0, int32 J0, int32 K0,
+			int32 I1, int32 J1, int32 K1, float D0, float D1)
+		{
 			// ON ORIENTE L'ARETE DU COIN BAS VERS LE COIN HAUT. Sans cela, la
 			// meme arete vue depuis deux cellules voisines donnerait deux cles
 			// differentes, donc deux sommets au lieu d'un -- une fissure
@@ -176,19 +284,38 @@ namespace
 				return *Deja;
 			}
 
-			const float Ecart = D0 - D1;
-			const double T = (FMath::Abs(Ecart) > UE_SMALL_NUMBER)
-				? FMath::Clamp(static_cast<double>(D0) / static_cast<double>(Ecart), 0.0, 1.0)
-				: 0.5;
-
+			const double T = Parametre(D0, D1);
 			const FVector A = PositionCoin(I0, J0, K0);
 			const FVector B = PositionCoin(I1, J1, K1);
-			const FVector P = A + (B - A) * T;
+			const FVector P = Retracter(A + (B - A) * T);
 
 			const int32 Indice = Sortie.Positions.Num();
 			Sortie.Positions.Add(P * WorldseedMetersToCm);
 			SommetParArete.Add(Cle, Indice);
 			return Indice;
+		}
+
+		int32 SommetSurArete(int32 X, int32 Y, int32 Z, int32 C0, int32 C1,
+			const float Densites[8])
+		{
+			return SommetSurAreteGrossiere(
+				X + CoinDX[C0], Y + CoinDY[C0], Z + CoinDZ[C0],
+				X + CoinDX[C1], Y + CoinDY[C1], Z + CoinDZ[C1],
+				Densites[C0], Densites[C1]);
+		}
+
+		/** Pose un triangle, en respectant l'enroulement demande. */
+		void Triangle(int32 A, int32 B, int32 C, bool bInverse)
+		{
+			// Un triangle degenere n'apporte rien et fausse la moyenne des
+			// normales. Le marching cubes en produit des qu'une traversee tombe
+			// pile sur un coin.
+			if (A == B || B == C || A == C) { return; }
+
+			const bool bEchanger = (bInverserEnroulement != bInverse);
+			Sortie.Triangles.Add(A);
+			Sortie.Triangles.Add(bEchanger ? C : B);
+			Sortie.Triangles.Add(bEchanger ? B : C);
 		}
 
 		/** Triangule une cellule reguliere. Rend faux si elle ne porte pas de surface. */
@@ -214,37 +341,186 @@ namespace
 				// L'octet haut porte la reutilisation, dont on n'a pas besoin --
 				// voir SommetParArete.
 				const unsigned short CodeArete = Aretes[S];
-				const int32 C0 = (CodeArete >> 4) & 0x0F;
-				const int32 C1 = CodeArete & 0x0F;
-				Locaux[S] = SommetSurArete(X, Y, Z, C0, C1, Densites);
+				Locaux[S] = SommetSurArete(X, Y, Z,
+					(CodeArete >> 4) & 0x0F, CodeArete & 0x0F, Densites);
 			}
 
 			const int32 NbTriangles = Donnees.GetTriangleCount();
 			for (int32 T = 0; T < NbTriangles; ++T)
 			{
-				const int32 A = Locaux[Donnees.vertexIndex[T * 3 + 0]];
-				const int32 B = Locaux[Donnees.vertexIndex[T * 3 + 1]];
-				const int32 C = Locaux[Donnees.vertexIndex[T * 3 + 2]];
+				Triangle(Locaux[Donnees.vertexIndex[T * 3 + 0]],
+					Locaux[Donnees.vertexIndex[T * 3 + 1]],
+					Locaux[Donnees.vertexIndex[T * 3 + 2]], false);
+			}
+			return true;
+		}
 
-				// Un triangle degenere n'apporte rien et fausse la moyenne des
-				// normales. Le marching cubes en produit des qu'une traversee
-				// tombe pile sur un coin.
-				if (A == B || B == C || A == C)
-				{
-					continue;
-				}
+		// ------------------------------------------------ cellules de transition
 
-				Sortie.Triangles.Add(A);
-				if (bInverserEnroulement)
+		/** Coordonnees de grille GROSSIERE d'un point de la face, en coins. */
+		FIntVector CoinDeFace(const FFace& Fa, int32 IU, int32 IV) const
+		{
+			FIntVector C(0, 0, 0);
+			C[Fa.AxeU] = IU;
+			C[Fa.AxeV] = IV;
+			C[Fa.AxeN] = (Fa.SigneN > 0) ? N : 0;
+			return C;
+		}
+
+		/** Position d'un echantillon FIN sur le plan de frontiere, en metres. */
+		FVector PositionFine(const FFace& Fa, int32 UF, int32 VF) const
+		{
+			const double Demi = Voxel * 0.5;
+			FVector P = MinM;
+			P[Fa.AxeU] += UF * Demi;
+			P[Fa.AxeV] += VF * Demi;
+			P[Fa.AxeN] += (Fa.SigneN > 0) ? (N * Voxel) : 0.0;
+			return P;
+		}
+
+		/**
+		 * Le sommet porte par une arete de la face PLEINE RESOLUTION.
+		 *
+		 * Ces sommets vivent sur le plan de frontiere, a la maille FINE : ce sont
+		 * eux qui doivent coincider avec les sommets de bord du chunk voisin,
+		 * plus fin. Ils ne sont JAMAIS retractes -- section 4.4 : la retraction
+		 * s'applique aux cellules regulieres et aux faces demi-resolution, jamais
+		 * aux faces pleine resolution, qui restent sur le plan.
+		 */
+		int32 SommetSurAreteFine(int32 IdFace, const FFace& Fa,
+			int32 UF0, int32 VF0, int32 UF1, int32 VF1, float D0, float D1)
+		{
+			if (UF1 < UF0 || VF1 < VF0)
+			{
+				Swap(UF0, UF1); Swap(VF0, VF1); Swap(D0, D1);
+			}
+
+			const int32 Axe = (UF1 != UF0) ? 0 : 1;
+			const int64 Cle = (static_cast<int64>(IdFace) << 48)
+				| (static_cast<int64>(UF0) << 32)
+				| (static_cast<int64>(VF0) << 16)
+				| static_cast<int64>(Axe);
+
+			if (const int32* Deja = SommetParAreteFine.Find(Cle))
+			{
+				return *Deja;
+			}
+
+			const double T = Parametre(D0, D1);
+			const FVector A = PositionFine(Fa, UF0, VF0);
+			const FVector B = PositionFine(Fa, UF1, VF1);
+			const FVector P = A + (B - A) * T;
+
+			const int32 Indice = Sortie.Positions.Num();
+			Sortie.Positions.Add(P * WorldseedMetersToCm);
+			SommetParAreteFine.Add(Cle, Indice);
+			return Indice;
+		}
+
+		/**
+		 * Triangule une cellule de transition de la face IdFace, en (U, V).
+		 *
+		 * Treize echantillons : neuf sur la face pleine resolution, quatre sur la
+		 * demi. Les quatre derniers ne sont pas evalues -- ils VALENT les coins de
+		 * la face pleine (section 4.5), ce qui ramene le cas a neuf bits et, au
+		 * passage, soude la face demi-resolution aux cellules regulieres.
+		 */
+		bool CelluleDeTransition(int32 IdFace, int32 U, int32 V)
+		{
+			const FFace& Fa = Faces[IdFace];
+
+			// --- les neuf echantillons de la face pleine resolution -----------
+			float D[13];
+			for (int32 K = 0; K < 9; ++K)
+			{
+				const int32 A = K % 3;
+				const int32 B = K / 3;
+				const int32 UF = 2 * U + A;
+				const int32 VF = 2 * V + B;
+
+				if ((A & 1) == 0 && (B & 1) == 0)
 				{
-					Sortie.Triangles.Add(C);
-					Sortie.Triangles.Add(B);
+					// Sur la grille GROSSIERE : on passe par le cache, ce qui
+					// garantit la valeur IDENTIQUE a celle que lisent les
+					// cellules regulieres. Sans cela, deux evaluations du meme
+					// point pourraient differer d'un bit et rouvrir la fissure.
+					const FIntVector C = CoinDeFace(Fa, U + A / 2, V + B / 2);
+					D[K] = Coin(C.X, C.Y, C.Z);
 				}
 				else
 				{
-					Sortie.Triangles.Add(B);
-					Sortie.Triangles.Add(C);
+					D[K] = static_cast<float>(
+						Champ.At(PositionFine(Fa, UF, VF), Grottes));
+					++Evaluations;
 				}
+			}
+			for (int32 K = 0; K < 4; ++K)
+			{
+				D[9 + K] = D[DemiVersPlein[K]];
+			}
+
+			// --- le code de cas, sur neuf bits --------------------------------
+			int32 Code = 0;
+			for (int32 Bit = 0; Bit < 9; ++Bit)
+			{
+				if (D[BitVersEchantillon[Bit]] < 0.0f) { Code |= (1 << Bit); }
+			}
+			if (Code == 0 || Code == 511) { return false; }
+
+			const uint8 Classe = transitionCellClass[Code];
+			const TransitionCellData& Donnees = transitionCellData[Classe & 0x7F];
+			const unsigned short* const Aretes = transitionVertexData[Code];
+
+			// LE BIT HAUT DE LA CLASSE INVERSE L'ENROULEMENT, et c'est dit en
+			// toutes lettres section 4.5 : « we indicate this property by setting
+			// the high bit [...] for any case that is inverted ». 211 des 512 cas
+			// le portent. Un resumeur automatique m'avait affirme qu'il signalait
+			// une cellule reguliere : c'etait faux, et verifiable.
+			//
+			// Il se compose avec la convention de BASE de la famille, qui n'est
+			// pas celle des cellules regulieres -- mesure, voir
+			// bInverserEnroulementTransition.
+			const bool bTableInverse = (Classe & 0x80) != 0;
+			const bool bInverse = (bTableInverse != bInverserEnroulementTransition);
+
+			int32 Locaux[12];
+			const int32 NbSommets = Donnees.GetVertexCount();
+			for (int32 S = 0; S < NbSommets; ++S)
+			{
+				const unsigned short CodeArete = Aretes[S];
+				const int32 C0 = (CodeArete >> 4) & 0x0F;
+				const int32 C1 = CodeArete & 0x0F;
+
+				if (C0 <= 8 && C1 <= 8)
+				{
+					// Arete de la face PLEINE resolution : maille fine, sur le
+					// plan de frontiere.
+					Locaux[S] = SommetSurAreteFine(IdFace, Fa,
+						2 * U + (C0 % 3), 2 * V + (C0 / 3),
+						2 * U + (C1 % 3), 2 * V + (C1 / 3),
+						D[C0], D[C1]);
+				}
+				else
+				{
+					// Arete de la face DEMI resolution : c'est une arete de la
+					// grille GROSSIERE sur ce meme plan, donc exactement celle
+					// qu'une cellule reguliere voisine voit. Le meme appel, donc
+					// le meme sommet, donc aucune fissure.
+					const int32 P0 = DemiVersPlein[C0 - 9];
+					const int32 P1 = DemiVersPlein[C1 - 9];
+					const FIntVector G0 = CoinDeFace(Fa, U + (P0 % 3) / 2, V + (P0 / 3) / 2);
+					const FIntVector G1 = CoinDeFace(Fa, U + (P1 % 3) / 2, V + (P1 / 3) / 2);
+					Locaux[S] = SommetSurAreteGrossiere(
+						G0.X, G0.Y, G0.Z, G1.X, G1.Y, G1.Z, D[C0], D[C1]);
+				}
+			}
+
+			const int32 NbTriangles = Donnees.GetTriangleCount();
+			for (int32 T = 0; T < NbTriangles; ++T)
+			{
+				Triangle(Locaux[Donnees.vertexIndex[T * 3 + 0]],
+					Locaux[Donnees.vertexIndex[T * 3 + 1]],
+					Locaux[Donnees.vertexIndex[T * 3 + 2]], bInverse);
 			}
 			return true;
 		}
@@ -253,7 +529,7 @@ namespace
 
 bool Mailler(const FWorldseedDensity& Density,
 	const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
-	float VoxelSizeM, uint8 MasqueTransition,
+	float VoxelSizeM, uint8 MasqueTransition, float LargeurTransition,
 	FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
 	TFunction<bool()> ShouldStop)
 {
@@ -266,22 +542,6 @@ bool Mailler(const FWorldseedDensity& Density,
 		return false;
 	}
 
-	// LES CELLULES DE TRANSITION NE SONT PAS ENCORE ECRITES, ET ON LE DIT.
-	//
-	// Les traiter silencieusement comme « pas de transition » serait le pire des
-	// deux mondes : le raccord manquerait et rien ne l'annoncerait. Le masque
-	// n'est jamais arme tant que les anneaux de resolution ne sont pas poses, ce
-	// garde-fou ne se declenche donc pas -- il est la pour le jour ou quelqu'un
-	// armerait le masque avant que la suite n'existe.
-	if (MasqueTransition != AucuneFace)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Worldseed] transvoxel : masque de transition 0x%02X demande, ")
-			TEXT("mais les cellules de transition ne sont pas encore ecrites -- ")
-			TEXT("le chunk est maille en resolution uniforme, donc AVEC fissure."),
-			MasqueTransition);
-	}
-
 	const double Debut = FPlatformTime::Seconds();
 
 	const FVector Taille = BoundsM.GetSize();
@@ -292,6 +552,16 @@ bool Mailler(const FWorldseedDensity& Density,
 	M.Voxel = VoxelSizeM;
 	M.N = N;
 	M.NP = N + 1;
+	M.Masque = MasqueTransition;
+
+	// L'EPAISSEUR DE LA DALLE EST UNE FRACTION DE LA CELLULE, pas une longueur
+	// absolue : elle doit suivre le niveau de detail. Lengyel note qu'une
+	// epaisseur NULLE raccorde geometriquement sans fissure mais « leads to
+	// severe shading problems » -- les triangles lateraux deviennent degeneres et
+	// leurs normales n'ont plus de sens. On garde donc une vraie epaisseur.
+	M.Largeur = FMath::Clamp(static_cast<double>(LargeurTransition), 0.0, 0.9)
+		* VoxelSizeM;
+
 	M.Valeurs.SetNumUninitialized(M.NP * M.NP * M.NP);
 	M.Connu.Init(false, M.NP * M.NP * M.NP);
 
@@ -347,10 +617,6 @@ bool Mailler(const FWorldseedDensity& Density,
 
 					++Germes;
 
-					// La cellule qui CONTIENT la traversee, plus ses voisines de
-					// face : l'interpolation sur une arete de quatre metres place
-					// le point au bon endroit a un voxel pres, et un germe pose
-					// une cellule a cote ne propage rien du tout.
 					const int32 CX = FMath::Clamp(
 						FMath::FloorToInt(GI + (HI - GI) * T), 0, N - 1);
 					const int32 CY = FMath::Clamp(
@@ -401,6 +667,30 @@ bool Mailler(const FWorldseedDensity& Density,
 			Empiler(C.X, C.Y, C.Z - 1); Empiler(C.X, C.Y, C.Z + 1);
 		}
 	}
+
+	// --- les cellules de transition -----------------------------------------
+	//
+	// ON NE PROPAGE PAS ICI, ON BALAYE. La couche de transition d'une face est
+	// une grille N x N a DEUX dimensions -- « transition mesh generation is a
+	// two-dimensional process since the layer of transition cells on a block face
+	// is only one cell thick » (section 4.5). Un balayage de mille cellules dont
+	// la plupart sortent au premier test coute moins qu'un appareil de
+	// propagation, et il ne peut rien manquer.
+	const int32 PremierTriangleTransition = Out.Triangles.Num();
+	int32 CellulesTransition = 0;
+	for (int32 F = 0; F < 6; ++F)
+	{
+		if ((MasqueTransition & (1 << F)) == 0) { continue; }
+
+		for (int32 V = 0; V < N; ++V)
+		{
+			for (int32 U = 0; U < N; ++U)
+			{
+				if (M.CelluleDeTransition(F, U, V)) { ++CellulesTransition; }
+			}
+		}
+	}
+	OutStats.TransitionCells = CellulesTransition;
 
 	OutStats.FieldSamples = M.Evaluations;
 	OutStats.MeshMs = (FPlatformTime::Seconds() - Debut) * 1000.0;
@@ -476,9 +766,16 @@ bool Mailler(const FWorldseedDensity& Density,
 	// GEOMETRIQUE d'un triangle -- celle que son ordre de sommets impose -- a ces
 	// normales-la dit donc si l'enroulement est le bon, et ne coute pas une
 	// evaluation de champ de plus.
+	// ET LES DEUX FAMILLES SE COMPTENT A PART. Les cellules regulieres et les
+	// cellules de transition sont deux triangulations avec deux conventions
+	// possibles ; melangees dans un seul pourcentage, une convention fausse sur
+	// la petite des deux se lit comme une degradation vague qu'aucune correction
+	// ne deplace franchement. « Un agregat sur des choses de natures
+	// differentes ne se corrige pas, il se decompose. »
 	{
-		int32 Endroit = 0;
-		int32 Total = 0;
+		int32 Endroit[2] = { 0, 0 };
+		int32 Total[2] = { 0, 0 };
+
 		for (int32 T = 0; T + 2 < Out.Triangles.Num(); T += 3)
 		{
 			const int32 A = Out.Triangles[T];
@@ -492,11 +789,15 @@ bool Mailler(const FWorldseedDensity& Density,
 			const FVector Sortante =
 				Out.Normals[A] + Out.Normals[B] + Out.Normals[C];
 
-			if (FVector::DotProduct(Face, Sortante) > 0.0) { ++Endroit; }
-			++Total;
+			const int32 Famille = (T >= PremierTriangleTransition) ? 1 : 0;
+			if (FVector::DotProduct(Face, Sortante) > 0.0) { ++Endroit[Famille]; }
+			++Total[Famille];
 		}
-		OutStats.FacesEndroit = (Total > 0)
-			? static_cast<float>(Endroit) / static_cast<float>(Total) : 0.0f;
+
+		OutStats.FacesEndroit = (Total[0] > 0)
+			? static_cast<float>(Endroit[0]) / static_cast<float>(Total[0]) : 0.0f;
+		OutStats.FacesEndroitTransition = (Total[1] > 0)
+			? static_cast<float>(Endroit[1]) / static_cast<float>(Total[1]) : 0.0f;
 	}
 
 	OutStats.NormalMs = (FPlatformTime::Seconds() - DebutNormales) * 1000.0;

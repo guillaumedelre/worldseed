@@ -81,6 +81,28 @@ public:
 		int32 ResolutionY = 256, int32 ChunkSideM = 32, int32 ChunksPerSide = 3);
 
 	/**
+	 * Les cellules de transition ferment-elles la fissure ?
+	 *
+	 * LA SEULE QUESTION QUI COMPTE POUR LE TRANSVOXEL, et elle ne se lit pas sur
+	 * un chunk isole : il faut DEUX chunks de resolutions differentes, cote a
+	 * cote, et regarder leur couture.
+	 *
+	 * Le controle est une ARETE OUVERTE sur le plan partage -- une arete qui
+	 * n.appartient qu.a UN triangle alors qu.elle est a l.interieur de la
+	 * surface. C.est la definition meme d.un trou, et elle ne suppose rien sur la
+	 * facon dont le raccord est cense marcher.
+	 *
+	 * Le TEMOIN est le meme couple de chunks avec le masque de transition a ZERO,
+	 * c.est-a-dire l.etat que le depot a aujourd.hui. Il doit montrer la fissure
+	 * que les cellules de transition suppriment -- sans quoi on ne mesurerait pas
+	 * ce qu.on croit.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeTransition(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 256, int32 ChunkSideM = 32,
+		float LargeurTransition = 0.5f);
+
+	/**
 	 * Mesure ce que le bruit 3D produit reellement : galeries et surplombs.
 	 *
 	 * DEUX GRANDEURS, ET ELLES SE SUFFISENT.

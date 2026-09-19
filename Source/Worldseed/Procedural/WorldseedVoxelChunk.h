@@ -76,6 +76,20 @@ struct WORLDSEED_API FWorldseedVoxelStats
 	 * l.enroulement donne donc une reponse qui ne suppose rien. Un ou zero, la
 	 * reponse est nette ; entre les deux, c.est autre chose qui ne va pas.
 	 */
+	/** Cellules de transition effectivement triangulees. Zero = aucune face armee. */
+	int32 TransitionCells = 0;
+
+	/**
+	 * Enroulement des triangles de TRANSITION, mesure a part.
+	 *
+	 * UN AGREGAT SUR DEUX POPULATIONS NE SE CORRIGE PAS, IL SE DECOMPOSE. Les
+	 * cellules regulieres et les cellules de transition sont deux familles avec
+	 * deux conventions possibles ; les melanger dans un seul pourcentage donne un
+	 * chiffre qu-aucune correction ne deplace franchement. Le depot a deja paye
+	 * cette lecon quatre fois sur le routage des galeries.
+	 */
+	float FacesEndroitTransition = 0.0f;
+
 	float FacesEndroit = 0.0f;
 
 	enum class ECause : uint8 { Maille, SansTraversee, Annule, MaillageVide };
@@ -110,5 +124,6 @@ namespace WorldseedVoxelChunk
 	WORLDSEED_API bool Build(const FWorldseedDensity& Density,
 		const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
 		float VoxelSizeM, FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
-		TFunction<bool()> ShouldStop = nullptr, bool bTransvoxel = false);
+		TFunction<bool()> ShouldStop = nullptr, bool bTransvoxel = false,
+		uint8 MasqueTransition = 0, float LargeurTransition = 0.5f);
 }

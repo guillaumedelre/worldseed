@@ -262,7 +262,7 @@ FString UWorldseedProbeLibrary::ProbeTransvoxel(int32 Seed, float HeightMeters,
 				Debut = FPlatformTime::Seconds();
 				const bool bB = WorldseedTransvoxel::Mailler(
 					Density, nullptr, Boite, Voxel,
-					WorldseedTransvoxel::AucuneFace, MaillageB, StatsB, nullptr);
+					WorldseedTransvoxel::AucuneFace, 0.0f, MaillageB, StatsB, nullptr);
 				Trans.TotalMs += (FPlatformTime::Seconds() - Debut) * 1000.0;
 				Trans.Evaluations += StatsB.FieldSamples;
 
@@ -293,7 +293,7 @@ FString UWorldseedProbeLibrary::ProbeTransvoxel(int32 Seed, float HeightMeters,
 				Debut = FPlatformTime::Seconds();
 				const bool bC = WorldseedTransvoxel::Mailler(
 					Density, nullptr, Elargie, Voxel,
-					WorldseedTransvoxel::AucuneFace, MaillageC, StatsC, nullptr);
+					WorldseedTransvoxel::AucuneFace, 0.0f, MaillageC, StatsC, nullptr);
 				TransLarge.TotalMs += (FPlatformTime::Seconds() - Debut) * 1000.0;
 				if (bC)
 				{

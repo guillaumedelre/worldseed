@@ -23,7 +23,8 @@ namespace WorldseedVoxelChunk
 	bool Build(const FWorldseedDensity& Density,
 		const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
 		float VoxelSizeM, FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
-		TFunction<bool()> ShouldStop, bool bTransvoxel)
+		TFunction<bool()> ShouldStop, bool bTransvoxel,
+		uint8 MasqueTransition, float LargeurTransition)
 	{
 		using namespace UE::Geometry;
 
@@ -36,7 +37,7 @@ namespace WorldseedVoxelChunk
 		if (bTransvoxel)
 		{
 			return WorldseedTransvoxel::Mailler(Density, Caves, BoundsM, VoxelSizeM,
-				WorldseedTransvoxel::AucuneFace, Out, OutStats, ShouldStop);
+				MasqueTransition, LargeurTransition, Out, OutStats, ShouldStop);
 		}
 
 		Out.Reset();
