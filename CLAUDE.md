@@ -5453,3 +5453,102 @@ vaut 0 : rien ne change a l'ecran, et l'A/B se fait sans recompiler.
    anneau, et le masque des faces tournees vers un voisin plus grossier ;
 4. la mesure au banc -- le compte de chunks a 1 200 m doit tomber bien sous les
    **9 242** que coutent 800 m aujourd'hui -- puis des photos des jointures.
+
+### Les cellules de transition : la fissure est fermee (20 septembre 2026)
+
+Seconde moitie du verrou 4. C'est la partie que `FMarchingCubes` ne sait pas
+produire, et c'est donc pour elle que le mailleur maison existe.
+
+**LA MESURE QUI TRANCHE, ET SON TEMOIN.** Deux chunks cote a cote -- le grossier
+a 2 m de voxel, le fin a 1 m -- cousus par la POSITION comme ils le seront en
+jeu, puisque ce sont deux composants distincts et qu'une fissure y est une
+discontinuite de position, jamais d'indice.
+
+| etat | triangles | sommets du plan | partages | aretes ouvertes |
+|---|---|---|---|---|
+| temoin, sans cellule | 2 743 | 60 | **0** | **58 (100,0 %)** |
+| avec transition | 2 801 | 41 | **41** | **0 (0,0 %)** |
+
+**L'ARETE OUVERTE EST LA DEFINITION D'UN TROU, PAS UN INDICE** : une arete qui
+n'appartient qu'a UN triangle alors qu'elle est a l'interieur de la surface. Et
+le temoin MONTRE la fissure qu'on supprime -- 100 % -- ce qui etait la condition
+pour que la mesure prouve quelque chose. Elle avait ete posee AVANT le defaut
+qu'elle doit voir, ce qui est la seule facon d'avoir un point de comparaison.
+
+**TROIS FAITS ETABLIS, AUCUN DEVINABLE :**
+
+- **la cellule de transition vit dans le bloc GROSSIER**, le long de sa
+  frontiere avec le fin (section 4.3). J'avais ecrit l'inverse dans un en-tete,
+  et c'est faux : c'est le bloc grossier qui a trop peu d'echantillons -- neuf
+  valeurs fines arrivent sur une face qui n'en porte que quatre -- donc c'est a
+  lui de ceder la place. Un mailleur ecrit dans l'autre sens aurait raccorde du
+  cote ou il n'y a rien a raccorder ;
+- **les quatre echantillons demi-resolution ne sont pas des inconnues** : ils
+  VALENT les coins de la face pleine -- 9 = 0, A = 2, B = 6, C = 8 (section
+  4.5). C'est ce qui ramene treize echantillons a neuf bits, et **c'est surtout
+  ce qui SOUDE** la face demi-resolution aux cellules regulieres : meme arete de
+  la grille grossiere, meme appel, donc le meme sommet. La couture est acquise
+  par construction, pas esperee ;
+- **la topologie des aretes**, interrogee dans les tables plutot que lue dans la
+  figure 4.18 (`perl Tools/Transvoxel/aretes.pl`) : **douze** aretes sur la face
+  pleine resolution, **quatre** sur la demi, et **AUCUNE laterale**. Les douze
+  premieres sont exactement l'adjacence d'une grille 3x3 en disposition ligne
+  par ligne, ce qui confirme au passage la numerotation des echantillons. Les
+  deux nappes ne partagent donc aucun sommet : elles sont cousues par des
+  triangles, et le mailleur tient DEUX espaces de cles de soudure.
+
+**LA RETRACTION, ET UN ECART ASSUME A LA METHODE D'ORIGINE.** Les cellules
+regulieres de bord se retractent pour laisser la place a la dalle. Lengyel garde
+pour cela DEUX positions par sommet -- primaire et secondaire -- et laisse un
+programme de sommet trancher selon le niveau des voisins. **Notre diffuseur
+REMAILLE un chunk quand son voisinage change de niveau**, donc on cuit
+directement la bonne position. C'est plus simple, et cela coute un remaillage
+que le chunk fait de toute facon.
+
+**LA LECON DE METRIQUE, ET C'EST LA MEME QUE CELLE DU ROUTAGE DES GALERIES.**
+Premiere mesure d'enroulement : **94,7 %**, contre 99,9 % pour les cellules
+regulieres seules. Une degradation vague, qu'on met volontiers sur le compte
+d'un detail geometrique -- et qu'aucune correction n'aurait deplacee
+franchement. J'ai separe les deux populations au lieu de deduire par
+soustraction. La reponse est alors devenue binaire :
+
+    regulieres  99,6 %      transition  0,0 %
+
+**TOUTES a l'envers, sans exception** : ce n'etait donc pas le bit d'inversion
+des tables qui etait mal lu, c'etait la convention de DEPART de la famille.
+Probablement le sens de la base tangentielle -- j'ai pose `U x V = normale
+sortante`, Lengyel regarde vraisemblablement la face depuis le bloc fin -- mais
+c'est une explication, pas la preuve : ce qui tranche est le zero pour cent.
+Apres correction, transition **100,0 %**.
+
+**LIRE LA SOURCE, PAS UN RESUME DE LA SOURCE.** Un resumeur automatique lance
+sur l'article de Lengyel affirmait que le bit haut de `transitionCellClass`
+« indique si la cellule est reguliere ». C'est FAUX et verifiable -- il inverse
+l'enroulement, la source des tables et la these le disent toutes deux en toutes
+lettres. **Une source qui se trompe sur un point verifiable ne sert pas sur les
+points invariables.** La these a donc ete extraite du PDF a la main : il n'y a
+ni poppler ni Python sur cette machine, d'ou un extracteur ecrit en Perl
+(`Compress::Raw::Zlib` est livre avec Perl ; les flux d'un PDF sont en Flate, et
+les operateurs `Tj`/`TJ` donnent le texte). L'extraction est LACUNAIRE -- la
+mise en page casse l'ordre de lecture et les figures ne sortent pas -- mais elle
+est de premiere main.
+
+**ATTENTION A UN PIEGE D'EXTRACTION** : une phrase tronquee se reconstruit
+volontiers dans le sens qui arrange. Celle qui parle du code de cas m'aurait
+conduit a l'ordre sequentiel des bits, qui est faux a 37,5 %. C'est la
+derivation depuis les tables qui a tranche, pas la lecture.
+
+**NON-REGRESSION du chemin regulier**, verifiee au chiffre pres apres coup :
+aire 20 531,9 m2 contre 20 532,9 pour le moteur sur la meme emprise, soit
+0,005 %, et 99,9 % d'enroulement. Le masque n'etant arme nulle part, rien ne
+change a l'ecran.
+
+**RESTE A FAIRE :**
+1. **les anneaux dans le diffuseur** : cle de chunk portant un NIVEAU, rayons
+   par anneau, et le calcul du masque depuis le niveau des six voisins ;
+2. **`LargeurTransition` doit passer dans `world_rules.json`**, ou vivent les
+   seuils. Elle est pour l'instant un parametre a valeur par defaut (0,5
+   cellule) : l'y mettre aujourd'hui forcerait une regeneration du monde pour un
+   reglage que personne ne lit encore ;
+3. la mesure au banc, puis **des photos des jointures** -- une forme qui n'a pas
+   ete vue n'est pas validee, et c'est une regle du depot.
