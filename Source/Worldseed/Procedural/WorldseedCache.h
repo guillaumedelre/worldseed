@@ -39,8 +39,16 @@
  *       reechantillonne a l'altitude de la surface courante, qui traverse
  *       donc des roches differentes en descendant. Le relief change partout
  *       ou la serie sedimentaire recouvre le socle.
+ *  15 - le SAPEMENT des corniches de banc, transpose du recul de falaise
+ *       marine. L'erosion stratifiee donnait un contraste de pente mais
+ *       aucun escalier : une marche est une forme TRANSITOIRE, faite d'une
+ *       falaise qui recule horizontalement, pas d'un equilibre de pente.
+ *  16 - la banquette du sapement visait la BASE du banc dur, c'est-a-dire le
+ *       sommet du talus tendre qui le porte -- or ce talus se desagrege, et
+ *       la marche est portee par la corniche D'EN DESSOUS. Correction du
+ *       relief partout ou une corniche recule.
  */
-#define WORLDSEED_PIPELINE_VERSION 14
+#define WORLDSEED_PIPELINE_VERSION 16
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

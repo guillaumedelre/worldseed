@@ -5022,6 +5022,80 @@ suffi a faire apparaitre l'escalier, pour la raison physique ci-dessus, mais il
 reste le bon calage : c'est celui qui met l'epaisseur des bancs a l'echelle du
 budget d'erosion.
 
+### Le sapement des corniches, transpose de la falaise marine (19 septembre 2026)
+
+Demande du proprietaire : « fais le sapement des bancs comme pour les falaises
+marines ». C'etait le bon chemin, et la brique etait deja ecrite.
+
+**POURQUOI IL FALLAIT CETTE PASSE, et c'est la mesure qui l'a etabli.** Brancher
+l'erosion sur les bancs donne bien un contraste de PENTE -- 16,65 degres sur le
+dur contre 12,42 sur le tendre -- mais AUCUN escalier : la surface ne s'attarde
+pas sur les bancs durs, rapport 0,957. Ce n'est pas un defaut de reglage. A
+l'equilibre soulevement / erosion, un banc dur ajuste sa PENTE ; il ne retient
+pas une ALTITUDE. Les marches du Grand Canyon sont une forme TRANSITOIRE, faite
+de falaises qui reculent HORIZONTALEMENT -- et un modele d'incision ne sait pas
+la produire, quel que soit le contraste qu'on lui donne.
+
+**LE MECANISME EST CELUI DE LA FALAISE MARINE, TERME A TERME**, d'ou une passe
+qui copie `WorldseedCoast` au lieu d'inventer autre chose :
+
+    falaise marine                      corniche de banc
+    --------------------------------    --------------------------------
+    la houle creuse une encoche         le banc TENDRE se desagrege
+    la masse au-dessus s'effondre       la corniche perd son appui
+    le front recule, reste vertical     la corniche recule, reste verticale
+    la roche tendre recule plus vite    plus le talus est tendre, plus la
+                                        corniche recule
+    plateforme d'abrasion au pied       banquette au toit du banc dur suivant
+    distance a la MER                   distance a la zone DEJA DESCENDUE
+
+**UNE ERREUR DE GEOLOGIE PAYEE A LA MESURE.** Premiere version : la banquette
+visait la BASE du banc dur, c'est-a-dire le sommet du talus tendre qui le porte.
+Or ce talus se desagrege entierement -- c'est tout le mecanisme -- et la
+nouvelle marche est portee par la CORNICHE D'EN DESSOUS. Viser le talus revenait
+a poser la banquette sur ce qui, precisement, ne tient pas. Le controle
+d'altitude est tombe de 0,957 a **0,842** : la surface se retrouvait en moyenne
+sur des bancs PLUS TENDRES qu'avant la passe.
+
+**MESURE, apres correction** (graine 20260909, 64 x 32 km) :
+
+| | erosion stratifiee seule | + sapement |
+|---|---|---|
+| ecart de pente dur / tendre | +4,22 deg | **+8,17 deg** |
+| rapport | 1,34 | **1,75** |
+| chute maximale | -- | **52 m** |
+| cellules sapees | -- | 5 371, soit 0,88 % des terres |
+| cout | -- | **146 ms** |
+| part emergee | 29,20 % | **29,20 %** |
+
+**52 M EST LA PREUVE QUE LA MARCHE A LA BONNE HAUTEUR** : c'est exactement
+`toit du gres -> toit de la dolomie`, soit 22 + 30. Le chiffre ne vient pas du
+terrain, il vient de la GEOMETRIE DE LA SERIE -- donc la marche est celle qu'on
+a dessinee.
+
+**LE PIEGE DU CACHE, PAYE UNE FOIS DE PLUS.** Apres la correction de la
+banquette, le releve est revenu IDENTIQUE AU CHIFFRE PRES et la ligne
+`sapement` avait disparu du journal : le monde venait du CACHE. La correction
+touchait le code, pas les regles, et je n'avais pas rebumpe
+`WORLDSEED_PIPELINE_VERSION`. C'est exactement ce que le compteur existe pour
+couvrir, et le depot le consigne deja pour la lithologie -- « le monde revenait
+avec l'ancienne carte des roches sans le moindre signe ». **LE SIGNE QUI
+TRAHIT : un releve identique au chiffre pres apres une correction reelle, et
+une ligne de journal qui manque.**
+
+**CE QUI RESTE OUVERT, sans l'adoucir :**
+
+1. **Le controle d'altitude reste sous 1** (0,928 contre 0,957 sans sapement).
+   Il est agrege sur les 14 042 cellules de la serie alors que le sapement n'en
+   touche que 5 371 : il est donc domine par le terrain NON sape. Le mesurer
+   sur les seules cellules sapees demanderait de les marquer, ce qui n'est pas
+   fait.
+2. **Rien n'a ete REGARDE.** L'escalier est mesure, pas photographie. Et le
+   depot a une regle pour cela : une forme qui n'a pas ete vue n'est pas
+   validee.
+3. **Le recul est uniforme par banc.** Une vraie corniche recule plus vite la
+   ou elle est mieux drainee ; ici seule la tendrete du talus module `reculM`.
+
 ### Le Python est parti : tout est en C++ (19 septembre 2026)
 
 Demande du proprietaire : « je souhaite vraiment tout passer en C++ de maniere

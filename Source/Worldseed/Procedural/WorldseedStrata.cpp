@@ -2,6 +2,7 @@
 
 #include "Procedural/WorldseedStrata.h"
 
+#include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedRules.h"
 
@@ -67,6 +68,25 @@ FWorldseedStratRules FWorldseedStratRules::FromRules(const UWorldseedRules& Rule
 		}
 	}
 
+	return Out;
+}
+
+FWorldseedSapementRules FWorldseedSapementRules::FromRules(const UWorldseedRules& Rules)
+{
+	FWorldseedSapementRules Out;
+
+	const TCHAR* SAP = TEXT("sapement");
+	auto Num = [&Rules, SAP](const TCHAR* Key, double Fallback)
+	{
+		return static_cast<float>(Rules.Num(SAP, Key, Fallback));
+	};
+
+	Out.ReachM = Num(TEXT("reculM"), 220.0);
+	Out.FaceFraction = Num(TEXT("facePart"), 0.14);
+	Out.SoftnessContrast = Num(TEXT("contrasteTendrete"), 1.6);
+	Out.PrecipMaxMm = Num(TEXT("pluieMaxMm"), 420.0);
+	Out.FloorMinM = Num(TEXT("fondMinM"), 5.0);
+	Out.Strength = Num(TEXT("force"), 1.0);
 	return Out;
 }
 
@@ -295,5 +315,176 @@ namespace WorldseedStrata
 			ToitDuBanc -= Rules.Serie[I].ThicknessM;
 		}
 		return false;
+	}
+
+	void Saper(const FWorldseedGeometry& Geometry,
+		const FWorldseedStratRules& Strat, const FWorldseedSapementRules& Rules,
+		const FWorldseedLithologyRules& Litho, const FWorldseedLithology& Lithology,
+		const TArray<float>& PrecipMm, float CapHardnessMin, int32 Seed,
+		TArray<float>& ElevationM)
+	{
+		const double Debut = FPlatformTime::Seconds();
+
+		const int32 NX = Geometry.NX;
+		const int32 NY = Geometry.NY;
+		const int32 Count = Geometry.CellCount();
+		if (!Rules.IsActive() || !Strat.IsActive() || ElevationM.Num() != Count)
+		{
+			return;
+		}
+
+		const float MailleM = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
+		const double LargeurM = Geometry.WidthM();
+		const double HauteurM = Geometry.HeightM;
+		const bool bPluie = (PrecipMm.Num() == Count);
+		const bool bRoche = Lithology.IsValid(Count);
+
+		// Le datum une seule fois : c'est une surface geologique.
+		TArray<float> Datum;
+		TArray<uint8> Couvert;
+		Datum.SetNumUninitialized(Count);
+		Couvert.SetNumUninitialized(Count);
+		for (int32 J = 0; J < NY; ++J)
+		{
+			for (int32 I = 0; I < NX; ++I)
+			{
+				const int32 C = J * NX + I;
+				const double X = (static_cast<double>(I) / NX - 0.5) * LargeurM;
+				const double Y = (static_cast<double>(J) / NY - 0.5) * HauteurM;
+				Datum[C] = static_cast<float>(DatumAt(X, Y, Strat, Seed));
+
+				bool bOk = (ElevationM[C] > Rules.FloorMinM);
+				if (bOk && bPluie && PrecipMm[C] > Rules.PrecipMaxMm) { bOk = false; }
+				if (bOk && bRoche)
+				{
+					const uint8 Id = Lithology.Id[C];
+					const float D = Litho.Catalogue.IsValidIndex(Id)
+						? Litho.Catalogue[Id].Hardness : 1.0f;
+					if (D < Strat.SocleHardnessMin || D > Strat.SocleHardnessMax)
+					{
+						bOk = false;
+					}
+				}
+				Couvert[C] = bOk ? 1 : 0;
+			}
+		}
+
+		// Toits et bases de chaque banc, en profondeur sous le datum.
+		TArray<float> Toit;
+		TArray<float> Base;
+		float Cumul = 0.0f;
+		for (const FWorldseedStratBanc& B : Strat.Serie)
+		{
+			Toit.Add(Cumul);
+			Cumul += B.ThicknessM;
+			Base.Add(Cumul);
+		}
+
+		TArray<uint8> Front;
+		TArray<float> Distance;
+		Front.SetNumUninitialized(Count);
+
+		int32 Touchees = 0;
+		int32 Corniches = 0;
+		double SommeChute = 0.0;
+		float PireChute = 0.0f;
+
+		// --- UNE CORNICHE PAR BANC DUR, DU HAUT VERS LE BAS -----------------
+		//
+		// L'ORDRE EST GEOLOGIQUE : les bancs superieurs sont decapes d'abord, et
+		// le recul de chacun decouvre le suivant. Remonter la pile inverserait
+		// la chronologie et ferait reculer une corniche que rien n'a encore
+		// mise a nu.
+		for (int32 B = 0; B < Strat.Serie.Num(); ++B)
+		{
+			if (Strat.Serie[B].Hardness < CapHardnessMin) { continue; }
+			++Corniches;
+
+			// --- LA BANQUETTE EST AU TOIT DU BANC DUR SUIVANT ---------------
+			//
+			// ERREUR DE GEOLOGIE PAYEE A LA MESURE. Premiere version : la cible
+			// etait la BASE du banc dur, c'est-a-dire le sommet du talus tendre
+			// qui le porte. Or ce talus se desagrege entierement -- c'est tout
+			// le mecanisme -- et la nouvelle marche est portee par la CORNICHE
+			// D'EN DESSOUS. Viser le talus revenait a poser la banquette sur ce
+			// qui, precisement, ne tient pas : le controle d'altitude est tombe
+			// de 0,957 a 0,842, la surface se retrouvant en moyenne sur des
+			// bancs PLUS TENDRES qu'avant.
+			int32 Suivant = INDEX_NONE;
+			for (int32 K = B + 1; K < Strat.Serie.Num(); ++K)
+			{
+				if (Strat.Serie[K].Hardness >= CapHardnessMin) { Suivant = K; break; }
+			}
+			const float ProfBanquette = (Suivant != INDEX_NONE)
+				? Toit[Suivant] : Base[B];
+
+			// LE FRONT N'EST PAS LA MER, C'EST LA ZONE DEJA DESCENDUE D'UNE
+			// MARCHE : la ou la surface a deja atteint la banquette suivante,
+			// le talus est a nu et sape la corniche voisine. La transformee
+			// rend la distance a la cellule nulle la plus proche.
+			for (int32 C = 0; C < Count; ++C)
+			{
+				const float Profondeur = Datum[C] - ElevationM[C];
+				Front[C] = (Profondeur >= ProfBanquette) ? 0 : 1;
+			}
+			WorldseedGrid::DistanceTransform(Front, NX, NY, Distance);
+			if (Distance.Num() != Count) { continue; }
+
+			// C'EST LE TALUS QUI DECIDE DU RECUL, jamais la corniche : une
+			// corniche assise sur de la craie est sapee bien plus vite que la
+			// meme assise sur de la dolomie.
+			const float DureteDessous = Strat.Serie.IsValidIndex(B + 1)
+				? Strat.Serie[B + 1].Hardness : Strat.Serie[B].Hardness;
+			const float Recul = FMath::Max(1.0f, Rules.ReachM
+				* (1.0f + Rules.SoftnessContrast * (0.5f - DureteDessous)));
+
+			for (int32 C = 0; C < Count; ++C)
+			{
+				if (Couvert[C] == 0) { continue; }
+
+				const float H = ElevationM[C];
+				const float Profondeur = Datum[C] - H;
+
+				// La surface doit etre entre le toit de cette corniche et la
+				// banquette suivante : c'est la marche que l'on fait reculer.
+				if (Profondeur < Toit[B] || Profondeur >= ProfBanquette) { continue; }
+
+				const float T = Distance[C] * MailleM / Recul;
+				if (T >= 1.0f) { continue; }
+
+				// --- LE PROFIL : BANQUETTE, PUIS FACE, PUIS RIEN -------------
+				//
+				// Meme forme que la passe littorale, et meme raison. La cible
+				// vaut la BASE du banc -- la banquette degagee -- puis remonte
+				// vers le relief existant sur la largeur de la face, puis s'y
+				// confond. La cible ne depassant jamais H, il n'y a ni bosse au
+				// raccord ni couture a la limite de recul.
+				const float Banquette = Datum[C] - ProfBanquette;
+				const float Profil = FMath::SmoothStep(
+					1.0f - Rules.FaceFraction, 1.0f, T);
+				const float Cible = FMath::Max(Rules.FloorMinM,
+					FMath::Lerp(Banquette, H, Profil));
+				const float Neuf = FMath::Min(H,
+					FMath::Lerp(H, Cible, Rules.Strength));
+
+				if (Neuf < H - 0.01f)
+				{
+					++Touchees;
+					SommeChute += H - Neuf;
+					PireChute = FMath::Max(PireChute, H - Neuf);
+				}
+				ElevationM[C] = Neuf;
+			}
+		}
+
+		int32 Terres = 0;
+		for (int32 C = 0; C < Count; ++C) { if (ElevationM[C] > 0.0f) { ++Terres; } }
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] sapement : %d corniches reculees, %d cellules ")
+			TEXT("(%.2f %% des terres), abaissement moyen %.1f m, maximum %.0f m  (%.0f ms)"),
+			Corniches, Touchees, 100.0 * Touchees / FMath::Max(Terres, 1),
+			(Touchees > 0) ? SommeChute / Touchees : 0.0, PireChute,
+			(FPlatformTime::Seconds() - Debut) * 1000.0);
 	}
 }

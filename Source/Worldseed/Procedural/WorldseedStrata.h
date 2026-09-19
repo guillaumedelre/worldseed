@@ -167,8 +167,104 @@ struct WORLDSEED_API FWorldseedErodibilite
 	void Echantillonner(const TArray<float>& DemM, TArray<float>& OutK) const;
 };
 
+/**
+ * Section "sapement" de world_rules.json : le recul des corniches.
+ *
+ * LE MECANISME EST CELUI DE LA FALAISE MARINE, TERME A TERME, et c'est
+ * pourquoi cette passe copie `WorldseedCoast` au lieu d'inventer autre chose.
+ * Le depot y a deja ecrit la lecon qui compte : « une falaise ne nait pas d'un
+ * EQUILIBRE DE PENTE mais d'un SAPEMENT -- la houle creuse une encoche au pied,
+ * la masse sus-jacente s'effondre, et le front recule en restant vertical ».
+ *
+ *   falaise marine                      corniche de banc
+ *   --------------------------------    --------------------------------
+ *   la houle creuse une encoche         le banc TENDRE se desagrege
+ *   la masse au-dessus s'effondre       la corniche perd son appui
+ *   le front recule, reste vertical     la corniche recule, reste verticale
+ *   la roche tendre recule plus vite    plus le banc DESSOUS est tendre,
+ *                                       plus la corniche recule
+ *   plateforme d'abrasion au pied       banquette au toit du banc suivant
+ *   distance a la MER                   distance a la zone DEJA DECAPEE
+ *
+ * POURQUOI IL FALLAIT CETTE PASSE, et la mesure le dit. Brancher l'erosion sur
+ * les bancs donne bien un contraste de PENTE -- 16,65 degres sur le dur contre
+ * 12,42 sur le tendre -- mais AUCUN escalier : la surface ne s'attarde pas sur
+ * les bancs durs, rapport 0,957. C'est attendu, et ce n'est pas un defaut de
+ * reglage. A l'equilibre soulevement / erosion, un banc dur ajuste sa PENTE ;
+ * il ne retient pas une ALTITUDE. Les marches du Grand Canyon sont une forme
+ * TRANSITOIRE, faite de falaises qui reculent HORIZONTALEMENT -- et c'est
+ * exactement ce qu'un modele d'incision ne sait pas produire.
+ *
+ * ELLE NE FAIT QUE BAISSER, comme la passe littorale et pour les memes raisons.
+ */
+struct WORLDSEED_API FWorldseedSapementRules
+{
+	/**
+	 * Recul de reference d'une corniche, en metres.
+	 *
+	 * C'est la LARGEUR de la banquette qu'elle degage derriere elle. Sous une
+	 * maille de simulation, rien ne se voit ; bien au-dela, les bancs se
+	 * decapent entierement et l'escalier disparait avec eux.
+	 */
+	float ReachM = 220.0f;
+
+	/**
+	 * Part du recul occupee par la FACE.
+	 *
+	 * LA FACE DOIT TENIR DANS UNE MAILLE DE SIMULATION, sinon la corniche n'est
+	 * qu'une rampe -- lecon deja payee deux fois dans ce depot, sur la falaise
+	 * marine puis sur le profil de canyon. A 220 m de recul et 31 m de maille,
+	 * 0,14 met la face pile sur une maille.
+	 */
+	float FaceFraction = 0.14f;
+
+	/**
+	 * Amplification du recul par la TENDRETE du banc sous-jacent.
+	 *
+	 * C'EST LE MOTEUR DU SAPEMENT, et sans lui toutes les corniches reculeraient
+	 * pareil. Une corniche assise sur de la craie est sapee bien plus vite que
+	 * la meme assise sur de la dolomie : c'est le banc DU DESSOUS qui decide,
+	 * jamais celui qui forme la marche.
+	 */
+	float SoftnessContrast = 1.6f;
+
+	/**
+	 * Pluie au-dessus de laquelle on ne sape pas, en mm/an.
+	 *
+	 * SOUS LA PLUIE, LES VERSANTS S'EBOULENT ET S'EVASENT EN V. C'est le
+	 * troisieme ingredient de la recette du proprietaire -- « le manque de
+	 * pluies empeche les versants de s'ebouler et de s'elargir en vallee
+	 * classique ; les parois restent ainsi verticales et seches ».
+	 */
+	float PrecipMaxMm = 420.0f;
+
+	/** Altitude plancher : on ne sape jamais sous le niveau de la mer. */
+	float FloorMinM = 5.0f;
+
+	/** Dosage. A zero, la passe ne fait rien, a l'identique. */
+	float Strength = 1.0f;
+
+	bool IsActive() const { return Strength > 0.0f && ReachM > 0.0f; }
+
+	static FWorldseedSapementRules FromRules(const UWorldseedRules& Rules);
+};
+
 namespace WorldseedStrata
 {
+	/**
+	 * Fait reculer les corniches de banc par sapement.
+	 *
+	 * Modifie ElevationM EN PLACE, et seulement vers le bas. A poser APRES
+	 * l'incision -- geologiquement, la gorge se creuse d'abord, puis ses parois
+	 * reculent -- et AVANT le second climat, pour que les biomes voient le
+	 * relief final.
+	 */
+	WORLDSEED_API void Saper(const FWorldseedGeometry& Geometry,
+		const FWorldseedStratRules& Strat, const FWorldseedSapementRules& Rules,
+		const FWorldseedLithologyRules& Litho, const FWorldseedLithology& Lithology,
+		const TArray<float>& PrecipMm, float CapHardnessMin, int32 Seed,
+		TArray<float>& ElevationM);
+
 	/**
 	 * Prepare l'erodabilite stratifiee.
 	 *

@@ -428,6 +428,30 @@ namespace WorldseedPipeline
 				Out.ElevationM, &Out.Tables);
 		}
 
+		// --- etape 4d : le sapement des corniches ------------------------------
+		//
+		// APRES L'INCISION, ET L'ORDRE EST GEOLOGIQUE : la gorge se creuse
+		// d'abord, puis ses parois reculent. L'inverse ferait reculer des
+		// corniches que rien n'a encore mises a nu.
+		//
+		// C'EST LE MECANISME DE LA FALAISE MARINE, transpose. L'erosion branchee
+		// sur les bancs donne un contraste de PENTE mais aucun escalier -- a
+		// l'equilibre, un banc dur ajuste sa pente, il ne retient pas une
+		// altitude. Les marches sont une forme TRANSITOIRE, faite de falaises
+		// qui reculent horizontalement par sapement, et seule une passe de ce
+		// type sait la produire.
+		{
+			const FWorldseedLithologyRules LR =
+				FWorldseedLithologyRules::FromRules(*Rules);
+			WorldseedStrata::Saper(Geometry,
+				FWorldseedStratRules::FromRules(*Rules, LR),
+				FWorldseedSapementRules::FromRules(*Rules),
+				LR, Out.Lithology, Out.Climate.PrecipMm,
+				static_cast<float>(Rules->Num(TEXT("tables"),
+					TEXT("chapiteauDureteMin"), 0.40)),
+				Seed, Out.ElevationM);
+		}
+
 		// --- seconde passe de climat sur le relief erode -----------------------
 		if (!WorldseedClimate::Generate(*Rules, Geometry, Seed, Out.ElevationM,
 			Out.Climate, Climate2Scope))
