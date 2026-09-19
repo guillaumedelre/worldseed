@@ -182,8 +182,8 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 
 	Out.BareRockSlopeDeg = Sub(TEXT("bareRockSlopeDeg"), 55.0);
 
-	Out.BeachElevationM = Sub(TEXT("beachElevationM"), 3.75);
-	Out.BeachWidthM = Sub(TEXT("beachWidthM"), 37.5);
+	Out.BeachElevationM = Sub(TEXT("beachElevationM"), 5.5);
+	Out.BeachWidthM = Sub(TEXT("beachWidthM"), 110.0);
 	Out.BeachSlopeFlatDeg = Sub(TEXT("beachSlopeFlatDeg"), 8.0);
 	Out.BeachSlopeSteepDeg = Sub(TEXT("beachSlopeSteepDeg"), 30.0);
 	Out.BeachWindwardBonus = Sub(TEXT("beachWindwardBonus"), 0.6);

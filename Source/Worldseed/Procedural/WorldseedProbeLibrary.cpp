@@ -1285,7 +1285,12 @@ FString UWorldseedProbeLibrary::ProbeArches(int32 Seed, float HeightMeters,
 			const double ZHaut = A.CentreM.Z + 1.3 * A.RayonM;
 			double PontMesure = TNumericLimits<double>::Max();
 			double OuCasse = 0.0;
-			for (double T = -A.EpaisseurM * 0.4; T <= A.EpaisseurM * 0.4; T += 4.0)
+			// ON SONDE LE COL, PAS AU-DELA. A 0,4 d'epaisseur on se retrouve au
+			// BORD du cap, la ou le sol tombe deja : il n'y a evidemment pas de
+			// roche au-dessus, et le test rendait zero pont sur seize arches
+			// pourtant surmontees de cinquante a quatre-vingts metres de
+			// falaise. Le pont d'une arche marine enjambe le COL, pas le cap.
+			for (double T = -A.EpaisseurM * 0.18; T <= A.EpaisseurM * 0.18; T += 4.0)
 			{
 				const double QX = A.CentreM.X + A.TraversM.X * T;
 				const double QY = A.CentreM.Y + A.TraversM.Y * T;

@@ -322,6 +322,51 @@ struct WORLDSEED_API FWorldseedCaveRules
 	 */
 	float ArchCrestMaxM = 80.0f;
 
+	/**
+	 * Largeur maximale du COL d'un cap, en metres.
+	 *
+	 * LE CRITERE D'ETRETAT, ET IL REMPLACE LA CRETE. Les deux versions
+	 * precedentes cherchaient une lame mince quelque part dans le relief ;
+	 * celle-ci cherche un PROMONTOIRE resserre au ras de l'eau, avec de la mer
+	 * des deux cotes. C'est ce qui fait qu'on voit le ciel au travers -- la
+	 * condition qui manquait, et sans laquelle une arche parfaitement
+	 * traversante reste invisible parce qu'enterree.
+	 */
+	/** Col minimal : en deca, c'est un caillou isole et non un cap. */
+	float ArchNeckMinM = 40.0f;
+
+	float ArchNeckMaxM = 120.0f;
+
+	/**
+	 * Distance maximale a la mer d'un cap percable, en metres.
+	 *
+	 * PRES DE LA MER, PAS ADJACENT A ELLE. La passe littorale garantit que la
+	 * cellule qui touche l'eau est la plateforme d'abrasion, a trois metres :
+	 * exiger "adjacente a la mer ET haute de cinquante metres" est une
+	 * contradiction, et la premiere version l'a paye par zero cap examine.
+	 */
+	float ArchSeaReachM = 400.0f;
+
+	/** Hauteur de l'ouverture, en metres. Elle part du ras de l'eau. */
+	float ArchOpeningHeightM = 38.0f;
+
+	/** Largeur de l'ouverture au pied, en metres. */
+	float ArchOpeningWidthM = 30.0f;
+
+	/**
+	 * Part de la falaise que l'ouverture peut occuper, dans [0..1].
+	 *
+	 * UN CAP S'AMINCIT EN MONTANT. Une ouverture a hauteur fixe dans un cap
+	 * modeste le vide de sa masse : mesure, pont a ZERO des quinze metres
+	 * d'ecart du centre, sur des arches pourtant surmontees de cinquante a
+	 * quatre-vingts metres de falaise. Une petite pointe merite une petite
+	 * arche.
+	 */
+	float ArchOpeningShare = 0.45f;
+
+	/** Falaise minimale d'un cap percable, en metres. */
+	float ArchCliffMinM = 45.0f;
+
 	/** Profondeur sous le sommet ou l'on mesure la crete, en metres. */
 	float ArchBelowSummitM = 20.0f;
 

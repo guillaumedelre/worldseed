@@ -145,13 +145,20 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.SeaMarginM = Num(TEXT("niveauMerMargeM"), 5.0);
 
 	Out.ArchCrestMaxM = Num(TEXT("archeLargeurCreteMaxM"), 80.0);
+	Out.ArchNeckMinM = Num(TEXT("archeColMinM"), 40.0);
+	Out.ArchNeckMaxM = Num(TEXT("archeColMaxM"), 120.0);
+	Out.ArchSeaReachM = Num(TEXT("archePorteeMerM"), 400.0);
+	Out.ArchOpeningHeightM = Num(TEXT("archeOuvertureHauteurM"), 38.0);
+	Out.ArchOpeningWidthM = Num(TEXT("archeOuvertureLargeurM"), 30.0);
+	Out.ArchOpeningShare = Num(TEXT("archeOuverturePartFalaise"), 0.45);
+	Out.ArchCliffMinM = Num(TEXT("archeFalaiseMinM"), 45.0);
 	Out.ArchBelowSummitM = Num(TEXT("archeSousSommetM"), 20.0);
 	Out.ArchRadiusMinM = Num(TEXT("archeRayonMinM"), 6.0);
 	Out.ArchRadiusMaxM = Num(TEXT("archeRayonMaxM"), 14.0);
 	Out.ArchBridgeMinM = Num(TEXT("archePontMinM"), 7.0);
 	Out.ArchBridgeMaxM = Num(TEXT("archePontMaxM"), 12.0);
 	Out.ArchBridgeMaxRatio = Num(TEXT("archePontRatioMax"), 0.55);
-	Out.ArchHardnessMaxM = Num(TEXT("archeDureteMax"), 0.7);
+	Out.ArchHardnessMaxM = Num(TEXT("archeDureteMax"), 0.9);
 	Out.ArchProbeSpacingM = Num(TEXT("archeSondageEspacementM"), 250.0);
 	Out.ArchSpacingM = Num(TEXT("archeEspacementM"), 1500.0);
 	Out.ArchSummitMarginM = Num(TEXT("archeMargeSommetM"), 10.0);
@@ -1439,258 +1446,278 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		}
 	}
 
-	// --- 5 quinquies. LES ARCHES, ET C'EST LA SEULE FORME QU'ON POSE ---------
+	// --- 5 quinquies. LES ARCHES MARINES, FORME D'ETRETAT --------------------
 	//
-	// LES QUATRE AUTRES SE DEDUISENT, CELLE-CI SE CONSTRUIT. La doline nait
-	// d'un plafond mince, l'aven d'un plateau, la bouche d'un escarpement, la
-	// diaclase d'un bruit de Worley : toutes repondent a une condition qu'on se
-	// contente de LIRE. Une arche, non. Elle demande DEUX proprietes
-	// simultanees -- une lame mince ET un trou dedans -- et aucun bruit ne peut
-	// garantir la conjonction. Premier essai, par bruit en nappes : des abris
-	// sous roche et des terrasses, jamais une ouverture traversante. Abandonne.
+	// TROISIEME VERSION, ET LES DEUX PREMIERES SE SONT TROMPEES D'OBJET.
 	//
-	// ET LA LAME NON PLUS NE SE TROUVE PAS, IL FAUT LA TAILLER. Mesure sur
-	// 6327 sondages bien espaces : 229 cretes seulement sont assez minces pour
-	// etre percees, et elles sont TOUTES en granite (135) ou en basalte (94) --
-	// zero en calcaire, gres ou schiste. La cause est mecanique : la boucle
-	// soulevement / erosion donne au granite 33,5 degres de pente et au gres
-	// 8,7 ; une pente raide fait une crete mince, une pente douce n'en fait
-	// aucune. Or l'arche reelle est une forme de GRES. D'ou le champ de lames
-	// (WorldseedFins) : des fentes paralleles qui decoupent des murs minces,
-	// exactement comme les joints verticaux d'Arches National Park.
+	// La premiere cherchait une crete mince n'importe ou : mesure, 229 cretes
+	// assez minces dans tout le monde et TOUTES en granite ou en basalte, zero
+	// en roche sedimentaire. La seconde fabriquait la lame -- des joints
+	// paralleles dans le gres, comme a Arches National Park -- et elle
+	// marchait : dix arches posees, dix traversantes, neuf sous un pont. Mais
+	// A L'IMAGE ELLES N'EXISTAIENT PAS, et la photo a dit pourquoi en un coup :
+	// le point de vue place a l'altitude de l'arche se retrouvait DANS la
+	// roche. L'arche etait a 119 m, le sol au-dessus a 239. Un trou de vingt
+	// metres enterre sous un plateau, au fond d'une fente de seize : il
+	// n'existait aucun endroit d'ou la regarder.
 	//
-	// CONSEQUENCE HEUREUSE : sur une lame, l'epaisseur et l'axe sont CONNUS PAR
-	// CONSTRUCTION. Plus rien a mesurer par sondage, et surtout plus de risque
-	// que l'arche tombe a cote de la lame -- les deux lisent le meme champ.
+	// CE QUI MANQUAIT N'ETAIT PAS LA LAME, C'ETAIT LE VIDE AUTOUR. Une arche se
+	// lit parce qu'on voit le CIEL au travers, et le proprietaire l'avait dit
+	// en donnant Etretat pour exemple : ce n'est pas un trou dans un mur, c'est
+	// un PROMONTOIRE perce a sa base, vu contre la mer, avec une masse enorme
+	// au-dessus. La regle "pont mince sinon c'est un tunnel" etait fausse --
+	// a Etretat le pont fait tout la falaise.
+	//
+	// Le critere est donc entierement different : un cap dont le COL est
+	// etroit, avec de la MER des deux cotes. La passe littorale les fabrique
+	// deja -- son bruit de recul creuse des anses et laisse des caps, et c'est
+	// pour cela qu'il existe.
 	int32 Arches = 0;
-	if (Rules.ArchCount > 0 && Rules.Fins.IsActive())
+	if (Rules.ArchCount > 0 && Rules.ArchNeckMaxM > 0.0f)
 	{
-		const double Epaisseur = Rules.Fins.SpacingM - Rules.Fins.SlotM;
+		TArray<FVector2D> ArchesPosees;
 
-		if (Epaisseur > Rules.ArchCrestMaxM)
+		auto MacroEn = [&](double PX, double PY)
 		{
-			// UNE LAME TROP EPAISSE DONNE UN TUNNEL, PAS UNE ARCHE. Le dire ici
-			// vaut mieux que de poser vingt-quatre tunnels en silence.
-			UE_LOG(LogTemp, Warning,
-				TEXT("[Worldseed] grottes : lames de %.0f m pour un plafond ")
-				TEXT("d'arche de %.0f m -- aucune arche posee"),
-				Epaisseur, Rules.ArchCrestMaxM);
+			double Uc = PX / Geometry.WidthM() + 0.5;
+			Uc -= FMath::FloorToDouble(Uc);
+			const double Vc = FMath::Clamp(PY / Geometry.HeightM + 0.5, 0.0, 1.0);
+			return static_cast<double>(WorldseedGrid::SampleUV(ElevationM, NX, NY,
+				static_cast<float>(Uc), static_cast<float>(Vc))) * HeightExaggeration;
+		};
+
+		const double ZBas = Rules.SeaMarginM - 2.0;
+
+		// --- LES CANDIDATS : DU LITTORAL, ET RIEN D'AUTRE --------------------
+		//
+		// On balaie les cellules terrestres qui touchent la mer. Un cap est par
+		// definition entoure d'eau : chercher ailleurs serait chercher un col
+		// de montagne, et l'on retomberait sur le tunnel de la version d'avant.
+		// PRES DE LA MER, PAS ADJACENT A ELLE, et la nuance a coute une passe
+		// entiere a zero. La passe littorale GARANTIT que la cellule qui touche
+		// l'eau est la plateforme d'abrasion, a trois metres : exiger
+		// "adjacente a la mer ET haute de cinquante metres" etait donc une
+		// contradiction, et le releve l'a dit d'un coup -- zero cap examine.
+		// Le cap qu'on cherche est derriere la plateforme, en haut de la face.
+		TArray<uint8> Terre;
+		Terre.SetNumUninitialized(Count);
+		for (int32 I = 0; I < Count; ++I)
+		{
+			Terre[I] = (ElevationM[I] > 0.0f) ? 1 : 0;
 		}
-		else
+		TArray<float> DistMer;
+		WorldseedGrid::DistanceTransform(Terre, NX, NY, DistMer);
+
+		TArray<int32> Littoral;
+		Littoral.Reserve(Count / 32 + 1);
+		for (int32 C = 0; C < Count; ++C)
 		{
-			TArray<FVector2D> ArchesPosees;
+			const double H = ElevationM[C] * HeightExaggeration;
+			if (H < Rules.ArchCliffMinM) { continue; }
+			if (DistMer[C] * MetresParPixel > Rules.ArchSeaReachM) { continue; }
+			Littoral.Add(C);
+		}
 
-			// Une arche ne se pose pas en plaine, et il faut que l'ouverture
-			// tienne au-dessus de la mer.
-			const double AltitudeMin = Rules.SeaMarginM + Rules.ArchBridgeMaxM
-				+ 2.6 * Rules.ArchRadiusMaxM + 10.0;
+		// Les plus HAUTS d'abord : un cap qui porte cent metres de falaise fait
+		// une arche qu'on voit de loin, un cap de dix metres fait un trou.
+		Littoral.Sort([&ElevationM](int32 A, int32 B)
+		{
+			return ElevationM[A] > ElevationM[B];
+		});
 
-			TArray<int32> Hauteurs;
-			Hauteurs.Reserve(Count / 8);
-			for (int32 Cell = 0; Cell < Count; ++Cell)
+		int32 Examines = 0;
+		int32 ColTropLarge = 0;
+		int32 PasDeMer = 0;
+		int32 RocheRefusee = 0;
+
+		for (const int32 Cell : Littoral)
+		{
+			if (Arches >= Rules.ArchCount) { break; }
+
+			const double X = (static_cast<double>(Cell % NX) / NX - 0.5)
+				* Geometry.WidthM();
+			const double Y = (static_cast<double>(Cell / NX) / NY - 0.5)
+				* Geometry.HeightM;
+
+			bool bDejaPrise = false;
+			for (const FVector2D& A : ArchesPosees)
 			{
-				if (ElevationM[Cell] * HeightExaggeration > AltitudeMin)
+				if (FVector2D::DistSquared(FVector2D(X, Y), A)
+					< Rules.ArchSpacingM * Rules.ArchSpacingM)
 				{
-					Hauteurs.Add(Cell);
+					bDejaPrise = true;
+					break;
 				}
 			}
-			Hauteurs.Sort([&ElevationM](int32 A, int32 B)
+			if (bDejaPrise) { continue; }
+			++Examines;
+
+			// --- LE COL, MESURE A LA HAUTEUR DE L'OUVERTURE ------------------
+			//
+			// ET C'EST LA TOUTE LA DIFFERENCE AVEC LA VERSION D'AVANT, qui
+			// mesurait la crete VINGT METRES SOUS LE SOMMET -- donc au coeur du
+			// massif, la ou il est large. Ici on mesure au RAS DE L'EAU, la ou
+			// la mer a deja mange les flancs : c'est la que le cap est mince,
+			// et c'est la qu'on perce.
+			// --- L'ARCHE SE DIMENSIONNE SUR LA FALAISE QUI LA PORTE ---------
+			//
+			// UN CAP S'AMINCIT EN MONTANT, et l'oublier vide l'arche de sa
+			// masse : une ouverture de trente-huit metres dans un cap de
+			// cinquante ne laissait de roche qu'au centre, si bien que le pont
+			// mesurait ZERO des quinze metres d'ecart -- sur des arches
+			// pourtant surmontees de cinquante a quatre-vingts metres de
+			// falaise. Une petite pointe merite une petite arche.
+			const double Falaise = ElevationM[Cell] * HeightExaggeration;
+			const double HauteurOuverture = FMath::Clamp(
+				(Falaise - ZBas) * Rules.ArchOpeningShare,
+				12.0, static_cast<double>(Rules.ArchOpeningHeightM));
+			const double ZHaut = ZBas + HauteurOuverture;
+
+			const double ZCol = ZBas + HauteurOuverture * 0.5;
+			const double PasM = 4.0;
+			const double PorteeM = 400.0;
+
+			double Rayons[8];
+			for (int32 D = 0; D < 8; ++D)
 			{
-				return ElevationM[A] > ElevationM[B];
-			});
-
-			int32 HorsRoche = 0;
-			int32 HorsZone = 0;
-			int32 Examines = 0;
-
-			for (const int32 Cell : Hauteurs)
-			{
-				if (Arches >= Rules.ArchCount) { break; }
-
-				double X = (static_cast<double>(Cell % NX) / NX - 0.5)
-					* Geometry.WidthM();
-				double Y = (static_cast<double>(Cell / NX) / NY - 0.5)
-					* Geometry.HeightM;
-
-				bool bDejaPrise = false;
-				for (const FVector2D& A : ArchesPosees)
+				const double A = D * (UE_DOUBLE_PI / 4.0);
+				const double CX = FMath::Cos(A);
+				const double CY = FMath::Sin(A);
+				double R = 0.0;
+				while (R < PorteeM
+					&& MacroEn(X + CX * (R + PasM), Y + CY * (R + PasM)) >= ZCol)
 				{
-					if (FVector2D::DistSquared(FVector2D(X, Y), A)
-						< Rules.ArchSpacingM * Rules.ArchSpacingM)
-					{
-						bDejaPrise = true;
-						break;
-					}
+					R += PasM;
 				}
-				if (bDejaPrise) { continue; }
-				++Examines;
-
-				// --- LA ROCHE, puis LA ZONE ----------------------------------
-				//
-				// Les deux gardes sont celles du champ de lames lui-meme : si
-				// l'une divergeait, l'arche se poserait la ou il n'y a pas de
-				// lame. C'est pourquoi les deux lisent la MEME structure de
-				// regles, chargee une seule fois.
-				const uint8 Roche = Lithology.Id.IsValidIndex(Cell)
-					? Lithology.Id[Cell] : 0;
-				const float Durete = LithoRules.Catalogue.IsValidIndex(Roche)
-					? LithoRules.Catalogue[Roche].Hardness : 1.0f;
-				if (Durete < Rules.Fins.HardnessMin || Durete > Rules.Fins.HardnessMax)
-				{
-					++HorsRoche;
-					continue;
-				}
-
-				if (WorldseedFins::Zone(X, Y, Rules.Fins, Seed) <= 0.0f)
-				{
-					++HorsZone;
-					continue;
-				}
-
-				// --- SE RECENTRER SUR LA LAME --------------------------------
-				//
-				// Le point le plus haut de la cellule n'est pas le milieu du
-				// mur : il peut tomber au bord, voire dans une fente. On se
-				// deplace EN TRAVERS jusqu'au centre de la lame la plus proche,
-				// sans quoi l'arche percerait une paroi au lieu du mur.
-				const double Theta = WorldseedFins::Direction(X, Y, Rules.Fins, Seed);
-				const FVector2D Travers(FMath::Cos(Theta), FMath::Sin(Theta));
-				const double Recentrage =
-					WorldseedFins::DecalageVersCentre(X, Y, Rules.Fins, Seed);
-				X += Travers.X * Recentrage;
-				Y += Travers.Y * Recentrage;
-
-				// LE SOMMET SE RELIT APRES LE RECENTRAGE, ET AVEC UNE MARGE.
-				//
-				// Deux erreurs se cumulaient, et la verification les a prises
-				// ensemble : sur dix arches posees, HUIT avaient leur pont
-				// creuse au-dessus du sol. D'abord l'altitude etait celle de la
-				// CELLULE d'origine alors qu'on vient de se deplacer jusqu'a un
-				// demi-espacement en travers -- sur une pente de gres a neuf
-				// degres, trente-cinq metres font cinq metres de denivele.
-				// Ensuite le champ de densite DEPLACE la surface verticalement
-				// de overhangAmplitudeM, donc la roche reelle peut se trouver
-				// plusieurs metres sous la grille macro. La marge couvre ce
-				// second ecart, que la passe des cavites ne peut pas connaitre.
-				//
-				// ET IL SE PREND AU PLUS BAS DE LA LAME, PAS EN SON CENTRE. Le
-				// pont ne couvre pas un point, il FRANCHIT toute l'epaisseur du
-				// mur : il doit donc passer sous le point le plus bas de cette
-				// travee, sinon il ressort du cote aval. Mesure avec le sommet
-				// pris au seul centre : trois arches sur dix restaient sans
-				// roche au-dessus, sur un terrain pourtant a peine incline --
-				// vingt metres de travee suffisent a perdre cinq metres.
-				auto MacroEn = [&](double PX, double PY)
-				{
-					double Uc = PX / Geometry.WidthM() + 0.5;
-					Uc -= FMath::FloorToDouble(Uc);
-					const double Vc = FMath::Clamp(PY / Geometry.HeightM + 0.5,
-						0.0, 1.0);
-					return static_cast<double>(WorldseedGrid::SampleUV(
-						ElevationM, NX, NY, static_cast<float>(Uc),
-						static_cast<float>(Vc))) * HeightExaggeration;
-				};
-
-				double Sommet = TNumericLimits<double>::Max();
-				for (double T = -Epaisseur * 0.5; T <= Epaisseur * 0.5; T += 4.0)
-				{
-					Sommet = FMath::Min(Sommet,
-						MacroEn(X + Travers.X * T, Y + Travers.Y * T));
-				}
-				Sommet -= Rules.ArchSummitMarginM;
-
-				// --- CREUSER -------------------------------------------------
-				const double Rayon = Tirage.Entre(Rules.ArchRadiusMinM,
-					Rules.ArchRadiusMaxM);
-
-				// L'ouverture fait 2,6 rayons de haut : trois chaines
-				// superposees dont l'union lisse donne une ellipse verticale.
-				// Un percement circulaire se lirait comme un forage, exactement
-				// comme un puits cylindrique pour l'aven.
-				const double HauteurOuverture = 2.6 * Rayon;
-
-				// LE PONT SE JUGE EN RAPPORT, PAS EN VALEUR ABSOLUE. Un trou de
-				// trente metres sous cent metres de roche est un tunnel ; le
-				// meme sous dix metres est une arche.
-				double Pont = Tirage.Entre(Rules.ArchBridgeMinM,
-					Rules.ArchBridgeMaxM);
-				Pont = FMath::Min(Pont, Rules.ArchBridgeMaxRatio * HauteurOuverture);
-
-				const double Haut = Sommet - Pont;
-				const double Bas = Haut - HauteurOuverture;
-				if (Bas < Rules.SeaMarginM) { continue; }
-
-				// Le percement deborde la lame des deux cotes, sinon il reste
-				// un bouchon de roche et le trou ne traverse pas -- ce qui en
-				// ferait un abri sous roche, pas une arche.
-				const double DemiLongueur = Epaisseur * 0.5 + 2.0 * Rayon + 6.0;
-
-				for (int32 Etage = 0; Etage < 3; ++Etage)
-				{
-					// Bas, milieu, haut : le rayon decroit vers le sommet, d'ou
-					// un contour ogival plutot qu'un cylindre.
-					static const double Niveaux[3] = { -0.60, 0.0, 0.55 };
-					static const double Facteurs[3] = { 0.85, 1.0, 0.72 };
-
-					const double ZE = (Haut + Bas) * 0.5 + Niveaux[Etage] * Rayon;
-					const double RE = Rayon * Facteurs[Etage];
-
-					const int32 Tranches = FMath::Max(3,
-						FMath::CeilToInt(2.0 * DemiLongueur / 5.0));
-					FVector Precedent = FVector::ZeroVector;
-					for (int32 T = 0; T <= Tranches; ++T)
-					{
-						const double F = static_cast<double>(T) / Tranches;
-						const double S = FMath::Lerp(-DemiLongueur, DemiLongueur, F);
-
-						// L'AXE ONDULE, comme celui d'un puits : une arche
-						// creusee a la regle se voit immediatement.
-						const double O = 1.5 * WorldseedPerlin::Perlin3D(
-							static_cast<float>(S * 0.05),
-							static_cast<float>(ZE * 0.05), 0.0f,
-							Seed + 7717 + Etage);
-
-						const FVector Point(X + Travers.X * S - Travers.Y * O,
-							Y + Travers.Y * S + Travers.X * O, ZE + O * 0.5);
-						if (T > 0)
-						{
-							FWorldseedCaveSegment Seg;
-							Seg.AM = Precedent;
-							Seg.BM = Point;
-							Seg.RadiusAM = static_cast<float>(RE);
-							Seg.RadiusBM = static_cast<float>(RE);
-							Out.Segments.Add(Seg);
-						}
-						Precedent = Point;
-					}
-				}
-
-				ArchesPosees.Emplace(X, Y);
-				++Arches;
-
-				FWorldseedCaveArch Fiche;
-				Fiche.CentreM = FVector(X, Y, (Haut + Bas) * 0.5);
-				Fiche.TraversM = Travers;
-				Fiche.EpaisseurM = static_cast<float>(Epaisseur);
-				Fiche.RayonM = static_cast<float>(Rayon);
-				Fiche.PontM = static_cast<float>(Pont);
-				Out.Arches.Add(Fiche);
-
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed] grottes : ARCHE a (%.0f, %.0f) m, sommet ")
-					TEXT("%.0f m, lame %.0f m, ouverture %.0f x %.0f m, pont %.0f m"),
-					X, Y, Sommet, Epaisseur, 2.0 * Rayon, HauteurOuverture, Pont);
+				Rayons[D] = R;
 			}
 
-			// SANS CE RELEVE ON NE SAURAIT PAS POURQUOI IL N'Y A PAS D'ARCHE, et
-			// les causes appellent des corrections opposees : hors roche est un
-			// fait de la lithologie, hors zone un reglage du masque.
+			double Col = PorteeM * 2.0;
+			int32 Mince = 0;
+			for (int32 D = 0; D < 4; ++D)
+			{
+				const double L = Rayons[D] + Rayons[D + 4] + PasM;
+				if (L < Col) { Col = L; Mince = D; }
+			}
+			// UN COL DE QUATRE METRES N'EST PAS UN CAP, c'est un caillou isole
+			// que le bruit a laisse : le percer le ferait disparaitre. Il faut
+			// de quoi poser les deux pieds de l'arche.
+			if (Col < Rules.ArchNeckMinM || Col > Rules.ArchNeckMaxM)
+			{
+				++ColTropLarge;
+				continue;
+			}
+
+			const double Angle = Mince * (UE_DOUBLE_PI / 4.0);
+			const FVector2D Travers(FMath::Cos(Angle), FMath::Sin(Angle));
+
+			// --- DE LA MER DES DEUX COTES, ET C'EST CE QUI FAIT LE CAP -------
+			//
+			// Sans ce test on percerait un simple RESSERREMENT de la cote, et
+			// l'arche donnerait sur de la terre : on ne verrait rien au travers.
+			// C'est exactement le defaut que la version d'avant n'a jamais su
+			// voir, faute de regarder ce qu'il y a DERRIERE le trou.
+			// CE QUI COMPTE EST QU'ON VOIE A TRAVERS, pas qu'il y ait de l'eau.
+			// Exiger l'altitude zero des deux cotes echouait partout : la
+			// plateforme d'abrasion est a trois metres et s'etend sur une
+			// centaine, donc le sol derriere un cap est du rivage, pas de la
+			// mer. Le vrai critere est que le sol y passe SOUS le pied de
+			// l'ouverture -- alors le ciel se voit au travers, qu'il y ait de
+			// l'eau ou du galet.
+			const double Marge = Col * 0.5 + 30.0;
+			const double SeuilVue = ZBas + 6.0;
+			const double CoteA = MacroEn(X + Travers.X * Marge, Y + Travers.Y * Marge);
+			const double CoteB = MacroEn(X - Travers.X * Marge, Y - Travers.Y * Marge);
+			if (CoteA > SeuilVue || CoteB > SeuilVue) { ++PasDeMer; continue; }
+
+			// --- LA ROCHE ----------------------------------------------------
+			//
+			// Etretat est de la CRAIE, et les arches marines se font dans la
+			// roche tendre ou dans le basalte. Le granite donne des domes : on
+			// l'ecarte, et on laisse tout le reste.
+			const uint8 Roche = Lithology.Id.IsValidIndex(Cell)
+				? Lithology.Id[Cell] : 0;
+			const float Durete = LithoRules.Catalogue.IsValidIndex(Roche)
+				? LithoRules.Catalogue[Roche].Hardness : 1.0f;
+			if (Durete > Rules.ArchHardnessMaxM) { ++RocheRefusee; continue; }
+
+			// --- CREUSER L'OGIVE ---------------------------------------------
+			//
+			// LARGE EN BAS, ETROITE EN HAUT. Une ouverture a section constante
+			// se lit comme un tunnel fore ; une arche marine est evasee au pied
+			// -- c'est la ou la houle travaille -- et se referme en voute.
+			// L'ouverture descend SOUS le niveau de la mer, pour que les pieds
+			// de l'arche plongent dans l'eau au lieu de reposer sur un seuil.
+			// LA LARGEUR SUIT LE COL AUSSI : une ouverture aussi large que le
+			// cap ne laisse pas de pieds a l'arche, elle la decapite.
+			const double Largeur = FMath::Min(
+				static_cast<double>(Rules.ArchOpeningWidthM), Col * 0.45);
+			const double DemiLongueur = Col * 0.5 + Largeur + 8.0;
+			const int32 Etages = 6;
+
+			for (int32 E = 0; E < Etages; ++E)
+			{
+				const double F = static_cast<double>(E) / (Etages - 1);
+				const double ZE = FMath::Lerp(ZBas, ZHaut, F);
+
+				// Demi-largeur : pleine au pied, elle se ferme en cosinus vers
+				// la cle de voute.
+				const double RE = Largeur * 0.5
+					* FMath::Cos(F * UE_DOUBLE_PI * 0.5) + 1.5;
+
+				const int32 Tranches = FMath::Max(3,
+					FMath::CeilToInt(2.0 * DemiLongueur / 5.0));
+				FVector Precedent = FVector::ZeroVector;
+				for (int32 T = 0; T <= Tranches; ++T)
+				{
+					const double G = static_cast<double>(T) / Tranches;
+					const double S = FMath::Lerp(-DemiLongueur, DemiLongueur, G);
+
+					const double O = 2.0 * WorldseedPerlin::Perlin3D(
+						static_cast<float>(S * 0.04),
+						static_cast<float>(ZE * 0.05), 0.0f, Seed + 7717 + E);
+
+					const FVector Point(X + Travers.X * S - Travers.Y * O,
+						Y + Travers.Y * S + Travers.X * O, ZE + O * 0.4);
+					if (T > 0)
+					{
+						FWorldseedCaveSegment Seg;
+						Seg.AM = Precedent;
+						Seg.BM = Point;
+						Seg.RadiusAM = static_cast<float>(RE);
+						Seg.RadiusBM = static_cast<float>(RE);
+						Out.Segments.Add(Seg);
+					}
+					Precedent = Point;
+				}
+			}
+
+			ArchesPosees.Emplace(X, Y);
+			++Arches;
+
+			FWorldseedCaveArch Fiche;
+			Fiche.CentreM = FVector(X, Y, (ZBas + ZHaut) * 0.5);
+			Fiche.TraversM = Travers;
+			Fiche.EpaisseurM = static_cast<float>(Col);
+			Fiche.RayonM = static_cast<float>(Largeur * 0.5);
+			Fiche.PontM = static_cast<float>(Falaise - ZHaut);
+			Out.Arches.Add(Fiche);
+
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] grottes : arches -- %d sites examines, ")
-				TEXT("%d hors roche, %d hors zone de lames, %d POSEES ")
-				TEXT("(lames de %.0f m)"),
-				Examines, HorsRoche, HorsZone, Arches, Epaisseur);
+				TEXT("[Worldseed] grottes : ARCHE MARINE a (%.0f, %.0f) m, ")
+				TEXT("cap de %.0f m perce sur %.0f x %.0f m, falaise %.0f m, %s"),
+				X, Y, Col, Largeur, HauteurOuverture, Falaise,
+				WorldseedLithology::Name(LithoRules, Roche));
 		}
+
+		// SANS CE RELEVE ON NE SAIT PAS POURQUOI IL N'Y A PAS D'ARCHE, et les
+		// trois causes appellent trois corrections opposees : un col trop large
+		// est un fait du littoral, l'absence de mer derriere un mauvais choix de
+		// site, une roche refusee un reglage.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] grottes : arches -- %d caps examines, %d cols trop ")
+			TEXT("larges, %d sans mer derriere, %d refuses sur la roche, %d POSEES"),
+			Examines, ColTropLarge, PasDeMer, RocheRefusee, Arches);
 	}
 
 	// --- 6. l'index spatial ---------------------------------------------------
