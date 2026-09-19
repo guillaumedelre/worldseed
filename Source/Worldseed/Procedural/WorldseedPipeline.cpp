@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedPipeline.h"
 
+#include "Procedural/WorldseedCoast.h"
+
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedErosion.h"
 #include "Procedural/WorldseedGrid.h"
@@ -365,6 +367,20 @@ namespace WorldseedPipeline
 				E -= Shift;
 			}
 			Out.SeaLevelShiftM += Shift;
+		}
+
+		// --- etape 4b : le recul de falaise ------------------------------------
+		//
+		// APRES LE RECALAGE DU NIVEAU MARIN, donc sur un trait de cote
+		// definitif, et AVANT le climat, pour que les biomes voient le nouveau
+		// relief. L'ordre n'est pas indifferent : pose apres les biomes, la
+		// passe creerait des falaises couvertes de la vegetation d'une plaine.
+		{
+			const FWorldseedCoastRules CoastRules =
+				FWorldseedCoastRules::FromRules(*Rules);
+			WorldseedCoast::Build(Geometry, Out.Lithology,
+				FWorldseedLithologyRules::FromRules(*Rules), CoastRules, Seed,
+				Out.ElevationM);
 		}
 
 		// --- seconde passe de climat sur le relief erode -----------------------

@@ -306,6 +306,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
 	int32 TourneeDesArches();
 
+	/** Les plus hautes falaises LITTORALES, vues depuis la mer. */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
+	int32 TourneeDesFalaises(int32 Combien = 5);
+
 	/**
 	 * Les endroits du monde CHARGE qui meritent d'etre vus.
 	 *

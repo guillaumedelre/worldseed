@@ -189,6 +189,13 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	{
 		bQuitterApresTournee =
 			FParse::Param(FCommandLine::Get(), TEXT("WorldseedQuitter"));
+
+		// LES FALAISES D'ABORD : c'est ce que la passe littorale vient de
+		// creer, et c'est la condition des arches marines. Les arches
+		// ensuite, pour voir si elles ont gagne un endroit d'ou se regarder.
+		Tournee.Reset();
+		EtapeTournee = INDEX_NONE;
+		TourneeDesFalaises(6);
 		TourneeDesArches();
 	}
 
@@ -1190,8 +1197,12 @@ void AWorldseedVoxelTerrain::Photographier(double XMetres, double YMetres,
 
 int32 AWorldseedVoxelTerrain::TourneeDesArches()
 {
-	Tournee.Reset();
-	EtapeTournee = INDEX_NONE;
+	// ELLE AJOUTE, ELLE NE REMET PAS A ZERO. Premiere version : un Reset en
+	// tete, qui effacait en silence les etapes deja posees par la tournee des
+	// falaises -- cinq falaises trouvees, journalisees, et aucune photo. Une
+	// fonction qui construit une liste ne doit pas decider a la place de son
+	// appelant ce qu'il advient de ce qui s'y trouvait.
+	const int32 Depart = Tournee.Num();
 
 	for (int32 I = 0; I < CaveNetwork.Arches.Num(); ++I)
 	{
@@ -1224,7 +1235,7 @@ int32 AWorldseedVoxelTerrain::TourneeDesArches()
 		Tournee.Add(Etape);
 	}
 
-	if (Tournee.Num() > 0)
+	if (Tournee.Num() > 0 && EtapeTournee == INDEX_NONE)
 	{
 		EtapeTournee = 0;
 		AttenteTournee = 0;
@@ -1233,9 +1244,124 @@ int32 AWorldseedVoxelTerrain::TourneeDesArches()
 			E.CibleM.Y + E.DepuisM.Y * E.DistanceM);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : tournee de %d arches"),
-		Tournee.Num());
-	return Tournee.Num();
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : %d arches ajoutees a la tournee"),
+		Tournee.Num() - Depart);
+	return Tournee.Num() - Depart;
+}
+
+int32 AWorldseedVoxelTerrain::TourneeDesFalaises(int32 Combien)
+{
+	if (HeightsM.Num() != Geometry.CellCount())
+	{
+		return 0;
+	}
+
+	const int32 NX = Geometry.NX;
+	const int32 NY = Geometry.NY;
+	const double MailleM = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
+
+	// --- LES PLUS HAUTES FALAISES, ET ELLES DOIVENT ETRE PRES DE LA MER ------
+	//
+	// Un ressaut au fond d'une vallee n'est pas une falaise littorale : ce
+	// qu'on veut juger est la paroi qui tombe DANS l'eau, parce que c'est elle
+	// qui porte les arches marines et c'est elle que cette passe a creee.
+	struct FCandidat
+	{
+		int32 Cellule = 0;
+		float Chute = 0.0f;
+		FVector2D VersLeBas = FVector2D::ZeroVector;
+	};
+	TArray<FCandidat> Candidats;
+
+	for (int32 J = 2; J < NY - 2; ++J)
+	{
+		for (int32 I = 2; I < NX - 2; ++I)
+		{
+			const int32 C = J * NX + I;
+			const float H = HeightsM[C];
+			if (H <= 5.0f) { continue; }
+
+			float Chute = 0.0f;
+			FIntPoint Vers = FIntPoint::ZeroValue;
+			bool bMerProche = false;
+
+			for (int32 DJ = -2; DJ <= 2; ++DJ)
+			{
+				for (int32 DI = -2; DI <= 2; ++DI)
+				{
+					const int32 V = (J + DJ) * NX + (I + DI);
+					if (HeightsM[V] <= 0.0f) { bMerProche = true; }
+					const float D = H - HeightsM[V];
+					if (D > Chute) { Chute = D; Vers = FIntPoint(DI, DJ); }
+				}
+			}
+
+			if (!bMerProche || Chute < 25.0f) { continue; }
+
+			FCandidat K;
+			K.Cellule = C;
+			K.Chute = Chute;
+			K.VersLeBas = FVector2D(Vers.X, Vers.Y).GetSafeNormal();
+			Candidats.Add(K);
+		}
+	}
+
+	Candidats.Sort([](const FCandidat& A, const FCandidat& B)
+	{
+		return A.Chute > B.Chute;
+	});
+
+	int32 Ajoutees = 0;
+	TArray<FVector2D> Prises;
+	for (const FCandidat& K : Candidats)
+	{
+		if (Ajoutees >= Combien) { break; }
+
+		const double X = (static_cast<double>(K.Cellule % NX) / NX - 0.5)
+			* Geometry.WidthM();
+		const double Y = (static_cast<double>(K.Cellule / NX) / NY - 0.5)
+			* Geometry.HeightM;
+
+		// Deux falaises voisines sont la MEME falaise.
+		bool bVoisine = false;
+		for (const FVector2D& P : Prises)
+		{
+			if (FVector2D::DistSquared(FVector2D(X, Y), P) < 3000.0 * 3000.0)
+			{
+				bVoisine = true;
+				break;
+			}
+		}
+		if (bVoisine) { continue; }
+		Prises.Emplace(X, Y);
+
+		FWorldseedPhotoStop E;
+		E.Nom = FString::Printf(TEXT("falaise%02d"), Ajoutees + 1);
+		E.CibleM = FVector(X, Y, HeightsM[K.Cellule] * 0.5);
+
+		// ON SE MET DU COTE DE LA MER, sinon on photographie le plateau et la
+		// falaise est hors champ -- elle est DERRIERE la camera.
+		E.DepuisM = K.VersLeBas;
+		E.DistanceM = FMath::Max(180.0f, K.Chute * 4.0f);
+		E.HauteurM = 10.0f;
+		Tournee.Add(E);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] photo : falaise%02d a (%.0f, %.0f) m, ")
+			TEXT("sommet %.0f m, chute %.0f m sur %.0f m"),
+			Ajoutees + 1, X, Y, HeightsM[K.Cellule], K.Chute, MailleM * 2.0);
+		++Ajoutees;
+	}
+
+	if (Ajoutees > 0 && EtapeTournee == INDEX_NONE)
+	{
+		EtapeTournee = 0;
+		AttenteTournee = 0;
+		const FWorldseedPhotoStop& S = Tournee[0];
+		TeleporterJoueur(S.CibleM.X + S.DepuisM.X * S.DistanceM,
+			S.CibleM.Y + S.DepuisM.Y * S.DistanceM);
+	}
+	return Ajoutees;
 }
 
 void AWorldseedVoxelTerrain::AvancerTournee()

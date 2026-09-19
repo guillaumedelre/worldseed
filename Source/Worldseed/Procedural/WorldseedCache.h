@@ -30,7 +30,7 @@
  *       invalider les mondes en cache, sinon ils rendent l'ancienne carte des
  *       roches sans le signaler. Paye comptant le jour de son ajout.
  */
-#define WORLDSEED_PIPELINE_VERSION 9
+#define WORLDSEED_PIPELINE_VERSION 10
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry
