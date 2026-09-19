@@ -4066,3 +4066,48 @@ on ne revient qu'apres avoir regagne `GroundProxyHideHysteresisM` (2 m).
 Le minuteur tourne sur les DEUX chemins, voxel comme carte d'altitude : la
 nappe traverse les cavites dans les deux cas. Celui du terrain en carte
 d'altitude ne demarrait que si `bUseVoxelMesher` etait faux.
+
+### Le filet qui rattrape le joueur ne jouait QU'UNE FOIS (19 septembre 2026)
+
+Signale : « je pense que le joueur tombe ». Mesure : pion a **-4745 m**, en
+chute a quarante metres par seconde, et rien ne le ramenait.
+
+**CE QUE CE N'ETAIT PAS**, deux hypotheses eliminees par la mesure avant de
+toucher au code :
+- *la collision cuite en asynchrone que depasserait un corps rapide* : un
+  lacher de **213 m** sur terrain deja charge atterrit proprement a 14,2 m en
+  `MOVE_WALKING`. Le mecanisme existe peut-etre, il n'est pas en cause ici ;
+- *un plancher manquant a l'endroit ou je l'avais pose* : la colonne y porte
+  bien trois surfaces -- sol exterieur 90,2 m, plafond de galerie 85,3,
+  **plancher 77,9**. Rejoue a l'identique, le pion glisse une vingtaine de
+  secondes puis se stabilise a 82,0 m. **Je n'ai pas reproduit la chute
+  initiale**, et il faut le dire : mon propre placement en `MOVE_WALKING` dans
+  une galerie en pente reste la cause la plus probable.
+
+**LA VRAIE FAILLE, elle, est structurelle et independante de la cause.**
+`HoldOrReleasePlayer` commencait par
+
+    if (!bHoldPlayer || bPlayerReleased || !bWorldReady) { return; }
+
+`bPlayerReleased` se verrouille a la mise en place initiale : **apres elle, il
+n'y a plus AUCUN filet**. Or le terrain n'est maille que de la surface a
+`bandeM` en dessous -- cent metres. Plus bas, aucun chunk n'existe et il ne
+peut RIEN y avoir : un pion qui passe sous la bande tombe indefiniment.
+
+**LE CRITERE DU FILET VIENT DE LA BANDE ELLE-MEME, il n'est pas arbitraire.**
+Sous `bandeM + marge`, le pion n'est pas en train de tomber dans un trou, il
+est HORS DU MONDE -- aucune geometrie ne peut l'y attendre. On rearme alors la
+mise en place initiale plutot que de reimplementer la remontee : elle sait deja
+choisir du sol plat, tenir le pion EN VOL le temps du maillage, et ne le
+relacher qu'une fois le chunk **solide**. Dupliquer ce travail aurait fait
+diverger les deux moities.
+
+**EPREUVE** : pion jete a -800 m en chute libre. Journal ->
+`joueur a 702 m SOUS la bande de terrain -- hors du monde, on le remonte`,
+puis `joueur tenu a z 1312 cm`, puis `joueur rendu a la gravite, chunk -3,-3,0
+solide`. Etat final : (-80, -80, 3,9) m en `MOVE_WALKING`.
+
+**PIEGE UHT AU PASSAGE** : `BlueprintReadWrite should not be used on private
+members`. Une `UPROPERTY` posee pres d'un membre prive herite de sa section ;
+la placer aupres des autres reglages editables, pas aupres du membre dont elle
+parle.

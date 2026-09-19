@@ -801,7 +801,7 @@ bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
 
 void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 {
-	if (!bHoldPlayer || bPlayerReleased || !bWorldReady)
+	if (!bHoldPlayer || !bWorldReady)
 	{
 		return;
 	}
@@ -822,6 +822,37 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	double X = PosCm.X / WorldseedMetersToCm;
 	double Y = PosCm.Y / WorldseedMetersToCm;
 	float SurfaceM = Density.SurfaceHeightM(X, Y);
+
+	// --- LE FILET EST PERMANENT, IL NE JOUE PAS QU'UNE FOIS ------------------
+	//
+	// Cette fonction sortait immediatement des que bPlayerReleased etait pose,
+	// donc apres la mise en place initiale il n'y avait PLUS AUCUN filet. Un
+	// pion qui passe sous la bande de terrain tombe alors indefiniment :
+	// mesure, -4745 m a quarante metres par seconde, et rien ne le ramene.
+	//
+	// LE CRITERE N'EST PAS ARBITRAIRE, IL VIENT DE LA BANDE ELLE-MEME. Le
+	// terrain n'est maille que de la surface a bandeM en dessous ; plus bas,
+	// aucun chunk n'existe et il ne peut RIEN y avoir. Un pion qu'on y trouve
+	// n'est pas en train de tomber dans un trou, il est HORS DU MONDE.
+	if (bPlayerReleased)
+	{
+		const double SousM = SurfaceM - PosCm.Z / WorldseedMetersToCm;
+		if (SousM <= DensityRules.BandDepthM + PlayerRescueMarginM)
+		{
+			return;
+		}
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] voxel : joueur a %.0f m SOUS la bande de terrain ")
+			TEXT("-- hors du monde, on le remonte"),
+			SousM - DensityRules.BandDepthM);
+
+		// On rearme la mise en place initiale, qui sait deja poser le pion et
+		// ne le relacher qu'une fois le chunk SOLIDE. Refaire ce travail ici
+		// serait le dupliquer, et les deux moities divergeraient.
+		bPlayerReleased = false;
+		bPlayerHeld = false;
+	}
 
 	if (!bPlayerHeld)
 	{

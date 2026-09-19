@@ -102,6 +102,18 @@ public:
 		meta = (ClampMin = "8.0"))
 	float ChunkSideM = 32.0f;
 
+	/**
+	 * Marge sous la bande avant de declarer le joueur hors du monde, en metres.
+	 *
+	 * La bande fait deja cent metres ; on n'y ajoute qu'une marge de securite
+	 * pour ne pas rattraper un joueur qui explore legitimement une cavite
+	 * profonde. Sous bande + marge, il n'existe aucune geometrie : ce n'est
+	 * plus une chute, c'est une sortie du monde.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
+		meta = (ClampMin = "0.0"))
+	float PlayerRescueMarginM = 20.0f;
+
 	/** Rayon de construction autour du joueur, en metres. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "32.0"))
