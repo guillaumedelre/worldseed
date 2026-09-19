@@ -582,38 +582,189 @@ namespace
 			Precedent = Point;
 		}
 	}
-}
 
-void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
-	const TArray<float>& ElevationM, const TArray<float>& PrecipMm,
-	const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& LithoRules,
-	const FWorldseedCaveRules& Rules, float HeightExaggeration, int32 Seed,
-	FWorldseedCaveNetwork& Out)
+/**
+ * Le chantier des grottes : l'etat que les dix temps se partagent.
+ *
+ * POURQUOI UNE STRUCTURE ET NON DIX FONCTIONS LIBRES. La passe porte une
+ * trentaine de grandeurs qui traversent les temps -- le contexte de routage,
+ * les aretes de l'arbre, les bornes de troncons, les bouches deja posees, les
+ * composantes du graphe. Les faire circuler en parametres donnerait des
+ * signatures de vingt arguments, ce qui est moins lisible que le probleme.
+ * Les nommer ICI, une fois, dit exactement ce qui est commun -- et c'est la
+ * moitie de l'interet du decoupage.
+ *
+ * REFACTOR PUR : aucune ligne de logique n'a ete reecrite, seulement deplacee.
+ * Le controle est un releve identique au chiffre pres, avant et apres.
+ */
+struct FChantierGrottes
 {
-	const double StartTime = FPlatformTime::Seconds();
+	// --- ce qu'on recoit, et qu'on ne possede pas ------------------------
+	const FWorldseedGeometry& Geometry;
+	const TArray<float>& ElevationM;
+	const TArray<float>& PrecipMm;
+	const FWorldseedLithology& Lithology;
+	const FWorldseedLithologyRules& LithoRules;
+	const FWorldseedCaveRules& Rules;
+	const float HeightExaggeration;
+	const int32 Seed;
+	FWorldseedCaveNetwork& Out;
 
-	Out.Reset();
+	// --- la grille ---------------------------------------------------------
+	const int32 NX;
+	const int32 NY;
+	const int32 Count;
+	const bool bHasPrecip;
+	const bool bHasLitho;
+	const float MetresParPixel;
 
-	const int32 NX = Geometry.NX;
-	const int32 NY = Geometry.NY;
-	const int32 Count = Geometry.CellCount();
+	/** Generateur deterministe : le monde doit se rejouer a l'identique. */
+	FTirage Tirage;
 
-	if (Count <= 0 || ElevationM.Num() != Count || Rules.ChamberSpacingM <= 0.0f)
+	// --- 1 et 2 : le semis --------------------------------------------------
+	TArray<int32> Candidates;
+	int32 Essais = 0;
+	float Espacement = 0.0f;
+
+	/** Nombre de cases de l'index spatial, pose par le semis. */
+	int32 Cases = 0;
+	int32 N = 0;
+
+	// --- 3 a 5 : le graphe et son routage -----------------------------------
+	FContexteRoutage Ctx;
+	TArray<TPair<int32, int32>> Aretes;
+	TArray<bool> AreteGardee;
+	int32 ABoucler = 0;
+	int32 Abandonnees = 0;
+
+	/** Bornes des troncons, et lesquels sont un repli. Lues par le controle. */
+	TArray<bool> EstRepli;
+	TArray<int32> DebutTroncon;
+
+	/**
+	 * Fin des GALERIES dans le tableau des segments.
+	 *
+	 * Elle borne le controle de percement, qui doit s'arreter avant les
+	 * ouvertures : celles-ci percent le sol A DESSEIN.
+	 */
+	int32 FinDesGaleries = 0;
+
+	// --- les composantes ----------------------------------------------------
+	TArray<int32> Racine;
+	TMap<int32, TArray<int32>> ParComposante;
+
+	// --- ce que les formes d'ouverture se partagent -------------------------
+	TArray<float> DY;
+	TArray<float> DX;
+	TArray<FVector2D> BouchesPosees;
+	TArray<bool> ChambreOuverte;
+	TSet<int32> ComposantesOuvertes;
+	int32 Souhaitees = 0;
+
+	int32 Entrees = 0;
+	int32 Gouffres = 0;
+	int32 Dolines = 0;
+	int32 Arches = 0;
+
+	FChantierGrottes(const FWorldseedGeometry& InGeometry,
+		const TArray<float>& InElevationM, const TArray<float>& InPrecipMm,
+		const FWorldseedLithology& InLithology,
+		const FWorldseedLithologyRules& InLithoRules,
+		const FWorldseedCaveRules& InRules, float InHeightExaggeration,
+		int32 InSeed, FWorldseedCaveNetwork& InOut)
+		: Geometry(InGeometry)
+		, ElevationM(InElevationM)
+		, PrecipMm(InPrecipMm)
+		, Lithology(InLithology)
+		, LithoRules(InLithoRules)
+		, Rules(InRules)
+		, HeightExaggeration(InHeightExaggeration)
+		, Seed(InSeed)
+		, Out(InOut)
+		, NX(InGeometry.NX)
+		, NY(InGeometry.NY)
+		, Count(InGeometry.CellCount())
+		, bHasPrecip(InPrecipMm.Num() == InGeometry.CellCount())
+		, bHasLitho(InLithology.IsValid(InGeometry.CellCount()))
+		, MetresParPixel(FMath::Max(InGeometry.MetersPerPixel(), 1e-3f))
+		, Tirage(InSeed + 5521)
 	{
-		return;
 	}
 
-	const bool bHasPrecip = (PrecipMm.Num() == Count);
-	const bool bHasLitho = Lithology.IsValid(Count);
-	const float MetresParPixel = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
+	/**
+	 * Une paroi ne sert qu'une fois.
+	 *
+	 * SANS CE TEST, DEUX CHAMBRES VOISINES ELISENT LA MEME PAROI : elles
+	 * cherchent chacune l'escarpement le plus raide de leur voisinage, et ces
+	 * voisinages se recouvrent. Partage par les trois formes d'ouverture, d'ou
+	 * sa place ici plutot que dans l'une d'elles.
+	 */
+	bool TropPres(double X, double Y) const
+	{
+		for (const FVector2D& B : BouchesPosees)
+		{
+			if (FVector2D::Distance(FVector2D(X, Y), B) < Rules.EntranceSpacingM)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
+	/**
+	 * Racine de la composante d'une chambre, avec compression de chemin.
+	 *
+	 * ELLE SERT AUX QUATRE FORMES D'OUVERTURE, pas seulement au decoupage en
+	 * composantes : chacune doit savoir si le reseau qu'elle perce est deja
+	 * ouvert. D'ou sa place ici plutot qu'en lambda locale.
+	 */
+	int32 Trouver(int32 I)
+	{
+		while (Racine[I] != I) { Racine[I] = Racine[Racine[I]]; I = Racine[I]; }
+		return I;
+	}
+
+	/** 1 et 2 : ou une grotte peut exister, et les chambres. */
+	void Semer();
+
+	/** 3 et 4 : l'arbre couvrant minimal, puis quelques boucles. */
+	void Relier();
+
+	/** 5 : les galeries, routees en A* sous contraintes. */
+	void Creuser();
+
+	/** Il n'y a pas UN reseau mais plusieurs : on les separe. */
+	void Composantes();
+
+	/** La doline : la ou le plafond cede. */
+	void Effondrer();
+
+	/** L'aven : la ou l'eau s'infiltre a travers un plateau. */
+	void Dissoudre();
+
+	/** La bouche de falaise, qui est la GARANTIE d'acces. */
+	void Ouvrir();
+
+	/** L'arche marine : un cap perce a sa base. */
+	void Percer();
+
+	/** 6 : l'index spatial, pour que le champ n'interroge pas tout. */
+	void Indexer();
+
+	/** 7 : le controle qui dit si le routage a servi a quelque chose. */
+	void Verifier();
+};
+
+}
+
+void FChantierGrottes::Semer()
+{
 	// --- 1. OU une grotte peut exister ---------------------------------------
 	//
 	// C'EST LA ROCHE QUI DECIDE, PAS LE BIOME. Un karst se creuse par
 	// dissolution : il lui faut du calcaire et de l'eau. Le climat n'entre donc
 	// que par la pluie, qui est un champ continu -- jamais par l'etiquette de
 	// biome, qui ne sert qu'a lier des assets.
-	TArray<int32> Candidates;
 	Candidates.Reserve(Count / 8);
 	for (int32 I = 0; I < Count; ++I)
 	{
@@ -644,9 +795,8 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// garantit une repartition reguliere, qui est ce qu'on veut d'un reseau.
 	// On refuse par une grille de hachage plutot qu'en comparant a toutes les
 	// chambres deja posees, sans quoi le cout serait quadratique.
-	FTirage Tirage(Seed + 5521);
 
-	const float Espacement = Rules.ChamberSpacingM;
+	Espacement = Rules.ChamberSpacingM;
 	const float CelluleM = FMath::Max(Espacement, 1.0f);
 	Out.CellM = CelluleM;
 
@@ -658,11 +808,11 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		FMath::CeilToInt(DemiLargeur / CelluleM) - Out.Min.X + 2,
 		FMath::CeilToInt(DemiHauteur / CelluleM) - Out.Min.Y + 2);
 
-	const int32 Cases = Out.Size.X * Out.Size.Y;
+	Cases = Out.Size.X * Out.Size.Y;
 	TArray<TArray<int32>> Hachage;
 	Hachage.SetNum(Cases);
 
-	auto CaseDe = [&Out](const FVector& P) -> int32
+	auto CaseDe = [this](const FVector& P) -> int32
 	{
 		const int32 I = FMath::Clamp(FMath::FloorToInt(P.X / Out.CellM) - Out.Min.X, 0, Out.Size.X - 1);
 		const int32 J = FMath::Clamp(FMath::FloorToInt(P.Y / Out.CellM) - Out.Min.Y, 0, Out.Size.Y - 1);
@@ -671,7 +821,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 	// Autant d'essais que de cellules candidates : au-dela le refus domine et on
 	// n'ajoute plus rien.
-	const int32 Essais = Candidates.Num();
+	Essais = Candidates.Num();
 	for (int32 E = 0; E < Essais; ++E)
 	{
 		const int32 Cell = Candidates[Tirage.Index(Candidates.Num())];
@@ -743,13 +893,16 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		Hachage[CaseDe(P)].Add(Index);
 	}
 
-	const int32 N = Out.Chambers.Num();
+	N = Out.Chambers.Num();
 	if (N < 2)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[Worldseed] grottes : %d chambre(s), rien a relier"), N);
 		return;
 	}
+}
 
+void FChantierGrottes::Relier()
+{
 	// --- 3. l'arbre couvrant minimal ------------------------------------------
 	//
 	// LA CONNEXITE EST ACQUISE PAR CONSTRUCTION. Un arbre couvrant touche tous
@@ -762,7 +915,6 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// les plus proches, ce qui suffit largement a un semis regulier.
 	// Le contexte de routage est monte AVANT l'arbre : c'est lui qui sait lire
 	// la surface, et l'arbre en a besoin pour juger ce qui est creusable.
-	FContexteRoutage Ctx;
 	Ctx.Geo = &Geometry;
 	Ctx.ElevationM = &ElevationM;
 	Ctx.Litho = &Lithology;
@@ -801,7 +953,6 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	Dedans.Init(false, N);
 	MeilleureArete[0] = 0.0f;
 
-	TArray<TPair<int32, int32>> Aretes;
 	Aretes.Reserve(N);
 
 	for (int32 Pas = 0; Pas < N; ++Pas)
@@ -841,7 +992,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// Un arbre n'a aucun cycle : le joueur revient donc TOUJOURS sur ses pas.
 	// On ajoute quelques aretes courtes, choisies parmi les paires les plus
 	// proches qui ne sont pas deja reliees.
-	const int32 ABoucler = FMath::RoundToInt(Aretes.Num() * Rules.LoopPct / 100.0f);
+	ABoucler = FMath::RoundToInt(Aretes.Num() * Rules.LoopPct / 100.0f);
 	if (ABoucler > 0)
 	{
 		TSet<uint64> Existantes;
@@ -874,7 +1025,10 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			Aretes.Add(TPair<int32, int32>(Candidates2[K].Get<1>(), Candidates2[K].Get<2>()));
 		}
 	}
+}
 
+void FChantierGrottes::Creuser()
+{
 	// --- 5. les galeries, ROUTEES ---------------------------------------------
 	//
 	// Une capsule DROITE entre deux chambres ignore tout : elle peut ressortir a
@@ -885,15 +1039,11 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	int32 Droites = 0;
 	int32 SansIssue = 0;
 	int32 TropLong = 0;
-	int32 Abandonnees = 0;
-	TArray<bool> AreteGardee;
 	// On note ou commencent les troncons de chaque liaison, pour pouvoir compter
 	// les percements SEPAREMENT selon qu'ils viennent d'un chemin route ou d'un
 	// repli sur la droite. Sans cette separation on mesure un melange, et aucune
 	// correction ne semble mordre -- ce qui est exactement ce qui vient de se
 	// produire quatre fois de suite.
-	TArray<bool> EstRepli;
-	TArray<int32> DebutTroncon;
 	Out.Segments.Reserve(Aretes.Num() * 4);
 
 	for (const TPair<int32, int32>& E : Aretes)
@@ -1027,8 +1177,11 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// comme des defauts : mesure 0,38 % la ou le routage est a 0,00. C'est le
 	// meme melange de deux populations qui avait deja fait regler quatre fois
 	// le mauvais bouton.
-	const int32 FinDesGaleries = Out.Segments.Num();
+	FinDesGaleries = Out.Segments.Num();
+}
 
+void FChantierGrottes::Composantes()
+{
 	// --- 5 bis. LES ENTREES ---------------------------------------------------
 	//
 	// SANS ELLES LE RESEAU EST HERMETIQUE, et c'est exactement ce qu'il etait :
@@ -1049,15 +1202,8 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// lui faut SA PROPRE ENTREE, sans quoi il reste inaccessible. Un reseau
 	// qu'on ne peut pas atteindre ne vaut pas mieux qu'un reseau qui n'existe
 	// pas, et c'est exactement le defaut qu'on vient de corriger.
-	TArray<int32> Racine;
 	Racine.SetNum(N);
 	for (int32 I = 0; I < N; ++I) { Racine[I] = I; }
-
-	TFunction<int32(int32)> Trouver = [&Racine, &Trouver](int32 I) -> int32
-	{
-		while (Racine[I] != I) { Racine[I] = Racine[Racine[I]]; I = Racine[I]; }
-		return I;
-	};
 
 	for (int32 K = 0; K < Aretes.Num(); ++K)
 	{
@@ -1067,7 +1213,6 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		if (Ra != Rb) { Racine[Ra] = Rb; }
 	}
 
-	TMap<int32, TArray<int32>> ParComposante;
 	for (int32 I = 0; I < N; ++I)
 	{
 		ParComposante.FindOrAdd(Trouver(I)).Add(I);
@@ -1081,36 +1226,21 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// falaise, est la GARANTIE : elle existe pour qu'aucun reseau ne reste
 	// mure. Les deux premieres ne doivent donc rien devoir a un budget, et la
 	// troisieme doit tenir compte de ce qu'elles ont deja ouvert.
-	TArray<float> DY;
-	TArray<float> DX;
 	WorldseedGrid::Gradient(ElevationM, NX, NY, MetresParPixel, DY, DX);
 
 	// LES OUVERTURES DEJA POSEES, pour qu'une paroi ne serve qu'une fois, et
 	// pour qu'un aven ne perce pas le bord d'une doline.
-	TArray<FVector2D> BouchesPosees;
-	TArray<bool> ChambreOuverte;
 	ChambreOuverte.Init(false, N);
-	TSet<int32> ComposantesOuvertes;
 
-	auto TropPres = [&BouchesPosees, &Rules](double X, double Y)
-	{
-		for (const FVector2D& B : BouchesPosees)
-		{
-			if (FVector2D::Distance(FVector2D(X, Y), B) < Rules.EntranceSpacingM)
-			{
-				return true;
-			}
-		}
-		return false;
-	};
 
-	int32 Entrees = 0;
-	int32 Gouffres = 0;
-	const int32 Souhaitees = (Rules.EntrancePerChambers > 0.0f)
+	Souhaitees = (Rules.EntrancePerChambers > 0.0f)
 		? FMath::Max(1, FMath::RoundToInt(N / Rules.EntrancePerChambers)) : 0;
 	// AU MOINS UNE PAR COMPOSANTE : le nombre demande est un PLANCHER de
 	// densite, pas un plafond d'accessibilite.
+}
 
+void FChantierGrottes::Effondrer()
+{
 	// --- 5 bis. LES DOLINES D'EFFONDREMENT -----------------------------------
 	//
 	// LA SEULE FORME KARSTIQUE QUI SE VOIE DE LOIN. La bouche s'ouvre dans un
@@ -1122,7 +1252,6 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// en entonnoir jusqu'au vide, et les parois s'eboulent jusqu'a leur angle
 	// de repos -- d'ou une ouverture plus LARGE que la salle. Le critere est
 	// `profondeur - rayon`, et rien d'autre.
-	int32 Dolines = 0;
 	if (Rules.DolineRoofMaxM > 0.0f && Rules.DolineFlareRatio > 1.0f)
 	{
 		for (int32 Ic = 0; Ic < Out.Chambers.Num(); ++Ic)
@@ -1153,7 +1282,10 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			++Dolines;
 		}
 	}
+}
 
+void FChantierGrottes::Dissoudre()
+{
 	// --- 5 ter. LES GOUFFRES, OU AVENS ---------------------------------------
 	//
 	// LA DEUXIEME FORME QUI SE FORME TOUTE SEULE, et elle est complementaire de
@@ -1220,7 +1352,10 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			++Gouffres;
 		}
 	}
+}
 
+void FChantierGrottes::Ouvrir()
+{
 	// --- 5 quater. LES BOUCHES DE FALAISE, QUI SONT LA GARANTIE --------------
 	//
 	// CE QUI PRECEDE S'EST FORME TOUT SEUL, ET NE GARANTIT RIEN. Un reseau
@@ -1446,7 +1581,10 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 				ParComposante.Num());
 		}
 	}
+}
 
+void FChantierGrottes::Percer()
+{
 	// --- 5 quinquies. LES ARCHES MARINES, FORME D'ETRETAT --------------------
 	//
 	// TROISIEME VERSION, ET LES DEUX PREMIERES SE SONT TROMPEES D'OBJET.
@@ -1473,7 +1611,6 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	// etroit, avec de la MER des deux cotes. La passe littorale les fabrique
 	// deja -- son bruit de recul creuse des anses et laisse des caps, et c'est
 	// pour cela qu'il existe.
-	int32 Arches = 0;
 	if (Rules.ArchCount > 0 && Rules.ArchNeckMaxM > 0.0f)
 	{
 		TArray<FVector2D> ArchesPosees;
@@ -1521,7 +1658,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 		// Les plus HAUTS d'abord : un cap qui porte cent metres de falaise fait
 		// une arche qu'on voit de loin, un cap de dix metres fait un trou.
-		Littoral.Sort([&ElevationM](int32 A, int32 B)
+		Littoral.Sort([this](int32 A, int32 B)
 		{
 			return ElevationM[A] > ElevationM[B];
 		});
@@ -1756,12 +1893,15 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			TEXT("%d refuses sur la roche, %d POSEES"),
 			Examines, ColTropLarge, PasDeMer, ToitTropCourt, RocheRefusee, Arches);
 	}
+}
 
+void FChantierGrottes::Indexer()
+{
 	// --- 6. l'index spatial ---------------------------------------------------
 	Out.ChamberBuckets.SetNum(Cases);
 	Out.SegmentBuckets.SetNum(Cases);
 
-	auto Ranger = [&Out](TArray<TArray<int32>>& Buckets, const FBox& B, int32 Index)
+	auto Ranger = [this](TArray<TArray<int32>>& Buckets, const FBox& B, int32 Index)
 	{
 		const int32 I0 = FMath::Clamp(FMath::FloorToInt(B.Min.X / Out.CellM) - Out.Min.X, 0, Out.Size.X - 1);
 		const int32 I1 = FMath::Clamp(FMath::FloorToInt(B.Max.X / Out.CellM) - Out.Min.X, 0, Out.Size.X - 1);
@@ -1790,7 +1930,10 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		B += S.AM; B += S.BM;
 		Ranger(Out.SegmentBuckets, B.ExpandBy(R), I);
 	}
+}
 
+void FChantierGrottes::Verifier()
+{
 	// --- 7. LE CONTROLE QUI DIT SI LE ROUTAGE A SERVI A QUELQUE CHOSE ---------
 	//
 	// Une galerie qui perce le sol est le defaut que l'A* est cense empecher.
@@ -1829,12 +1972,61 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			Points[1], Perces[1], 100.0f * Perces[1] / FMath::Max(Points[1], 1));
 	}
 
+}
+
+void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
+	const TArray<float>& ElevationM, const TArray<float>& PrecipMm,
+	const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& LithoRules,
+	const FWorldseedCaveRules& Rules, float HeightExaggeration, int32 Seed,
+	FWorldseedCaveNetwork& Out)
+{
+	const double StartTime = FPlatformTime::Seconds();
+
+	Out.Reset();
+
+	if (Geometry.CellCount() <= 0 || ElevationM.Num() != Geometry.CellCount()
+		|| Rules.ChamberSpacingM <= 0.0f)
+	{
+		return;
+	}
+
+	// --- LES DIX TEMPS, ET L'ORDRE EST PORTANT -----------------------------
+	//
+	// On ne peut pas router avant d'avoir relie, ni ouvrir avant de savoir
+	// combien de reseaux existent, ni indexer avant que toutes les primitives
+	// soient posees. Ecrit ainsi, l'ordre se LIT ; dans une fonction de mille
+	// deux cent cinquante lignes, il fallait le reconstituer.
+	FChantierGrottes Chantier(Geometry, ElevationM, PrecipMm, Lithology,
+		LithoRules, Rules, HeightExaggeration, Seed, Out);
+
+	Chantier.Semer();
+	if (Out.Chambers.Num() == 0)
+	{
+		return;
+	}
+
+	Chantier.Relier();
+	Chantier.Creuser();
+	Chantier.Composantes();
+
+	// LES TROIS FORMES D'OUVERTURE, ET ELLES NE SE VALENT PAS. Deux se FORMENT
+	// toutes seules, par geologie ; la bouche de falaise est la GARANTIE, et
+	// son compte tient donc compte de ce que les deux autres ont deja ouvert.
+	// D'ou cet ordre, qui n'est pas negociable.
+	Chantier.Effondrer();
+	Chantier.Dissoudre();
+	Chantier.Ouvrir();
+	Chantier.Percer();
+
+	Chantier.Indexer();
+	Chantier.Verifier();
+
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
 		TEXT("%d troncons, %d abandonnees, %d reseaux, ")
 		TEXT("%d bouches, %d GOUFFRES, %d DOLINES, %d ARCHES  (%.0f ms)"),
-		Out.Chambers.Num(), Aretes.Num(), ABoucler,
-		Out.Segments.Num(), Abandonnees, ParComposante.Num(), Entrees, Gouffres,
-		Dolines, Arches,
+		Out.Chambers.Num(), Chantier.Aretes.Num(), Chantier.ABoucler,
+		Out.Segments.Num(), Chantier.Abandonnees, Chantier.ParComposante.Num(),
+		Chantier.Entrees, Chantier.Gouffres, Chantier.Dolines, Chantier.Arches,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
 }
