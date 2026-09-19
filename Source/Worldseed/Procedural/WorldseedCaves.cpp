@@ -607,9 +607,21 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		const FVector P(X, Y, Surface - Profondeur);
 		const float Rayon = Tirage.Entre(Rules.ChamberRadiusMinM, Rules.ChamberRadiusMaxM);
 
-		// Une chambre dont le plancher passe sous la mer est refusee : la
-		// contrainte est posee ICI, au semis, et non corrigee apres coup.
+		// DEUX BORNES, ET J'EN AVAIS OUBLIE UNE. Le plancher ne doit pas passer
+		// sous la mer -- c'etait la seule verifiee -- mais le PLAFOND ne doit pas
+		// sortir du sol non plus. Une chambre a douze metres de profondeur avec
+		// seize metres de rayon depasse de quatre : c'est un puits a ciel ouvert,
+		// et aucune mesure ne le voyait puisque le controle de percement
+		// n'echantillonne que les GALERIES.
+		//
+		// La condition revient a exiger que la profondeur tiree depasse le rayon
+		// tire ; la refuser au semis vaut mieux que de la rattraper apres, ou il
+		// faudrait choisir entre deplacer la chambre et la retrecir.
 		if (P.Z - Rayon < Rules.SeaMarginM)
+		{
+			continue;
+		}
+		if (P.Z + Rayon > Surface - Rules.TunnelRadiusMaxM)
 		{
 			continue;
 		}

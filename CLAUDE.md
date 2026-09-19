@@ -3803,3 +3803,38 @@ toutes les entrees et les autres resteraient murees.
 **ETAT FINAL** : 28 chambres, 31 liaisons dont 8 abandonnees, **5 reseaux**,
 **7 entrees**, 297 troncons, 466 ms. Percement **0,29 %**, soit exactement les
 sept bouches, qui percent a dessein. Le repli drape n'est plus jamais employe.
+
+### Arbitrage de la profondeur des grottes (19 septembre 2026)
+
+**Retenu : 20 a 45 m de profondeur, salles de 6 a 16 m de rayon.** 25 chambres,
+4 reseaux, 6 entrees, 6 liaisons perdues sur 28.
+
+**DEUX BORNES ENCADRENT CE CHOIX, et l'une manquait.**
+
+- *Le plancher* : une chambre sous le niveau de la mer serait noyee par le
+  plugin Water. L'altitude minimale exigee vaut donc
+  `profondeurMax + rayonMax + niveauMerMarge`, soit **66 m** ici. C'est ce qui
+  cantonne les grottes aux collines, et c'est voulu.
+- *Le plafond* : **`profondeurMin` doit depasser `rayonMax`**, sinon le haut de
+  la chambre sort du sol et ouvre un puits a ciel ouvert. Ce defaut a EXISTE --
+  la configuration en vigueur juste avant cet arbitrage avait douze metres de
+  profondeur minimale pour seize de rayon maximal -- et **aucune mesure ne le
+  voyait**, le controle de percement n'echantillonnant que les galeries. Trouve
+  en preparant les chiffres de l'arbitrage, pas par une sonde.
+
+**LES QUATRE EQUILIBRES, a bornes respectees :**
+
+| profondeur | rayon | chambres | reseaux | entrees | liaisons perdues |
+|---|---|---|---|---|---|
+| 20-45 m | 6-16 | **25** | **4** | 6 | 6 sur 28 |
+| 28-90 m | 6-22 | 21 | 5 | 5 | **4 sur 23** |
+| 24-65 m | 6-20 | 22 | **4** | 6 | 6 sur 24 |
+| 16-30 m | 5-12 | **29** | 7 | 7 | 8 sur 32 |
+
+**RESULTAT CONTRE-INTUITIF A RETENIR : la bande la PLUS PROFONDE perd le MOINS
+de liaisons.** On attend l'inverse -- plus on creuse loin, plus c'est difficile.
+Mais une chambre profonde ne peut exister que sur les hauteurs, et la il y a de
+la roche partout pour creuser entre elles. Les chambres peu profondes
+s'eparpillent jusqu'en plaine, ou la mer interrompt tout : la bande la plus
+superficielle morcelle le sous-sol en **sept** systemes independants contre
+quatre.
