@@ -1029,6 +1029,7 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 	int32 ColonnesGalerie = 0;
 	int32 ColonnesFranchissables = 0;
 	int32 ColonnesDebout = 0;
+	int32 ColonnesVisiere = 0;
 	int32 TraverseesMax = 0;
 	double PlusGrandVideMonde = 0.0;
 
@@ -1051,6 +1052,13 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 
 			const double Haut = Surface + R.OverhangAmplitudeM * 1.5;
 			const double Bas = Surface - R.BandDepthM;
+
+			// Profondeur du PREMIER vide sous la surface, et epaisseur de la
+			// roche qui le couvre : de quoi separer visieres et galeries.
+			double PremierVideSousSurface = -1.0;
+			double PremierToitEpaisseur = -1.0;
+			double DebutToit = Haut;
+			double FinToit = Haut;
 
 			// ON MESURE LA HAUTEUR DES VIDES, PAS LEUR NOMBRE.
 			//
@@ -1081,6 +1089,12 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 
 				if (!bAir)
 				{
+					// EPAISSEUR DU PREMIER TOIT : la roche traversee entre le
+					// ciel et le premier vide. C'est elle qui dit si l'on a
+					// affaire a une visiere -- quelques metres -- ou au
+					// plafond d'une grotte profonde.
+					if (!bRocheVue) { DebutToit = Z; }
+					if (PremierToitEpaisseur < 0.0) { FinToit = Z; }
 					bRocheVue = true;
 					if (HauteurVide > 0.0)
 					{
@@ -1092,6 +1106,11 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 				else if (bRocheVue)
 				{
 					// De l'air SOUS de la roche : un vide, et non le ciel.
+					if (PremierVideSousSurface < 0.0)
+					{
+						PremierVideSousSurface = Surface - Z;
+						PremierToitEpaisseur = DebutToit - FinToit;
+					}
 					HauteurVide += PasZ;
 				}
 
@@ -1122,6 +1141,19 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 
 			TraverseesMax = FMath::Max(TraverseesMax, Traversees);
 			if (Traversees > 1) { ++ColonnesSurplomb; }
+
+			// UNE VISIERE EST UN SURPLOMB PEU PROFOND, et c'est ce qui la
+			// distingue d'une galerie. Le chiffre global des surplombs melange
+			// les deux : une grotte a quatre-vingts metres sous terre compte
+			// autant qu'un abri sous roche ou l'on se tient debout. Or ce sont
+			// deux formes differentes, et une seule se voit du dehors.
+			if (PremierVideSousSurface >= 0.0
+				&& PremierVideSousSurface <= 20.0
+				&& PremierToitEpaisseur > 0.0
+				&& PremierToitEpaisseur <= 15.0)
+			{
+				++ColonnesVisiere;
+			}
 			if (bGalerie) { ++ColonnesGalerie; }
 			if (PlusGrandVide >= 2.0) { ++ColonnesFranchissables; }
 			if (PlusGrandVide >= 2.5) { ++ColonnesDebout; }
@@ -1152,6 +1184,10 @@ FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 		TEXT("[Sonde] surplombs : %.2f %% des colonnes traversees plus d'une fois ")
 		TEXT("(%d au plus)  |  amplitude %.1f m, frequence %.4f"),
 		PartSurplomb, TraverseesMax, R.OverhangAmplitudeM, R.OverhangFrequency);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Sonde] visieres : %.2f %% des colonnes ont un toit de 15 m au plus ")
+		TEXT("sur un vide commencant a 20 m au plus sous la surface (arches, abris)"),
+		Colonnes > 0 ? 100.0 * ColonnesVisiere / Colonnes : 0.0);
 	UE_LOG(LogTemp, Log,
 		TEXT("[Sonde] vides : %d mesures, hauteur mediane %.1f m, la plus grande ")
 		TEXT("%.1f m  |  %.2f %% des colonnes ont 2 m de libre, %.2f %% en ont 2,5"),

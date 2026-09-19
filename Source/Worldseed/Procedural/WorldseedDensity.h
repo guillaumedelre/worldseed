@@ -103,6 +103,60 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	float CaveSurfaceFadeM = 25.0f;
 
+	// --- arches et abris sous roche ---------------------------------------------
+
+	/**
+	 * Profondeur PERPENDICULAIRE sous laquelle une arche peut se creuser, en metres.
+	 *
+	 * PERPENDICULAIRE, ET LA PRECISION N'EST PAS UN DETAIL. Le champ mesure une
+	 * distance VERTICALE a la surface -- `Z - H(x,y)` -- et sur une falaise
+	 * cette distance est enorme des le premier metre dans la roche, puisque la
+	 * surface a l'aplomb se trouve loin au-dessus. Une porte posee sur elle ne
+	 * mordrait donc JAMAIS la ou les arches se forment. On divise par la norme
+	 * du gradient, `sqrt(1 + |grad H|^2)`, ce qui rend la distance vraie a la
+	 * paroi au premier ordre.
+	 */
+	float ArchDepthM = 12.0f;
+
+	/**
+	 * Pente minimale pour qu'une arche se creuse, en degres.
+	 *
+	 * UNE ARCHE EST UNE FORME DE PAROI, PAS DE PLAINE, et ce n'est pas un gout :
+	 * une nappe d'air creusee sous un terrain PLAT detacherait la calotte qui
+	 * la surmonte -- un bloc flottant, exactement le defaut que la deformation
+	 * produisait. Creusee dans un VERSANT, la meme nappe mord dans la paroi et
+	 * son plafond reste accroche a la colline derriere. La pente est donc la
+	 * condition qui rend le creusement sur.
+	 */
+	float ArchSlopeMinDeg = 38.0f;
+
+	/**
+	 * Frequence horizontale des nappes, en cycles par metre.
+	 *
+	 * Elle donne l'ETENDUE d'une arche : une valeur de 1/60 fait des poches
+	 * d'une vingtaine de metres, ce qu'il faut pour percer un eperon.
+	 */
+	float ArchFrequencyXY = 0.017f;
+
+	/**
+	 * Frequence VERTICALE des nappes, en cycles par metre.
+	 *
+	 * ELLE DOIT ETRE BIEN PLUS GRANDE QUE L'HORIZONTALE, et c'est tout le
+	 * principe. Un bruit isotrope fait des bulles ; comprimer sa periode en Z
+	 * fait des NAPPES -- larges, minces, horizontales. Une nappe qui mord dans
+	 * un versant donne une visiere ; une nappe qui traverse un eperon donne une
+	 * arche. Le rapport entre les deux frequences est la forme.
+	 */
+	float ArchFrequencyZ = 0.080f;
+
+	int32 ArchOctaves = 2;
+
+	/** Seuil au-dela duquel la nappe devient un vide, dans [-1..1]. */
+	float ArchThreshold = 0.55f;
+
+	/** Profondeur maximale du creusement, en metres. */
+	float ArchAmplitudeM = 5.0f;
+
 	// --- diaclases ------------------------------------------------------------
 
 	/**
@@ -293,6 +347,14 @@ private:
 
 	/** Ouverture des diaclases en un point : positif dans le vide. */
 	double JointAt(const FVector& PosM, double DepthM) const;
+
+	/**
+	 * Creusement des arches et abris sous roche : positif dans le vide.
+	 *
+	 * DepthM est la profondeur VERTICALE ; la fonction en tire elle-meme la
+	 * distance perpendiculaire, dont elle a besoin et que l'appelant n'a pas.
+	 */
+	double ArchAt(const FVector& PosM, double DepthM) const;
 
 	/**
 	 * Aptitude de la roche a se dissoudre sous ce point, dans [0..1].

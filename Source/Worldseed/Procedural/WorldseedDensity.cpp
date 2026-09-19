@@ -51,6 +51,14 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 
 	Out.RockColourFadeM = Num(TEXT("couleurRocheFonduM"), 12.0);
 
+	Out.ArchDepthM = Num(TEXT("archeProfondeurM"), 12.0);
+	Out.ArchSlopeMinDeg = Num(TEXT("archePenteMinDeg"), 38.0);
+	Out.ArchFrequencyXY = Num(TEXT("archeFrequenceXY"), 0.017);
+	Out.ArchFrequencyZ = Num(TEXT("archeFrequenceZ"), 0.080);
+	Out.ArchOctaves = Int(TEXT("archeOctaves"), 2);
+	Out.ArchThreshold = Num(TEXT("archeSeuil"), 0.55);
+	Out.ArchAmplitudeM = Num(TEXT("archeAmplitudeM"), 5.0);
+
 	return Out;
 }
 
@@ -105,6 +113,75 @@ float FWorldseedDensity::KarstifiableAt(double X, double Y) const
 
 	const uint8 Id = (*LithologyId)[J * NX + I];
 	return KarstifiableParId.IsValidIndex(Id) ? KarstifiableParId[Id] : 1.0f;
+}
+
+double FWorldseedDensity::ArchAt(const FVector& PosM, double DepthM) const
+{
+	if (Rules.ArchAmplitudeM <= 0.0f || Rules.ArchOctaves < 1)
+	{
+		return -1.0;
+	}
+
+	// --- GARDE BON MARCHE : une borne VERTICALE genereuse --------------------
+	//
+	// La vraie porte est perpendiculaire, mais la calculer demande quatre
+	// echantillons du relief. On elimine d'abord le gros du volume avec une
+	// borne verticale large : a la pente la plus raide qu'on accepte, la
+	// distance verticale vaut au plus `profondeur * norme du gradient`, et on
+	// prend une norme de cinq, soit environ 79 degres.
+	if (DepthM < 0.0 || DepthM > Rules.ArchDepthM * 5.0)
+	{
+		return -1.0;
+	}
+
+	// --- LA PENTE ET LA DISTANCE VRAIE ---------------------------------------
+	//
+	// Le gradient du relief donne les deux d'un coup : la pente, qui decide si
+	// une arche peut se former ici, et la norme, qui convertit la distance
+	// VERTICALE en distance PERPENDICULAIRE. Sans cette conversion la porte ne
+	// mordrait jamais sur une falaise -- c'est justement la qu'on la veut.
+	const double E = 2.0;
+	const double Hx = SurfaceHeightM(PosM.X + E, PosM.Y)
+		- SurfaceHeightM(PosM.X - E, PosM.Y);
+	const double Hy = SurfaceHeightM(PosM.X, PosM.Y + E)
+		- SurfaceHeightM(PosM.X, PosM.Y - E);
+	const double PenteXY = FMath::Sqrt(Hx * Hx + Hy * Hy) / (2.0 * E);
+
+	if (PenteXY < FMath::Tan(FMath::DegreesToRadians(Rules.ArchSlopeMinDeg)))
+	{
+		return -1.0;
+	}
+
+	const double Norme = FMath::Sqrt(1.0 + PenteXY * PenteXY);
+	const double Perp = DepthM / Norme;
+	if (Perp > Rules.ArchDepthM)
+	{
+		return -1.0;
+	}
+
+	// --- LA NAPPE ------------------------------------------------------------
+	//
+	// Frequence verticale bien plus grande que l'horizontale : le bruit devient
+	// une pile de nappes larges et minces au lieu d'un champ de bulles. C'est
+	// ce rapport, et lui seul, qui fait la forme.
+	const float N = WorldseedPerlin::Fbm3D(
+		static_cast<float>(PosM.X) * Rules.ArchFrequencyXY,
+		static_cast<float>(PosM.Y) * Rules.ArchFrequencyXY,
+		static_cast<float>(PosM.Z) * Rules.ArchFrequencyZ,
+		1.0f, Rules.ArchOctaves, Seed + 7717);
+
+	if (N <= Rules.ArchThreshold)
+	{
+		return -1.0;
+	}
+
+	// Le creusement s'efface en profondeur : une arche est une forme d'EROSION,
+	// elle travaille depuis la paroi vers l'interieur.
+	const double Fondu = 1.0 - Perp / Rules.ArchDepthM;
+	const double Force = (N - Rules.ArchThreshold)
+		/ FMath::Max(1.0 - Rules.ArchThreshold, 0.01);
+
+	return Rules.ArchAmplitudeM * Force * Fondu;
 }
 
 double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM) const
@@ -420,6 +497,18 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 		// vide, elle ne repousse pas la roche. L'addition ferait remonter le
 		// sol au-dessus du tube.
 		D = FMath::Max(D, Vide);
+	}
+
+	// --- arches et abris sous roche -----------------------------------------
+	// ON CREUSE, ON NE DEFORME PAS, et c'est toute la difference avec la piste
+	// abandonnee. Un terme soustractif enleve de la matiere a un solide : il ne
+	// peut pas produire de lambeau flottant. Deplacer la surface, si -- mesure
+	// a l'epoque : des ecailles detachees dans le ciel des que le deplacement
+	// cessait d'etre inversible.
+	const double Voute = ArchAt(PosM, DepthM);
+	if (Voute > 0.0)
+	{
+		D = FMath::Max(D, Voute);
 	}
 
 	// --- diaclases ----------------------------------------------------------

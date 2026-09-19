@@ -4216,3 +4216,67 @@ interchangeables deux experiences de jeu qui ne le sont pas.
 
 **ETAT FINAL** : 6 bouches, 9 avens, 4 dolines pour 25 chambres et 4 reseaux,
 368 troncons, 275 ms, percement des galeries 0,00 %, 2,85 ms/chunk.
+
+### Les arches : il n'y a rien a percer (19 septembre 2026)
+
+Troisieme des trois formes arbitrees, et la seule qui n'aboutit pas. Le terme
+existe, il est mesure, il est **desactive** (`archeAmplitudeM: 0`), garde inerte
+comme `overhangWarpM` pour que la mesure reste rejouable.
+
+**LA DEFINITION QUI TRANCHE, donnee par le proprietaire** : une arche naturelle
+est une **OUVERTURE TRAVERSANTE sous un pont de roche continu**, creee par
+SOUSTRACTION de matiere. Ce n'est ni une grotte, ni un abri sous roche, ni une
+visiere. Le critere est le trou qui traverse.
+
+**ELLE DEMANDE DONC UNE LAME, ET CE MONDE N'EN A AUCUNE.** Mesure : sur 402
+points emerges au-dessus de 30 m, **ZERO** n'a de crete plus etroite que 80 m a
+vingt metres sous son sommet. Percer une colline de deux cents metres ne donne
+pas une arche, ca donne un tunnel. **Ce n'est pas un defaut de reglage, c'est
+une absence de support** -- et aucun reglage du bruit ne pouvait y remedier.
+
+**CE QUE LE TERME PRODUISAIT REELLEMENT** : des nappes horizontales mordant dans
+un versant, donc des abris sous roche au mieux, et des TERRASSES au pire -- un
+escalier de marches regulieres, parce qu'a 1/59 m en horizontal les nappes
+s'etendent en bandes continues le long du versant au lieu de former des poches.
+Resserrer a 1/22 m n'a pas suffi.
+
+**MESURE, temoin avec/sans sur le terrain le plus raide** (visieres = toit de
+15 m au plus sur un vide commencant a 20 m au plus sous la surface) :
+
+    sans le terme    2,17 %
+    seuil 0,55       2,37 %
+    seuil 0,30      14,41 %
+    seuil 0,15      30,35 %
+
+Le terme MARCHE. Ce qu'il produit n'est simplement pas une arche.
+
+**CE QUI RESTE ACQUIS ET UTILE** : la distance PERPENDICULAIRE. Le champ mesure
+une distance VERTICALE a la surface, et sur une falaise cette distance est
+enorme des le premier metre dans la roche -- la surface a l'aplomb se trouve
+loin au-dessus. Toute porte posee sur elle ne mord JAMAIS sur une paroi. On
+divise par la norme du gradient, `sqrt(1 + |grad H|^2)`, ce qui rend la distance
+vraie a la paroi au premier ordre. A reprendre pour toute forme de PAROI.
+
+**LA PISTE QUI RESTE** : faire de l'arche une forme POSEE, comme la doline et
+l'aven -- choisir un site sur un eperon raide, creuser la LAME ET LE TROU
+ensemble. On construit alors la propriete qui la definit au lieu d'esperer qu'un
+bruit la rencontre.
+
+**QUATRE ERREURS DE PROTOCOLE DANS LA MEME HEURE, toutes de placement**, et
+elles m'ont fait annoncer deux fois un resultat faux -- dont un « desastre » qui
+n'existait pas :
+
+- **trois fois, pion pose a une altitude FIXE sur un relief accidente**, donc
+  DANS la colline. L'image qu'on obtient alors -- lambeaux de terrain sur fond
+  d'ocean, decor masque -- ressemble trait pour trait a un defaut de generation.
+  Le controle qui tranche est un sondage VERTICAL depuis la camera : s'il touche
+  du voxel, on est sous la roche, et rien de ce qu'on voit ne prouve quoi que ce
+  soit ;
+- **une fois, `end_play` / sonde / `begin_play` enchaines dans un seul script**.
+  La fermeture du PIE est asynchrone -- c'est deja note plus haut pour les
+  chargements d'asset -- donc le pion place ensuite ne l'a jamais ete, et la
+  capture « temoin » a ete prise au point d'apparition. Un appel par etape.
+
+**Procedure de placement, desormais obligatoire avant toute capture** : sonder
+vers le bas pour trouver le sol, poser dessus avec une marge, puis sonder vers
+le HAUT pour confirmer le ciel libre.
