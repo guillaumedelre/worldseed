@@ -4206,8 +4206,13 @@ silencieux. Un compte des reseaux sans ouverture est journalise a chaque
 generation : `les 4 reseaux ont au moins une ouverture`. Sans lui, on croirait
 la garantie tenue parce que le code a tourne.
 
-**CONSEQUENCE A ARBITRER, ET ELLE EST DE JOUABILITE** : la bouche de falaise a
-quasiment disparu (6 -> 1) parce que le plancher de densite est entierement
-consomme par ce qui s'ouvre tout seul. Or c'est la SEULE des trois ou l'on
-ENTRE en marchant ; dans les deux autres, on tombe. Le monde est desormais un
-monde de puits.
+**LA BOUCHE DE FALAISE GARDE SON PROPRE PLANCHER**, arbitre par le
+proprietaire le 19 septembre 2026. Premiere version : le plancher de densite
+etait COMMUN aux trois formes, donc les avens et les dolines le consommaient --
+6 bouches avant, UNE apres. Or ce n'est pas une ouverture parmi d'autres, c'est
+la SEULE des trois ou l'on entre EN MARCHANT ; dans un aven comme dans une
+doline, on tombe. Les compter dans le meme budget revenait a traiter comme
+interchangeables deux experiences de jeu qui ne le sont pas.
+
+**ETAT FINAL** : 6 bouches, 9 avens, 4 dolines pour 25 chambres et 4 reseaux,
+368 troncons, 275 ms, percement des galeries 0,00 %, 2,85 ms/chunk.

@@ -1204,8 +1204,20 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		if (!ComposantesOuvertes.Contains(Paire.Key)) { ++SansOuverture; }
 	}
 
+	// LA BOUCHE DE FALAISE GARDE SON PROPRE PLANCHER, arbitre par le
+	// proprietaire le 19 septembre 2026.
+	//
+	// Premiere version : le plancher de densite etait commun aux trois formes,
+	// donc les avens et les dolines le consommaient. Mesure -- 6 bouches avant,
+	// UNE apres. Or ce n'est pas une ouverture parmi d'autres : c'est la SEULE
+	// des trois ou l'on entre EN MARCHANT. Dans un aven comme dans une doline,
+	// on tombe. Compter les trois dans le meme budget revenait a traiter comme
+	// interchangeables deux experiences de jeu qui ne le sont pas.
+	//
+	// Le plancher n'est donc plus reduit par ce qui s'est ouvert tout seul ; il
+	// reste releve par les reseaux encore mures, ce qui est la garantie.
 	const int32 EntreesVoulues = (Souhaitees > 0)
-		? FMath::Max(Souhaitees - (Dolines + Gouffres), SansOuverture) : 0;
+		? FMath::Max(Souhaitees, SansOuverture) : 0;
 
 	if (EntreesVoulues > 0)
 	{
