@@ -47,7 +47,7 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.JointAnisoZ = Num(TEXT("diaclaseAplatissementZ"), 0.22);
 	Out.JointDepthM = Num(TEXT("diaclaseProfondeurM"), 45.0);
 	Out.JointZoneFrequency = Num(TEXT("diaclaseZoneFrequence"), 0.0016);
-	Out.JointZoneThreshold = Num(TEXT("diaclaseZoneSeuil"), 0.55);
+	Out.JointZoneThreshold = Num(TEXT("diaclaseZoneSeuil"), 0.45);
 
 	return Out;
 }

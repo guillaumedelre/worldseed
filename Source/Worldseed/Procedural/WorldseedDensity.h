@@ -175,11 +175,11 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 *   0,15 -> 32,53 %   0,35 -> 14,44 %   0,55 -> 5,00 %
 	 *   0,25 -> 21,52 %   0,45 ->  9,25 %   0,68 ->  1,59 %
 	 *
-	 * Retenu 0,55 : cinq pour cent du granite, soit 2,4 % des terres. Un chaos
-	 * de blocs est un accident local, pas l'etat ordinaire d'un massif -- mais
-	 * il doit se trouver.
+	 * Retenu 0,45, arbitre par le proprietaire : neuf pour cent du granite. Un
+	 * chaos de blocs reste un accident local, pas l'etat ordinaire d'un massif,
+	 * mais a 0,55 il se trouvait trop rarement pour etre une rencontre.
 	 */
-	float JointZoneThreshold = 0.55f;
+	float JointZoneThreshold = 0.45f;
 
 	static FWorldseedDensityRules FromRules(const UWorldseedRules& Rules);
 };
