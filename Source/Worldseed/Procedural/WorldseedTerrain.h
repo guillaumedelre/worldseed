@@ -263,6 +263,44 @@ public:
 		meta = (ClampMin = "0.0", EditCondition = "bBuildGroundProxy"))
 	float GroundProxyDropM = 1.0f;
 
+	/**
+	 * Retirer le sol de fond du rendu quand l'oeil est SOUS la surface.
+	 *
+	 * UN DECOR D'HORIZON N'A RIEN A FAIRE DANS UN VOLUME FERME. La nappe
+	 * grossiere traverse les salles et les galeries et s'y dessine par-dessus
+	 * la roche : mesure, elle occupait 70,2 % du cadre dans la salle sous le
+	 * gouffre. Ce qu'on perd en la coupant est mesure aussi : depuis une bouche
+	 * de grotte, regard vers le dehors, 4,1 % du cadre seulement -- parce que
+	 * le terrain voxel couvre entierement les 250 m du rayon de chargement, et
+	 * que ce qu'on voit par une ouverture est presque toujours du vrai terrain.
+	 * Dix-sept fois plus de degats a l'interieur que de perte a la sortie.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
+		meta = (EditCondition = "bBuildGroundProxy"))
+	bool bHideGroundProxyUnderground = true;
+
+	/**
+	 * Profondeur sous la nappe a partir de laquelle on la retire, en metres.
+	 *
+	 * Pas zero : a fleur de nappe, l'oeil passe d'un cote a l'autre a chaque
+	 * pas sur un terrain accidente. On attend d'etre franchement dessous.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
+		meta = (ClampMin = "0.0", EditCondition = "bHideGroundProxyUnderground"))
+	float GroundProxyHideDepthM = 3.0f;
+
+	/**
+	 * Largeur de la bande d'hysteresis, en metres.
+	 *
+	 * SANS ELLE LE DECOR CLIGNOTE. Un seuil unique fait basculer l'affichage a
+	 * chaque oscillation de l'oeil autour de la valeur critique -- et l'oeil
+	 * d'une camera a bras oscille en permanence. On cache sous le seuil et on
+	 * ne revient qu'une fois cette bande regagnee.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
+		meta = (ClampMin = "0.0", EditCondition = "bHideGroundProxyUnderground"))
+	float GroundProxyHideHysteresisM = 2.0f;
+
 	/** Inverse l'ordre des triangles si le terrain apparait retourne. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks")
 	bool bFlipWinding = false;
@@ -391,6 +429,12 @@ protected:
 	 * charges et non des cotes.
 	 */
 	void BuildGroundProxy();
+
+	/** Retire ou rend le sol de fond selon que l'oeil est sous terre ou non. */
+	void UpdateGroundProxyVisibility();
+
+	FTimerHandle ProxyTimer;
+	bool bGroundProxyHidden = false;
 
 	/** Le materiau correspondant au mode d'apparence courant. */
 	UMaterialInterface* ChooseTerrainMaterial(const FWorldseedAppearance& Mode) const;

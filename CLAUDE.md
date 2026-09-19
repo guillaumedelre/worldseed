@@ -4018,3 +4018,51 @@ faire dans un volume ferme.
 `<<'PY'` mange la double barre oblique inverse, donc `'\n'` ecrit un vrai saut
 de ligne dans le fichier C++ et casse la compilation sur « saut de ligne dans la
 constante ». Construire la barre oblique par `chr(92)`.
+
+### Le sol de fond sort du RENDU PRINCIPAL, pas de la passe de profondeur (19 septembre 2026)
+
+Le decor d'horizon traversait les cavites et s'y dessinait par-dessus la roche.
+Arbitre par le proprietaire sur mesure, apres A/B a l'image au meme cadrage :
+
+    dans la salle sous le gouffre   70,2 % du cadre change   ecart moyen 35,9/255
+    bouche de grotte, vers dehors    4,1 % du cadre change   ecart moyen  3,7/255
+
+**Dix-sept fois plus de degats a l'interieur que de perte a la sortie**, et la
+raison est structurelle : depuis que les trous de chunks sont corriges, le
+terrain voxel couvre ENTIEREMENT les 250 m du rayon de chargement, donc ce
+qu'on voit par une ouverture est presque toujours du vrai terrain. Ma crainte
+de « perdre l'horizon a l'entree d'une grotte » etait exageree, et c'est la
+mesure qui l'a dit -- pas le raisonnement.
+
+**LE PIEGE QU'IL FALLAIT EVITER, ET IL AURAIT ETE SILENCIEUX.** Le premier
+reflexe est `SetActorHiddenInGame(true)`. Or **ce sol de fond porte le
+`UWaterTerrainComponent`, et c'est toute sa raison d'etre** : le plugin Water y
+lit le relief pour sa texture d'information. Le masquer l'aurait sorti des deux
+passes, et l'ocean cesse alors de se dessiner SANS le moindre avertissement --
+le piege `[0 .. 0]` deja documente plus haut.
+
+**Le levier exact est dans la source du moteur**, `PrimitiveSceneProxy.h:804` :
+
+    ShouldRenderInDepthPass() = bRenderInMainPass || bRenderInDepthPass
+
+La passe de base est gardee par `ShouldRenderInMainPass()`
+(`BasePassRendering.cpp:2048`), la passe de profondeur par la ligne ci-dessus.
+**Couper le premier en armant le second retire donc la nappe de l'IMAGE sans la
+retirer de l'EAU.** `SetRenderInMainPass(false)` + `SetRenderInDepthPass(true)`.
+Verifie : sous terre le drapeau principal tombe a False et celui de profondeur
+reste True, en surface les deux reviennent, et la ligne
+`eau : ... z [-296 .. 296] m` est inchangee.
+
+**C'EST LA CAMERA QUI DECIDE, PAS LE PION.** En vue a la troisieme personne le
+bras place l'oeil jusqu'a quatre metres derriere le personnage : il peut etre
+dehors quand le personnage est dedans, et c'est l'oeil qui voit le decor.
+`UGameplayStatics::GetPlayerCameraManager(World, 0)->GetCameraLocation()`.
+
+**ET IL FAUT UNE HYSTERESIS.** Un seuil unique fait clignoter le decor : l'oeil
+d'une camera a bras oscille en permanence autour de la valeur critique sur un
+terrain accidente. On cache sous `GroundProxyHideDepthM` (3 m sous la nappe) et
+on ne revient qu'apres avoir regagne `GroundProxyHideHysteresisM` (2 m).
+
+Le minuteur tourne sur les DEUX chemins, voxel comme carte d'altitude : la
+nappe traverse les cavites dans les deux cas. Celui du terrain en carte
+d'altitude ne demarrait que si `bUseVoxelMesher` etait faux.

@@ -9,6 +9,7 @@
 #include "Procedural/WorldseedPipeline.h"
 
 #include "GameFramework/Pawn.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
@@ -51,12 +52,94 @@ void AWorldseedTerrain::BeginPlay()
 				this, &AWorldseedTerrain::PlacePlayerOnTerrain);
 		}
 	}
+
+	// LE SOL DE FOND SE SURVEILLE SUR LES DEUX CHEMINS, voxel comme carte
+	// d'altitude : il traverse les cavites dans les deux cas.
+	if (bHideGroundProxyUnderground)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(ProxyTimer, this,
+				&AWorldseedTerrain::UpdateGroundProxyVisibility, 0.1f, true);
+		}
+	}
+}
+
+void AWorldseedTerrain::UpdateGroundProxyVisibility()
+{
+	if (!GroundProxy)
+	{
+		return;
+	}
+	UProceduralMeshComponent* Nappe = GroundProxy->GetMesh();
+	if (!Nappe)
+	{
+		return;
+	}
+
+	const UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// C'EST LA CAMERA QUI DECIDE, PAS LE PION. En vue a la troisieme personne
+	// le bras place l'oeil jusqu'a quatre metres derriere le personnage : il
+	// peut etre dehors quand le personnage est dedans, et c'est l'oeil qui
+	// voit le decor.
+	const APlayerCameraManager* const Cam =
+		UGameplayStatics::GetPlayerCameraManager(World, 0);
+	if (!Cam)
+	{
+		return;
+	}
+	const FVector OeilCm = Cam->GetCameraLocation();
+
+	// On compare a la NAPPE elle-meme, pas au terrain : c'est elle qui se
+	// dessine, et le retrait de GroundProxyDropM la place un peu plus bas.
+	const float SolCm = GetHeightAtWorldXY(
+		static_cast<float>(OeilCm.X), static_cast<float>(OeilCm.Y));
+	const float NappeCm = SolCm
+		- GroundProxyDropM * WorldseedMetersToCm * HeightExaggeration;
+
+	const double SousCm = NappeCm - OeilCm.Z;
+	const float SeuilCm = GroundProxyHideDepthM * WorldseedMetersToCm;
+	const float BandeCm = GroundProxyHideHysteresisM * WorldseedMetersToCm;
+
+	// Hysteresis : on cache au-dela du seuil, on ne revient qu'apres avoir
+	// regagne la bande. Un seuil unique ferait clignoter le decor.
+	const bool bCacher = bGroundProxyHidden
+		? (SousCm > SeuilCm - BandeCm)
+		: (SousCm > SeuilCm);
+
+	if (bCacher == bGroundProxyHidden)
+	{
+		return;
+	}
+	bGroundProxyHidden = bCacher;
+
+	// ON SORT DU RENDU PRINCIPAL, PAS DE LA PASSE DE PROFONDEUR, et la nuance
+	// est vitale : ce sol de fond porte le UWaterTerrainComponent, c'est meme
+	// toute sa raison d'etre. Le plugin Water lit le relief dans sa passe de
+	// PROFONDEUR, et le moteur decide d'y entrer par
+	// `ShouldRenderInDepthPass() = bRenderInMainPass || bRenderInDepthPass`
+	// (PrimitiveSceneProxy.h:804). Couper le premier en armant le second
+	// retire donc la nappe de l'image SANS la retirer de l'eau. La masquer
+	// entierement -- SetActorHiddenInGame -- l'aurait sortie des deux, et
+	// l'ocean cesse de se dessiner sans le moindre avertissement.
+	Nappe->SetRenderInDepthPass(true);
+	Nappe->SetRenderInMainPass(!bCacher);
+
+	UE_LOG(LogTemp, Verbose,
+		TEXT("[Worldseed] sol de fond : %s (oeil a %.1f m sous la nappe)"),
+		bCacher ? TEXT("retire") : TEXT("rendu"), SousCm / WorldseedMetersToCm);
 }
 
 void AWorldseedTerrain::EndPlay(const EEndPlayReason::Type Reason)
 {
 	if (UWorld* World = GetWorld())
 	{
+		World->GetTimerManager().ClearTimer(ProxyTimer);
 		World->GetTimerManager().ClearTimer(UpdateTimer);
 	}
 
