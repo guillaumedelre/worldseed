@@ -290,25 +290,20 @@ public:
 	FString OuSuisJe() const;
 
 	/**
-	 * Photographie une position, sans MCP ni intervention.
+	 * Le monde charge, en LECTURE SEULE, pour qui doit l'interroger.
 	 *
-	 * C'EST LE JEU QUI PREND LA PHOTO, et c'est ce qui rend la verification
-	 * visuelle possible quand le lien d'outillage est tombe. Le pion est pose,
-	 * TENU en vol jusqu'a ce que son chunk porte une collision, cadre, puis on
-	 * laisse passer quelques images avant de declencher -- le maillage arrive
-	 * par travaux asynchrones, et tirer trop tot photographie un monde a moitie
-	 * bati.
+	 * L'acteur charge et possede ce monde : y donner acces en lecture est
+	 * legitime et evite de le recopier. Ce qui ne le serait pas, c'est qu'il
+	 * se charge lui-meme des travaux qui s'en servent -- la tournee photo a
+	 * vecu ici par commodite avant d'aller dans son propre sous-systeme.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
-	void Photographier(double XMetres, double YMetres, const FString& Nom);
+	const FWorldseedGeometry& MondeGeometrie() const { return Geometry; }
+	const TArray<float>& MondeAltitudes() const { return HeightsM; }
+	const FWorldseedCaveNetwork& MondeGrottes() const { return CaveNetwork; }
+	const FWorldseedDensity& MondeChamp() const { return Density; }
 
-	/** Une tournee de toutes les arches du monde, vues DANS L'AXE. */
-	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
-	int32 TourneeDesArches();
-
-	/** Les plus hautes falaises LITTORALES, vues depuis la mer. */
-	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
-	int32 TourneeDesFalaises(int32 Combien = 5);
+	/** Vrai quand le pion a ete rendu a la gravite sur un sol solide. */
+	bool JoueurPose() const { return bPlayerReleased; }
 
 	/**
 	 * Les endroits du monde CHARGE qui meritent d'etre vus.
@@ -370,32 +365,6 @@ private:
 	/** Destination demandee, tant que le pion n'y est pas pose. */
 	bool bTeleportPose = false;
 	FVector2D TeleportXYM = FVector2D::ZeroVector;
-
-	/**
-	 * Une etape de tournee : ou se placer, et quoi regarder.
-	 *
-	 * SE PLACER ET VISER SONT DEUX CHOSES. Une arche ne se juge pas en se
-	 * tenant dedans : il faut reculer et regarder DANS L'AXE du percement,
-	 * sinon on photographie une paroi. Le projet a deja paye l'equivalent avec
-	 * les silhouettes de vegetation jugees a la verticale -- une bache posee au
-	 * sol y ressemblait a une teinte parfaite.
-	 */
-	struct FWorldseedPhotoStop
-	{
-		FString Nom;
-		FVector CibleM = FVector::ZeroVector;
-		FVector2D DepuisM = FVector2D(1.0, 0.0);
-		float DistanceM = 110.0f;
-		float HauteurM = 2.0f;
-	};
-
-	/** Avance la tournee d'un cran. Appelee par le minuteur du terrain. */
-	void AvancerTournee();
-
-	TArray<FWorldseedPhotoStop> Tournee;
-	int32 EtapeTournee = INDEX_NONE;
-	int32 AttenteTournee = 0;
-	bool bQuitterApresTournee = false;
 
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;
