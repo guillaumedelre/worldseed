@@ -62,6 +62,11 @@ struct FWorldseedVoxelChunkState
 	bool bEmpty = false;
 
 	bool bHasCollision = false;
+
+	/** Pourquoi le dernier maillage n'a rien rendu. Diagnostic. */
+	FWorldseedVoxelStats::ECause Cause = FWorldseedVoxelStats::ECause::Maille;
+	int32 Seeds = 0;
+	int32 Tris = 0;
 };
 
 /**
@@ -237,6 +242,21 @@ private:
 	/** Couleur et teinte d'un sommet, depuis la carte des biomes. */
 	void PaintVertices(FWorldseedVoxelMesh& Mesh) const;
 
+public:
+	/**
+	 * Etat de la colonne de chunks qui contient ce point. Diagnostic.
+	 *
+	 * IL N'EXISTE AUCUN AUTRE MOYEN DE SAVOIR POURQUOI UN TROU EST LA. De
+	 * l'exterieur, un chunk jamais considere, un chunk declare vide et un chunk
+	 * maille a zero triangle se ressemblent tous les trois : on sonde, on ne
+	 * touche rien, et on ne peut pas distinguer les trois causes -- qui
+	 * appellent pourtant trois corrections differentes.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
+	FString DiagnostiquerColonne(FVector MondeCm) const;
+
+private:
+
 	void ReleaseChunk(const FIntVector& Key);
 
 	/** Tient le joueur en l'air, puis le rend a la gravite quand le sol existe. */
@@ -294,6 +314,12 @@ private:
 	/** Cumuls pour le releve. */
 	int32 BuiltChunks = 0;
 	int32 EmptyChunks = 0;
+
+	/** Travaux annules puis repris. Un compteur qui monte sans fin est un signe. */
+	int32 AbandonedChunks = 0;
+
+	/** Chunks ou le mailleur n'a rien rendu malgre une traversee. */
+	int32 DegenerateChunks = 0;
 	int32 TotalTriangles = 0;
 	double TotalMeshMs = 0.0;
 	double WorstMeshMs = 0.0;

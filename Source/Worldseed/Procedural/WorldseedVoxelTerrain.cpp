@@ -291,6 +291,32 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 		return;
 	}
 
+	// --- 3 bis. REPRENDRE CE QUI A ETE ABANDONNE ----------------------------
+	//
+	// Un chunk dont le travail a ete annule reste dans la table SANS maillage,
+	// SANS travail et SANS marque de vide. La boucle des candidats ci-dessous
+	// saute toute cle deja presente, donc il ne reviendrait jamais tout seul :
+	// il faut le relancer explicitement. C'est le pendant indispensable de la
+	// distinction faite a la reception -- sans lui, on a seulement remplace un
+	// trou marque "vide" par un trou sans marque.
+	{
+		TArray<FIntVector> ARelancer;
+		for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+		{
+			const FWorldseedVoxelChunkState& S = Pair.Value;
+			if (!S.bEmpty && !S.Mesh && !S.Job.IsValid())
+			{
+				ARelancer.Add(Pair.Key);
+			}
+		}
+		for (const FIntVector& Key : ARelancer)
+		{
+			if (EnVol >= MaxJobsInFlight) { break; }
+			LaunchJob(Key);
+			++EnVol;
+		}
+	}
+
 	// LES COLONNES D'ABORD, LA VERTICALE ENSUITE, et c'est la grille 2D qui la
 	// donne : on ne considere que les etages ou la surface peut se trouver,
 	// plus la bande creusable dessous. Les etages de socle n'existent meme pas
@@ -404,6 +430,99 @@ void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
 	});
 }
 
+FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
+{
+	if (!bWorldReady)
+	{
+		return TEXT("monde pas pret");
+	}
+
+	const FVector LocalM = (MondeCm - GetActorLocation()) / WorldseedMetersToCm;
+	const double Side = ChunkSideM;
+	const int32 CX = FMath::FloorToInt(LocalM.X / Side);
+	const int32 CY = FMath::FloorToInt(LocalM.Y / Side);
+
+	float SurfMin = 0.0f, SurfMax = 0.0f;
+	Density.SurfaceRangeM(CX * Side, CY * Side, CX * Side + Side, CY * Side + Side,
+		SurfMin, SurfMax);
+	const int32 ZBas = FMath::FloorToInt((SurfMin - DensityRules.BandDepthM) / Side);
+	const int32 ZHaut = FMath::FloorToInt(SurfMax / Side);
+
+	const FVector OriginM = (StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
+
+	FString R = FString::Printf(
+		TEXT("colonne (%d, %d) : surface macro %.1f a %.1f m, etages %d a %d"),
+		CX, CY, SurfMin, SurfMax, ZBas, ZHaut);
+
+	// La surface REELLE, echantillonnee au centre de la colonne : c'est elle
+	// que le mailleur voit, et elle differe de la macro par le bruit.
+	const double MX = CX * Side + Side * 0.5;
+	const double MY = CY * Side + Side * 0.5;
+	R += FString::Printf(TEXT("\n  champ au centre, tous les 4 m :"));
+	for (double Z = ZBas * Side; Z <= (ZHaut + 1) * Side; Z += 4.0)
+	{
+		R += FString::Printf(TEXT(" %.0f:%+.1f"), Z, Density.At(FVector(MX, MY, Z)));
+	}
+
+	for (int32 CZ = ZBas; CZ <= ZHaut; ++CZ)
+	{
+		const FIntVector Key(CX, CY, CZ);
+		const FVector CentreM = ChunkBoundsM(Key).GetCenter();
+		const double DistM = FVector::Dist(CentreM, OriginM);
+		const FWorldseedVoxelChunkState* S = Chunks.Find(Key);
+
+		R += FString::Printf(TEXT("\n  etage %+d  d=%.0f m  "), CZ, DistM);
+		if (!S)
+		{
+			R += (DistM > LoadRadiusM)
+				? TEXT("ABSENT (hors rayon)")
+				: TEXT("ABSENT ALORS QU'IL EST DANS LE RAYON");
+			continue;
+		}
+		R += FString::Printf(TEXT("present : vide=%s travail=%s maillage=%s"),
+			S->bEmpty ? TEXT("OUI") : TEXT("non"),
+			S->Job.IsValid() ? TEXT("en cours") : TEXT("aucun"),
+			S->Mesh ? TEXT("OUI") : TEXT("AUCUN"));
+
+		// ON REJOUE LE BALAYAGE PAR GERMES, a l'identique, pour savoir s'il
+		// voit la traversee. C'est le seul moyen de distinguer un chunk que le
+		// balayage a manque d'un chunk que le mailleur n'a pas su remplir :
+		// vus du dehors, les deux sont un trou.
+		{
+			const FBox B = ChunkBoundsM(Key);
+			const double PasM = DensityRules.VoxelSizeM * 4.0;
+			const int32 N = FMath::Max(FMath::CeilToInt(ChunkSideM / PasM), 1);
+			// AVEC LES GROTTES, comme le mailleur. Mon premier balayage de
+			// diagnostic appelait le champ SANS elles et voyait donc une
+			// traversee nette la ou le mailleur n'en voyait aucune : la sonde
+			// et le code mesuraient deux champs differents.
+			FWorldseedCaveLocal Local;
+			CaveNetwork.Query(B.ExpandBy(DensityRules.CaveBlendM + 4.0f), Local);
+
+			int32 Dedans = 0, Dehors = 0;
+			for (int32 K = 0; K <= N; ++K)
+			for (int32 J = 0; J <= N; ++J)
+			for (int32 I = 0; I <= N; ++I)
+			{
+				const FVector P(
+					FMath::Min(B.Min.X + I * PasM, B.Max.X),
+					FMath::Min(B.Min.Y + J * PasM, B.Max.Y),
+					FMath::Min(B.Min.Z + K * PasM, B.Max.Z));
+				(Density.At(P, &Local) < 0.0 ? Dedans : Dehors)++;
+			}
+			static const TCHAR* NomCause[] = {
+				TEXT("maille"), TEXT("sans traversee"), TEXT("annule"), TEXT("maillage vide") };
+			R += FString::Printf(
+				TEXT("  [balayage %dx%d : %d roche, %d air | cause : %s | %d capsules]"),
+				N + 1, N + 1, Dedans, Dehors,
+				NomCause[static_cast<int32>(S->Cause)],
+				Local.Chambers.Num() + Local.Segments.Num());
+			R += FString::Printf(TEXT(" [germes %d, triangles %d]"), S->Seeds, S->Tris);
+		}
+	}
+	return R;
+}
+
 void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 {
 	const int32 Count = Mesh.Positions.Num();
@@ -494,12 +613,39 @@ void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
 	TotalMeshMs += Job->Stats.MeshMs + Job->Stats.NormalMs;
 	WorstMeshMs = FMath::Max(WorstMeshMs, Job->Stats.MeshMs + Job->Stats.NormalMs);
 
+	State.Cause = Job->Stats.Cause;
+	State.Seeds = Job->Stats.Seeds;
+	State.Tris = Job->Stats.Triangles;
+
 	if (!Job->bHasSurface || Job->Mesh.IsEmpty())
 	{
+		// UN TRAVAIL ANNULE N'EST PAS UN CHUNK VIDE, et les confondre laissait
+		// un TROU DEFINITIF dans le sol.
+		//
+		// Ce test marquait "vide" les trois causes d'echec du mailleur : pas de
+		// traversee, travail annule, maillage sorti vide. Seule la premiere est
+		// une propriete du monde ; les deux autres sont des accidents. Et comme
+		// un chunk marque vide n'est JAMAIS repropose -- la boucle des
+		// candidats saute toute cle deja presente -- l'accident devenait
+		// permanent. Mesure chez le proprietaire : 2 colonnes sans aucun sol
+		// sur 135 chargees, soit 1,5 %, et le sol de fond les masquait en se
+		// dessinant un metre plus bas, ce qui donnait les "zones bizarres".
+		// On tombait au travers.
+		if (Job->Stats.Cause == FWorldseedVoxelStats::ECause::Annule)
+		{
+			// Ni maillage ni marque : la passe suivante le reprendra.
+			++AbandonedChunks;
+			return;
+		}
+
 		// AUCUNE SURFACE : on s'en souvient au lieu de l'oublier. Sans cette
 		// marque, la meme boite serait relancee a chaque passe du minuteur.
 		State.bEmpty = true;
 		++EmptyChunks;
+		if (Job->Stats.Cause == FWorldseedVoxelStats::ECause::MaillageVide)
+		{
+			++DegenerateChunks;
+		}
 		return;
 	}
 

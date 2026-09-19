@@ -51,6 +51,23 @@ struct WORLDSEED_API FWorldseedVoxelStats
 	int32 FieldSamples = 0;
 	int32 Vertices = 0;
 	int32 Triangles = 0;
+
+	/**
+	 * Pourquoi le maillage n'a rien rendu.
+	 *
+	 * TROIS CAUSES SE CACHAIENT DERRIERE UN SEUL "false", ET ELLES N'APPELLENT
+	 * PAS LA MEME REPONSE. Un chunk sans traversee est VIDE et doit etre
+	 * retenu comme tel ; un chunk dont le travail a ete ANNULE doit etre
+	 * repris ; un chunk que le mailleur n'a pas su remplir est un defaut qu'il
+	 * faut au moins pouvoir compter. L'appelant marquait les trois "vide pour
+	 * toujours" et ne les reproposait jamais -- d'ou des trous permanents dans
+	 * le sol, mesures a 1,5 % des colonnes chargees.
+	 */
+	/** Germes semes par le balayage grossier. Zero explique tout ; beaucoup, rien. */
+	int32 Seeds = 0;
+
+	enum class ECause : uint8 { Maille, SansTraversee, Annule, MaillageVide };
+	ECause Cause = ECause::Maille;
 };
 
 namespace WorldseedVoxelChunk

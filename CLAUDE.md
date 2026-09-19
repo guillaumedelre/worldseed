@@ -3934,3 +3934,87 @@ au-dessus d'un sol a 48 m, le pion etait hors de ce rayon : **zero chunk, zero
 collision, et les sondages rendaient « rien » partout**, ce qui ressemble
 exactement a un terrain qui ne se genere plus. Verifier l'ecart vertical au sol
 avant de soupconner le streaming.
+
+### Des TROUS dans le sol : un germe pose au mauvais endroit (19 septembre 2026)
+
+Signale : « j'ai encore des zones bizarres, un peu comme les taches noires sauf
+qu'elle n'est pas noire ». C'etait un vrai defaut, et le plus grave trouve sur
+le terrain voxel : **on pouvait tomber au travers du monde**.
+
+**CE QUE L'IMAGE MONTRAIT** : une plaque plate a bords DROITS, avec une marche,
+posee au milieu des dunes, plus quelques entailles sombres. Masquer
+`WorldseedGroundProxy` a tout explique d'un coup : sous la plaque il y a un
+**trou carre**, on voit l'ocean au travers. Le sol de fond ne genait pas, il
+BOUCHAIT -- un metre plus bas, d'ou la marche. Il n'a pas de collision, donc les
+sondages le traversent et touchent le voxel derriere : **on mesure du sol la ou
+on voit un trou**, et inversement.
+
+**MESURE** : 2 colonnes sans aucun sol sur 135 chargees, soit **1,5 %**. Le trou
+tombe exactement sur une cellule de 32 m -- le chunk (32, -35) -- et il
+**survit a un dechargement complet suivi d'un rechargement**, donc il est
+deterministe.
+
+**LA CHAINE DE DIAGNOSTIC, et il a fallu instrumenter pour la remonter.** De
+l'exterieur, un chunk jamais considere, un chunk declare vide et un chunk maille
+a zero triangle se ressemblent tous les trois. D'ou `DiagnostiquerColonne`, qui
+rend pour une colonne : la plage macro, les etages candidats, l'etat de chaque
+chunk, le balayage rejoue et la cause enregistree.
+
+    colonne saine   etage 0 : 322 roche / 407 air, 82 germes -> 2470 triangles
+    colonne cassee  etage 0 : 324 roche / 405 air, 81 germes -> 0 triangle
+
+**LA CAUSE : LE GERME ETAIT POSE AU COIN DE L'ARETE, PAS SUR LA SURFACE.** Le
+balayage grossier teste le signe tous les 4 m et semait au point de balayage.
+Or la traversee peut se trouver n'importe ou sur ces 4 m. `GenerateContinuation`
+part de la cellule d'UN metre qui contient le germe ; si cette cellule est
+pleine de roche, elle n'y trouve aucune traversee et **s'arrete aussitot, sans
+un seul triangle**. Cela marchait dans 98,5 % des cas parce qu'avec
+quatre-vingts germes il s'en trouve presque toujours un qui tombe juste -- mais
+sur une surface tres PLANE, un champ de dunes, aucun ne tombe juste et le chunk
+entier disparait.
+
+Correctif : interpoler le point de traversee sur l'arete
+(`T = (Iso - V) / (W - V)`) et semer LA. Jusqu'a trois germes par point au lieu
+d'un, tous valides. **Apres : 0 trou sur 135 colonnes, l'ancien trou rend 2380
+triangles avec le MEME nombre de germes (81), et le cout ne bouge pas
+(2,89 ms/chunk contre 2,88).** Meme nombre de germes, resultat oppose : c'est la
+signature d'un defaut de PLACEMENT, pas de quantite.
+
+**UN SECOND DEFAUT TROUVE EN CHEMIN, corrige lui aussi.** `UploadChunk` faisait
+
+    if (!Job->bHasSurface || Job->Mesh.IsEmpty()) { State.bEmpty = true; return; }
+
+alors que `bHasSurface` est faux pour TROIS raisons : aucune traversee (une
+propriete du monde), travail ANNULE, et maillage sorti vide. Seule la premiere
+justifie de retenir « vide » -- et comme un chunk marque vide n'est jamais
+repropose (la boucle des candidats saute toute cle presente), les deux autres
+devenaient des trous permanents. Les causes sont desormais distinguees dans
+`FWorldseedVoxelStats::ECause`, un travail annule n'est plus marque, et une
+passe de REPRISE relance les chunks sans maillage, sans travail et non vides.
+Sans cette passe on aurait seulement remplace un trou marque par un trou sans
+marque.
+
+**PIEGES DE MESURE PAYES SUR CE SEUL DEFAUT :**
+
+- **Ma sonde et le mailleur n'evaluaient pas le meme champ.** Mon balayage de
+  diagnostic appelait `Density.At(P)` sans les grottes, le mailleur
+  `Density.At(P, &Caves)` avec. Il faut rejouer a l'identique, `CaveNetwork.Query`
+  compris, sinon on compare deux mondes.
+- **`line_trace_multi` ne depasse pas le premier bloquant** (deja note) et le sol
+  de fond n'a pas de collision cuite : impossible de le sonder. Le seul controle
+  qui tranche est de le MASQUER et de recapturer.
+- **`ShowFlag.Lighting 0`** separe couleur et eclairage, et c'est lui qui a
+  montre que le vert d'une grotte n'etait pas une teinte mais un AUTRE maillage.
+- **Un pion en `MOVE_FLYING` ne se tient sur rien** : j'ai cru pendant plusieurs
+  appels qu'il etait pose sur le sol de fond a 42 m alors que le terrain est a
+  13 m. Lire le mode de deplacement avant d'interpreter une altitude.
+
+**RESTE OUVERT : le sol de fond entre DANS les cavites.** Distinct des trous, et
+non corrige. Dans la salle sous le gouffre, le masquer laisse de la roche pleine
+partout -- il est donc bien dessine a l'interieur. Un decor d'horizon n'a rien a
+faire dans un volume ferme.
+
+**PIEGE D'OUTILLAGE, et il m'a coute quatre essais** : un heredoc bash
+`<<'PY'` mange la double barre oblique inverse, donc `'\n'` ecrit un vrai saut
+de ligne dans le fichier C++ et casse la compilation sur « saut de ligne dans la
+constante ». Construire la barre oblique par `chr(92)`.

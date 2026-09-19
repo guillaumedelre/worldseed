@@ -30,6 +30,8 @@ namespace WorldseedVoxelChunk
 
 		if (!Density.IsValid() || VoxelSizeM <= 0.0f || !BoundsM.IsValid)
 		{
+			// Pas "vide" : inexploitable. On le reprendra.
+			OutStats.Cause = FWorldseedVoxelStats::ECause::Annule;
 			return false;
 		}
 
@@ -127,30 +129,65 @@ namespace WorldseedVoxelChunk
 					const double V = Grossier[Index(I, J, K)];
 					const bool bDedans = V < MC.IsoValue;
 
-					// Un seul voisin suffit a signaler la traversee ; on ne
-					// regarde que vers l'avant pour ne pas semer deux fois la
-					// meme arete.
-					auto Traverse = [&](int32 DI, int32 DJ, int32 DK)
+					// LE GERME DOIT TOMBER SUR LA SURFACE, PAS SUR LE COIN DE
+					// L'ARETE QUI LA TRAVERSE.
+					//
+					// Premiere version fautive, et elle a coute des TROUS DANS
+					// LE SOL. Elle semait au point de balayage -- le coin bas
+					// de l'arete -- alors que la traversee peut se trouver
+					// n'importe ou sur les quatre metres suivants. La
+					// continuation part de la cellule d'un metre qui contient
+					// le germe ; si cette cellule est pleine de roche, elle n'y
+					// trouve aucune traversee et s'arrete AUSSITOT, sans un
+					// seul triangle.
+					//
+					// Cela marchait dans 98,5 % des cas parce qu'avec
+					// quatre-vingts germes il s'en trouve presque toujours un
+					// qui tombe juste. Sur une surface tres PLANE -- un champ
+					// de dunes -- aucun ne tombe juste et le chunk entier
+					// disparait. Mesure chez le proprietaire : 2 colonnes sans
+					// aucun sol sur 135, avec 81 germes et 0 triangle, la ou la
+					// voisine rendait 2470 triangles pour 82 germes.
+					//
+					// On interpole donc le point de traversee sur l'arete. Cela
+					// seme jusqu'a trois germes par point au lieu d'un, tous
+					// VALIDES, au lieu d'un seul qui a une chance sur quatre de
+					// l'etre.
+					auto Semer = [&](int32 DI, int32 DJ, int32 DK)
 					{
 						if (I + DI > NX || J + DJ > NY || K + DK > NZ)
 						{
-							return false;
+							return;
 						}
 						const double W = Grossier[Index(I + DI, J + DJ, K + DK)];
-						return (W < MC.IsoValue) != bDedans;
+						if ((W < MC.IsoValue) == bDedans)
+						{
+							return;
+						}
+
+						const double Ecart = W - V;
+						const double T = (FMath::Abs(Ecart) > UE_DOUBLE_SMALL_NUMBER)
+							? FMath::Clamp((MC.IsoValue - V) / Ecart, 0.0, 1.0)
+							: 0.5;
+
+						const FVector A = Point(I, J, K);
+						const FVector B = Point(I + DI, J + DJ, K + DK);
+						const FVector P = A + (B - A) * T;
+						Germes.Emplace(P.X, P.Y, P.Z);
 					};
 
-					if (Traverse(1, 0, 0) || Traverse(0, 1, 0) || Traverse(0, 0, 1))
-					{
-						const FVector P = Point(I, J, K);
-						Germes.Emplace(P.X, P.Y, P.Z);
-					}
+					Semer(1, 0, 0);
+					Semer(0, 1, 0);
+					Semer(0, 0, 1);
 				}
 			}
 		}
 
+		OutStats.Seeds = Germes.Num();
+
 		if (Germes.Num() == 0)
 		{
+			OutStats.Cause = FWorldseedVoxelStats::ECause::SansTraversee;
 			// Aucune traversee : le chunk est tout roche ou tout air. C'est le
 			// cas le plus frequent, et il ne coute plus que le balayage.
 			OutStats.FieldSamples = Samples.load(std::memory_order_relaxed);
@@ -166,10 +203,12 @@ namespace WorldseedVoxelChunk
 
 		if (ShouldStop && ShouldStop())
 		{
+			OutStats.Cause = FWorldseedVoxelStats::ECause::Annule;
 			return false;
 		}
 		if (MC.Triangles.Num() == 0 || MC.Vertices.Num() == 0)
 		{
+			OutStats.Cause = FWorldseedVoxelStats::ECause::MaillageVide;
 			return false;
 		}
 
