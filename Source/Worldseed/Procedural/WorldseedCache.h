@@ -29,8 +29,14 @@
  *       compteur : une correction de l'attribution des roches doit desormais
  *       invalider les mondes en cache, sinon ils rendent l'ancienne carte des
  *       roches sans le signaler. Paye comptant le jour de son ajout.
+ *   8 a 12 - crans dont la raison est dans leur commit ; cet historique avait
+ *       cesse d'etre tenu, ce qui est un defaut : le lire ne dit plus ce que
+ *       chaque cran a change.
+ *  13 - le plateau disseque (WorldseedPlateau) : une passe de plus abaisse le
+ *       relief entre l'erosion et le second climat, donc les mondes en cache
+ *       n'ont ni mesas ni canyons et doivent etre refaits.
  */
-#define WORLDSEED_PIPELINE_VERSION 12
+#define WORLDSEED_PIPELINE_VERSION 13
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

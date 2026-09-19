@@ -3,6 +3,9 @@
 #include "Procedural/WorldseedPipeline.h"
 
 #include "Procedural/WorldseedCoast.h"
+#include "Procedural/WorldseedFins.h"
+#include "Procedural/WorldseedPlateau.h"
+#include "Procedural/WorldseedStrata.h"
 
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedErosion.h"
@@ -381,6 +384,28 @@ namespace WorldseedPipeline
 			WorldseedCoast::Build(Geometry, Out.Lithology,
 				FWorldseedLithologyRules::FromRules(*Rules), CoastRules, Seed,
 				Out.ElevationM);
+		}
+
+		// --- etape 4c : le plateau disseque, donc les mesas et les canyons -----
+		//
+		// APRES LE LITTORAL, et l'ordre porte deux raisons. Le trait de cote
+		// est alors definitif, donc le drainage que la passe calcule trouve ses
+		// exutoires au bon endroit. Et les deux passes ne se marchent pas
+		// dessus : celle-ci exige `altitudeMinM` au-dessus de la mer, quand le
+		// recul de falaise travaille precisement sur la bande cotiere.
+		//
+		// AVANT LE CLIMAT, comme le littoral et pour la meme raison : un relief
+		// remanie apres la classification porterait la vegetation d'une plaine
+		// sur des escarpements de cent cinquante metres.
+		{
+			WorldseedPlateau::Build(Geometry, Out.Lithology,
+				FWorldseedLithologyRules::FromRules(*Rules),
+				Out.Climate.PrecipMm,
+				FWorldseedPlateauRules::FromRules(*Rules),
+				FWorldseedFinRules::FromRules(*Rules),
+				FWorldseedStratRules::FromRules(*Rules,
+					FWorldseedLithologyRules::FromRules(*Rules)), Seed,
+				Out.ElevationM, &Out.Tables);
 		}
 
 		// --- seconde passe de climat sur le relief erode -----------------------

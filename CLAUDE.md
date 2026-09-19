@@ -4701,6 +4701,249 @@ pas une preuve. Releve identique avant et apres les trois chantiers :
   sonde : lithologie / relief / diaclases d'un cote, cretes / couverture des
   lames / verification des arches de l'autre.
 
+### Le plateau disseque : mesas et canyons (19 septembre 2026)
+
+Demande du proprietaire : « fais les canyons et les mesas », puis, en cours de
+route, « ils doivent etre places dans des zones geographiques appropriees en
+terme de climat, de relief et de lithologie ». Les deux formes sortent d'UNE
+seule passe, `WorldseedPlateau`, posee a cote de la passe littorale.
+
+**CE QUI FAIT LIRE UNE MESA TIENT EN UN SEUL FAIT.** Sur une photo de Monument
+Valley, TOUS les sommets sont a la MEME altitude, parce qu'ils sont les
+morceaux d'UNE ancienne plaine. Aucun bruit fractal ne peut produire cela : un
+fBm donne des sommets a des hauteurs toutes differentes, donc des collines et
+jamais des tables. D'ou une surface de REFERENCE -- maximum glissant du relief,
+puis lissage. Le maximum retient les sommets ; le lissage les relie en une
+surface continue ; et la ou ce lissage passe SOUS un sommet isole, le `min()`
+final rabote ce sommet A PLAT. **Prendre le maximum seul ne raboterait rien** :
+il vaut H sur chaque sommet par construction.
+
+Mesas et canyons sont les deux faces d'un meme objet -- ce qui reste, et ce qui
+a ete enleve -- ce qui est precisement pourquoi une seule passe les produit.
+
+**UNE AFFIRMATION DU DEPOT ETAIT FAUSSE, et elle a ete corrigee.** Le
+commentaire de la section `lames` de `world_rules.json` annoncait que « le meme
+champ donne les canyons et les mesas a d'autres reglages ». C'est vrai pour les
+canyons EN FENTE, faux pour les mesas : des fentes paralleles laissent des
+CRETES, dont les sommets suivent le relief existant, donc a des altitudes
+toutes differentes. Il y manquait la surface de reference, qui est tout le
+mecanisme.
+
+**LA PASSE N'ABAISSE JAMAIS**, comme la passe littorale dont elle copie la
+structure, et le plancher du fond de canyon est PORTANT et non defensif : sans
+lui, un escarpement de 220 m creuse depuis une table qui n'en fait que 80
+enverrait le fond SOUS le niveau de la mer, donc convertirait de la terre en
+mer. La part emergee est calibree a 29,2 pour cent et traitee comme un
+invariant du projet. Verifie : **29,20 pour cent avant comme apres**.
+
+**ELLE VIT DANS LE RELIEF 2D, PAS DANS LE VOXEL**, et ce n'est pas un choix de
+commodite : le voxel ne creuse que `bandeM` sous la surface, cent metres, ou une
+table de deux cents ne tiendrait pas. Le voxel ajoute ensuite son grain d'un
+metre sur la paroi, ce qui est son role.
+
+**LE PLACEMENT SE LIT SUR LES CHAMPS CONTINUS, JAMAIS SUR L'ETIQUETTE DE
+BIOME** -- meme regle que le karst. Trois criteres physiques, et chacun a sa
+raison : roche sedimentaire tendre, parce qu'une table-montagne est un
+empilement debite en bancs horizontaux que le granite ne fait pas ; pluie
+faible, parce qu'un escarpement vertical est une forme ARIDE -- sous la pluie
+le sol se forme, la vegetation s'installe et la paroi s'adoucit en versant ; et
+relief local faible, parce qu'une mesa est le RESTE d'une plaine et que sans
+plaine il n'y a rien a dissequer.
+
+**LE CANYON SUIT LE DRAINAGE, PONDERE PAR LA PLUIE.** Un flux a poids uniforme
+mesure une AIRE ; pondere par la pluie il mesure un DEBIT, et c'est la
+difference entre un oued et un fleuve. Cela fait exister le fleuve ALLOGENE --
+celui qui ramasse son eau dans des montagnes humides et traverse ensuite un
+desert. Le Colorado est exactement cela, et c'est pourquoi le plus grand canyon
+du monde se trouve dans une region qui ne recoit presque rien. Le champ de
+lames ajoute la seconde echelle, les fentes etroites.
+
+**L'ENTONNOIR EST CE QUI A RENDU LE REGLAGE POSSIBLE**, et c'est la lecon de
+methode a retenir. Une couverture trop faible peut venir de six gardes
+differentes, et sans le compte de chacune on regle au hasard la mauvaise -- ce
+que le depot a deja paye quatre fois de suite sur le routage des galeries.
+Releve, graine 20260909, 64 x 32 km :
+
+    terres                         612 369   100,00 %
+    altitude >= 60 m               437 220    71,40 %
+    pluie <= 520 mm                280 012    45,73 %
+    relief local <= 320 m           84 033    13,72 %
+    durete 0,25 a 0,70              29 028     4,74 %
+    masque de region                   857     0,14 %   <- le coupable
+
+Les quatre criteres physiques laissaient un gisement sain de **4,74 % des
+terres**. C'est le masque de region qui etranglait tout.
+
+**UNE FREQUENCE TROP BASSE REND LA COUVERTURE ALEATOIRE, et ce n'est pas une
+question de dosage.** A 0,00012 cycle/m la longueur d'onde fait 8,3 km, soit
+une trentaine de taches sur tout le monde ; or le terrain eligible est lui-meme
+groupe en quelques regions. **L'intersection de deux ensembles peu nombreux est
+une LOTERIE sur la graine, pas une proportion** : le masque ne gardait que 3 %
+de l'eligible la ou son seuil en promettait 18. Porte a 0,00028 -- environ 120
+taches -- l'intersection redevient statistique. **A retenir pour tout masque
+pose EN PLUS d'autres criteres deja selectifs.**
+
+**ETAT MESURE**, apres calibrage, temoin SPATIAL dans le meme monde (les
+cellules qui passent toutes les gardes sauf le masque) :
+
+|                                   | en zone | temoin |
+|---|---|---|
+| part des terres                   | 1,47 % | 3,31 % |
+| pente mediane                     | 10,3 deg | 4,0 |
+| cellules sous 5 degres            | 31,5 % | 55,7 |
+| **cellules au-dela de 45 degres** | **18,2 %** | **0,0** |
+| ecart d'altitude des sommets      | 17 m pour 220 d'escarpement, soit 7,8 % | -- |
+
+Chute maximale 192 m, moyenne 61 m, cout 1,4 s par monde.
+
+**LE TEMOIN EST SPATIAL, PAS TEMPOREL, ET C'EST DELIBERE.** Comparer deux
+generations demanderait de changer une regle entre les deux -- or **le PIE NE
+RELIT PAS `world_rules.json`**, seules les sondes le font, si bien qu'un temoin
+ainsi obtenu mesure exactement le cas teste. Le depot a deja paye ce piege sur
+l'A/B du reseau de grottes.
+
+**ET L'ECART DE SOMMETS NE SE LIT PAS CONTRE LE TEMOIN** -- piege que cette
+sonde a d'abord tendu elle-meme. Le temoin est une PLAINE : ses rares sommets y
+partagent trivialement leur altitude, donc son ecart est petit PAR ABSENCE DE
+RELIEF, pas par partage d'une surface. Compare a lui, la zone parait toujours
+pire. La seule lecture juste est RELATIVE A L'ESCARPEMENT.
+
+**DEUX DEFAUTS TROUVES A L'IMAGE, ET SEULEMENT A L'IMAGE.**
+
+1. **Un masque de region dit ou une forme a le DROIT d'exister, pas qu'elle
+   existe.** La premiere version de `WorldseedPlateau::Sites` ne testait que ce
+   masque : les sites designes avaient leur sommet a **700 et 1064 metres**,
+   c'est-a-dire des MONTAGNES que la passe n'avait jamais touchees. Aucune
+   mesure agregee ne le voyait. Corrige par deux gardes purement geometriques,
+   qui ne demandent ni la roche ni la pluie : le sommet doit etre PLAT (moins de
+   8 degres) et le denivele local doit valoir a peu pres UN escarpement (0,5 a
+   1,6 fois). Un pic a le meme denivele mais une pente forte ; une montagne a un
+   denivele bien plus grand. Apres : 5 sites sur 139 candidats, sommets de 89 a
+   420 m, parois de 118 a 191 m.
+
+2. **ON NE PHOTOGRAPHIE PAS UNE FORME D'UN KILOMETRE AVEC UN RAYON DE 250 m.**
+   Le voxel n'existe que dans le rayon de chargement ; au-dela on photographie
+   le SOL DE FOND, a 63 m par maille. Les premieres vues, prises a 900 m, ne
+   montraient donc pas le relief mais son decor d'horizon : des formes lisses et
+   arrondies ou l'on croit voir un relief mou alors qu'on ne voit pas le relief
+   du tout. **Le depot avait deja perdu une heure sur ce piege**, a 420-580 m, et
+   il est consigne plus haut -- je l'ai refait. Les vues sont desormais a 200 m
+   et cadrent la PAROI et son rebord contre le ciel, pas la silhouette entiere.
+
+**CE QUI SE REBATIT NE SE TRANSPORTE PAS.** `WorldseedPlateau::Sites` est une
+fonction PURE du relief fini, des regles et de la graine : le menu ne la
+transporte pas et le terrain la rejoue au chargement, exactement comme le reseau
+de grottes. Transporter une donnee deterministe la doublerait. Aucun effet sur
+le cache.
+
+**UNE SEULE IMPLEMENTATION, DEUX CONSOMMATEURS.** `Surfaces` et `ZoneAt` sont
+publiques a dessein : la passe les emploie pour creuser, la sonde pour mesurer.
+Une sonde qui reimplemente son critere valide une COPIE du mecanisme, pas le
+mecanisme -- c'est la regle du depot, et le portage de `terre.py` l'avait deja
+rappelee.
+
+**RESTE OUVERT, ET CHIFFRE :**
+
+- **La silhouette entiere n'a pas ete vue.** A 250 m de rayon de chargement, une
+  table de plus d'un kilometre ne tient pas dans une vue. Ce qui est verifie a
+  l'image est la PAROI ; ce qui ne l'est pas est le partage d'altitude entre
+  tables voisines, qui n'est etabli que par la mesure (17 m pour 220). Pour le
+  voir il faudrait soit elargir le rayon pour la tournee, soit reduire l'echelle
+  des tables (`porteeM`), soit des anneaux de resolution pour le sol de fond --
+  chantier deja ouvert par ailleurs.
+- **La distribution des pentes n'est pas franchement bimodale** : 31,5 % de plat,
+  39,8 % entre 5 et 25 degres, 18,2 % au-dela de 45. La bande intermediaire
+  reste la plus large, ce qui veut dire que les parois sont encore adoucies par
+  la maille de simulation de 31 m. Le voxel les raidit localement ; la mesure
+  2D, elle, ne peut pas descendre sous sa maille.
+
+### La lithologie passe en 3D : une COLONNE, pas une grille (19 septembre 2026)
+
+Question du proprietaire : « est-il possible de passer la lithologie en 3D ?
+cela permettrait de resoudre les choses ? ». Reponse : oui, et c'etait la brique
+manquante commune a DEUX chantiers -- les gradins du canyon et le chapiteau de
+la mesa sont le meme mecanisme, l'erosion differentielle VERTICALE.
+
+**UNE GRILLE 3D EST IMPOSSIBLE, ET LE PROJET AVAIT DEJA FAIT LE CALCUL.** A un
+metre de voxel ce monde ferait soixante-seize milliards de voxels : un seul
+identifiant de roche par voxel pese 76 Go. C'est exactement l'argument qui avait
+fait du relief une FONCTION plutot qu'une grille, et il vaut tel quel ici.
+
+**LA REPONSE EST UNE COLONNE STRATIGRAPHIQUE.** La carte 2D existante dit quelle
+roche fait le SOCLE ; une SERIE de bancs se lit par-dessus a n'importe quel
+(x, y, z), sans rien stocker. `WorldseedStrata::BancAt` remplace un acces
+tableau par une descente dans une pile de six elements. Cout memoire : zero.
+`WorldseedLithology.h` l'avait d'ailleurs annonce -- « un vrai sous-sol est
+feuillete [...] c'est une extension naturelle ».
+
+**LES BANCS SONT HORIZONTAUX, ET CE N'EST PAS UNE SIMPLIFICATION.** Les rayures
+du Grand Canyon sont horizontales PARCE QUE les bancs le sont, et toutes les
+mesas d'une region partagent leur sommet parce qu'elles s'arretent TOUTES sur le
+meme banc dur. La platitude EST la cause de la forme. Le gauchissement -- 140 m
+sur 16 km de longueur d'onde, moins d'un degre -- existe seulement pour eviter
+que le monde entier porte ses corniches au meme niveau sur 64 km.
+
+**LA SERIE NE RECOUVRE QUE LE SEDIMENTAIRE**, par une fenetre de durete sur le
+socle. Sur granite ou basalte, tout rend la roche 2D : le comportement d'avant,
+a l'identique. Une donnee absente doit rester sans effet.
+
+**CE QUE LA STRATIGRAPHIE REMPLACE, ET C'EST UN GAIN DE FOND.** Le sommet d'une
+mesa n'est plus RABOTE geometriquement sur un maximum glissant : il se cale sur
+le TOIT DU PREMIER BANC DUR. C'est le mecanisme reel, decrit par le
+proprietaire -- « le banc dur protege les tendres du dessous, l'erosion sape la
+base, la roche dure s'effondre par blocs ». Le maximum glissant reste, mais pour
+ce qu'il sait faire : servir de repli la ou aucun banc dur n'affleure.
+
+**MESURE, et c'est elle qui valide le remplacement** (graine 20260909, 64 x 32 km) :
+
+| | rabotage geometrique | chapiteau geologique |
+|---|---|---|
+| cellules remodelees | 0,20 % des terres | **0,77 %** |
+| plat sous 5 degres | 40,2 % | 32,3 % |
+| cellules au-dela de 45 degres | 6,8 % | **12,6 %** |
+| ecart d'altitude des sommets | 3 m, soit 1,4 % | **3 m, soit 1,5 %** |
+| part emergee | 29,20 % | **29,20 %** |
+
+**L'ECART DES SOMMETS NE S'EST PAS DEGRADE**, et c'est le point : la propriete
+qui definit une mesa vient desormais de la GEOLOGIE et non d'une astuce, sans
+rien perdre.
+
+**LE PROFIL DE CANYON A ETE REFAIT AU PASSAGE, et le defaut valait la lecon.**
+La premiere version seuillait le flux accumule par un `smoothstep` : la
+profondeur decroissait donc continument en s'eloignant du lit, ce qui donne une
+RAMPE et non une gorge. Le releve le disait sans ambiguite -- abaissement MOYEN
+58 m pour un maximum de 166, et 39,8 % des cellules entre 5 et 25 degres contre
+16,4 au-dela de 45. **Le remede etait deja ecrit dans la passe littorale**, dont
+le commentaire porte : « LA FACE DOIT TENIR DANS UNE MAILLE DE SIMULATION, sinon
+la falaise n'est qu'une rampe ». Le profil se dessine desormais depuis la
+DISTANCE AU CHENAL -- transformee exacte du projet -- : plancher plat sur
+`largeurFondM`, puis chute sur une maille. La cle `drainageLargeur` a disparu
+avec le smoothstep, plutot que d'etre laissee a mentir dans le fichier.
+
+**ET LE SEUIL DE DRAINAGE SE LIT CONTRE LA DISTRIBUTION, une fois de plus.**
+A 3,20 -- le rang 75 -- un QUART du terrain devenait chenal, et avec 76 m de
+gorge de chaque cote il ne restait plus de plateau : la part de sommets plats
+tombait de 31,5 a 11,6 %. Or le Colorado est UN fleuve sur un vaste plateau.
+Porte au rang 93, le plateau survit entre les gorges -- condition pour qu'il
+s'y forme des mesas.
+
+**RESTE A FAIRE, dans l'ordre et sans l'adoucir :**
+
+1. **L'EROSION NE LIT PAS ENCORE LES BANCS.** `Erodibility` fabrique un K par
+   cellule depuis la roche 2D, une fois, AVANT la boucle. Pour que les gradins
+   EMERGENT au lieu d'etre poses, il faut reechantillonner K a l'altitude de la
+   surface COURANTE a chaque passe : en descendant, la surface traverse alors
+   les bancs et le taux change. C'est la que l'escalier du Grand Canyon naitra
+   vraiment. Le precedent est favorable -- la durete branchee sur une erosion
+   sans apport ne deplacait que 4 a 7 cm, mais une fois la boucle
+   soulevement/erosion en place elle a donne 25 degres de pente au granite
+   contre 9,5 au calcaire.
+2. **Les huit autres sites d'appel de la durete restent 2D** : grottes, lames,
+   diaclases, littoral, sondes. Rien n'est casse -- ils lisent le socle -- mais
+   une galerie qui descend devrait changer de roche.
+3. **Rien n'a ete REGARDE depuis la stratigraphie.** Les parois rayees sont
+   branchees et compilent ; elles n'ont pas ete photographiees.
+
 ### Le Python est parti : tout est en C++ (19 septembre 2026)
 
 Demande du proprietaire : « je souhaite vraiment tout passer en C++ de maniere

@@ -9,6 +9,8 @@
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedDensity.h"
+#include "Procedural/WorldseedPlateau.h"
+#include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 
 #include <atomic>
@@ -300,6 +302,12 @@ public:
 	const FWorldseedGeometry& MondeGeometrie() const { return Geometry; }
 	const TArray<float>& MondeAltitudes() const { return HeightsM; }
 	const FWorldseedCaveNetwork& MondeGrottes() const { return CaveNetwork; }
+
+	/** Les sites de tables, rebatis au chargement et jamais serialises. */
+	const TArray<FWorldseedPlateauSite>& MondeTables() const { return Tables; }
+
+	/** Les fonds de canyon, rebatis au chargement comme les tables. */
+	const TArray<FWorldseedPlateauSite>& MondeCanyons() const { return Canyons; }
 	const FWorldseedDensity& MondeChamp() const { return Density; }
 
 	/** Vrai quand le pion a ete rendu a la gravite sur un sol solide. */
@@ -348,6 +356,18 @@ private:
 
 	/** Le reseau de grottes du monde charge. */
 	FWorldseedCaveNetwork CaveNetwork;
+
+	/** Sites de tables, fonction pure du relief et de la graine. */
+	TArray<FWorldseedPlateauSite> Tables;
+
+	/** Fonds de canyon : l autre face du meme objet. */
+	TArray<FWorldseedPlateauSite> Canyons;
+
+	/** La serie stratigraphique, lue une fois au chargement. */
+	FWorldseedStratRules StratRules;
+
+	/** Durete par identifiant, pour la garde du socle sedimentaire. */
+	TArray<float> DureteParId;
 	FWorldseedLithology Lithology;
 
 	/**

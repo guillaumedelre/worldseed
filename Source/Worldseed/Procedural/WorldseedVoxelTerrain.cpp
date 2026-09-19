@@ -1,6 +1,8 @@
 // Worldseed - terrain voxel : diffusion des chunks autour du joueur.
 
 #include "Procedural/WorldseedVoxelTerrain.h"
+#include "Procedural/WorldseedPlateau.h"
+#include "Procedural/WorldseedStrata.h"
 
 #include "Procedural/WorldseedGameInstance.h"
 #include "Procedural/WorldseedPipeline.h"
@@ -139,6 +141,16 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			const FWorldseedLithologyRules LR = FWorldseedLithologyRules::FromRules(*LithoRules);
 			Density.SetLithology(Lithology, LR);
 
+			StratRules = FWorldseedStratRules::FromRules(*LithoRules, LR);
+			DureteParId.Reset();
+			for (const FWorldseedLithologyEntry& E : LR.Catalogue)
+			{
+				DureteParId.Add(E.Hardness);
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : strates -- %d bancs, %.0f m de serie, datum %.0f m"),
+				StratRules.Serie.Num(), StratRules.TotalThicknessM, StratRules.DatumM);
+
 			CouleurParRoche.Reset();
 			NomParRoche.Reset();
 			for (const FWorldseedLithologyEntry& E : LR.Catalogue)
@@ -169,6 +181,21 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		TEXT("[Worldseed] voxel : chunks de %.0f m, voxel %.2f m, rayon %.0f m, ")
 		TEXT("collision partout, %d travaux simultanes"),
 		ChunkSideM, DensityRules.VoxelSizeM, LoadRadiusM, MaxJobsInFlight);
+
+	// LES SITES DE TABLES SE REBATISSENT, ILS NE SE TRANSPORTENT PAS. Meme
+	// raisonnement que pour le reseau de grottes, que le menu ne transporte pas
+	// non plus : la recherche est une fonction PURE du relief, des regles et de
+	// la graine, donc la transporter doublerait une donnee deterministe. Et il
+	// FAUT la faire ici, sans quoi une partie lancee depuis le menu n'aurait
+	// aucun lieu remarquable la ou une partie lancee en PIE en a.
+	{
+		FString Err;
+		if (const UWorldseedRules* const R = WorldseedPipeline::GetRules(Err))
+		{
+			WorldseedPlateau::Sites(Geometry, HeightsM,
+				FWorldseedPlateauRules::FromRules(*R), WorldSeed, Tables, &Canyons);
+		}
+	}
 
 	if (UWorld* const W = GetWorld())
 	{
@@ -592,7 +619,34 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 			const double Profondeur = Density.SurfaceHeightM(X, Y) - Z;
 			if (Profondeur > 0.0)
 			{
-				const uint8 Id = Lithology.Id[Cell];
+				// --- LA ROCHE SE LIT EN TROIS DIMENSIONS --------------------
+				//
+				// C'ETAIT UNE ROCHE PAR COLONNE, donc une paroi d'une seule
+				// teinte du sommet au pied. Or un vrai sous-sol est FEUILLETE,
+				// et c'est exactement ce qui donne au Grand Canyon ses rayures :
+				// les bancs durs font les corniches, les tendres les talus, et
+				// chacun a sa couleur.
+				//
+				// La serie ne recouvre que le SEDIMENTAIRE : sur du granite ou
+				// du basalte, la garde de durete ne passe pas et l'on retombe
+				// sur la roche 2D, c'est-a-dire le comportement d'avant a
+				// l'identique. Une donnee absente doit rester sans effet.
+				uint8 Id = Lithology.Id[Cell];
+				if (StratRules.IsActive())
+				{
+					const float DureteSocle = DureteParId.IsValidIndex(Id)
+						? DureteParId[Id] : 1.0f;
+					if (DureteSocle >= StratRules.SocleHardnessMin
+						&& DureteSocle <= StratRules.SocleHardnessMax)
+					{
+						const int32 Banc = WorldseedStrata::BancAt(
+							X, Y, Z, StratRules, WorldSeed);
+						if (StratRules.Serie.IsValidIndex(Banc))
+						{
+							Id = StratRules.Serie[Banc].RockId;
+						}
+					}
+				}
 				if (CouleurParRoche.IsValidIndex(Id))
 				{
 					const float T = FMath::Clamp(
@@ -1141,6 +1195,21 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 			TEXT("%d chambres dans le monde ; les bouches, gouffres et dolines ")
 			TEXT("sont au journal de generation.") LINE_TERMINATOR,
 			CaveNetwork.Chambers.Num());
+	}
+
+	// LES TABLES SONT INTROUVABLES AU HASARD, et c'est la raison d'etre de ces
+	// lignes : elles couvrent environ un pour cent des terres sur 64 x 32 km.
+	// Meme motif que pour les arches -- une forme qu'on ne sait pas trouver
+	// n'existe pas pour le joueur.
+	for (int32 I = 0; I < Tables.Num() && I < 10; ++I)
+	{
+		const FWorldseedPlateauSite& S = Tables[I];
+		const FString L = FString::Printf(
+			TEXT("Worldseed.Aller %.0f %.0f   table %-12d sommet %5.0f m, ")
+			TEXT("paroi de %.0f m"),
+			S.CentreM.X, S.CentreM.Y, I + 1, S.AltitudeM, S.EscarpementM);
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] lieu : %s"), *L);
+		Sortie += L + LINE_TERMINATOR;
 	}
 
 	return Sortie;

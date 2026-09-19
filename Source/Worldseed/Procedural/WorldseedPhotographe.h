@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
+#include "Procedural/WorldseedUdsBridge.h"
 #include "Subsystems/WorldSubsystem.h"
 
 #include "WorldseedPhotographe.generated.h"
@@ -65,9 +67,39 @@ public:
 	/** Les plus hautes falaises littorales, vues depuis la mer. */
 	int32 AjouterLesFalaises(int32 Combien);
 
+	/**
+	 * Les tables : on les cadre DE COTE ET DE LOIN.
+	 *
+	 * UNE MESA NE SE PHOTOGRAPHIE PAS D EN HAUT NI DE PRES. De pres on ne
+	 * voit qu une paroi, et depuis le sommet on ne voit qu une plaine -- dans
+	 * les deux cas la forme disparait. Ce qui la fait lire, c est la
+	 * SILHOUETTE : un trait horizontal pose sur un socle, et le sommet voisin
+	 * a la meme hauteur. Le depot a deja paye la lecon sur la teinte de
+	 * l herbe, jugee a la verticale ou un quad opaque est indiscernable du
+	 * sol : juger une silhouette CONTRE LE CIEL, de cote, jamais a la
+	 * verticale.
+	 */
+	int32 AjouterLesTables(int32 Combien);
+
+	/**
+	 * Les canyons : on descend DEDANS, on ne les survole pas.
+	 *
+	 * UN CANYON VU D EN HAUT EST UNE RAYURE, et c est tout ce qu on en voit.
+	 * Ce qui le fait lire, c est d etre au FOND, entre deux parois qui
+	 * montent hors du cadre. La camera se pose donc sur le plancher et
+	 * regarde le long de la gorge.
+	 */
+	int32 AjouterLesCanyons(int32 Combien);
+
+	/** Reecrit l heure a midi avant chaque prise. Sans effet sans UDS. */
+	void MidiFige();
+
 	bool EnCours() const { return Tournee.IsValidIndex(Etape); }
 
 private:
+	FWorldseedUdsBridge Uds;
+	bool bUdsResolu = false;
+
 	/** Le terrain du monde, ou nul s'il n'y en a pas. */
 	AWorldseedVoxelTerrain* Terrain() const;
 

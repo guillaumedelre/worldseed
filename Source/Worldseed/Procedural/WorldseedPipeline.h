@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedClimate.h"
+#include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedFields.h"
 #include "Procedural/WorldseedCaves.h"
@@ -80,6 +81,16 @@ namespace WorldseedPipeline
 		 * connexite est acquise par construction, donc jamais a verifier.
 		 */
 		FWorldseedCaveNetwork Caves;
+
+		/**
+		 * Les sites de tables, pour qu'on puisse aller les voir.
+		 *
+		 * Fonction PURE du relief fini, des regles et de la graine : le menu
+		 * ne les transporte pas et le terrain les rebatit, exactement comme le
+		 * reseau de grottes. Ils sont ici pour la sonde et pour le journal de
+		 * generation, pas comme une donnee a conserver.
+		 */
+		TArray<FWorldseedPlateauSite> Tables;
 
 		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
 		bool bFromCache = false;

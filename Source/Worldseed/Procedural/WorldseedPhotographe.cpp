@@ -2,7 +2,10 @@
 
 #include "Procedural/WorldseedPhotographe.h"
 
+#include "Procedural/WorldseedPlateau.h"
+
 #include "Procedural/WorldseedVoxelTerrain.h"
+#include "Procedural/WorldseedUdsBridge.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
@@ -75,6 +78,31 @@ void UWorldseedPhotographe::OnWorldBeginPlay(UWorld& InWorld)
 	// test de validite. On attend donc le premier tick ou le monde est la.
 }
 
+void UWorldseedPhotographe::MidiFige()
+{
+	// UNE TOURNEE LONGUE TOMBE DANS LA NUIT, et alors elle ne prouve plus rien.
+	// L horloge d UDS avance d une unite par 1,125 s reelle : vingt-sept arrets
+	// a trente-six secondes font seize minutes, soit HUIT HEURES de jeu. La
+	// moitie des vues sortait donc en bleu nuit -- et le depot a deja une regle
+	// pour cela, « juger la couleur EN PLEIN JOUR », qu il avait fallu apprendre
+	// sur un mur d arbustes qui rendait noir sous la pluie.
+	//
+	// On REECRIT l heure avant chaque prise plutot que d arreter l animation :
+	// une ecriture rate proprement si le pack n est pas la, alors qu arreter
+	// l horloge laisserait le monde fige pour la suite de la partie.
+	if (!bUdsResolu)
+	{
+		bUdsResolu = true;
+		Uds.Resolve(GetWorld());
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : ciel -- %s"),
+			Uds.IsValid() ? *Uds.Describe() : TEXT("aucun UDS, heure non figee"));
+	}
+	if (Uds.IsValid())
+	{
+		Uds.WriteNumber(TEXT("Time of Day"), 1300.0);
+	}
+}
+
 void UWorldseedPhotographe::Photographier(double XMetres, double YMetres,
 	const FString& Nom)
 {
@@ -114,6 +142,100 @@ int32 UWorldseedPhotographe::AjouterLesArches()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : %d arches a la tournee"), Ajoutees);
+	return Ajoutees;
+}
+
+int32 UWorldseedPhotographe::AjouterLesTables(int32 Combien)
+{
+	AWorldseedVoxelTerrain* const T = Terrain();
+	if (!T) { return 0; }
+
+	const TArray<FWorldseedPlateauSite>& Sites = T->MondeTables();
+	int32 Ajoutees = 0;
+
+	for (int32 I = 0; I < Sites.Num() && Ajoutees < Combien; ++I)
+	{
+		const FWorldseedPlateauSite& S = Sites[I];
+
+		FWorldseedPhotoStop E;
+		E.Nom = FString::Printf(TEXT("table%02d"), I + 1);
+		E.CibleM = FVector(S.CentreM.X, S.CentreM.Y, S.AltitudeM);
+
+		// LA DISTANCE EST BORNEE PAR LE TERRAIN, PAS PAR LE CADRAGE, et c'est
+		// une contrainte dure. Le voxel n'existe que dans le rayon de
+		// chargement -- 250 m -- et au-dela on photographie le SOL DE FOND, a
+		// 63 m par maille : des formes lisses et arrondies ou l'on croit voir
+		// un relief mou alors qu'on ne voit pas le relief du tout. Le depot a
+		// deja perdu une heure sur ce piege avec des vues a 420-580 m.
+		//
+		// CONSEQUENCE ASSUMEE : on ne photographie PAS la silhouette entiere
+		// d'une table de plus d'un kilometre. On cadre sa PAROI et son rebord
+		// contre le ciel, ce qui reste le controle diagnostique -- un mur
+		// vertical surmonte d'un trait horizontal.
+		// LA FENETRE DE PRISE DE VUE EST ETROITE, ET ELLE SE CALCULE.
+		//
+		// Les chunks se batissent autour du JOUEUR, dans un rayon de 250 m. Ce
+		// qu'on photographie doit donc etre a moins de 250 m de LUI, sans quoi
+		// l'on cadre le sol de fond a 63 m par maille -- des formes lisses et
+		// arrondies ou l'on croit voir un relief mou alors qu'on ne voit pas le
+		// relief du tout.
+		//
+		// Soit D la distance au centre de la butte, dont le rayon vaut environ
+		// `tables.porteeM`. Il faut D > rayon pour etre DESCENDU de la butte, et
+		// D - rayon < 250 pour que le rebord soit en voxel. A 250 m de rayon, la
+		// fenetre utile va donc de 250 a 500 m, et 350 la place au milieu.
+		//
+		// LA PREMIERE VERSION CADRAIT A 200 m ET N'A RIEN MONTRE : sur une table
+		// de 1,8 km, la camera etait encore DESSUS, et les cinq vues ont rendu
+		// une plaine. C'est ce qui a fait ramener les tables a l'echelle d'une
+		// BUTTE -- la forme doit tenir dans la distance de vue, sinon elle
+		// existe dans la donnee et pas pour le joueur.
+		E.DepuisM = FVector2D(0.82, 0.57);
+		E.DistanceM = 350.0f;
+
+		// Au PIED de la paroi, le regard vers le haut : c'est la seule position
+		// d'ou une butte se lit -- un mur vertical surmonte d'un trait
+		// horizontal, contre le ciel.
+		E.HauteurM = -FMath::Max(S.EscarpementM - 40.0f, 30.0f);
+		Tournee.Add(E);
+		++Ajoutees;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] photo : %d tables a la tournee (sur %d sites)"),
+		Ajoutees, Sites.Num());
+	return Ajoutees;
+}
+
+int32 UWorldseedPhotographe::AjouterLesCanyons(int32 Combien)
+{
+	AWorldseedVoxelTerrain* const T = Terrain();
+	if (!T) { return 0; }
+
+	const TArray<FWorldseedPlateauSite>& Sites = T->MondeCanyons();
+	int32 Ajoutees = 0;
+
+	for (int32 I = 0; I < Sites.Num() && Ajoutees < Combien; ++I)
+	{
+		const FWorldseedPlateauSite& S = Sites[I];
+
+		FWorldseedPhotoStop E;
+		E.Nom = FString::Printf(TEXT("canyon%02d"), I + 1);
+		E.CibleM = FVector(S.CentreM.X, S.CentreM.Y, S.AltitudeM);
+
+		// DE PRES, ET AU RAS DU PLANCHER. Un canyon ne se photographie pas de
+		// loin : a 350 m on est deja sur le plateau, donc on voit une rayure.
+		// Au fond, les parois sortent du cadre et c est ce qui le fait lire.
+		E.DepuisM = FVector2D(-0.57, 0.82);
+		E.DistanceM = 120.0f;
+		E.HauteurM = 6.0f;
+		Tournee.Add(E);
+		++Ajoutees;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] photo : %d canyons a la tournee (sur %d sites)"),
+		Ajoutees, Sites.Num());
 	return Ajoutees;
 }
 
@@ -240,6 +362,8 @@ void UWorldseedPhotographe::Demarrer()
 	if (!T) { return; }
 
 	const FWorldseedPhotoStop& E = Tournee[0];
+	MidiFige();
+
 	T->TeleporterJoueur(E.CibleM.X + E.DepuisM.X * E.DistanceM,
 		E.CibleM.Y + E.DepuisM.Y * E.DistanceM);
 
@@ -265,6 +389,8 @@ void UWorldseedPhotographe::Tick(float DeltaTime)
 		// condition des arches marines. Les arches ensuite.
 		AjouterLesFalaises(6);
 		AjouterLesArches();
+		AjouterLesTables(6);
+		AjouterLesCanyons(6);
 		Demarrer();
 	}
 
@@ -317,7 +443,12 @@ void UWorldseedPhotographe::Avancer()
 				FBox(FVector(VX - 30.0, VY - 30.0, E.CibleM.Z - 20.0),
 					FVector(VX + 30.0, VY + 30.0, E.CibleM.Z + 240.0)), Local);
 
-			double ZM = E.CibleM.Z + E.HauteurM;
+			// JAMAIS SOUS LE NIVEAU DE LA MER. La remontee qui suit sort de la
+			// ROCHE, elle ne sait rien de l EAU -- l ocean est un plan a
+			// l altitude zero, etranger au champ de densite. Une vue de table
+			// est sortie entierement bleue, camera NOYEE, parce que le pied
+			// calcule tombait a -45 m.
+			double ZM = FMath::Max(E.CibleM.Z + E.HauteurM, 3.0);
 			while (ZM < E.CibleM.Z + 220.0
 				&& T->MondeChamp().At(FVector(VX, VY, ZM), &Local) <= 0.0)
 			{

@@ -162,4 +162,23 @@ public:
 	static FString ProbeCaves(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f,
 		bool bSteepest = false);
+
+	/**
+	 * Le plateau disseque : mesas et canyons.
+	 *
+	 * TEMOIN SPATIAL, dans le MEME monde : les cellules en zone contre celles
+	 * qui remplissent tous les autres criteres -- roche, aridite, relief,
+	 * altitude -- et que seul le masque de region a laissees dehors. Comparer
+	 * deux generations demanderait de changer une regle entre les deux, et le
+	 * depot a paye ce piege : le PIE ne relit pas world_rules.json, si bien
+	 * qu'un temoin ainsi obtenu mesure exactement le cas teste.
+	 *
+	 * LA MESURE QUI TRANCHE est l'ecart-type des altitudes de sommets par
+	 * bloc. Une colline a sommet plat existe partout ; ce qui fait une TABLE,
+	 * c'est que les sommets voisins partagent une altitude, parce qu'ils sont
+	 * les morceaux d'une seule ancienne surface.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeTables(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024);
 };
