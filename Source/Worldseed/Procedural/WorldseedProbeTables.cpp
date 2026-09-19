@@ -35,6 +35,7 @@
 #include "Procedural/WorldseedFins.h"
 #include "Procedural/WorldseedFlow.h"
 #include "Procedural/WorldseedPlateau.h"
+#include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedRules.h"
 
 namespace WorldseedProbeTablesDetail
@@ -231,6 +232,117 @@ FString UWorldseedProbeLibrary::ProbeTables(int32 Seed, float HeightMeters,
 		}
 	}
 
+	// --- LES BANCS ONT-ILS MORDU ? -----------------------------------------
+	//
+	// C'EST LA SEULE MESURE QUI REPOND, et elle n'est pas evidente. Une passe
+	// d'erosion qui lit les bancs et une passe qui les ignore produisent deux
+	// reliefs qui se ressemblent en pente moyenne : le contraste ne se voit
+	// pas dans un agregat.
+	//
+	// LE TEMOIN EST L'HISTOGRAMME DES ALTITUDES. Si les bancs durs freinent
+	// l'erosion, la surface s'y ATTARDE : les altitudes des terres couvertes
+	// se massent alors au TOIT des bancs durs, au lieu de se repartir
+	// uniformement dans la serie. On compare donc la part qui tombe pres d'un
+	// toit dur a ce qu'un tirage uniforme donnerait -- un rapport superieur a
+	// 1 dit que les corniches existent.
+	FString Gradins = TEXT("serie inactive");
+	{
+		const FWorldseedStratRules SR = FWorldseedStratRules::FromRules(*S.Regles, S.Litho);
+		FWorldseedErodibilite Erod;
+		WorldseedStrata::PreparerErodibilite(G, S.World.Lithology, S.Litho, SR,
+			static_cast<float>(S.Regles->Num(TEXT("erosion"), TEXT("duretePoids"), 0.0)),
+			Seed, Erod);
+
+		if (Erod.IsActive() && SR.Serie.Num() == Erod.BasCumulM.Num())
+		{
+			// --- UN TEST SANS FENETRE, ET LE PREMIER EN AVAIT UNE ----------
+			//
+			// La premiere version comptait les cellules situees a moins de
+			// douze metres du TOIT d'un banc dur. Elle marchait sur des bancs
+			// epais et s'est effondree des qu'on les a amincis : a 18-35 m
+			// d'epaisseur, les fenetres se recouvrent et « pres d'un toit dur »
+			// devient vrai presque partout -- 47,4 % attendus au hasard, donc
+			// plus aucun pouvoir discriminant. Meme famille de faute que « un
+			// seuil n'est pas une part » : une mesure dont la reference derive
+			// avec le reglage qu'on teste ne mesure rien.
+			//
+			// CELUI-CI N'A PAS DE FENETRE. Si les bancs durs freinent
+			// l'erosion, la surface s'y ATTARDE : la durete moyenne du banc
+			// qu'elle OCCUPE depasse alors la moyenne de la serie, ponderee par
+			// les epaisseurs. Le rapport des deux est sans dimension, sans
+			// reglage, et ne sature pas.
+			// --- ET LA VRAIE SIGNATURE EST LA PENTE, PAS L'ALTITUDE --------
+			//
+			// A l'equilibre soulevement / erosion, la loi de puissance de
+			// courant donne `S = (U / K.A^m)^(1/n)` : un banc dur ne tient pas
+			// une ALTITUDE plus haute, il tient une PENTE plus raide. Tester
+			// l'altitude revenait donc a chercher un escalier la ou la physique
+			// implementee produit un changement d'inclinaison. Le depot avait
+			// deja etabli exactement cela sur les roches 2D -- granite 25
+			// degres contre calcaire 9,5.
+			double PenteDur = 0.0;
+			int32 NDur = 0;
+			double PenteTendre = 0.0;
+			int32 NTendre = 0;
+			const float CapMin = static_cast<float>(
+				S.Regles->Num(TEXT("tables"), TEXT("chapiteauDureteMin"), 0.40));
+
+			double SommeSurface = 0.0;
+			int32 DansSerie = 0;
+			for (int32 C = 0; C < Count; ++C)
+			{
+				if (H[C] <= 0.0f || !Erod.Couvert.IsValidIndex(C) || Erod.Couvert[C] == 0)
+				{
+					continue;
+				}
+				const float D = Erod.DatumM[C] - H[C];
+				if (D < 0.0f || D > SR.TotalThicknessM) { continue; }
+
+				const int32 B = Erod.BancAProfondeur(D);
+				if (!SR.Serie.IsValidIndex(B)) { continue; }
+				SommeSurface += SR.Serie[B].Hardness;
+				++DansSerie;
+
+				const int32 I = C % NX;
+				const int32 J = C / NX;
+				const float Dx = (H[Index(I + 1, J)] - H[Index(I - 1, J)]) / (2.0f * MailleM);
+				const float Dy = (H[Index(I, J + 1)] - H[Index(I, J - 1)]) / (2.0f * MailleM);
+				const double Pente = FMath::RadiansToDegrees(
+					FMath::Atan(FMath::Sqrt(Dx * Dx + Dy * Dy)));
+
+				if (SR.Serie[B].Hardness >= CapMin) { PenteDur += Pente; ++NDur; }
+				else { PenteTendre += Pente; ++NTendre; }
+			}
+
+			double SommeSerie = 0.0;
+			double SommeEpaisseur = 0.0;
+			for (const FWorldseedStratBanc& B : SR.Serie)
+			{
+				SommeSerie += static_cast<double>(B.Hardness) * B.ThicknessM;
+				SommeEpaisseur += B.ThicknessM;
+			}
+			const double MoyenneSerie = (SommeEpaisseur > 0.0)
+				? SommeSerie / SommeEpaisseur : 0.0;
+			const double MoyenneSurface = (DansSerie > 0)
+				? SommeSurface / DansSerie : 0.0;
+
+			const double MoyDur = (NDur > 0) ? PenteDur / NDur : 0.0;
+			const double MoyTendre = (NTendre > 0) ? PenteTendre / NTendre : 0.0;
+
+			Gradins = FString::Printf(
+				TEXT("%d cellules dans la serie.") LINE_TERMINATOR
+				TEXT("[Worldseed]     PENTE par banc -- dur %.2f deg (%d cellules) contre ")
+				TEXT("tendre %.2f deg (%d) : ecart %+.2f deg, rapport %.2f") LINE_TERMINATOR
+				TEXT("[Worldseed]     ALTITUDE -- durete du banc occupe %.3f contre %.3f ")
+				TEXT("en moyenne de serie, rapport %.3f"),
+				DansSerie,
+				MoyDur, NDur, MoyTendre, NTendre, MoyDur - MoyTendre,
+				(MoyTendre > 0.0) ? MoyDur / MoyTendre : 0.0,
+				MoyenneSurface, MoyenneSerie,
+				(MoyenneSerie > 0.0) ? MoyenneSurface / MoyenneSerie : 0.0);
+		}
+	}
+
 	const double PartTerres = 100.0 * Terres / FMath::Max(Count, 1);
 	auto Pct = [Terres](int32 N) { return 100.0 * N / FMath::Max(Terres, 1); };
 
@@ -240,6 +352,7 @@ FString UWorldseedProbeLibrary::ProbeTables(int32 Seed, float HeightMeters,
 		Seed, HeightMeters / 1000.0f, NX, NY, MailleM, Rayon);
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   part emergee %.2f %%  (invariant du projet : 29,2 %%)"), PartTerres);
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed]   GRADINS : %s"), *Gradins);
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]"));
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]   ENTONNOIR -- ou les cellules se perdent"));
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]     terres                        %8d  100.00 %%"), Terres);

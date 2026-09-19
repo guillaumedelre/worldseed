@@ -4944,6 +4944,84 @@ s'y forme des mesas.
 3. **Rien n'a ete REGARDE depuis la stratigraphie.** Les parois rayees sont
    branchees et compilent ; elles n'ont pas ete photographiees.
 
+### L'erosion lit les bancs : ce que ca donne, et ce que ca ne donne pas (19 septembre 2026)
+
+Demande du proprietaire : « fais l'erosion qui lit les bancs ». C'est fait,
+c'est mesure, et le resultat est A MOITIE celui qu'on cherchait -- il faut le
+dire dans cet ordre.
+
+**CE QUI A CHANGE DANS LE CODE.** `K` n'est plus fige avant la boucle : il est
+REECHANTILLONNE a l'altitude de la surface courante, a la cadence du drainage.
+Le datum -- toit de la serie -- est precalcule une fois, puisque l'erosion ne
+deplace pas une surface geologique ; chaque reechantillonnage ne coute alors
+qu'une descente dans la pile. **Cout mesure : nul.** 51,96 s de generation
+contre 51,72 avant.
+
+**LE CONTRASTE A DU ETRE AMPLIFIE, ET LA MESURE L'A EXIGE.** Premiere version :
+`K de 1,08 a 1,48`, soit un rapport de **1,37**. Une corniche qui resiste 1,37
+fois mieux que son talus ne se voit pas. La cause est dans la formule, qui est
+ADDITIVE et ancree sur la durete moyenne du MONDE -- 0,73, dominee par le
+granite et le basalte qui couvrent le plus de surface. Toute la serie
+sedimentaire etant SOUS cette moyenne, ses K se tassaient. D'ou
+`strates.contrasteErosion`, qui ecarte les bancs AUTOUR DE LA MOYENNE DE LA
+SERIE : leur moyenne ne bouge pas, donc le volume d'erosion sur la couverture
+non plus, et le calage du granite et du basalte n'est pas touche. Resultat :
+`K de 0,61 a 1,81`, rapport **2,98**.
+
+**CE QUI MARCHE, ET C'EST MESURE :**
+
+    PENTE par banc -- dur 16,65 deg (3093 cellules) contre tendre 12,42 (10949)
+                      ecart +4,22 deg, rapport 1,34
+
+Un banc dur tient une pente un tiers plus raide que son talus. C'est exactement
+`S = (U / K.A^m)^(1/n)`, la meme loi qui donnait deja 25 degres au granite
+contre 9,5 au calcaire.
+
+**CE QUI NE MARCHE PAS, ET IL NE FAUT PAS LE MAQUILLER :**
+
+    ALTITUDE -- durete du banc occupe 0,393 contre 0,411 en moyenne de serie,
+                rapport 0,957
+
+La surface ne s'attarde PAS sur les bancs durs. Il n'y a donc pas d'escalier a
+marches franches.
+
+**LA RAISON EST PHYSIQUE, PAS UN DEFAUT DE REGLAGE.** A l'equilibre soulevement
+/ erosion, un banc dur ajuste sa PENTE, il ne retient pas une ALTITUDE. Or
+l'escalier du Grand Canyon est une forme TRANSITOIRE : ses marches viennent de
+falaises qui reculent HORIZONTALEMENT par sapement -- le banc tendre se
+desagrege, la corniche dure perd son appui et s'effondre par blocs. Un modele
+d'incision a l'equilibre ne produit pas ce mecanisme, quel que soit le
+contraste qu'on lui donne.
+
+**LA PISTE, ET LE PROJET A DEJA LA BRIQUE.** `WorldseedCoast` implemente
+exactement un recul par sapement -- « une falaise marine ne nait pas d'un
+equilibre de pente mais d'un SAPEMENT ». Le transposer aux limites de bancs,
+avec la desagregation du tendre pour moteur au lieu de la houle, est le chemin
+vers de vrais gradins. C'est un chantier a part entiere.
+
+**DEUX FAUTES DE MESURE PAYEES DANS LA MEME HEURE, et elles se ressemblent :**
+
+1. **Une fenetre qui sature.** Le premier test comptait les cellules a moins de
+   douze metres du toit d'un banc dur. Il marchait sur des bancs epais et s'est
+   effondre des qu'on les a amincis : a 18-35 m d'epaisseur, les fenetres se
+   recouvrent et « pres d'un toit dur » devient vrai presque partout -- 47,4 %
+   attendus au hasard, donc plus aucun pouvoir discriminant. **Une mesure dont
+   la reference derive avec le reglage qu'on teste ne mesure rien.** Meme
+   famille que « un seuil n'est pas une part ».
+2. **Tester la mauvaise grandeur.** Chercher un escalier dans l'ALTITUDE quand
+   la physique implementee produit un changement de PENTE. Le depot avait
+   pourtant deja ecrit, deux fois, que « ni l'altitude moyenne par roche ni la
+   perte brute ne mesurent l'erosion differentielle : seule la PENTE dit
+   quelque chose de la resistance ». Relu trop tard.
+
+**L'EPAISSEUR DES BANCS A ETE RAMENEE DE 45-100 m A 18-35 m**, et la serie
+compte desormais DIX bancs pour 253 m. Motif : l'erosion retire 46 a 107 m
+selon la roche, donc avec des bancs de 45-100 la surface n'en traversait
+qu'UN -- on ne fait pas un escalier avec une marche. Ce changement n'a pas
+suffi a faire apparaitre l'escalier, pour la raison physique ci-dessus, mais il
+reste le bon calage : c'est celui qui met l'epaisseur des bancs a l'echelle du
+budget d'erosion.
+
 ### Le Python est parti : tout est en C++ (19 septembre 2026)
 
 Demande du proprietaire : « je souhaite vraiment tout passer en C++ de maniere

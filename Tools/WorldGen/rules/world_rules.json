@@ -1157,14 +1157,20 @@
     "_comment_socleDurete": "SOURCE. LA SERIE NE RECOUVRE QUE LE SEDIMENTAIRE. Sur un orogene le socle affleure -- soulevement et decapage ont emporte la couverture, ce que la regle d attribution 2D traduit deja. Hors de cette fenetre, granite et basalte, RocheAt rend la roche 2D a toute profondeur : le comportement d avant, a l identique.",
     "socleDureteMin": 0.25,
     "socleDureteMax": 0.70,
+    "_comment_contrasteErosion": "CALIBRE. SANS LUI LES BANCS NE FONT AUCUN GRADIN, et c est mesure. La formule d erodabilite est ADDITIVE et ancree sur la durete moyenne du MONDE -- 0,73, dominee par le granite et le basalte qui couvrent le plus de surface. Or toute la serie sedimentaire est SOUS cette moyenne : les K des six bancs se tassaient entre 1,08 et 1,48, soit un rapport de 1,37. Une corniche qui resiste 1,37 fois mieux que son talus ne se voit pas. L amplification se fait AUTOUR DE LA MOYENNE DE LA SERIE et non autour de celle du monde : elle ecarte les bancs sans deplacer leur moyenne, donc sans changer le volume total d erosion sur la couverture, et sans toucher au calage du granite et du basalte qui ne sont pas dans la serie. A 1, on retrouve les K d avant a l identique.",
+    "contrasteErosion": 3.0,
     "_comment_serie": "ARBITRAIRE, mais la STRUCTURE est sourcee : on alterne un banc DUR qui fait corniche et un banc TENDRE qui fait talus, du haut vers le bas. Duretes du catalogue : gres 0,55 / dolomie 0,65 / calcaire 0,45 font les corniches ; schiste 0,35 / craie 0,25 font les talus. Le chapiteau est en gres, comme les Wingate et Navajo du plateau du Colorado. Epaisseur totale 420 m.",
     "serie": [
-      { "roche": "gres",     "epaisseurM": 55 },
-      { "roche": "schiste",  "epaisseurM": 85 },
-      { "roche": "dolomie",  "epaisseurM": 45 },
-      { "roche": "craie",    "epaisseurM": 75 },
-      { "roche": "calcaire", "epaisseurM": 60 },
-      { "roche": "schiste",  "epaisseurM": 100 }
+      { "roche": "gres",     "epaisseurM": 22 },
+      { "roche": "schiste",  "epaisseurM": 30 },
+      { "roche": "dolomie",  "epaisseurM": 18 },
+      { "roche": "craie",    "epaisseurM": 28 },
+      { "roche": "calcaire", "epaisseurM": 20 },
+      { "roche": "schiste",  "epaisseurM": 32 },
+      { "roche": "gres",     "epaisseurM": 20 },
+      { "roche": "craie",    "epaisseurM": 30 },
+      { "roche": "dolomie",  "epaisseurM": 18 },
+      { "roche": "schiste",  "epaisseurM": 35 }
     ]
   },
 

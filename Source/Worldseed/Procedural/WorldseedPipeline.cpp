@@ -283,9 +283,29 @@ namespace WorldseedPipeline
 			}
 		}
 
+		// --- L'EROSION LIT LES BANCS -----------------------------------------
+		//
+		// SANS CELA, LES GRADINS NE PEUVENT PAS EXISTER. Le tableau ci-dessus
+		// fige l'erodabilite de la roche de surface INITIALE ; une fois la
+		// surface descendue de deux cents metres, elle decrit un monde qui
+		// n'est plus la. Or une corniche nait precisement de ce que la surface
+		// atteint un banc DUR apres un banc TENDRE.
+		//
+		// LA SERIE SE LIT SUR LA LITHOLOGIE ET AVANT LA BOUCLE : le datum est
+		// une surface geologique, l'erosion ne le deplace pas. Seule la
+		// LECTURE suit la surface.
+		FWorldseedErodibilite ErodStrates;
+		WorldseedStrata::PreparerErodibilite(Geometry, Out.Lithology,
+			FWorldseedLithologyRules::FromRules(*Rules),
+			FWorldseedStratRules::FromRules(*Rules,
+				FWorldseedLithologyRules::FromRules(*Rules)),
+			static_cast<float>(Rules->Num(TEXT("erosion"), TEXT("duretePoids"), 0.0)),
+			Seed, ErodStrates);
+
 		FWorldseedErosionReport ErosionReport;
 		if (!WorldseedErosion::Run(*Rules, Geometry, Out.Climate.PrecipMm, Erodabilite,
-			Soulevement, Out.ElevationM, ErosionReport, ErosionScope))
+			Soulevement, ErodStrates.IsActive() ? &ErodStrates : nullptr,
+			Out.ElevationM, ErosionReport, ErosionScope))
 		{
 			OutError = TEXT("generation interrompue");
 			return false;

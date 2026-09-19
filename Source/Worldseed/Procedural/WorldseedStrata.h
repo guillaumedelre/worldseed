@@ -6,6 +6,8 @@
 
 #include "Procedural/WorldseedLithology.h"
 
+struct FWorldseedGeometry;
+
 class UWorldseedRules;
 
 /** Un banc de la serie, avec sa durete recopiee du catalogue. */
@@ -88,6 +90,25 @@ struct WORLDSEED_API FWorldseedStratRules
 	float SocleHardnessMin = 0.25f;
 	float SocleHardnessMax = 0.70f;
 
+	/**
+	 * Amplification du CONTRASTE d'erodabilite entre bancs.
+	 *
+	 * SANS ELLE, LES BANCS NE FONT AUCUN GRADIN, et c'est mesure. La formule
+	 * d'erodabilite est ADDITIVE et ancree sur la durete moyenne du MONDE --
+	 * 0,73, dominee par le granite et le basalte qui couvrent le plus de
+	 * surface. Or toute la serie sedimentaire est sous cette moyenne : les K
+	 * des six bancs se tassaient entre 1,08 et 1,48, soit un rapport de 1,37.
+	 * Une corniche qui resiste 1,37 fois mieux que son talus ne se voit pas.
+	 *
+	 * L'AMPLIFICATION SE FAIT AUTOUR DE LA MOYENNE DE LA SERIE, jamais autour
+	 * de celle du monde, et cette precision porte tout : elle ecarte les bancs
+	 * les uns des autres SANS deplacer leur moyenne, donc sans changer la
+	 * quantite totale d'erosion sur la couverture. On redistribue, on n'ajoute
+	 * pas. Le calage du granite et du basalte n'est pas touche non plus,
+	 * puisqu'ils ne sont pas dans la serie.
+	 */
+	float ErosionContrast = 3.0f;
+
 	/** Epaisseur totale de la serie, calculee a la lecture. */
 	float TotalThicknessM = 0.0f;
 
@@ -97,8 +118,68 @@ struct WORLDSEED_API FWorldseedStratRules
 		const FWorldseedLithologyRules& Litho);
 };
 
+/**
+ * Erodabilite qui SUIT LA SURFACE a travers les bancs.
+ *
+ * POURQUOI CE N'EST PAS UN SIMPLE TABLEAU. L'erodabilite etait calculee UNE
+ * FOIS, avant la boucle, depuis la roche 2D : chaque cellule gardait donc le
+ * meme K du debut a la fin, quelle que soit la profondeur a laquelle la surface
+ * etait descendue. C'est exactement ce qui empechait les GRADINS d'exister --
+ * une corniche nait de ce que la surface traverse un banc dur APRES avoir
+ * traverse un tendre, et un K fige ne peut pas le savoir.
+ *
+ * LE DATUM EST PRECALCULE, ET C'EST CE QUI REND LA CHOSE ABORDABLE. Le toit de
+ * la serie est une surface GEOLOGIQUE : il ne bouge pas pendant l'erosion. On
+ * paie donc son bruit une seule fois -- 8 Mo sur cette grille -- et chaque
+ * reechantillonnage ne coute plus qu'une descente dans une pile de six
+ * elements, soit quelques comparaisons par cellule.
+ *
+ * L'ANCRAGE RESTE LA MOYENNE DU MONDE, FIGEE, et ce point est portant. Si l'on
+ * recalculait la moyenne a chaque passe depuis la surface courante, la quantite
+ * TOTALE d'erosion deriverait a mesure que la surface descend dans des bancs
+ * plus tendres -- et tout le calage terrestre bougerait pour une raison
+ * etrangere a la physique qu'on modelise. On redistribue l'erosion, on n'en
+ * change pas le volume.
+ */
+struct WORLDSEED_API FWorldseedErodibilite
+{
+	/** K du socle par cellule : exactement le comportement d'avant. */
+	TArray<float> SocleK;
+
+	/** Toit de la serie par cellule. FIGE : l'erosion ne le deplace pas. */
+	TArray<float> DatumM;
+
+	/** 1 si la serie recouvre cette cellule. */
+	TArray<uint8> Couvert;
+
+	/** K de chaque banc, du haut vers le bas. */
+	TArray<float> BancK;
+
+	/** Profondeur du BAS de chaque banc sous le datum, cumulee. */
+	TArray<float> BasCumulM;
+
+	bool IsActive() const { return BancK.Num() > 0 && DatumM.Num() > 0; }
+
+	/** Indice du banc a cette profondeur sous le datum, ou INDEX_NONE. */
+	int32 BancAProfondeur(float ProfondeurM) const;
+
+	/** Remplit OutK a l'altitude courante de chaque cellule. */
+	void Echantillonner(const TArray<float>& DemM, TArray<float>& OutK) const;
+};
+
 namespace WorldseedStrata
 {
+	/**
+	 * Prepare l'erodabilite stratifiee.
+	 *
+	 * Poids a zero, ou serie vide : la structure reste inactive et l'erosion
+	 * garde son tableau fige -- le comportement d'avant, a l'identique.
+	 */
+	WORLDSEED_API void PreparerErodibilite(const FWorldseedGeometry& Geometry,
+		const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& Litho,
+		const FWorldseedStratRules& Strat, float Weight, int32 Seed,
+		FWorldseedErodibilite& Out);
+
 	/** Altitude du toit de la serie en ce point, gauchissement compris. */
 	WORLDSEED_API double DatumAt(double X, double Y,
 		const FWorldseedStratRules& Rules, int32 Seed);

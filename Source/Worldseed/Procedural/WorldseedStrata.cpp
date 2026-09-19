@@ -24,6 +24,7 @@ FWorldseedStratRules FWorldseedStratRules::FromRules(const UWorldseedRules& Rule
 	Out.WarpFrequency = Num(TEXT("gauchissementFrequence"), 0.00006);
 	Out.SocleHardnessMin = Num(TEXT("socleDureteMin"), 0.25);
 	Out.SocleHardnessMax = Num(TEXT("socleDureteMax"), 0.70);
+	Out.ErosionContrast = Num(TEXT("contrasteErosion"), 3.0);
 
 	// LA SERIE SE LIT PAR CLE DE ROCHE, JAMAIS PAR IDENTIFIANT. Les
 	// identifiants sont des positions dans le catalogue ; les ecrire en dur
@@ -69,8 +70,166 @@ FWorldseedStratRules FWorldseedStratRules::FromRules(const UWorldseedRules& Rule
 	return Out;
 }
 
+int32 FWorldseedErodibilite::BancAProfondeur(float ProfondeurM) const
+{
+	// AU-DESSUS DU DATUM, C'EST LE BANC SOMMITAL. Un relief plus haut que la
+	// couverture est fait de la roche du sommet de la pile ; rendre le socle y
+	// ferait affleurer du granite en altitude, l'inverse de la realite.
+	if (ProfondeurM < 0.0f) { return BancK.Num() > 0 ? 0 : INDEX_NONE; }
+
+	for (int32 I = 0; I < BasCumulM.Num(); ++I)
+	{
+		if (ProfondeurM < BasCumulM[I]) { return I; }
+	}
+	return INDEX_NONE;   // sous la serie : le socle
+}
+
+void FWorldseedErodibilite::Echantillonner(const TArray<float>& DemM,
+	TArray<float>& OutK) const
+{
+	const int32 Count = DemM.Num();
+	if (!IsActive() || SocleK.Num() != Count || DatumM.Num() != Count)
+	{
+		return;
+	}
+	OutK.SetNumUninitialized(Count);
+
+	for (int32 I = 0; I < Count; ++I)
+	{
+		if (!Couvert.IsValidIndex(I) || Couvert[I] == 0)
+		{
+			OutK[I] = SocleK[I];
+			continue;
+		}
+		const int32 B = BancAProfondeur(DatumM[I] - DemM[I]);
+		OutK[I] = BancK.IsValidIndex(B) ? BancK[B] : SocleK[I];
+	}
+}
+
 namespace WorldseedStrata
 {
+	void PreparerErodibilite(const FWorldseedGeometry& Geometry,
+		const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& Litho,
+		const FWorldseedStratRules& Strat, float Weight, int32 Seed,
+		FWorldseedErodibilite& Out)
+	{
+		Out = FWorldseedErodibilite();
+
+		const int32 Count = Geometry.CellCount();
+		if (Weight <= 0.0f || !Strat.IsActive()
+			|| Lithology.Id.Num() != Count || Litho.Catalogue.Num() == 0)
+		{
+			return;
+		}
+
+		// LA MOYENNE SE PREND SUR LE MONDE ET NE BOUGERA PLUS, et c'est la
+		// condition pour que le VOLUME total d'erosion reste celui d'avant.
+		// Meme formule que WorldseedLithology::Erodibility -- on ne recopie pas
+		// une formule dans deux fichiers sans le dire : celle-ci en est la
+		// version stratifiee, et les deux doivent bouger ensemble.
+		double Somme = 0.0;
+		int32 N = 0;
+		for (const uint8 Id : Lithology.Id)
+		{
+			if (Litho.Catalogue.IsValidIndex(Id))
+			{
+				Somme += Litho.Catalogue[Id].Hardness;
+				++N;
+			}
+		}
+		if (N == 0) { return; }
+		const float Moyenne = static_cast<float>(Somme / N);
+
+		auto KDe = [Moyenne, Weight](float Durete)
+		{
+			return FMath::Clamp(1.0f + Weight * (Moyenne - Durete), 0.15f, 2.5f);
+		};
+
+		// LA MOYENNE DE LA SERIE, PONDEREE PAR L'EPAISSEUR : c'est autour
+		// d'elle qu'on ecarte les bancs, donc sans deplacer leur moyenne, donc
+		// sans changer le volume d'erosion sur la couverture.
+		double SommeSerie = 0.0;
+		double SommeEpaisseur = 0.0;
+		for (const FWorldseedStratBanc& B : Strat.Serie)
+		{
+			SommeSerie += static_cast<double>(B.Hardness) * B.ThicknessM;
+			SommeEpaisseur += B.ThicknessM;
+		}
+		const float MoyenneSerie = (SommeEpaisseur > 0.0)
+			? static_cast<float>(SommeSerie / SommeEpaisseur) : Moyenne;
+
+		Out.BancK.Reserve(Strat.Serie.Num());
+		Out.BasCumulM.Reserve(Strat.Serie.Num());
+		float Cumul = 0.0f;
+		for (const FWorldseedStratBanc& B : Strat.Serie)
+		{
+			Cumul += B.ThicknessM;
+
+			// On ECARTE la durete du banc autour de la moyenne de la serie,
+			// puis on applique la formule habituelle. Contraste a 1 : les K
+			// d'avant, a l'identique.
+			const float Ecartee = MoyenneSerie
+				+ (B.Hardness - MoyenneSerie) * Strat.ErosionContrast;
+			Out.BancK.Add(KDe(Ecartee));
+			Out.BasCumulM.Add(Cumul);
+		}
+
+		Out.SocleK.SetNumUninitialized(Count);
+		Out.Couvert.SetNumUninitialized(Count);
+		Out.DatumM.SetNumUninitialized(Count);
+
+		const double LargeurM = Geometry.WidthM();
+		const double HauteurM = Geometry.HeightM;
+		const int32 NX = Geometry.NX;
+		const int32 NY = Geometry.NY;
+
+		int32 Couverts = 0;
+		for (int32 J = 0; J < NY; ++J)
+		{
+			for (int32 I = 0; I < NX; ++I)
+			{
+				const int32 C = J * NX + I;
+				const uint8 Id = Lithology.Id[C];
+				const float Durete = Litho.Catalogue.IsValidIndex(Id)
+					? Litho.Catalogue[Id].Hardness : Moyenne;
+				Out.SocleK[C] = KDe(Durete);
+
+				const bool bSedimentaire = (Durete >= Strat.SocleHardnessMin)
+					&& (Durete <= Strat.SocleHardnessMax);
+				Out.Couvert[C] = bSedimentaire ? 1 : 0;
+				if (bSedimentaire) { ++Couverts; }
+
+				// LE DATUM SE PAIE UNE SEULE FOIS. C'est une surface
+				// GEOLOGIQUE : l'erosion ne la deplace pas. Le precalculer
+				// ramene chaque reechantillonnage a quelques comparaisons.
+				const double X = (static_cast<double>(I) / NX - 0.5) * LargeurM;
+				const double Y = (static_cast<double>(J) / NY - 0.5) * HauteurM;
+				Out.DatumM[C] = static_cast<float>(DatumAt(X, Y, Strat, Seed));
+			}
+		}
+
+		float KMin = 1e9f;
+		float KMax = -1e9f;
+		for (const float K : Out.BancK)
+		{
+			KMin = FMath::Min(KMin, K);
+			KMax = FMath::Max(KMax, K);
+		}
+
+		// SANS CE RELEVE ON NE SAIT PAS SI LES BANCS MORDENT. Un K qui ne varie
+		// pas d'un banc a l'autre ne produira aucun gradin, et la difference ne
+		// se voit pas sur le relief fini.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] erodabilite stratifiee : %d bancs, K de %.2f a %.2f ")
+			TEXT("(contraste %.2f), serie sur %.1f %% des cellules, durete moyenne %.2f"),
+			Out.BancK.Num(), KMin, KMax,
+			(KMin > 0.0f) ? KMax / KMin : 0.0f,
+			100.0 * Couverts / FMath::Max(Count, 1), Moyenne);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   serie : durete moyenne %.2f, contraste x%.1f"),
+			MoyenneSerie, Strat.ErosionContrast);
+	}
+
 	double DatumAt(double X, double Y, const FWorldseedStratRules& Rules, int32 Seed)
 	{
 		if (Rules.WarpAmplitudeM <= 0.0f)

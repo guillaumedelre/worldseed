@@ -5,6 +5,8 @@
 // qu'un autre fichier dit la meme chose autrement.
 
 #include "Procedural/WorldseedErosion.h"
+
+#include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedFlow.h"
 #include "Procedural/WorldseedGrid.h"
 
@@ -144,6 +146,7 @@ namespace WorldseedErosion
 	bool Run(const UWorldseedRules& Rules, const FWorldseedGeometry& Geo,
 		const TArray<float>& PrecipMm, const TArray<float>& Erodibility,
 		const TArray<float>& UpliftM,
+		const FWorldseedErodibilite* Strates,
 		TArray<float>& Dem,
 		FWorldseedErosionReport& OutReport, const FWorldseedProgressScope& Progress)
 	{
@@ -157,7 +160,15 @@ namespace WorldseedErosion
 
 		// Tableau vide : comportement d'avant, a l'identique. C'est ce qui
 		// permet de revenir en arriere sans toucher au code.
-		const bool bAvecRoche = (Erodibility.Num() == Count);
+		// K EST DESORMAIS UNE COPIE LOCALE, et ce n est pas un detail : il est
+		// REECHANTILLONNE en cours de boucle a l altitude courante, ce qu un
+		// parametre const ne permettrait pas. Sans serie, il garde la valeur
+		// d entree du debut a la fin -- comportement d avant, a l identique.
+		TArray<float> K = Erodibility;
+		const bool bStrates = (Strates != nullptr) && Strates->IsActive()
+			&& (Strates->DatumM.Num() == Count);
+		if (bStrates) { Strates->Echantillonner(Dem, K); }
+		const bool bAvecRoche = (K.Num() == Count);
 
 		// SATURER N'EST PAS ANODIN : la ou le plafond mord, la loi cesse de
 		// s'appliquer et tout terme qu'elle porte -- la roche comprise -- est
@@ -238,6 +249,25 @@ namespace WorldseedErosion
 				return false;
 			}
 
+			// --- LA ROCHE SE RELIT A LA SURFACE COURANTE --------------------
+			//
+			// C'EST ICI QUE LES GRADINS NAISSENT, et nulle part ailleurs. K
+			// etait calcule UNE FOIS avant la boucle : chaque cellule gardait
+			// donc l'erodabilite de sa roche de surface INITIALE, meme apres
+			// etre descendue de deux cents metres. Une corniche nait pourtant
+			// de ce que la surface atteint un banc DUR apres avoir traverse un
+			// TENDRE -- information qu'un K fige ne peut pas porter.
+			//
+			// A LA CADENCE DU DRAINAGE, et c'est deliberement le meme rythme.
+			// La surface ne descend que de `maxIncisionPerStepM` par passe, six
+			// metres, quand les bancs font quarante-cinq a cent : quelques
+			// passes de retard sont negligeables, et l'on evite de payer le
+			// reechantillonnage trois cents fois.
+			if (bStrates && It % Every == 0)
+			{
+				Strates->Echantillonner(Dem, K);
+			}
+
 			if (It % Every == 0)
 			{
 				WorldseedFlow::Compute(Dem, RainWeight, NX, NY, SeaLevel, 1e-4f, Flow);
@@ -308,7 +338,7 @@ namespace WorldseedErosion
 				// ailleurs -- dans l'exposant, ou en post-traitement --
 				// reviendrait a bricoler un resultat au lieu de decrire une
 				// cause.
-				const float K = bAvecRoche ? Erodibility[I] : 1.0f;
+				const float KCell = bAvecRoche ? K[I] : 1.0f;
 
 				// LE PLAFOND SUIT LA ROCHE, LUI AUSSI. Premiere version : un
 				// plafond FIXE. Or il sature precisement sur les cellules
@@ -318,9 +348,9 @@ namespace WorldseedErosion
 				// deplacait que quatre a sept CENTIMETRES sur une erosion
 				// entiere. Un garde-fou numerique ne doit pas manger la
 				// physique qu'il protege : il se met a l'echelle avec elle.
-				const float Brut = Rate * K
+				const float Brut = Rate * KCell
 					* FMath::Pow(AreaNorm[I], M) * FMath::Pow(SlopeNorm, NExp);
-				const float Plafond = MaxStep * K;
+				const float Plafond = MaxStep * KCell;
 				if (Brut > Plafond) { ++Satures; }
 
 				const float Value = FMath::Clamp(Brut, 0.0f, Plafond);

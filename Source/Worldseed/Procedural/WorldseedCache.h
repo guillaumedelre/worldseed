@@ -35,8 +35,12 @@
  *  13 - le plateau disseque (WorldseedPlateau) : une passe de plus abaisse le
  *       relief entre l'erosion et le second climat, donc les mondes en cache
  *       n'ont ni mesas ni canyons et doivent etre refaits.
+ *  14 - l'EROSION LIT LES BANCS. K n'est plus fige avant la boucle : il est
+ *       reechantillonne a l'altitude de la surface courante, qui traverse
+ *       donc des roches differentes en descendant. Le relief change partout
+ *       ou la serie sedimentaire recouvre le socle.
  */
-#define WORLDSEED_PIPELINE_VERSION 13
+#define WORLDSEED_PIPELINE_VERSION 14
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

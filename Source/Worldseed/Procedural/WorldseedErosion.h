@@ -35,6 +35,16 @@ struct WORLDSEED_API FWorldseedErosionReport
  * meme resultat visuel a n'importe quelle resolution. Sans cela, changer de
  * resolution changerait le monde.
  */
+/**
+ * Declaree ICI, au niveau GLOBAL, et pas en elaborated-type-specifier dans
+ * la signature : ecrit `const struct FWorldseedErodibilite*` A L INTERIEUR du
+ * namespace, le compilateur declare un type NEUF
+ * `WorldseedErosion::FWorldseedErodibilite`, distinct du vrai, et l on obtient
+ * six erreurs de type incomplet sur une structure parfaitement definie
+ * ailleurs. Paye comptant.
+ */
+struct FWorldseedErodibilite;
+
 namespace WorldseedErosion
 {
 	/** Rend faux si le calcul a ete interrompu. */
@@ -66,9 +76,23 @@ namespace WorldseedErosion
 	 *
 	 * Tableau vide : comportement d'avant, a l'identique.
 	 */
+	/**
+	 * Erodabilite STRATIFIEE, facultative.
+	 *
+	 * QUAND ELLE EST FOURNIE, K CESSE D ETRE FIGE. Le tableau `Erodibility`
+	 * ne decrit que la roche de SURFACE au depart ; des que la surface
+	 * descend, elle traverse des bancs, et c est de cette traversee que
+	 * naissent les GRADINS -- une corniche est un banc dur atteint apres un
+	 * banc tendre. Un K calcule une fois avant la boucle ne peut pas le
+	 * savoir, et c est pourquoi l ancienne version ne produisait aucune
+	 * marche.
+	 *
+	 * Nullptr : comportement d avant, a l identique.
+	 */
 	WORLDSEED_API bool Run(const UWorldseedRules& Rules, const FWorldseedGeometry& Geometry,
 		const TArray<float>& PrecipMm, const TArray<float>& Erodibility,
 		const TArray<float>& UpliftM,
+		const FWorldseedErodibilite* Strates,
 		TArray<float>& InOutElevationM,
 		FWorldseedErosionReport& OutReport,
 		const FWorldseedProgressScope& Progress = FWorldseedProgressScope());
