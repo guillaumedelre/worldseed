@@ -178,7 +178,7 @@ public:
 	float FallbackHeightMeters = 32000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde")
-	int32 FallbackResolutionY = 1024;
+	int32 FallbackResolutionY = 2048;
 
 	/**
 	 * Tient le joueur au-dessus du relief tant que son sol n'existe pas.

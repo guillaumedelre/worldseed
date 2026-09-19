@@ -104,7 +104,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde",
 		meta = (ClampMin = "64", ClampMax = "2048"))
-	int32 FallbackResolutionY = 1024;
+	int32 FallbackResolutionY = 2048;
 
 	/** Exageration verticale. 1 = altitudes reelles. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde",
@@ -265,13 +265,15 @@ public:
 	 * huit. Quatre tournees photo n'ont montre que des creux doux et des
 	 * plateaux lisses pour cette seule raison.
 	 *
-	 * CE QUI RESTE APRES : les formes elles-memes sont tracees a 31 m dans le
-	 * relief de simulation. Le proxy ne peut pas etre plus net que sa source ;
-	 * aller plus loin demande de monter la SIMULATION, pas le proxy.
+	 * IL SUIT LA SIMULATION, ET IL DOIT LA SUIVRE. Quand la grille est passee
+	 * a 4096 le 19 septembre, un proxy reste a 2048 serait redevenu la MOITIE
+	 * de sa source -- exactement le defaut qu'on venait de corriger. La valeur
+	 * et le plafond montent donc avec elle ; le code borne de toute facon a
+	 * `Geometry.NX`, donc mettre plus haut ne coute rien et ne fait rien.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "32", ClampMax = "2048", EditCondition = "bBuildGroundProxy"))
-	int32 GroundProxyWidth = 2048;
+		meta = (ClampMin = "32", ClampMax = "4096", EditCondition = "bBuildGroundProxy"))
+	int32 GroundProxyWidth = 4096;
 
 	/**
 	 * Enfoncement du sol de fond sous le terrain detaille, en metres.

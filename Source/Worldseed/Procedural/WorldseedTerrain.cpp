@@ -1174,6 +1174,24 @@ void AWorldseedTerrain::BuildGroundProxy()
 		Mesh->SetMaterial(0, Material);
 	}
 
+	// --- LE DECOR D'HORIZON SORT DU RAY TRACING -----------------------------
+	//
+	// SIGNALE EN JEU DES LE PASSAGE A 4096 : « RAY TRACING GEOMETRY REQUESTED
+	// MEMORY OVER BUDGET 900 MB / 400 MB ». La cause est directe -- cette
+	// nappe est UN SEUL maillage de plusieurs millions de sommets, et le
+	// moteur lui batit une structure d'acceleration a la mesure.
+	//
+	// ET ELLE N'A RIEN A Y FAIRE. C'est un decor de FOND : on ne le voit qu'au
+	// dela du rayon de chargement, le terrain voxel le couvre entierement en
+	// deca, et il est deja retire du rendu principal des qu'on passe sous un
+	// plafond. Le sortir des reflets et des ombres tracees ne se voit donc
+	// nulle part, et rend au budget ce qui lui manquait.
+	//
+	// MEME FAMILLE QUE LE POOL DE TEXTURES : le moteur ne plante pas, il
+	// DEGRADE en silence une fois le budget depasse -- et l'on cherche ensuite
+	// la cause d'un rendu terne du mauvais cote.
+	Mesh->SetVisibleInRayTracing(false);
+
 	// LE RELEVE DIT CE QUI EST COUVERT, PAS CE QUI A ETE DEMANDE.
 	//
 	// Un sol de fond tronque ne ressemble pas a une panne : le paysage se

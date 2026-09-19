@@ -57,15 +57,33 @@ namespace
 	 * Le commentaire d'origine -- « au-dela, le maillage devient trop lourd
 	 * sans decoupage en chunks » -- est PERIME : le terrain est desormais
 	 * maille en voxels diffuses autour du joueur, et la grille de simulation
-	 * n'est plus ce qui se dessine. Ce qui plafonne maintenant, c'est le COUT
-	 * de la chaine : 2048x1024 coute 59 s sur un monde de 64 km, dont 39 pour
-	 * l'erosion couplee. Doubler la grille quadruplerait ce chiffre.
+	 * n'est plus ce qui se dessine. Ce qui plafonne est le COUT de la chaine.
 	 *
-	 * CONSEQUENCE A CONNAITRE : sur une grande carte, la maille de simulation
-	 * s'elargit. 31,3 m a 64 km contre 7,8 m a 16 km. Le detail fin ne vient
-	 * plus de la grille mais de la couche voxel, qui travaille au metre.
+	 * PORTE DE 1024 A 2048 LE 19 SEPTEMBRE, SUR MESURE ET NON SUR ESTIMATION.
+	 * Le commentaire precedent annoncait « doubler la grille quadruplerait ce
+	 * chiffre » sans l'avoir verifie. Mesure faite, graine 20260909 sur
+	 * 64 x 32 km :
+	 *
+	 *                          2048x1024 (31 m)   4096x2048 (16 m)
+	 *   generation                    52 s             250 s   (x4,8)
+	 *   cellules a plus de 45 deg     9,9 %            16,4 %
+	 *   pente mediane en zone        10,2 deg          14,3
+	 *   ecart d'altitude des sommets  2,2 %             1,4
+	 *   part emergee                 29,20 %           29,20
+	 *
+	 * SOIXANTE-CINQ POUR CENT DE TERRAIN ESCARPE EN PLUS, et c'est tout
+	 * l'objet : a 31 m de maille, un canyon de 150 m ne fait que cinq cellules
+	 * et sort LISSE quoi qu'on creuse. Le voxel a un metre n'y change rien --
+	 * il pose du grain SUR une forme deja adoucie. Quatre tournees photo n'ont
+	 * montre que des creux doux pour cette raison.
+	 *
+	 * LE COUT TOMBE PRESQUE ENTIEREMENT SUR LE CLIMAT -- 42 s par passe contre
+	 * 8,8 -- et il se paie UNE FOIS : le monde part ensuite au cache.
+	 *
+	 * CONSEQUENCE A CONNAITRE : sur une grande carte la maille s'elargit quand
+	 * meme. 15,6 m a 64 km contre 3,9 a 16 km.
 	 */
-	constexpr int32 MaxResolution = 1024;
+	constexpr int32 MaxResolution = 2048;
 
 	/** Resolution visee : environ un quad tous les 2 m, plafonnee. */
 	int32 ResolutionForSize(float SizeMeters)
