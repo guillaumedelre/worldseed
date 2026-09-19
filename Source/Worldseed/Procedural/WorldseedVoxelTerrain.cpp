@@ -11,6 +11,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Paths.h"
+#include "UnrealClient.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
 #include "TimerManager.h"
@@ -172,6 +177,21 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			FMath::Max(UpdatePeriod, 0.05f), true);
 	}
 
+	// --- LA TOURNEE PHOTO SE DECLENCHE EN LIGNE DE COMMANDE ------------------
+	//
+	// PAS PAR UN APPEL EXTERNE, ET C'EST TOUT L'INTERET. Piloter la prise de
+	// vue depuis l'exterieur suppose un lien d'outillage vivant ; quand il
+	// tombe -- ce qui arrive des que l'editeur est tue et relance plusieurs
+	// fois, donc a chaque compilation -- on redevient aveugle. Lue au
+	// demarrage, l'option rend la verification visuelle possible dans tous les
+	// cas, y compris en build final.
+	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedPhotos")))
+	{
+		bQuitterApresTournee =
+			FParse::Param(FCommandLine::Get(), TEXT("WorldseedQuitter"));
+		TourneeDesArches();
+	}
+
 	// Une passe tout de suite : sans elle le monde reste vide le temps du
 	// premier reveil du minuteur, ce qui se voit au demarrage.
 	UpdateChunks();
@@ -236,6 +256,12 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 	{
 		return;
 	}
+
+	// LA TOURNEE PHOTO AVANCE SUR CE MEME MINUTEUR, et c'est ce qui la rend
+	// possible sans outillage externe : elle a besoin d'attendre que les
+	// chunks arrivent, donc d'un fil du temps -- exactement ce que ce minuteur
+	// fournit deja.
+	AvancerTournee();
 
 	const FVector OriginCm = StreamingOriginCm() - GetActorLocation();
 	const FVector OriginM = OriginCm / WorldseedMetersToCm;
@@ -1139,4 +1165,192 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 	}
 
 	return Sortie;
+}
+
+// -------------------------------------------------------- la tournee photo
+
+void AWorldseedVoxelTerrain::Photographier(double XMetres, double YMetres,
+	const FString& Nom)
+{
+	FWorldseedPhotoStop Etape;
+	Etape.Nom = Nom.IsEmpty() ? TEXT("vue") : Nom;
+	Etape.CibleM = FVector(XMetres, YMetres, Density.SurfaceHeightM(XMetres, YMetres));
+	Etape.DepuisM = FVector2D(1.0, 0.0);
+	Tournee.Add(Etape);
+
+	if (EtapeTournee == INDEX_NONE)
+	{
+		EtapeTournee = Tournee.Num() - 1;
+		AttenteTournee = 0;
+		TeleporterJoueur(
+			Etape.CibleM.X + Etape.DepuisM.X * Etape.DistanceM,
+			Etape.CibleM.Y + Etape.DepuisM.Y * Etape.DistanceM);
+	}
+}
+
+int32 AWorldseedVoxelTerrain::TourneeDesArches()
+{
+	Tournee.Reset();
+	EtapeTournee = INDEX_NONE;
+
+	for (int32 I = 0; I < CaveNetwork.Arches.Num(); ++I)
+	{
+		const FWorldseedCaveArch& A = CaveNetwork.Arches[I];
+
+		// DEUX VUES, PARCE QU'ELLES REPONDENT A DEUX QUESTIONS DIFFERENTES.
+		// La vue dans l'axe dit si le trou traverse ; la vue large dit si le
+		// PAYSAGE existe -- des fentes de cinquante metres devraient se voir
+		// de loin, et si elles ne se voient pas, le probleme n'est pas
+		// l'arche.
+		if (I < 3)
+		{
+			FWorldseedPhotoStop Large;
+			Large.Nom = FString::Printf(TEXT("paysage%02d"), I + 1);
+			Large.CibleM = A.CentreM;
+			Large.DepuisM = A.TraversM.GetSafeNormal();
+			Large.DistanceM = 320.0f;
+			Large.HauteurM = 170.0f;
+			Tournee.Add(Large);
+		}
+
+		FWorldseedPhotoStop Etape;
+		Etape.Nom = FString::Printf(TEXT("arche%02d"), I + 1);
+		Etape.CibleM = A.CentreM;
+
+		// ON REGARDE DANS L'AXE DU PERCEMENT, sans quoi on photographie une
+		// paroi pleine et l'on conclut a tort que l'arche n'existe pas.
+		Etape.DepuisM = A.TraversM.GetSafeNormal();
+		Etape.DistanceM = FMath::Max(70.0f, A.EpaisseurM * 1.6f);
+		Tournee.Add(Etape);
+	}
+
+	if (Tournee.Num() > 0)
+	{
+		EtapeTournee = 0;
+		AttenteTournee = 0;
+		const FWorldseedPhotoStop& E = Tournee[0];
+		TeleporterJoueur(E.CibleM.X + E.DepuisM.X * E.DistanceM,
+			E.CibleM.Y + E.DepuisM.Y * E.DistanceM);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : tournee de %d arches"),
+		Tournee.Num());
+	return Tournee.Num();
+}
+
+void AWorldseedVoxelTerrain::AvancerTournee()
+{
+	if (!Tournee.IsValidIndex(EtapeTournee))
+	{
+		return;
+	}
+
+	UWorld* const W = GetWorld();
+	APawn* const Pion = W ? UGameplayStatics::GetPlayerPawn(W, 0) : nullptr;
+	APlayerController* const PC = W ? UGameplayStatics::GetPlayerController(W, 0) : nullptr;
+	if (!Pion || !PC)
+	{
+		return;
+	}
+
+	const FWorldseedPhotoStop& E = Tournee[EtapeTournee];
+
+	// ON VISE A CHAQUE PASSE, PAS UNE SEULE FOIS. Le pion pivote quand il
+	// retombe sur le sol, et une orientation posee avant l'atterrissage est
+	// perdue sans le moindre signe.
+	const FVector CibleCm = GetActorLocation()
+		+ FVector(E.CibleM.X, E.CibleM.Y, E.CibleM.Z) * WorldseedMetersToCm;
+	FVector OeilCm = Pion->GetActorLocation();
+	if (const APlayerCameraManager* const Cam = PC->PlayerCameraManager)
+	{
+		OeilCm = Cam->GetCameraLocation();
+	}
+	PC->SetControlRotation((CibleCm - OeilCm).Rotation());
+
+	// LE POINT DE VUE SE TIENT A LA HAUTEUR DE LA CIBLE, PAS A CELLE DU SOL.
+	//
+	// Premiere version : on calait le pion sur le sol local. Mesure -- l'arche
+	// etait a 119 m et le sol du point de vue a 239 ; la camera visait donc
+	// cinquante-cinq degres vers le bas et photographiait le dos du
+	// personnage. Une arche se regarde DE SON NIVEAU, dans l'axe du
+	// percement. On part donc de l'altitude de la cible et l'on ne remonte que
+	// si l'on se trouve DANS la roche -- ce que le champ sait dire.
+	if (UCharacterMovementComponent* const Move =
+		Pion->FindComponentByClass<UCharacterMovementComponent>())
+	{
+		if (bPlayerReleased)
+		{
+			Move->SetMovementMode(MOVE_Flying);
+			Move->Velocity = FVector::ZeroVector;
+
+			const FVector P = Pion->GetActorLocation() - GetActorLocation();
+			const double VX = P.X / WorldseedMetersToCm;
+			const double VY = P.Y / WorldseedMetersToCm;
+
+			FWorldseedCaveLocal Local;
+			CaveNetwork.Query(FBox(FVector(VX - 30.0, VY - 30.0, E.CibleM.Z - 20.0),
+				FVector(VX + 30.0, VY + 30.0, E.CibleM.Z + 240.0)), Local);
+
+			double ZM = E.CibleM.Z + E.HauteurM;
+			while (ZM < E.CibleM.Z + 220.0
+				&& Density.At(FVector(VX, VY, ZM), &Local) <= 0.0)
+			{
+				ZM += 2.0;
+			}
+
+			FVector Pose = Pion->GetActorLocation();
+			Pose.Z = GetActorLocation().Z + (ZM + 2.0) * WorldseedMetersToCm;
+			Pion->SetActorLocation(Pose, false, nullptr, ETeleportType::TeleportPhysics);
+		}
+	}
+
+	if (!bPlayerReleased)
+	{
+		// Le sol du point de vue n'est pas encore solide : on attend, et on ne
+		// compte pas ce temps -- sinon on declenche avant que le monde existe.
+		return;
+	}
+
+	++AttenteTournee;
+
+	// LAISSER LE MONDE SE BATIR AVANT DE TIRER. Les chunks arrivent par
+	// travaux asynchrones ; une photo prise des l'arrivee montre un paysage
+	// troue, et l'on croit a un defaut de generation. Mesure du projet : il
+	// faut compter une quinzaine de secondes pour que le rayon se remplisse.
+	const int32 TicksAvantPhoto = 60;
+	const int32 TicksApresPhoto = TicksAvantPhoto + 12;
+
+	if (AttenteTournee == TicksAvantPhoto)
+	{
+		const FString Fichier = FPaths::Combine(
+			FPaths::ProjectSavedDir(), TEXT("Photos"), E.Nom + TEXT(".png"));
+		FScreenshotRequest::RequestScreenshot(Fichier, false, false);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] photo : %s -- cible (%.0f, %.0f, %.0f) m, ")
+			TEXT("depuis %.0f m dans l'axe"),
+			*E.Nom, E.CibleM.X, E.CibleM.Y, E.CibleM.Z, E.DistanceM);
+	}
+
+	if (AttenteTournee >= TicksApresPhoto)
+	{
+		++EtapeTournee;
+		AttenteTournee = 0;
+
+		if (Tournee.IsValidIndex(EtapeTournee))
+		{
+			const FWorldseedPhotoStop& S = Tournee[EtapeTournee];
+			TeleporterJoueur(S.CibleM.X + S.DepuisM.X * S.DistanceM,
+				S.CibleM.Y + S.DepuisM.Y * S.DistanceM);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : tournee terminee"));
+			EtapeTournee = INDEX_NONE;
+			if (bQuitterApresTournee)
+			{
+				FPlatformMisc::RequestExit(false);
+			}
+		}
+	}
 }

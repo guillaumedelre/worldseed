@@ -1115,6 +1115,70 @@ FString UWorldseedProbeLibrary::ProbeArches(int32 Seed, float HeightMeters,
 	{
 		return TEXT("aucun site valide : tous les centres sont dans l'air");
 	}
+	// --- Y A-T-IL DES FALAISES ? ---------------------------------------------
+	//
+	// C'EST LA QUESTION QUI DECIDE DES ARCHES, ET ELLE PASSE AVANT LA LAME.
+	// Une arche se lit parce qu'on voit le ciel au travers ; il faut donc que
+	// le sol TOMBE autour d'elle. Les photos montrent un monde de dunes lisses,
+	// et une arche creusee dans une dune est invisible par construction -- le
+	// point de vue a son altitude se retrouve DANS la roche.
+	//
+	// On mesure donc le DENIVELE LOCAL : la plus grande chute d'altitude sur
+	// deux cellules, rapportee a la roche. Ce n'est pas la pente moyenne, qui
+	// lisse tout : c'est la marche que l'oeil voit.
+	{
+		const int32 NXr = World.Geometry.NX;
+		const int32 NYr = World.Geometry.NY;
+		const double MailleM = World.Geometry.MetersPerPixel();
+
+		TArray<int32> Cellules;
+		TArray<double> SommeRelief;
+		TArray<int32> AuDessusDe40;
+		const int32 NR = FMath::Max(1, Litho.Catalogue.Num());
+		Cellules.Init(0, NR);
+		SommeRelief.Init(0.0, NR);
+		AuDessusDe40.Init(0, NR);
+
+		for (int32 J = 2; J < NYr - 2; ++J)
+		{
+			for (int32 I = 2; I < NXr - 2; ++I)
+			{
+				const int32 C = J * NXr + I;
+				if (World.ElevationM[C] <= 0.0f) { continue; }
+
+				float Chute = 0.0f;
+				for (int32 DJ = -2; DJ <= 2; ++DJ)
+				{
+					for (int32 DI = -2; DI <= 2; ++DI)
+					{
+						const int32 V = (J + DJ) * NXr + (I + DI);
+						Chute = FMath::Max(Chute,
+							World.ElevationM[C] - World.ElevationM[V]);
+					}
+				}
+
+				const uint8 R = World.Lithology.Id.IsValidIndex(C)
+					? World.Lithology.Id[C] : 0;
+				if (!Cellules.IsValidIndex(R)) { continue; }
+				++Cellules[R];
+				SommeRelief[R] += Chute;
+				if (Chute > 40.0f) { ++AuDessusDe40[R]; }
+			}
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] --- denivele local, sur %.0f m ---"), MailleM * 2.0);
+		for (int32 R = 0; R < NR; ++R)
+		{
+			if (Cellules[R] == 0) { continue; }
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   %-10s chute moyenne %5.1f m, %5.2f %% au-dela de 40 m"),
+				WorldseedLithology::Name(Litho, static_cast<uint8>(R)),
+				SommeRelief[R] / Cellules[R],
+				100.0 * AuDessusDe40[R] / Cellules[R]);
+		}
+	}
+
 	// --- LE CHAMP DE LAMES : CE QU'IL COUVRE, ET OU -------------------------
 	//
 	// C'EST LE VRAI RISQUE DE CE TERME, bien plus que le nombre d'arches. Des

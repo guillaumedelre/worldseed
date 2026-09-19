@@ -85,3 +85,4 @@ Content/Worldseed/PCG/Materials/
 # pointer un clone vers des materiaux absents. Elle se refait en une commande :
 # `rvt_graft.rediriger()`. Voir README.md.
 Tools/UE/materiaux_greffes.json
+Saved/
