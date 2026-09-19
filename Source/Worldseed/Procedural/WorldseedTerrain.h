@@ -257,14 +257,21 @@ public:
 	 * les photos, et aucun travail sur le champ de densite ne pouvait y changer
 	 * quoi que ce soit -- il ne s'applique qu'aux 250 m proches.
 	 *
-	 * A 1024, la maille tombe a 62 m. Ce n'est pas une solution complete : il
-	 * faudrait des anneaux de resolution decroissante pour que les facettes
-	 * disparaissent vraiment, ce que le streaming des chunks fait deja pour le
-	 * proche. C'est la piste, le jour ou cela vaudra le travail.
+	 * A 2048 IL COLLE EXACTEMENT A SA SOURCE, et c'est le plafond utile : le
+	 * code le borne d'ailleurs a `Geometry.NX`. A 1024 il en jetait la MOITIE
+	 * pour rien -- 62 m de maille pour un relief calcule a 31 -- et c'est ce
+	 * qui rendait les grandes formes invisibles de loin : un canyon de 150 m
+	 * ne faisait plus que 2,4 mailles affichees, une mesa de 500 m en faisait
+	 * huit. Quatre tournees photo n'ont montre que des creux doux et des
+	 * plateaux lisses pour cette seule raison.
+	 *
+	 * CE QUI RESTE APRES : les formes elles-memes sont tracees a 31 m dans le
+	 * relief de simulation. Le proxy ne peut pas etre plus net que sa source ;
+	 * aller plus loin demande de monter la SIMULATION, pas le proxy.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
 		meta = (ClampMin = "32", ClampMax = "2048", EditCondition = "bBuildGroundProxy"))
-	int32 GroundProxyWidth = 1024;
+	int32 GroundProxyWidth = 2048;
 
 	/**
 	 * Enfoncement du sol de fond sous le terrain detaille, en metres.

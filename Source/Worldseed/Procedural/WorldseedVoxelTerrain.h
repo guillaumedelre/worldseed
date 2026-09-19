@@ -142,7 +142,7 @@ public:
 	/** Travaux simultanes sur le pool de fils. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "1", ClampMax = "64"))
-	int32 MaxJobsInFlight = 12;
+	int32 MaxJobsInFlight = 24;
 
 	/**
 	 * Chunks televerses par passe.
