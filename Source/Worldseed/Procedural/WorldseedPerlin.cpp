@@ -305,6 +305,56 @@ namespace WorldseedPerlin
 		}
 	}
 
+	void Worley3D(float X, float Y, float Z, int32 Seed, float& OutF1, float& OutF2)
+	{
+		const int32 IX = FMath::FloorToInt(X);
+		const int32 IY = FMath::FloorToInt(Y);
+		const int32 IZ = FMath::FloorToInt(Z);
+
+		float F1 = BIG_NUMBER;
+		float F2 = BIG_NUMBER;
+
+		// LES VINGT-SEPT VOISINES, ET PAS SEULEMENT LA CELLULE COURANTE : le
+		// germe le plus proche d'un point situe pres d'un bord est dans la
+		// cellule d'a cote. Se limiter a la cellule rendrait une grille
+		// cubique, pas un diagramme de Voronoi.
+		for (int32 DZ = -1; DZ <= 1; ++DZ)
+		{
+			for (int32 DY = -1; DY <= 1; ++DY)
+			{
+				for (int32 DX = -1; DX <= 1; ++DX)
+				{
+					const int32 CX = IX + DX;
+					const int32 CY = IY + DY;
+					const int32 CZ = IZ + DZ;
+
+					// Trois tirages decorreles par remixage du meme hachage,
+					// exactement comme le fait HashGradient3D pour ses deux.
+					uint32 H = Hash3(CX, CY, CZ, Seed);
+					const float U1 = static_cast<float>(H) * (1.0f / 4294967296.0f);
+					H ^= H >> 15; H = H * 2246822519u; H ^= H >> 13;
+					const float U2 = static_cast<float>(H) * (1.0f / 4294967296.0f);
+					H ^= H >> 15; H = H * 3266489917u; H ^= H >> 16;
+					const float U3 = static_cast<float>(H) * (1.0f / 4294967296.0f);
+
+					const float PX = static_cast<float>(CX) + U1 - X;
+					const float PY = static_cast<float>(CY) + U2 - Y;
+					const float PZ = static_cast<float>(CZ) + U3 - Z;
+
+					const float D2 = PX * PX + PY * PY + PZ * PZ;
+					if (D2 < F1) { F2 = F1; F1 = D2; }
+					else if (D2 < F2) { F2 = D2; }
+				}
+			}
+		}
+
+		// Comparaison au carre dans la boucle, racine une seule fois : la
+		// racine carree est la seule operation chere ici, et l'ordre des
+		// distances est le meme que celui de leurs carres.
+		OutF1 = FMath::Sqrt(F1);
+		OutF2 = FMath::Sqrt(F2);
+	}
+
 	float Fbm3D(float X, float Y, float Z, float Frequency, int32 Octaves,
 		int32 Seed, float Lacunarity, float Gain)
 	{

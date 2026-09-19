@@ -8,6 +8,7 @@
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedCaves.h"
+#include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
 #include "Procedural/WorldseedTexturePack.h"
 #include "WorldseedTerrain.generated.h"
@@ -461,6 +462,16 @@ protected:
 	 * les deux acteurs decrivent bien le meme sous-sol.
 	 */
 	FWorldseedCaveNetwork Caves;
+
+	/**
+	 * De quelle roche est fait le sous-sol.
+	 *
+	 * ELLE NE SERT PAS QU'A SEMER LES CHAMBRES : le champ de densite s'en sert
+	 * aussi pour decider ou s'ouvrent les DIACLASES, qui sont la cavite de la
+	 * roche insoluble. Le karst et la fracture se partagent ainsi le monde
+	 * selon la roche, et jamais selon un reglage.
+	 */
+	FWorldseedLithology Lithology;
 
 	/** L'acteur voxel pose par cet acteur, quand bUseVoxelMesher est vrai. */
 	UPROPERTY()

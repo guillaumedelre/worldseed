@@ -182,6 +182,34 @@ struct WORLDSEED_API FWorldseedCaveRules
 	/** Enfoncement horizontal de la bouche dans le versant, en metres. */
 	float EntranceDepthM = 14.0f;
 
+	// --- gouffres ---------------------------------------------------------------
+
+	/**
+	 * Pente maximale au-dessus d'un gouffre, en degres.
+	 *
+	 * UN AVEN S'OUVRE SUR UN PLATEAU, une bouche sur une falaise : ce sont les
+	 * deux formes d'entree d'un karst, et le TERRAIN decide de laquelle. La
+	 * premiere demande du plat -- un puits vertical sur un versant raide
+	 * deboucherait en biais et ne ressemblerait a rien -- la seconde demande un
+	 * escarpement. L'une est donc le repli naturel de l'autre.
+	 */
+	float ShaftSlopeMaxDeg = 20.0f;
+
+	/** Rayon du gouffre a son ouverture, en metres. */
+	float ShaftTopRadiusM = 2.5f;
+
+	/**
+	 * Rayon du gouffre a sa base, en metres.
+	 *
+	 * PLUS LARGE QUE L'OUVERTURE, et c'est la forme meme de l'aven : etroit en
+	 * surface parce que la dissolution y a le moins travaille, evase dessous ou
+	 * l'eau a stagne. Un puits cylindrique se lit tout de suite comme un forage.
+	 */
+	float ShaftBottomRadiusM = 6.0f;
+
+	/** Amplitude de l'ondulation de l'axe, en metres. Zero donne un forage. */
+	float ShaftWanderM = 3.0f;
+
 	/**
 	 * Distance minimale entre deux bouches, en metres.
 	 *

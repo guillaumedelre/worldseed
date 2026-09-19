@@ -28,9 +28,10 @@ AWorldseedVoxelTerrain::AWorldseedVoxelTerrain()
 void AWorldseedVoxelTerrain::AdoptWorld(int32 InSeed,
 	const FWorldseedGeometry& InGeometry, const TArray<float>& InHeightsM,
 	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration,
-	const FWorldseedCaveNetwork& InCaves)
+	const FWorldseedCaveNetwork& InCaves, const FWorldseedLithology& InLithology)
 {
 	CaveNetwork = InCaves;
+	Lithology = InLithology;
 	WorldSeed = InSeed;
 	Geometry = InGeometry;
 	HeightsM = InHeightsM;
@@ -114,6 +115,18 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	}
 
 	Density.Init(Geometry, HeightsM, HeightExaggeration, WorldSeed, DensityRules);
+
+	// LA LITHOLOGIE EST BRANCHEE APRES Init, ET SEULEMENT SI ELLE EXISTE. Sans
+	// elle le champ reste evaluable et ne creuse aucune diaclase : une donnee
+	// absente doit rester sans effet, jamais produire un effet arbitraire.
+	if (Lithology.IsValid(Geometry.CellCount()))
+	{
+		FString LithoError;
+		if (const UWorldseedRules* LithoRules = WorldseedPipeline::GetRules(LithoError))
+		{
+			Density.SetLithology(Lithology, FWorldseedLithologyRules::FromRules(*LithoRules));
+		}
+	}
 	bWorldReady = Density.IsValid();
 
 	if (!bWorldReady)

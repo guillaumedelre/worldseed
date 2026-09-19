@@ -103,6 +103,84 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	float CaveSurfaceFadeM = 25.0f;
 
+	// --- diaclases ------------------------------------------------------------
+
+	/**
+	 * Ouverture maximale d'une diaclase, en metres.
+	 *
+	 * DEUX METRES N'EST PAS UN CHOIX ESTHETIQUE, C'EST UN PLANCHER IMPOSE PAR LE
+	 * VOXEL. Une diaclase reelle s'ouvre de quelques centimetres a un metre ;
+	 * a un metre de voxel, le marching cubes ne peut tout simplement pas
+	 * representer une fente plus etroite que deux voxels -- elle disparaitrait
+	 * ou se reduirait a un chapelet d'artefacts. On ne retient donc que les
+	 * fissures ELARGIES, celles que la meteorisation a ouvertes au point qu'un
+	 * homme y passe. Ce sont aussi les seules qui interessent le jeu.
+	 */
+	float JointApertureM = 2.4f;
+
+	/**
+	 * Taille d'une maille du reseau de fractures, en metres.
+	 *
+	 * C'est l'espacement entre deux diaclases d'une meme famille. Le granite
+	 * terrestre se debite en blocs metriques a decametriques ; on vise le haut
+	 * de cette plage, sans quoi le massif serait decoupe en confettis.
+	 */
+	float JointCellM = 42.0f;
+
+	/**
+	 * Aplatissement vertical du reseau, dans [0..1].
+	 *
+	 * IL FAIT TOUTE LA DIFFERENCE ENTRE UNE FRACTURE ET UNE BULLE. Un Voronoi
+	 * isotrope donne des cellules rondes, donc des parois orientees dans tous
+	 * les sens ; en comprimant l'axe Z avant de l'evaluer, les cellules
+	 * deviennent des PRISMES hauts et les parois des plans quasi verticaux --
+	 * ce qu'est une diaclase. A 1, on retrouve des bulles.
+	 */
+	float JointAnisoZ = 0.22f;
+
+	/**
+	 * Profondeur au-dela de laquelle une diaclase est refermee, en metres.
+	 *
+	 * L'INVERSE DU FONDU DES GALERIES, ET C'EST VOULU. Un karst se creuse en
+	 * profondeur et s'estompe pres du sol ; une diaclase fait le contraire. La
+	 * roche en profondeur est sous la charge de tout ce qui la surmonte, et
+	 * cette contrainte referme les joints ; c'est la decompression et la
+	 * meteorisation, pres de la surface, qui les ouvrent. Une fissure de
+	 * granite est donc une forme de SURFACE, et elle s'ouvre a l'air libre --
+	 * c'est par la qu'on y entre.
+	 */
+	float JointDepthM = 45.0f;
+
+	/**
+	 * Frequence du masque de zone, en cycles par metre.
+	 *
+	 * SANS CE MASQUE, TOUT LE GRANITE DU MONDE SERAIT TRANCHE. Un reseau de
+	 * diaclases ouvertes est un accident local -- un chaos de blocs, un
+	 * escarpement decomprime -- pas l'etat ordinaire d'un massif. Le masque
+	 * decide OU le reseau s'ouvre, et le laisse ferme partout ailleurs.
+	 */
+	float JointZoneFrequency = 0.0016f;
+
+	/**
+	 * Seuil du masque de zone, dans [-1..1].
+	 *
+	 * C'EST UN SEUIL ET NON UNE PART, et la distinction a ete payee comptant.
+	 * Ce reglage s'appelait d'abord "part de la roche ou les diaclases
+	 * s'ouvrent" et valait 0,16 ; le code en tirait un seuil en supposant le
+	 * bruit UNIFORME sur [-1..1]. Un Perlin ne l'est pas : il se masse autour
+	 * de zero et n'atteint presque jamais ses bornes. Mesure : le seuil 0,68
+	 * cense garder 16 % n'en gardait que 1,59. Le nom mentait.
+	 *
+	 * COURBE RELEVEE sur la graine 20260909, part de la roche insoluble emergee :
+	 *   0,15 -> 32,53 %   0,35 -> 14,44 %   0,55 -> 5,00 %
+	 *   0,25 -> 21,52 %   0,45 ->  9,25 %   0,68 ->  1,59 %
+	 *
+	 * Retenu 0,55 : cinq pour cent du granite, soit 2,4 % des terres. Un chaos
+	 * de blocs est un accident local, pas l'etat ordinaire d'un massif -- mais
+	 * il doit se trouver.
+	 */
+	float JointZoneThreshold = 0.55f;
+
 	static FWorldseedDensityRules FromRules(const UWorldseedRules& Rules);
 };
 
@@ -136,6 +214,23 @@ public:
 	 */
 	void Init(const FWorldseedGeometry& InGeometry, const TArray<float>& InElevationM,
 		float InHeightExaggeration, int32 InSeed, const FWorldseedDensityRules& InRules);
+
+	/**
+	 * Branche la lithologie : sans elle, aucune diaclase n'est creusee.
+	 *
+	 * POURQUOI C'EST UN APPEL SEPARE ET NON UN PARAMETRE DE Init. La lithologie
+	 * est facultative -- le champ doit rester evaluable sans elle, ne serait-ce
+	 * que pour les sondes qui n'en ont pas besoin -- et surtout elle n'a pas la
+	 * meme duree de vie : le relief vient du cache du monde, la roche est
+	 * recalculee. Les melanger dans une seule signature obligerait chaque
+	 * appelant a fournir les deux.
+	 *
+	 * Le tableau d'identifiants n'est PAS copie ; il doit survivre a cet objet.
+	 * La petite table d'aptitudes, elle, l'est : elle tient en quelques flottants
+	 * et cela evite de dependre aussi de la duree de vie des regles.
+	 */
+	void SetLithology(const struct FWorldseedLithology& InLithology,
+		const struct FWorldseedLithologyRules& InRules);
 
 	bool IsValid() const;
 
@@ -179,6 +274,23 @@ public:
 private:
 	/** Creusement des galeries en un point : positif dans le vide. */
 	double CaveAt(const FVector& PosM, double DepthM) const;
+
+	/** Ouverture des diaclases en un point : positif dans le vide. */
+	double JointAt(const FVector& PosM, double DepthM) const;
+
+	/**
+	 * Aptitude de la roche a se dissoudre sous ce point, dans [0..1].
+	 *
+	 * LECTURE AU PLUS PROCHE VOISIN, JAMAIS EN BILINEAIRE. La lithologie est un
+	 * champ d'IDENTIFIANTS : interpoler entre du calcaire et du granite
+	 * fabriquerait une roche qui n'existe pas. Le projet a deja paye ce piege
+	 * sur la carte des biomes lue par PCG -- 1,71 % des points affectes a un
+	 * biome absent -- et la lecon vaut pour tout champ categoriel.
+	 */
+	float KarstifiableAt(double X, double Y) const;
+
+	const TArray<uint8>* LithologyId = nullptr;
+	TArray<float> KarstifiableParId;
 
 	FWorldseedGeometry Geometry;
 	const TArray<float>* ElevationM = nullptr;

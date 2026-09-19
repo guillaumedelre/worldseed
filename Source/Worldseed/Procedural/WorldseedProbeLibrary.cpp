@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedLithology.h"
+#include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 
@@ -107,6 +108,13 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 
 	FWorldseedDensity Density;
 	Density.Init(World.Geometry, World.ElevationM, 1.0f, Seed, DensityRules);
+
+	// LA LITHOLOGIE EST INDISPENSABLE A CETTE MESURE, et l'oublier la rend
+	// silencieusement fausse. Sans elle, KarstifiableAt rend 1 partout, le
+	// terme de diaclase sort au premier test et le releve de cout ne mesure
+	// plus que le champ d'avant -- 2,67 ms/chunk annonces, identiques aux 2,62
+	// d'avant l'ajout, ce qui donnait a croire que le Worley etait gratuit.
+	Density.SetLithology(World.Lithology, FWorldseedLithologyRules::FromRules(*Rules));
 
 	// --- trouver de la TERRE ------------------------------------------------
 	// Mailler au-dessus de l'ocean ne couterait rien et ne prouverait rien : il
@@ -303,6 +311,230 @@ FString UWorldseedProbeLibrary::ProbeLithology(int32 Seed, float HeightMeters,
 	const double KarstPct = 100.0 * Karst / FMath::Max(Terre, 1);
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   terres karstifiables : %.2f %%"), KarstPct);
+
+	// --- LES DIACLASES, la cavite de la roche qui NE se dissout PAS ----------
+	//
+	// LA MESURE QUI COMPTE N'EST PAS LE VOLUME CREUSE. Une fente de deux metres
+	// dans une bande de quarante-cinq ne peut peser qu'une fraction de pour
+	// cent du volume, et ce chiffre ne dirait rien de ce qu'on veut savoir :
+	// est-ce qu'on peut y ENTRER, et est-ce qu'elle MENE quelque part. On
+	// echantillonne donc des COLONNES verticales et on compte celles qui sont
+	// ouvertes sur une hauteur d'homme, puis la longueur horizontale continue
+	// du vide a mi-bande.
+	{
+		const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*Rules);
+
+		FWorldseedDensity Champ;
+		Champ.Init(World.Geometry, World.ElevationM, 1.0f, Seed, DR);
+		Champ.SetLithology(World.Lithology, Litho);
+
+		// ON VISE LE COEUR D'UNE ZONE OUVERTE, ET LE CRITERE EST LE MASQUE,
+		// PAS L'ALTITUDE. Premiere version : je prenais la cellule insoluble la
+		// plus HAUTE. Comme le masque n'ouvre que 5 % de cette roche, ce point
+		// avait 95 % de chances d'etre dans une zone FERMEE -- et il l'etait.
+		// Le temoin l'a dit sans appel : avec et sans diaclases, 2902 colonnes
+		// dans les deux cas, au chiffre pres. La sonde mesurait le bruit des
+		// galeries et rien d'autre.
+		FVector2D Centre(0.0, 0.0);
+		double MeilleureAlt = -1e9;
+		float MeilleurMasque = -1e9f;
+		for (int32 J = 0; J < World.Geometry.NY; J += 4)
+		{
+			for (int32 I = 0; I < World.Geometry.NX; I += 4)
+			{
+				const int32 Idx = J * World.Geometry.NX + I;
+				if (World.ElevationM[Idx] <= 20.0f) { continue; }
+				const uint8 Id = World.Lithology.Id[Idx];
+				if (!Litho.Catalogue.IsValidIndex(Id)) { continue; }
+				if (Litho.Catalogue[Id].Karstifiable > 0.05f) { continue; }
+
+				const double X = (static_cast<double>(I) / World.Geometry.NX - 0.5)
+					* World.Geometry.WidthM();
+				const double Y = (static_cast<double>(J) / World.Geometry.NY - 0.5)
+					* World.Geometry.HeightM;
+
+				const float Masque = WorldseedPerlin::Perlin(
+					static_cast<float>(X) * DR.JointZoneFrequency,
+					static_cast<float>(Y) * DR.JointZoneFrequency, Seed + 4451);
+
+				if (Masque > MeilleurMasque)
+				{
+					MeilleurMasque = Masque;
+					MeilleureAlt = World.ElevationM[Idx];
+					Centre = FVector2D(X, Y);
+				}
+			}
+		}
+
+		// COMBIEN DE MONDE CETTE FORME TOUCHE-T-ELLE ? La question n'est pas
+		// decorative : si le masque de zone ne restreignait rien, tout le
+		// granite emerge serait tranche de fentes, ce qui ne ressemblerait a
+		// aucun paysage. On balaie donc la grille entiere.
+		{
+			int32 TerresInsolubles = 0;
+			int32 Ouvertes = 0;
+
+			// UN PERLIN N'EST PAS UNIFORME : il se masse autour de zero et
+			// n'atteint presque jamais ses bornes. Un seuil pose comme si la
+			// loi etait uniforme ne coupe donc pas la part qu'on croit -- 0,68
+			// devait garder 16 %, il en garde 1,59. On releve la courbe au lieu
+			// de la supposer.
+			const float Seuils[] = { 0.15f, 0.25f, 0.35f, 0.45f, 0.55f, 0.68f };
+			int32 Comptes[UE_ARRAY_COUNT(Seuils)] = {};
+
+			for (int32 I = 0; I < World.Geometry.CellCount(); ++I)
+			{
+				if (World.ElevationM[I] <= 0.0f) { continue; }
+				const uint8 Id = World.Lithology.Id[I];
+				if (!Litho.Catalogue.IsValidIndex(Id)) { continue; }
+				if (Litho.Catalogue[Id].Karstifiable > 0.05f) { continue; }
+				++TerresInsolubles;
+
+				const int32 Ix = I % World.Geometry.NX;
+				const int32 Jy = I / World.Geometry.NX;
+				const double X = (static_cast<double>(Ix) / World.Geometry.NX - 0.5)
+					* World.Geometry.WidthM();
+				const double Y = (static_cast<double>(Jy) / World.Geometry.NY - 0.5)
+					* World.Geometry.HeightM;
+
+				// Meme masque que le champ, a la lettre : le reproduire
+				// approximativement ne mesurerait pas ce qui est rendu.
+				const float B = WorldseedPerlin::Perlin(
+					static_cast<float>(X) * DR.JointZoneFrequency,
+					static_cast<float>(Y) * DR.JointZoneFrequency, Seed + 4451);
+				if (B > DR.JointZoneThreshold) { ++Ouvertes; }
+				for (int32 K = 0; K < UE_ARRAY_COUNT(Seuils); ++K)
+				{
+					if (B > Seuils[K]) { ++Comptes[K]; }
+				}
+			}
+
+			FString Courbe;
+			for (int32 K = 0; K < UE_ARRAY_COUNT(Seuils); ++K)
+			{
+				Courbe += FString::Printf(TEXT("  %.2f -> %.2f %%"), Seuils[K],
+					100.0 * Comptes[K] / FMath::Max(TerresInsolubles, 1));
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   diaclases, part de la roche insoluble selon le seuil :%s"),
+				*Courbe);
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   diaclases : %.2f %% de la roche insoluble emergee ")
+				TEXT("porte un reseau ouvert, soit %.2f %% des terres"),
+				100.0 * Ouvertes / FMath::Max(TerresInsolubles, 1),
+				100.0 * Ouvertes / FMath::Max(Terre, 1));
+		}
+
+		if (MeilleureAlt < -1e8)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   diaclases : aucune roche insoluble emergee"));
+		}
+		else
+		{
+			// UN CARRE DE 400 m AU PAS DE 2 m, MESURE DEUX FOIS : une fois avec
+			// les diaclases, une fois sans. C'EST LE TEMOIN QUI MANQUAIT, et son
+			// absence a produit un chiffre entierement faux -- voir plus bas.
+			const double Pas = 2.0;
+			const int32 N = 200;
+
+			struct FReleve
+			{
+				int32 Praticables = 0;
+				double HauteurMax = 0.0;
+				int32 LongueurMax = 0;
+			};
+
+			// PREMIERE VERSION DE CETTE MESURE, ET ELLE ETAIT FAUSSE. Elle
+			// descendait depuis SurfaceHeightM -- le relief MACRO -- et comptait
+			// comme vide tout ce qu'elle trouvait dessous. Or le champ deplace
+			// la surface de plusieurs metres : huit d'amplitude plus vingt-cinq
+			// de deplacement horizontal. Partout ou le sol reel passe sous le
+			// relief macro, elle comptait de l'AIR ORDINAIRE comme une fissure.
+			// Elle annoncait 15,85 % de colonnes ouvertes alors que la maille,
+			// en jeu, n'en montrait aucune -- et ses chiffres n'avaient pas
+			// bouge d'un iota quand le masque de zone avait change, ce qui
+			// aurait du suffire a la soupconner.
+			auto Balayer = [&](const FWorldseedDensityRules& Regles) -> FReleve
+			{
+				FWorldseedDensity C;
+				C.Init(World.Geometry, World.ElevationM, 1.0f, Seed, Regles);
+				C.SetLithology(World.Lithology, Litho);
+
+				FReleve R;
+				for (int32 Jy = 0; Jy < N; ++Jy)
+				{
+					int32 LongueurCourante = 0;
+					for (int32 Ix = 0; Ix < N; ++Ix)
+					{
+						const double X = Centre.X + (Ix - N / 2) * Pas;
+						const double Y = Centre.Y + (Jy - N / 2) * Pas;
+						const double Haut = C.SurfaceHeightM(X, Y) + 40.0;
+						const double Bas = Haut - 40.0 - Regles.JointDepthM;
+
+						const double PasZ = 0.5;
+						double Meilleur = 0.0;
+						double Vide = 0.0;
+						bool bSolTrouve = false;
+
+						for (double Z = Haut; Z > Bas; Z -= PasZ)
+						{
+							const double V = C.At(FVector(X, Y, Z));
+							if (!bSolTrouve)
+							{
+								// On ne compte qu'APRES avoir traverse la roche :
+								// tout ce qui precede est le ciel.
+								if (V <= 0.0) { bSolTrouve = true; }
+								continue;
+							}
+							if (V > 0.0) { Vide += PasZ; Meilleur = FMath::Max(Meilleur, Vide); }
+							else { Vide = 0.0; }
+						}
+
+						R.HauteurMax = FMath::Max(R.HauteurMax, Meilleur);
+						if (Meilleur >= 2.0)
+						{
+							++R.Praticables;
+							++LongueurCourante;
+							R.LongueurMax = FMath::Max(R.LongueurMax, LongueurCourante);
+						}
+						else
+						{
+							LongueurCourante = 0;
+						}
+					}
+				}
+				return R;
+			};
+
+			const double t0 = FPlatformTime::Seconds();
+			const FReleve Avec = Balayer(DR);
+
+			FWorldseedDensityRules Sans = DR;
+			Sans.JointApertureM = 0.0f;
+			const FReleve SansD = Balayer(Sans);
+
+			const int32 Colonnes = N * N;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   diaclases a (%.0f, %.0f) m, altitude %.0f m, ")
+				TEXT("masque %.2f pour un seuil de %.2f, carre de %d m :"),
+				Centre.X, Centre.Y, MeilleureAlt, MeilleurMasque, DR.JointZoneThreshold,
+				static_cast<int32>(N * Pas));
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]     AVEC : %d colonnes sur %d ouvertes sur 2 m au moins ")
+				TEXT("(%.2f %%), vide le plus haut %.1f m, fente la plus longue %.0f m"),
+				Avec.Praticables, Colonnes, 100.0 * Avec.Praticables / Colonnes,
+				Avec.HauteurMax, Avec.LongueurMax * Pas);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]     SANS (temoin) : %d colonnes (%.2f %%), ")
+				TEXT("vide le plus haut %.1f m, fente la plus longue %.0f m"),
+				SansD.Praticables, 100.0 * SansD.Praticables / Colonnes,
+				SansD.HauteurMax, SansD.LongueurMax * Pas);
+			UE_LOG(LogTemp, Log, TEXT("[Worldseed]     les deux balayages en %.0f ms"),
+				1000.0 * (FPlatformTime::Seconds() - t0));
+		}
+	}
 
 	return FString::Printf(TEXT("%d roches ; %.2f %% des terres karstifiables ; detail au journal"),
 		Roches, KarstPct);

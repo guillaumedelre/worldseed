@@ -7,6 +7,7 @@
 
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedCaves.h"
+#include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedDensity.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 
@@ -211,7 +212,8 @@ public:
 	 */
 	void AdoptWorld(int32 InSeed, const FWorldseedGeometry& InGeometry,
 		const TArray<float>& InHeightsM, const FWorldseedBiomeMap& InBiomes,
-		float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves);
+		float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves,
+		const FWorldseedLithology& InLithology);
 
 private:
 
@@ -266,6 +268,7 @@ private:
 
 	/** Le reseau de grottes du monde charge. */
 	FWorldseedCaveNetwork CaveNetwork;
+	FWorldseedLithology Lithology;
 
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;

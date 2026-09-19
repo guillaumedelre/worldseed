@@ -98,6 +98,29 @@ namespace WorldseedPerlin
 	 * surfaces ou le bruit approche 1 forment des tubes qui se croisent et se
 	 * ramifient, la ou un fBm seuille donnerait des poches isolees.
 	 */
+	/**
+	 * Bruit cellulaire de Worley : distances aux DEUX germes les plus proches.
+	 *
+	 * POURQUOI CETTE FONCTION EXISTE, ET CE QU'ELLE SERT A FAIRE. Perlin donne
+	 * des blobs, le bruit a cretes donne des tubes ; aucun des deux ne sait
+	 * faire un reseau de FRACTURES. Worley seme un germe par cellule et decrit
+	 * l'espace par ses distances ; la difference F2 - F1 s'annule exactement sur
+	 * la frontiere entre deux germes, donc sur la surface de Voronoi. Seuiller
+	 * cette difference donne un reseau de PAROIS FINES, fermees et connexes --
+	 * c'est la forme d'un systeme de diaclases.
+	 *
+	 * LA CONNEXITE EST ACQUISE PAR CONSTRUCTION, comme pour l'arbre couvrant des
+	 * chambres : les faces d'un diagramme de Voronoi se touchent toutes par
+	 * leurs aretes. On n'a donc pas a verifier qu'une fissure en rejoint une
+	 * autre, ce qui serait un calcul non local.
+	 *
+	 * COUT : vingt-sept cellules visitees par evaluation. C'est l'operation la
+	 * plus chere du champ de densite, elle doit etre gardee par des tests
+	 * bon marche.
+	 */
+	WORLDSEED_API void Worley3D(float X, float Y, float Z, int32 Seed,
+		float& OutF1, float& OutF2);
+
 	WORLDSEED_API float Ridged3D(float X, float Y, float Z, float Frequency,
 		int32 Octaves, int32 Seed, float Lacunarity = 2.0f, float Gain = 0.5f);
 

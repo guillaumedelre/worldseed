@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedDensity.h"
 
+#include "Procedural/WorldseedLithology.h"
+
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
@@ -40,6 +42,13 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.CaveSurfaceFadeM = Num(TEXT("caveSurfaceFadeM"), 25.0);
 	Out.CaveBlendM = static_cast<float>(Rules.Num(TEXT("cavites"), TEXT("raccordM"), 2.5));
 
+	Out.JointApertureM = Num(TEXT("diaclaseOuvertureM"), 2.4);
+	Out.JointCellM = Num(TEXT("diaclaseMailleM"), 42.0);
+	Out.JointAnisoZ = Num(TEXT("diaclaseAplatissementZ"), 0.22);
+	Out.JointDepthM = Num(TEXT("diaclaseProfondeurM"), 45.0);
+	Out.JointZoneFrequency = Num(TEXT("diaclaseZoneFrequence"), 0.0016);
+	Out.JointZoneThreshold = Num(TEXT("diaclaseZoneSeuil"), 0.55);
+
 	return Out;
 }
 
@@ -52,6 +61,126 @@ void FWorldseedDensity::Init(const FWorldseedGeometry& InGeometry,
 	HeightExaggeration = FMath::Max(InHeightExaggeration, 0.01f);
 	Seed = InSeed;
 	Rules = InRules;
+}
+
+void FWorldseedDensity::SetLithology(const FWorldseedLithology& InLithology,
+	const FWorldseedLithologyRules& InRules)
+{
+	LithologyId = &InLithology.Id;
+
+	KarstifiableParId.Reset();
+	KarstifiableParId.Reserve(InRules.Catalogue.Num());
+	for (const FWorldseedLithologyEntry& E : InRules.Catalogue)
+	{
+		KarstifiableParId.Add(E.Karstifiable);
+	}
+}
+
+float FWorldseedDensity::KarstifiableAt(double X, double Y) const
+{
+	if (!LithologyId || KarstifiableParId.Num() == 0)
+	{
+		// Sans lithologie branchee, on declare la roche soluble : aucune
+		// diaclase ne s'ouvre, et le monde reste celui d'avant. Le defaut d'une
+		// donnee absente doit etre l'ABSENCE d'effet, jamais un effet arbitraire.
+		return 1.0f;
+	}
+
+	const int32 NX = Geometry.NX;
+	const int32 NY = Geometry.NY;
+	if (LithologyId->Num() != NX * NY)
+	{
+		return 1.0f;
+	}
+
+	// Meme convention de repere que SampleUV : X enroule, Y est borne.
+	const double U = X / Geometry.WidthM() + 0.5;
+	const double V = Y / Geometry.HeightM + 0.5;
+
+	int32 I = FMath::FloorToInt(U * NX);
+	I = ((I % NX) + NX) % NX;
+	const int32 J = FMath::Clamp(FMath::FloorToInt(V * NY), 0, NY - 1);
+
+	const uint8 Id = (*LithologyId)[J * NX + I];
+	return KarstifiableParId.IsValidIndex(Id) ? KarstifiableParId[Id] : 1.0f;
+}
+
+double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM) const
+{
+	if (Rules.JointApertureM <= 0.0f || Rules.JointCellM <= 0.0f)
+	{
+		return -1.0;
+	}
+
+	// --- LES TROIS GARDES BON MARCHE, DANS L'ORDRE DE LEUR COUT --------------
+	//
+	// Le Worley visite vingt-sept cellules : c'est l'operation la plus chere du
+	// champ. Elle ne doit tourner que sur le volume ou une diaclase est
+	// possible, et trois tests tres bon marche l'y ramenent.
+
+	// 1. LA ROCHE. Une diaclase est la cavite de ce qui NE se dissout PAS : le
+	//    calcaire fait des grottes, le granite fait des fractures. Les deux
+	//    formes sont donc exclusives par construction, et c'est la lithologie
+	//    qui les repartit -- pas un reglage.
+	const float Fracturable = 1.0f - KarstifiableAt(PosM.X, PosM.Y);
+	if (Fracturable <= 0.05f)
+	{
+		return -1.0;
+	}
+
+	// 2. LA PROFONDEUR. Fondu lineaire, referme sous JointDepthM.
+	if (DepthM > Rules.JointDepthM)
+	{
+		return -1.0;
+	}
+	const double FonduProfondeur = 1.0 - FMath::Max(0.0, DepthM) / Rules.JointDepthM;
+
+	// 3. LA ZONE. Un bruit basse frequence decide ou le reseau s'ouvre. Il est
+	//    en DEUX dimensions a dessein : un chaos de blocs est une zone du
+	//    paysage, pas une poche isolee dans la masse.
+	//
+	//    UN PERLIN 2D A UNE OCTAVE, ET C'EST UN CHOIX DE COUT AUTANT QUE DE
+	//    FORME. Cette garde s'evalue sur TOUT le granite de la bande, donc des
+	//    millions de fois par chunk ; en fBm 3D a deux octaves elle demandait
+	//    seize evaluations de gradient, contre quatre ici. Et une octave suffit
+	//    a ce qu'on lui demande : des taches larges aux bords flous, pas du
+	//    detail. Mesure : 3,65 ms/chunk avec le fBm, contre 2,62 sans diaclases
+	//    du tout.
+	const float Bruit = WorldseedPerlin::Perlin(
+		static_cast<float>(PosM.X) * Rules.JointZoneFrequency,
+		static_cast<float>(PosM.Y) * Rules.JointZoneFrequency,
+		Seed + 4451);
+
+	// Le bruit sort dans [-1..1] a peu pres uniformement autour de zero ; le
+	// seuil place la part voulue au-dessus de lui.
+	if (Bruit <= Rules.JointZoneThreshold)
+	{
+		return -1.0;
+	}
+	const double Zone = FMath::Min(1.0, (Bruit - Rules.JointZoneThreshold) / 0.25);
+
+	// --- LE RESEAU LUI-MEME ---------------------------------------------------
+	//
+	// F2 - F1 s'annule sur la frontiere entre deux germes. L'axe Z est comprime
+	// avant l'evaluation, ce qui etire les cellules en prismes : leurs parois
+	// deviennent des plans quasi verticaux, c'est-a-dire des diaclases et non
+	// des bulles.
+	const float Echelle = 1.0f / Rules.JointCellM;
+	float F1 = 0.0f;
+	float F2 = 0.0f;
+	WorldseedPerlin::Worley3D(
+		static_cast<float>(PosM.X) * Echelle,
+		static_cast<float>(PosM.Y) * Echelle,
+		static_cast<float>(PosM.Z) * Echelle * Rules.JointAnisoZ,
+		Seed + 4457, F1, F2);
+
+	// Distance a la paroi, ramenee en metres.
+	const double DistanceParoiM = (F2 - F1) * Rules.JointCellM * 0.5;
+
+	const double DemiOuverture =
+		0.5 * Rules.JointApertureM * Fracturable * Zone * FonduProfondeur;
+
+	return DemiOuverture - DistanceParoiM;
 }
 
 bool FWorldseedDensity::IsValid() const
@@ -289,6 +418,16 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 		// vide, elle ne repousse pas la roche. L'addition ferait remonter le
 		// sol au-dessus du tube.
 		D = FMath::Max(D, Vide);
+	}
+
+	// --- diaclases ----------------------------------------------------------
+	// L'autre forme de cavite, et celle de la roche qui NE se dissout PAS. Elle
+	// ne peut pas coexister avec la precedente au meme endroit : le test de
+	// lithologie les separe.
+	const double Fissure = JointAt(PosM, DepthM);
+	if (Fissure > 0.0)
+	{
+		D = FMath::Max(D, Fissure);
 	}
 
 	// Le bruit ci-dessus donne le GRAIN -- des conduits credibles, mais sans

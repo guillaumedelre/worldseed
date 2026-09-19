@@ -5,6 +5,7 @@
 #include "Algo/Reverse.h"
 
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedLithology.h"
 
 namespace
@@ -131,6 +132,10 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.EntrancePerChambers = Num(TEXT("entreeParChambres"), 10.0);
 	Out.EntranceDepthM = Num(TEXT("entreeEnfoncementM"), 14.0);
 	Out.EntranceSpacingM = Num(TEXT("entreeEspacementM"), 120.0);
+	Out.ShaftSlopeMaxDeg = Num(TEXT("gouffrePenteMaxDeg"), 20.0);
+	Out.ShaftTopRadiusM = Num(TEXT("gouffreRayonHautM"), 2.5);
+	Out.ShaftBottomRadiusM = Num(TEXT("gouffreRayonBasM"), 6.0);
+	Out.ShaftWanderM = Num(TEXT("gouffreOndulationM"), 3.0);
 	Out.SeaMarginM = Num(TEXT("niveauMerMargeM"), 5.0);
 	return Out;
 }
@@ -934,6 +939,14 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		}
 	}
 
+	// LE CONTROLE DE PERCEMENT NE DOIT VOIR QUE LES GALERIES. Les entrees qui
+	// suivent percent le sol A DESSEIN -- c'est leur definition. Laisser le
+	// dernier troncon courir jusqu'a la fin du tableau les faisait compter
+	// comme des defauts : mesure 0,38 % la ou le routage est a 0,00. C'est le
+	// meme melange de deux populations qui avait deja fait regler quatre fois
+	// le mauvais bouton.
+	const int32 FinDesGaleries = Out.Segments.Num();
+
 	// --- 5 bis. LES ENTREES ---------------------------------------------------
 	//
 	// SANS ELLES LE RESEAU EST HERMETIQUE, et c'est exactement ce qu'il etait :
@@ -979,6 +992,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	}
 
 	int32 Entrees = 0;
+	int32 Gouffres = 0;
 	const int32 Souhaitees = (Rules.EntrancePerChambers > 0.0f)
 		? FMath::Max(1, FMath::RoundToInt(N / Rules.EntrancePerChambers)) : 0;
 	// AU MOINS UNE PAR COMPOSANTE : le nombre demande est un PLANCHER de
@@ -1037,11 +1051,29 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			if (Entrees >= EntreesVoulues) { break; }
 			const FWorldseedCaveChamber& C = Out.Chambers[Ic];
 
+			// --- LA FORME DE L'ENTREE SE DECIDE A L'APLOMB DE LA CHAMBRE -------
+			//
+			// Premiere version fautive : je cherchais d'abord une falaise dans
+			// un rayon de cent quatre-vingts metres, et ne posais un gouffre que
+			// si je n'en trouvais AUCUNE. Comme un tel rayon contient presque
+			// toujours un escarpement, le gouffre n'est jamais arrive -- mesure :
+			// zero sur six entrees.
+			//
+			// Le bon critere est le terrain DIRECTEMENT AU-DESSUS. Un aven se
+			// creuse la ou l'eau s'infiltre a travers un plateau ; une bouche
+			// s'ouvre la ou une galerie est recoupee par un versant. Ce n'est pas
+			// une preference, c'est la facon dont chacun se forme.
 			// On cherche, autour de la chambre, la cellule la plus RAIDE.
 			const int32 Col0 = FMath::Clamp(
 				FMath::FloorToInt((C.CentreM.X / Geometry.WidthM() + 0.5) * NX), 0, NX - 1);
 			const int32 Row0 = FMath::Clamp(
 				FMath::FloorToInt((C.CentreM.Y / Geometry.HeightM + 0.5) * NY), 0, NY - 1);
+
+			const int32 CellHaut = Row0 * NX + Col0;
+			const float PenteHaut = FMath::Sqrt(
+				DX[CellHaut] * DX[CellHaut] + DY[CellHaut] * DY[CellHaut]);
+			const bool bPlateau =
+				PenteHaut <= FMath::Tan(FMath::DegreesToRadians(Rules.ShaftSlopeMaxDeg));
 			const int32 Rayon = FMath::Max(2, FMath::CeilToInt(Espacement / MetresParPixel));
 
 			float MeilleurePente = PenteMin;
@@ -1079,6 +1111,83 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 					}
 				}
 			}
+			// --- PAS DE FALAISE ? ALORS UN GOUFFRE ------------------------------
+			//
+			// Le terrain decide de la forme de l'entree, et c'est ce qui rend les
+			// deux credibles : une bouche s'ouvre a l'HORIZONTALE dans un
+			// escarpement, un aven s'ouvre a la VERTICALE sur un plateau. Quand
+			// aucune paroi assez raide ne borde la chambre, c'est donc qu'on est
+			// en terrain plat -- exactement le cas de l'aven.
+			if (bPlateau || MeilleureCellule == INDEX_NONE)
+			{
+				const FWorldseedCaveChamber& Ch = Out.Chambers[Ic];
+				const double Sol = Ctx.SurfaceA(Ch.CentreM.X, Ch.CentreM.Y);
+
+				const double Haut = Sol + Rules.ShaftTopRadiusM * 0.5;
+				const double Bas = Ch.CentreM.Z + Ch.RadiusM * 0.5;
+				if (Haut - Bas < 8.0) { continue; }
+
+				bool bTropPres2 = false;
+				for (const FVector2D& B2 : BouchesPosees)
+				{
+					if (FVector2D::Distance(FVector2D(Ch.CentreM.X, Ch.CentreM.Y), B2)
+						< Rules.EntranceSpacingM)
+					{
+						bTropPres2 = true;
+						break;
+					}
+				}
+				if (bTropPres2) { continue; }
+
+				// LE PROFIL EN CLOCHE : etroit en surface, evase dessous. C'est
+				// la forme meme de l'aven -- la dissolution a le moins travaille
+				// en haut, et l'eau a stagne en bas. Un puits cylindrique se lit
+				// tout de suite comme un forage.
+				const int32 Tranches = FMath::Max(3, FMath::CeilToInt((Haut - Bas) / 4.0));
+				FVector Precedent = FVector::ZeroVector;
+				for (int32 T = 0; T <= Tranches; ++T)
+				{
+					const double F = static_cast<double>(T) / Tranches;
+					const double Z = FMath::Lerp(Haut, Bas, F);
+
+					// L'axe ONDULE : un aven n'est pas un trait a la regle.
+					const double Ox = Rules.ShaftWanderM * WorldseedPerlin::Perlin3D(
+						static_cast<float>(Ch.CentreM.X * 0.05),
+						static_cast<float>(Z * 0.05), 0.0f, Seed + 3313);
+					const double Oy = Rules.ShaftWanderM * WorldseedPerlin::Perlin3D(
+						0.0f, static_cast<float>(Z * 0.05),
+						static_cast<float>(Ch.CentreM.Y * 0.05), Seed + 3373);
+
+					const FVector Point(Ch.CentreM.X + Ox, Ch.CentreM.Y + Oy, Z);
+					if (T > 0)
+					{
+						FWorldseedCaveSegment S;
+						S.AM = Precedent;
+						S.BM = Point;
+						S.RadiusAM = FMath::Lerp(Rules.ShaftTopRadiusM,
+							Rules.ShaftBottomRadiusM, static_cast<float>((T - 1.0) / Tranches));
+						S.RadiusBM = FMath::Lerp(Rules.ShaftTopRadiusM,
+							Rules.ShaftBottomRadiusM, static_cast<float>(F));
+						Out.Segments.Add(S);
+					}
+					Precedent = Point;
+				}
+
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed] grottes : GOUFFRE %d a (%.0f, %.0f) m, ")
+					TEXT("%.0f m de haut, pente du plateau %.0f deg"),
+					Entrees + 1, Ch.CentreM.X, Ch.CentreM.Y, Haut - Bas,
+					FMath::RadiansToDegrees(FMath::Atan(PenteHaut)));
+
+				BouchesPosees.Add(FVector2D(Ch.CentreM.X, Ch.CentreM.Y));
+				++Entrees;
+				++Gouffres;
+				continue;
+			}
+
+			// Le gouffre n'a pas pu se poser : si une falaise existe, elle prend
+			// le relais. Sinon cette chambre restera sans entree propre -- elle
+			// reste reliee au reseau, qui en a une ailleurs.
 			if (MeilleureCellule == INDEX_NONE) { continue; }
 
 			const int32 Ce = MeilleureCellule % NX;
@@ -1192,7 +1301,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		for (int32 L = 0; L < DebutTroncon.Num(); ++L)
 		{
 			const int32 Fin = (L + 1 < DebutTroncon.Num())
-				? DebutTroncon[L + 1] : Out.Segments.Num();
+				? DebutTroncon[L + 1] : FinDesGaleries;
 			const int32 Bac = EstRepli[L] ? 1 : 0;
 
 			for (int32 I = DebutTroncon[L]; I < Fin; ++I)
@@ -1219,8 +1328,8 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
-		TEXT("%d troncons, %d abandonnees, %d drapees, %d reseaux, %d ENTREES  (%.0f ms)"),
+		TEXT("%d troncons, %d abandonnees, %d reseaux, %d entrees dont %d GOUFFRES  (%.0f ms)"),
 		Out.Chambers.Num(), Aretes.Num(), ABoucler,
-		Out.Segments.Num(), Abandonnees, Droites, ParComposante.Num(), Entrees,
+		Out.Segments.Num(), Abandonnees, ParComposante.Num(), Entrees, Gouffres,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
 }

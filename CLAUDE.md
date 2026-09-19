@@ -3838,3 +3838,99 @@ la roche partout pour creuser entre elles. Les chambres peu profondes
 s'eparpillent jusqu'en plaine, ou la mer interrompt tout : la bande la plus
 superficielle morcelle le sous-sol en **sept** systemes independants contre
 quatre.
+
+### Gouffres et diaclases : la roche decide de la forme de la cavite (19 septembre 2026)
+
+Deuxieme moitie du chantier des cavites, demandee par le proprietaire :
+« je prefere finir avec les infractuosites, (gouffres etc...) lithographie ».
+Deux formes ajoutees, et elles ne se choisissent pas -- **la lithologie les
+repartit** : la ou la roche se dissout, le karst de la section `cavites` ; la ou
+elle ne se dissout pas, des **diaclases**, c'est-a-dire des fractures.
+
+**LE GOUFFRE : LE CRITERE EST A L'APLOMB, PAS ALENTOUR.** Un karst a deux formes
+d'entree, et c'est le terrain qui tranche : la bouche s'ouvre a l'horizontale
+dans un versant recoupe par une vallee, l'aven s'ouvre a la verticale la ou
+l'eau s'infiltre a travers un plateau. Premiere version fautive : je cherchais
+d'abord une falaise dans le voisinage de la chambre et ne posais un gouffre que
+si je n'en trouvais AUCUNE. Un voisinage de 180 m contient presque toujours un
+escarpement -- **mesure : zero gouffre sur six entrees**. Le bon critere est la
+pente de la cellule qui surmonte la chambre. Apres correction : **1 gouffre sur
+6 entrees, 26 m de haut, plateau a 19 degres**, verifie a l'image et par une
+grille de sondages (trou de 6 m de large, 40 m de chute, plateau a 88 m).
+Cette rarete n'est pas un defaut de reglage : la pente MEDIANE des terres vaut
+30,6 degres, donc le plateau est la forme rare ici.
+
+**LE CONTROLE DE PERCEMENT DOIT S'ARRETER AUX GALERIES.** Le dernier troncon
+courait jusqu'a la fin du tableau des segments, donc il avalait les entrees --
+qui percent le sol A DESSEIN. Mesure : 0,38 % de points au-dessus du sol la ou
+le routage est a 0,00. Meme melange de deux populations qui avait deja fait
+regler quatre fois le mauvais bouton. Une borne `FinDesGaleries` prise avant la
+pose des entrees le referme.
+
+**LES DIACLASES : UN BRUIT DE WORLEY, ECRIT POUR L'OCCASION** (`Worley3D`, le
+projet n'en avait aucun). La difference entre les distances aux deux germes les
+plus proches s'annule exactement sur la frontiere de Voronoi : la seuiller donne
+un reseau de parois fines, **connexes par construction** puisque les faces d'un
+diagramme de Voronoi se touchent toutes. Meme vertu que l'arbre couvrant des
+chambres, sans aucun calcul global.
+- **L'aplatissement vertical fait toute la difference entre une fracture et une
+  bulle** : en comprimant Z avant d'evaluer, les cellules deviennent des prismes
+  et leurs parois des plans quasi verticaux.
+- **Le fondu de profondeur est l'INVERSE de celui des galeries.** Un karst se
+  creuse en profondeur ; une diaclase se referme, parce que la charge sus-jacente
+  serre les joints et que c'est la decompression, pres de la surface, qui les
+  ouvre. Une fissure de granite est donc une forme de SURFACE -- et elle debouche
+  a l'air libre, ce qui lui tient lieu d'entree sans qu'on ait rien a poser.
+- **DEUX METRES D'OUVERTURE EST UN PLANCHER IMPOSE PAR LE VOXEL**, pas un gout :
+  a 1 m de voxel, le marching cubes ne peut pas representer une fente plus
+  etroite que deux voxels. On ne retient que les fissures elargies, ou un homme
+  passe -- les seules qui interessent le jeu.
+
+**TROIS MESURES FAUSSES DE SUITE, ET LA MEME LECON A CHAQUE FOIS.**
+
+1. **Un temoin non branche mesure le monde d'avant.** `probe_voxel` ne posait pas
+   `SetLithology`, donc `KarstifiableAt` rendait 1 partout, le terme sortait a la
+   premiere garde, et le releve annoncait **2,67 ms/chunk contre 2,62 avant
+   l'ajout** -- ce qui donnait a croire que le Worley etait gratuit. Branche, le
+   vrai chiffre etait **3,65**.
+2. **Une sonde qui part du relief MACRO compte de l'air ordinaire.** Elle
+   descendait depuis `SurfaceHeightM` et comptait tout vide en dessous ; or le
+   champ deplace la surface de plusieurs metres (8 d'amplitude, 25 de
+   deplacement horizontal). Elle annoncait **15,85 % de colonnes ouvertes** la ou
+   la maille, en jeu, n'en montrait AUCUNE. Le signe qui aurait du alerter : ses
+   chiffres n'avaient pas bouge d'un iota quand le masque de zone avait change.
+   La version juste cherche le premier changement de signe en descendant -- le
+   sol REEL -- et ne compte que dessous.
+3. **Mesurer une forme rare au mauvais endroit.** La sonde visait la cellule
+   insoluble la plus HAUTE ; comme le masque n'ouvre que 5 % de cette roche, ce
+   point avait 95 % de chances d'etre dans une zone fermee, et il l'etait.
+
+**C'EST LE TEMOIN AVEC/SANS QUI A TOUT DEBLOQUE**, et il devrait etre le reflexe :
+la meme sonde, deux fois, avec la forme et avec son ouverture a zero. Au mauvais
+endroit il donnait **2902 colonnes dans les deux cas, au chiffre pres** -- preuve
+immediate que la diaclase ne produisait rien. Au bon endroit :
+
+    AVEC  : 20,37 % des colonnes ouvertes sur 2 m, vide continu 42,5 m
+    SANS  :  4,04 %                                vide continu 25,5 m
+
+**UN SEUIL N'EST PAS UNE PART.** Le reglage s'appelait `diaclaseZonePct` et
+valait 0,16 ; le code en tirait un seuil en supposant le bruit UNIFORME sur
+[-1..1]. Un Perlin ne l'est pas, il se masse autour de zero : **le seuil 0,68
+cense garder 16 % n'en gardait que 1,59**. Meme famille d'erreur que les 715 mm
+pris pour une mediane. Renomme `diaclaseZoneSeuil`, avec la courbe relevee dans
+le commentaire de la regle -- part de la roche insoluble emergee : 0,15 -> 32,53 % ;
+0,35 -> 14,44 ; 0,55 -> 5,00 ; 0,68 -> 1,59. Retenu 0,55, soit **2,44 % des terres**.
+
+**LE COUT SE PAIE DANS LA GARDE, PAS DANS LE WORLEY.** Le Worley ne tourne que
+sur une fraction du volume ; c'est le test qui decide de l'appeler qui s'evalue
+partout. En fBm 3D a deux octaves il demandait seize evaluations de gradient ;
+un Perlin 2D a une octave en demande quatre et suffit a des taches larges.
+**3,65 -> 2,85 ms/chunk, geometrie inchangee au chiffre pres** (8147 colonnes
+dans les deux cas) : c'est la signature d'une vraie optimisation.
+
+**PIEGE DE VERIFICATION EN PIE, nouveau et couteux.** Les chunks se batissent
+dans un rayon de **250 m autour du pion**, en 3D. Teleporte a 400 m d'altitude
+au-dessus d'un sol a 48 m, le pion etait hors de ce rayon : **zero chunk, zero
+collision, et les sondages rendaient « rien » partout**, ce qui ressemble
+exactement a un terrain qui ne se genere plus. Verifier l'ecart vertical au sol
+avant de soupconner le streaming.
