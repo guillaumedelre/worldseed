@@ -119,12 +119,35 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	// LA LITHOLOGIE EST BRANCHEE APRES Init, ET SEULEMENT SI ELLE EXISTE. Sans
 	// elle le champ reste evaluable et ne creuse aucune diaclase : une donnee
 	// absente doit rester sans effet, jamais produire un effet arbitraire.
+	if (!Lithology.IsValid(Geometry.CellCount()))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] voxel : PAS de lithologie (%d identifiants pour %d cellules) ")
+			TEXT("-- les parois garderont la couleur du biome de surface"),
+			Lithology.Id.Num(), Geometry.CellCount());
+	}
 	if (Lithology.IsValid(Geometry.CellCount()))
 	{
 		FString LithoError;
 		if (const UWorldseedRules* LithoRules = WorldseedPipeline::GetRules(LithoError))
 		{
-			Density.SetLithology(Lithology, FWorldseedLithologyRules::FromRules(*LithoRules));
+			const FWorldseedLithologyRules LR = FWorldseedLithologyRules::FromRules(*LithoRules);
+			Density.SetLithology(Lithology, LR);
+
+			CouleurParRoche.Reset();
+			for (const FWorldseedLithologyEntry& E : LR.Catalogue)
+			{
+				CouleurParRoche.Add(E.Colour);
+			}
+
+			// SANS CETTE LIGNE ON NE SAIT PAS SI LA ROCHE EST BRANCHEE, et la
+			// difference ne se voit pas : une paroi peut etre creme parce
+			// qu'elle est du calcaire, ou parce que le biome au-dessus est du
+			// desert. Deux causes, une seule image.
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : lithologie branchee, %d couleurs de roche, ")
+				TEXT("fondu %.0f m"),
+				CouleurParRoche.Num(), DensityRules.RockColourFadeM);
 		}
 	}
 	bWorldReady = Density.IsValid();
@@ -388,6 +411,10 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 
 	const bool bHasBiomes = (Biomes.Index.Num() == Geometry.CellCount());
 	const bool bHasCover = (Biomes.Cover.Num() == Geometry.CellCount());
+	const bool bAvecRoche = Lithology.IsValid(Geometry.CellCount())
+		&& CouleurParRoche.Num() > 0;
+	const FWorldseedDensityRules& Rules = DensityRules;
+
 	const double WidthM = Geometry.WidthM();
 	const double HeightM = Geometry.HeightM;
 
@@ -420,7 +447,36 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 		const EWorldseedBiome Biome = bHasCover
 			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
 			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]);
-		Mesh.Colours[I] = WorldseedBiomes::Colour(Biome);
+		FLinearColor Teinte = WorldseedBiomes::Colour(Biome);
+
+		// --- SOUS TERRE, C'EST LA ROCHE QUI HABILLE -------------------------
+		//
+		// Ce calcul etait purement 2D : on lisait le biome de la colonne et on
+		// peignait, sans aucune notion de profondeur. Une paroi de grotte a
+		// quarante metres sous une prairie rendait donc VERTE -- constate a
+		// l'image dans la salle sous le gouffre, et c'est ce qui rendait les
+		// cavites illisibles meme une fois eclairees.
+		//
+		// La couleur d'une paroi est celle de sa ROCHE, et la lithologie la
+		// porte deja : calcaire creme, granite gris rose, basalte sombre. Meme
+		// doctrine que partout ailleurs dans cette passe -- la roche decide.
+		if (bAvecRoche && Rules.RockColourFadeM > 0.0f)
+		{
+			const double Z = Mesh.Positions[I].Z / WorldseedMetersToCm;
+			const double Profondeur = Density.SurfaceHeightM(X, Y) - Z;
+			if (Profondeur > 0.0)
+			{
+				const uint8 Id = Lithology.Id[Cell];
+				if (CouleurParRoche.IsValidIndex(Id))
+				{
+					const float T = FMath::Clamp(
+						static_cast<float>(Profondeur) / Rules.RockColourFadeM, 0.0f, 1.0f);
+					Teinte = FMath::Lerp(Teinte, CouleurParRoche[Id], T);
+				}
+			}
+		}
+
+		Mesh.Colours[I] = Teinte;
 	}
 }
 

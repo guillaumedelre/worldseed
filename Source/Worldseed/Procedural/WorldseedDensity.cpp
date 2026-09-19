@@ -49,6 +49,8 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.JointZoneFrequency = Num(TEXT("diaclaseZoneFrequence"), 0.0016);
 	Out.JointZoneThreshold = Num(TEXT("diaclaseZoneSeuil"), 0.45);
 
+	Out.RockColourFadeM = Num(TEXT("couleurRocheFonduM"), 12.0);
+
 	return Out;
 }
 

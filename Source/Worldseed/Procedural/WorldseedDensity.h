@@ -181,6 +181,22 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	float JointZoneThreshold = 0.45f;
 
+	/**
+	 * Profondeur a laquelle la couleur devient celle de la ROCHE, en metres.
+	 *
+	 * SOUS TERRE, CE N'EST PLUS LE BIOME QUI HABILLE. La couleur des sommets
+	 * etait calculee en 2D pure -- on lisait le biome de la colonne et on
+	 * peignait -- donc une paroi de grotte a quarante metres sous une prairie
+	 * rendait VERTE. Constate a l'image dans la salle sous le gouffre.
+	 *
+	 * Le fondu est genereux a dessein : la surface REELLE s'ecarte de la
+	 * surface macro de plusieurs metres (amplitude des surplombs), donc un
+	 * fondu court trancherait au mauvais endroit sur les falaises et les
+	 * visieres. A douze metres, tout ce qui est franchement souterrain est de
+	 * la roche et tout ce qui est en surface garde son biome.
+	 */
+	float RockColourFadeM = 12.0f;
+
 	static FWorldseedDensityRules FromRules(const UWorldseedRules& Rules);
 };
 

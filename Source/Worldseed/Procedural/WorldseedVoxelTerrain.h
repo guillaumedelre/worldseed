@@ -270,6 +270,15 @@ private:
 	FWorldseedCaveNetwork CaveNetwork;
 	FWorldseedLithology Lithology;
 
+	/**
+	 * Couleur de chaque roche, indexee par identifiant.
+	 *
+	 * COPIEE, PAS REFERENCEE : cinq couleurs tiennent dans une poignee d'octets,
+	 * et cela evite de dependre de la duree de vie des regles au moment ou l'on
+	 * peint un chunk.
+	 */
+	TArray<FLinearColor> CouleurParRoche;
+
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;
 
