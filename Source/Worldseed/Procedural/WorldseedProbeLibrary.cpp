@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedProbeLibrary.h"
 
+#include "Procedural/WorldseedFins.h"
+
 #include "Procedural/WorldseedDensity.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
@@ -1002,9 +1004,10 @@ FString UWorldseedProbeLibrary::ProbeArches(int32 Seed, float HeightMeters,
 	}
 
 	const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*Rules);
+	const FWorldseedLithologyRules Litho = FWorldseedLithologyRules::FromRules(*Rules);
 	FWorldseedDensity Density;
 	Density.Init(World.Geometry, World.ElevationM, 1.0f, Seed, DR);
-	Density.SetLithology(World.Lithology, FWorldseedLithologyRules::FromRules(*Rules));
+	Density.SetLithology(World.Lithology, Litho);
 
 	// --- CHOISIR LES SITES : LES PLUS HAUTS, PAS AU HASARD -------------------
 	//
@@ -1112,6 +1115,160 @@ FString UWorldseedProbeLibrary::ProbeArches(int32 Seed, float HeightMeters,
 	{
 		return TEXT("aucun site valide : tous les centres sont dans l'air");
 	}
+	// --- LE CHAMP DE LAMES : CE QU'IL COUVRE, ET OU -------------------------
+	//
+	// C'EST LE VRAI RISQUE DE CE TERME, bien plus que le nombre d'arches. Des
+	// fentes de cinquante metres tous les soixante-dix, c'est un paysage de
+	// canyons : credible sur quelques pour cent des terres, devastateur sur un
+	// tiers. La part se MESURE, elle ne se deduit pas d'un seuil -- le projet
+	// a deja paye cette confusion sur les diaclases, ou un seuil cense garder
+	// 16 % n'en gardait que 1,59.
+	{
+		const FWorldseedFinRules FR = FWorldseedFinRules::FromRules(*Rules);
+		const int32 NXl = World.Geometry.NX;
+		const int32 NYl = World.Geometry.NY;
+
+		int32 Terres = 0;
+		int32 Gres = 0;
+		int32 GresEnZone = 0;
+		int32 GresHaut = 0;
+		double SommeAltGres = 0.0;
+
+		for (int32 I = 0; I < World.ElevationM.Num(); ++I)
+		{
+			if (World.ElevationM[I] <= 0.0f) { continue; }
+			++Terres;
+
+			const uint8 R = World.Lithology.Id.IsValidIndex(I)
+				? World.Lithology.Id[I] : 0;
+			const float Durete = Litho.Catalogue.IsValidIndex(R)
+				? Litho.Catalogue[R].Hardness : 1.0f;
+			if (Durete < FR.HardnessMin || Durete > FR.HardnessMax) { continue; }
+
+			++Gres;
+			SommeAltGres += World.ElevationM[I];
+			if (World.ElevationM[I] > 63.0f) { ++GresHaut; }
+
+			const double X = (static_cast<double>(I % NXl) / NXl - 0.5)
+				* World.Geometry.WidthM();
+			const double Y = (static_cast<double>(I / NXl) / NYl - 0.5)
+				* World.Geometry.HeightM;
+			if (WorldseedFins::Zone(X, Y, FR, Seed) > 0.0f) { ++GresEnZone; }
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- champ de lames ---"));
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   roche eligible : %.2f %% des terres, ")
+			TEXT("altitude moyenne %.0f m, %.2f %% au-dessus de 63 m"),
+			100.0 * Gres / FMath::Max(Terres, 1),
+			(Gres > 0) ? SommeAltGres / Gres : 0.0,
+			100.0 * GresHaut / FMath::Max(Gres, 1));
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   dont EN ZONE de lames : %.2f %% de cette roche, ")
+			TEXT("soit %.2f %% des terres (seuil %.2f)"),
+			100.0 * GresEnZone / FMath::Max(Gres, 1),
+			100.0 * GresEnZone / FMath::Max(Terres, 1), FR.ZoneThreshold);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   lames de %.0f m entre des fentes de %.0f m, ")
+			TEXT("profondes de %.0f m"),
+			FR.SpacingM - FR.SlotM, FR.SlotM, FR.DepthM);
+	}
+
+	// --- LE CONTROLE QUI DIT SI CE SONT DES ARCHES ---------------------------
+	//
+	// UNE ARCHE EST UNE OUVERTURE TRAVERSANTE SOUS UN PONT DE ROCHE CONTINU :
+	// les deux moities du critere doivent etre verifiees, et separement. Un
+	// trou qui ne traverse pas est un abri sous roche ; un trou sans roche
+	// au-dessus est une echancrure. Les compter ensemble laisserait passer les
+	// deux defauts.
+	{
+		int32 Traversantes = 0;
+		int32 AvecPont = 0;
+		int32 Bonnes = 0;
+
+		for (const FWorldseedCaveArch& A : World.Caves.Arches)
+		{
+			// LE CHAMP NE CREUSE RIEN SI ON NE LUI DONNE PAS LE RESEAU. At(P)
+			// sans primitives rend la roche PLEINE : la sonde mesurait donc le
+			// monde d'AVANT le percement et rendait "0 traversante" quelles que
+			// soient les arches. Meme piege que probe_voxel sans SetLithology,
+			// et il ne se signale pas -- le chiffre est plausible.
+			FWorldseedCaveLocal Local;
+			World.Caves.Query(FBox(
+				FVector(A.CentreM.X - A.EpaisseurM - 40.0,
+					A.CentreM.Y - A.EpaisseurM - 40.0, A.CentreM.Z - 60.0),
+				FVector(A.CentreM.X + A.EpaisseurM + 40.0,
+					A.CentreM.Y + A.EpaisseurM + 40.0, A.CentreM.Z + 60.0)), Local);
+
+			// 1. TRAVERSER : de l'air sur toute la longueur de l'axe, y compris
+			//    au milieu de la lame -- c'est la que resterait un bouchon.
+			const double Demi = A.EpaisseurM * 0.5 + A.RayonM;
+			bool bTraverse = true;
+			for (double T = -Demi; T <= Demi; T += 2.0)
+			{
+				const FVector Q(A.CentreM.X + A.TraversM.X * T,
+					A.CentreM.Y + A.TraversM.Y * T, A.CentreM.Z);
+				if (Density.At(Q, &Local) <= 0.0) { bTraverse = false; break; }
+			}
+
+			// 2. LE PONT, ET ON LE MESURE AU LIEU DE LE COCHER.
+			//
+			// Un booleen ne dit pas OU ni DE COMBIEN il casse : deux essais de
+			// correction n'ont pas bouge le compte, ce qui est le signe qu'on
+			// regle le mauvais bouton. On remonte donc depuis le sommet de
+			// l'ouverture jusqu'a sortir de la roche, et on garde la plus
+			// MINCE des travees -- c'est elle qui decide.
+			const double ZHaut = A.CentreM.Z + 1.3 * A.RayonM;
+			double PontMesure = TNumericLimits<double>::Max();
+			double OuCasse = 0.0;
+			for (double T = -A.EpaisseurM * 0.4; T <= A.EpaisseurM * 0.4; T += 4.0)
+			{
+				const double QX = A.CentreM.X + A.TraversM.X * T;
+				const double QY = A.CentreM.Y + A.TraversM.Y * T;
+
+				// IL FAUT D'ABORD SORTIR DU TROU. Partir du sommet calcule de
+				// l'ouverture et compter la roche vers le haut donnait ZERO
+				// partout : ce point est de l'AIR par construction, et l'union
+				// lisse l'inflate encore du rayon de raccord. On mesurait donc
+				// sa propre erreur, avec un chiffre identique sur les dix
+				// arches -- ce qui aurait du alerter tout de suite.
+				double Z = ZHaut;
+				while (Z < ZHaut + 40.0
+					&& Density.At(FVector(QX, QY, Z), &Local) > 0.0)
+				{
+					Z += 0.5;
+				}
+
+				// Puis l'epaisseur de roche franche jusqu'a l'air libre.
+				double Epais = 0.0;
+				while (Epais < 80.0
+					&& Density.At(FVector(QX, QY, Z + Epais), &Local) <= 0.0)
+				{
+					Epais += 0.5;
+				}
+				if (Epais < PontMesure) { PontMesure = Epais; OuCasse = T; }
+			}
+
+			const bool bPont = (PontMesure >= 2.0);
+			if (bTraverse) { ++Traversantes; }
+			if (bPont) { ++AvecPont; }
+			if (bTraverse && bPont) { ++Bonnes; }
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   arche (%.0f, %.0f) : %s, pont demande %.0f m, ")
+				TEXT("MESURE %.0f m (au plus mince a %.0f m du centre)"),
+				A.CentreM.X, A.CentreM.Y,
+				bTraverse ? TEXT("traverse") : TEXT("NE TRAVERSE PAS"),
+				A.PontM, PontMesure, OuCasse);
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- arches posees ---"));
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   %d posees : %d traversantes, %d avec un pont, ")
+			TEXT("%d VRAIES ARCHES"),
+			World.Caves.Arches.Num(), Traversantes, AvecPont, Bonnes);
+	}
+
 	Largeurs.Sort();
 	auto Centile = [&Largeurs](double Q)
 	{

@@ -4526,3 +4526,81 @@ Appliquee a `oceanDepthM`, `riftDepthM`, `detailAmplitudeOceanM` et au plancher
 
 Relief total : **2051 m sur 64 km.** Un monde de montagnes, avec une plage en Z
 d'eau trois fois et demie plus serree qu'avant.
+
+### Les arches existent : il fallait tailler la lame avant de percer (19 septembre 2026)
+
+Le chantier avait ete abandonne sur un constat chiffre -- zero site sur 402
+points emerges avec une crete sous 80 m. Rouvert a la demande du proprietaire
+apres la boucle soulevement / erosion, il aboutit : **9 vraies arches sur 10
+posees**, traversantes et sous un pont de roche continu.
+
+**LE RELIEF AVAIT CHANGE LE CONSTAT.** Meme mesure sur 64 x 32 km, 392 sites
+valides : crete mediane 106 m, p10 44 m, et **37,76 % des sites sous 80 m**
+contre 0,00 % avant. Le mecanisme est direct -- `S = (U / K.A^m)^(1/n)` : une
+pente plus raide resserre la crete a une profondeur donnee sous le sommet.
+
+**MAIS LES LAMES ETAIENT SUR LA MAUVAISE ROCHE, ET C'EST LE FAIT QUI A TOUT
+DECIDE.** Sur 6327 sondages bien espaces, 229 cretes assez minces : **135 en
+granite, 94 en basalte, ZERO en calcaire, gres ou schiste**. La cause est
+mecanique -- granite a 33,5 degres de pente, gres a 8,7 -- donc la roche des
+arches reelles est precisement celle qui, chez nous, n'a plus de relief.
+**DECISION DU PROPRIETAIRE : fabriquer les lames en gres**, par le mecanisme
+reel d'Arches National Park -- des joints verticaux PARALLELES qui decoupent
+des murs minces.
+
+**`WorldseedFins` : des fentes paralleles, PAS un bruit cellulaire.** Le Worley
+des diaclases donne un nid d'abeille de parois, tres bien pour un chaos de
+blocs et inutile ici. Une lame demande une fonction periodique le long d'UN axe.
+Couverture mesuree : **1,01 % des terres** (gres 10,89 % des terres, dont
+9,28 % en zone), lames de 54 m entre des fentes de 16 m profondes de 50. Le
+meme champ donne les CANYONS et les MESAS a d'autres reglages.
+
+**LE BUG QUI TUAIT TOUT, ET IL EST MATHEMATIQUE.** Ecrire
+`U = X.cos(theta(X,Y)) + Y.sin(theta(X,Y))` pour des bandes qui tournent
+doucement est FAUX : theta multiplie la coordonnee ABSOLUE du monde, qui monte
+a 32 000 m, donc `|grad U| = 1 + X.d(theta)/ds` vaut environ **CINQ** loin de
+l'origine. L'espacement reel des fentes tombait a quatorze metres pour
+soixante-dix demandes, et il ne restait aucune lame. Remede : **theta constant
+par morceaux** -- case de 16 km, bien plus large qu'une tache de lames, donc la
+discontinuite tombe la ou la zone est deja nulle. `|grad U|` vaut alors
+exactement 1. **A retenir pour tout champ oriente.**
+
+**QUATRE MESURES FAUSSES AVANT LA BONNE, ET TOUTES DU MEME GENRE.**
+
+1. *Un seul espacement pour sonder et pour poser.* Tant qu'aucune arche n'etait
+   posee, CHAQUE cellule du monde etait examinee, y compris en plein versant ou
+   la "crete" a vingt metres sous le point est la montagne entiere : 433 057
+   sites et 99,44 % de cretes trop larges, quand la sonde -- qui espace ses
+   points et ne garde que des sommets -- en trouvait 37,76 % d'assez minces.
+   **On sonde souvent, on pose rarement.**
+2. *La verification n'evaluait pas les cavites.* `Density.At(P)` sans le reseau
+   rend la roche PLEINE : la sonde mesurait le monde d'AVANT le percement et
+   annoncait "0 traversante" quelles que soient les arches. Meme piege que
+   `probe_voxel` sans `SetLithology`, et il ne se signale pas.
+3. *La mesure du pont partait DANS le trou.* Compter la roche vers le haut
+   depuis le sommet calcule de l'ouverture donne zero : ce point est de l'air
+   par construction, et l'union lisse l'inflate encore du rayon de raccord. Il
+   faut d'abord SORTIR du trou, puis compter. **Le signe qui aurait du
+   alerter : 0 m au meme offset de -22 m sur les DIX arches.** Un chiffre
+   identique partout n'est jamais un hasard de terrain.
+4. *Un booleen ne dit pas ou ca casse.* Deux corrections n'ont pas bouge le
+   compte "avec pont" ; c'est en remplacant le oui/non par une EPAISSEUR
+   MESUREE, avec l'offset du point le plus mince, que l'anomalie est apparue.
+
+**LE PONT DEMANDE N'EST PAS LE PONT OBTENU**, et il faut le savoir partout ou
+une epaisseur compte : l'union lisse gonfle chaque forme creusee d'environ
+`raccordM` (2,5 m). Un pont demande a 4 m ne laissait que 1,5 m de roche.
+Plancher porte a 7. Et la marge de securite sur le sommet macro (10 m) s'ajoute
+au pont : mesure finale **7 a 26 m** pour des ouvertures de 18 a 33 m de haut.
+C'est epais pour une arche ; le chemin d'amelioration est d'evaluer le
+deplacement vertical du voxel dans la passe des cavites plutot que de le
+couvrir par une marge forfaitaire.
+
+**Le reseau conserve desormais les arches** (`FWorldseedCaveArch` : centre, axe
+de percement, epaisseur, rayon, pont). C'est l'arbitrage B8, et c'est ce qui
+permet a `Worldseed.Lieux` d'y envoyer le joueur. Le reseau etant REBATI a
+chaque chargement et jamais serialise, aucun impact sur le cache.
+
+**RESTE OUVERT** : une arche sur dix a son pont perce (0 m a deux metres du
+centre) -- probablement une chambre ou une galerie qui passe juste au-dessus.
+Et rien n'a encore ete REGARDE en jeu.

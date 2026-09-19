@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedRules.h"
+#include "Procedural/WorldseedFins.h"
 
 struct FWorldseedLithology;
 struct FWorldseedLithologyRules;
@@ -60,10 +61,36 @@ struct WORLDSEED_API FWorldseedCaveLocal
  * quelques aretes courtes pour faire des boucles, sans quoi le joueur revient
  * toujours sur ses pas.
  */
+/**
+ * Une arche posee : ou elle est, et par ou elle traverse.
+ *
+ * CONSERVEE PARCE QU'UNE FORME QU'ON NE SAIT PAS RETROUVER N'EXISTE PAS. Les
+ * segments seuls decrivent la geometrie mais ne disent pas laquelle est une
+ * arche ; sans cette liste il n'y a aucun moyen de verifier que le trou
+ * TRAVERSE, ni d'y envoyer le joueur, ni d'y accrocher du butin. C'est
+ * l'arbitrage B8 du proprietaire : la sortie de la passe macro est
+ * interrogeable au runtime.
+ */
+struct WORLDSEED_API FWorldseedCaveArch
+{
+	/** Centre de l'ouverture, en metres. */
+	FVector CentreM = FVector::ZeroVector;
+
+	/** Direction du percement, EN TRAVERS de la lame. Normalisee. */
+	FVector2D TraversM = FVector2D(1.0, 0.0);
+
+	float EpaisseurM = 0.0f;
+	float RayonM = 0.0f;
+	float PontM = 0.0f;
+};
+
 struct WORLDSEED_API FWorldseedCaveNetwork
 {
 	TArray<FWorldseedCaveChamber> Chambers;
 	TArray<FWorldseedCaveSegment> Segments;
+
+	/** Les arches, pour qu'on puisse les retrouver et les verifier. */
+	TArray<FWorldseedCaveArch> Arches;
 
 	/** Index spatial : une grille reguliere en XY, la bande etant mince. */
 	float CellM = 64.0f;
@@ -279,6 +306,86 @@ struct WORLDSEED_API FWorldseedCaveRules
 	 * reglage.
 	 */
 	float BlendM = 2.5f;
+
+	// --- arches ---------------------------------------------------------------
+
+	/**
+	 * Largeur de crete au-dela de laquelle on ne perce pas, en metres.
+	 *
+	 * C'EST LE CRITERE QUI FAIT LA DIFFERENCE ENTRE UNE ARCHE ET UN TUNNEL, et
+	 * il n'est pas negociable : une arche est une ouverture TRAVERSANTE sous un
+	 * pont de roche continu. Percer une colline de deux cents metres donne un
+	 * tunnel, pas une arche. La forme demande donc une LAME, et c'est son
+	 * absence qui avait fait abandonner le chantier sur le monde de 16 km --
+	 * zero site sur 402 points emerges. Sur 64 x 32 km, apres la boucle
+	 * soulevement / erosion : 37,76 % des sites passent sous 80 m.
+	 */
+	float ArchCrestMaxM = 80.0f;
+
+	/** Profondeur sous le sommet ou l'on mesure la crete, en metres. */
+	float ArchBelowSummitM = 20.0f;
+
+	float ArchRadiusMinM = 6.0f;
+	float ArchRadiusMaxM = 14.0f;
+
+	/**
+	 * Epaisseur du pont de roche au-dessus de l'ouverture, en metres.
+	 *
+	 * C'EST CE QUI SE VOIT, PLUS ENCORE QUE L'OUVERTURE. Un trou de trente
+	 * metres sous cent metres de roche se lit comme un tunnel ; le meme trou
+	 * sous dix metres se lit comme une arche. Le rapport compte donc autant que
+	 * la valeur, d'ou le plafond relatif ci-dessous.
+	 */
+	float ArchBridgeMinM = 4.0f;
+	float ArchBridgeMaxM = 12.0f;
+
+	/** Pont rapporte a la hauteur de l'ouverture. Au-dela, c'est un tunnel. */
+	float ArchBridgeMaxRatio = 0.55f;
+
+	/**
+	 * Durete maximale de la roche, dans [0..1].
+	 *
+	 * UNE ARCHE N'EST PAS UNE FORME DE DISSOLUTION, donc le critere n'est pas
+	 * la karstification : c'est de l'erosion differentielle et de la
+	 * desquamation. Le gres en est la roche type -- Arches National Park est
+	 * entierement en gres --, le calcaire en porte aussi. Le granite, lui,
+	 * donne des domes et des chaos de blocs, pas des arches. A 1,0, la porte
+	 * est ouverte a toutes les roches.
+	 */
+	float ArchHardnessMaxM = 0.7f;
+
+	/**
+	 * Distance entre deux SONDAGES de crete, en metres.
+	 *
+	 * ON SONDE SOUVENT ET ON POSE RAREMENT, et confondre les deux espacements
+	 * fausse la mesure autant que le resultat. Sans sondage espace, chaque
+	 * cellule du monde est examinee -- y compris en plein versant, ou la crete
+	 * a vingt metres sous le point mesure est evidemment la montagne entiere.
+	 * Releve de la premiere version : 433 057 sites et 99,44 % de cretes trop
+	 * larges, quand la sonde, qui espace ses points et ne garde que des
+	 * sommets, en trouvait 37,76 % d'assez minces.
+	 */
+	float ArchProbeSpacingM = 250.0f;
+
+	/** Distance minimale entre deux arches, en metres. */
+	float ArchSpacingM = 1500.0f;
+
+	/** Nombre vise. A zero, aucune arche n'est posee. */
+	int32 ArchCount = 24;
+
+	/**
+	 * Marge retranchee au sommet de la grille macro, en metres.
+	 *
+	 * LE CHAMP DE DENSITE DEPLACE LA SURFACE, et la passe des cavites ne le
+	 * sait pas : elle ne lit que la grille de simulation, tandis que le voxel y
+	 * ajoute jusqu'a overhangAmplitudeM de deplacement vertical. Un pont calcule
+	 * sur la grille peut donc se retrouver EN L'AIR. Mesure avant cette marge :
+	 * huit arches sur dix sans roche au-dessus de l'ouverture.
+	 */
+	float ArchSummitMarginM = 10.0f;
+
+	/** Le champ de lames : l'arche se pose au milieu d'un mur, pas ailleurs. */
+	FWorldseedFinRules Fins;
 
 	static FWorldseedCaveRules FromRules(const UWorldseedRules& Rules);
 };

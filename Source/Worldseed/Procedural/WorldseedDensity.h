@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedRules.h"
+#include "Procedural/WorldseedFins.h"
 
 struct FWorldseedCaveLocal;
 
@@ -251,6 +252,19 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	float RockColourFadeM = 12.0f;
 
+	/**
+	 * Le champ de lames de gres, charge par le MEME appel que le reste.
+	 *
+	 * IL EST ICI ET PAS AILLEURS POUR QU'ON NE PUISSE PAS L'OUBLIER. Pose en
+	 * membre separe du champ de densite, il aurait fallu l'assigner a chaque
+	 * endroit ou une densite est construite -- le terrain, chacune des sondes --
+	 * et un seul oubli aurait rendu le terme inerte SANS AUCUN SIGNE. C'est
+	 * exactement ce qui s'est produit avec la lithologie non branchee dans
+	 * probe_voxel : la sonde annoncait 2,67 ms/chunk et mesurait le monde
+	 * d'avant. En passant par les regles, il n'y a qu'un seul chemin.
+	 */
+	FWorldseedFinRules Fins;
+
 	static FWorldseedDensityRules FromRules(const UWorldseedRules& Rules);
 };
 
@@ -367,8 +381,22 @@ private:
 	 */
 	float KarstifiableAt(double X, double Y) const;
 
+	/**
+	 * Durete de la roche sous ce point, dans [0..1]. Meme lecture categorielle.
+	 *
+	 * ELLE NE SE DEDUIT PAS DE LA KARSTIFICATION. Le gres se dissout peu (0,15)
+	 * et le granite pas du tout (0,00), mais leurs duretes sont 0,55 et 0,95 :
+	 * ce sont deux axes independants, et c'est la DURETE qui dit ou des lames
+	 * peuvent se decouper.
+	 */
+	float DureteAt(double X, double Y) const;
+
+	/** Decoupe des lames de gres par fentes paralleles : positif dans le vide. */
+	double FinAt(const FVector& PosM, double DepthM) const;
+
 	const TArray<uint8>* LithologyId = nullptr;
 	TArray<float> KarstifiableParId;
+	TArray<float> DureteParId;
 
 	FWorldseedGeometry Geometry;
 	const TArray<float>* ElevationM = nullptr;

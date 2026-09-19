@@ -59,6 +59,7 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.ArchThreshold = Num(TEXT("archeSeuil"), 0.55);
 	Out.ArchAmplitudeM = Num(TEXT("archeAmplitudeM"), 5.0);
 
+	Out.Fins = FWorldseedFinRules::FromRules(Rules);
 	return Out;
 }
 
@@ -80,9 +81,12 @@ void FWorldseedDensity::SetLithology(const FWorldseedLithology& InLithology,
 
 	KarstifiableParId.Reset();
 	KarstifiableParId.Reserve(InRules.Catalogue.Num());
+	DureteParId.Reset();
+	DureteParId.Reserve(InRules.Catalogue.Num());
 	for (const FWorldseedLithologyEntry& E : InRules.Catalogue)
 	{
 		KarstifiableParId.Add(E.Karstifiable);
+		DureteParId.Add(E.Hardness);
 	}
 }
 
@@ -113,6 +117,67 @@ float FWorldseedDensity::KarstifiableAt(double X, double Y) const
 
 	const uint8 Id = (*LithologyId)[J * NX + I];
 	return KarstifiableParId.IsValidIndex(Id) ? KarstifiableParId[Id] : 1.0f;
+}
+
+float FWorldseedDensity::DureteAt(double X, double Y) const
+{
+	if (!LithologyId || DureteParId.Num() == 0)
+	{
+		// Sans lithologie, on declare la roche DURE : aucune lame ne se
+		// decoupe, et le monde reste celui d'avant. Le defaut d'une donnee
+		// absente doit etre l'ABSENCE d'effet.
+		return 1.0f;
+	}
+
+	const int32 NX = Geometry.NX;
+	const int32 NY = Geometry.NY;
+	if (LithologyId->Num() != NX * NY)
+	{
+		return 1.0f;
+	}
+
+	const double U = X / Geometry.WidthM() + 0.5;
+	const double V = Y / Geometry.HeightM + 0.5;
+
+	int32 I = FMath::FloorToInt(U * NX);
+	I = ((I % NX) + NX) % NX;
+	const int32 J = FMath::Clamp(FMath::FloorToInt(V * NY), 0, NY - 1);
+
+	const uint8 Id = (*LithologyId)[J * NX + I];
+	return DureteParId.IsValidIndex(Id) ? DureteParId[Id] : 1.0f;
+}
+
+double FWorldseedDensity::FinAt(const FVector& PosM, double DepthM) const
+{
+	// --- LES GARDES, DANS L'ORDRE DE LEUR COUT ------------------------------
+	//
+	// Meme lecon que pour les diaclases : le cout se paie dans la GARDE, pas
+	// dans le motif. Le motif ne tourne que sur une fraction du volume, la
+	// garde s'evalue partout.
+
+	// 1. LA PROFONDEUR, et c'est le test le moins cher de tous.
+	if (!Rules.Fins.IsActive() || DepthM > Rules.Fins.DepthM)
+	{
+		return -1.0;
+	}
+
+	// 2. LA MER. Une fente de cinquante metres creusee dans une plaine cotiere
+	//    passerait sous zero, et le plugin Water y appliquerait son rendu
+	//    sous-marin -- un canyon noye que personne n'a decide.
+	if (PosM.Z < Rules.Fins.SeaMarginM)
+	{
+		return -1.0;
+	}
+
+	// 3. LA ROCHE. Le gres et lui seul : le calcaire a deja son karst, le
+	//    granite et le basalte ont leurs diaclases.
+	const float Durete = DureteAt(PosM.X, PosM.Y);
+	if (Durete < Rules.Fins.HardnessMin || Durete > Rules.Fins.HardnessMax)
+	{
+		return -1.0;
+	}
+
+	return WorldseedFins::SlotAt(PosM.X, PosM.Y, DepthM, Rules.Fins, Seed);
 }
 
 double FWorldseedDensity::ArchAt(const FVector& PosM, double DepthM) const
@@ -519,6 +584,17 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	if (Fissure > 0.0)
 	{
 		D = FMath::Max(D, Fissure);
+	}
+
+	// --- lames de gres --------------------------------------------------------
+	// Des fentes PARALLELES, et non un reseau cellulaire : c'est ce qui laisse
+	// entre elles des murs minces et longs. Sans eux il n'y a pas d'arche
+	// possible dans ce monde -- mesure : les 229 seules cretes assez minces
+	// sont toutes en granite ou en basalte, zero en roche sedimentaire.
+	const double Fente = FinAt(PosM, DepthM);
+	if (Fente > 0.0)
+	{
+		D = FMath::Max(D, Fente);
 	}
 
 	// Le bruit ci-dessus donne le GRAIN -- des conduits credibles, mais sans

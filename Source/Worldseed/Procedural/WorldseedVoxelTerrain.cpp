@@ -1114,10 +1114,22 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 	Ligne(TEXT("roche tendre"), Tendre, TEXT("la plaine decapee, a comparer"));
 	Ligne(TEXT("la cote"), Cote, TEXT("le fond marin et l'eau"));
 
-	// LES OUVERTURES DE GROTTE NE SONT PAS RECALCULABLES ICI : le reseau ne
-	// retient que des chambres et des segments, pas le role de chacun. Elles
-	// sont journalisees a la generation -- c'est la qu'on les lit, et les
-	// conserver dans le reseau est un chantier a part (arbitrage B8).
+	// LES ARCHES, ELLES, SONT CONSERVEES PAR LE RESEAU. C'est l'arbitrage B8 --
+	// la sortie de la passe macro est interrogeable au runtime -- et c'est ce
+	// qui permet d'y aller sans relire un journal. Les bouches, gouffres et
+	// dolines ne le sont pas encore : elles restent au journal de generation.
+	for (int32 I = 0; I < CaveNetwork.Arches.Num(); ++I)
+	{
+		const FWorldseedCaveArch& A = CaveNetwork.Arches[I];
+		const FString L = FString::Printf(
+			TEXT("Worldseed.Aller %.0f %.0f   arche %-12d %5.0f m, ")
+			TEXT("ouverture %.0f m sous un pont, lame de %.0f m"),
+			A.CentreM.X, A.CentreM.Y, I + 1, A.CentreM.Z,
+			2.6f * A.RayonM, A.EpaisseurM);
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] lieu : %s"), *L);
+		Sortie += L + LINE_TERMINATOR;
+	}
+
 	if (CaveNetwork.IsValid())
 	{
 		Sortie += FString::Printf(
