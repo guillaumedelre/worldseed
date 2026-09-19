@@ -100,11 +100,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde",
 		meta = (ClampMin = "100.0"))
-	float FallbackHeightMeters = 8000.0f;
+	float FallbackHeightMeters = 32000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde",
 		meta = (ClampMin = "64", ClampMax = "2048"))
-	int32 FallbackResolutionY = 256;
+	int32 FallbackResolutionY = 1024;
 
 	/** Exageration verticale. 1 = altitudes reelles. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde",

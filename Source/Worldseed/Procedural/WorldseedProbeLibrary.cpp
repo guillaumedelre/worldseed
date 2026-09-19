@@ -312,6 +312,66 @@ FString UWorldseedProbeLibrary::ProbeLithology(int32 Seed, float HeightMeters,
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   terres karstifiables : %.2f %%"), KarstPct);
 
+	// --- OU FAUT-IL ALLER VOIR ? ---------------------------------------------
+	//
+	// UNE MESURE NE REMPLACE PAS UN REGARD, et un regard demande une adresse.
+	// Cette passe designe les endroits ou chaque chose se juge : le sommet pour
+	// l'amplitude, le contraste granite / calcaire pour l'erosion
+	// differentielle, la cote pour la mer et l'eau.
+	{
+		int32 Sommet = INDEX_NONE;
+		float ZMax = -1e9f;
+		int32 GraniteRaide = INDEX_NONE;
+		float PenteGranite = -1.0f;
+		int32 CalcairePlat = INDEX_NONE;
+		float PenteCalcaire = 1e9f;
+		int32 Cote = INDEX_NONE;
+
+		TArray<float> GY, GX;
+		WorldseedGrid::Gradient(World.ElevationM, World.Geometry.NX, World.Geometry.NY,
+			World.Geometry.MetersPerPixel(), GY, GX);
+
+		for (int32 I = 0; I < World.ElevationM.Num(); ++I)
+		{
+			const float Z = World.ElevationM[I];
+			if (Z > ZMax) { ZMax = Z; Sommet = I; }
+			if (Z <= 0.0f) { continue; }
+
+			const float P = FMath::RadiansToDegrees(
+				FMath::Atan(FMath::Sqrt(GX[I] * GX[I] + GY[I] * GY[I])));
+
+			const uint8 R = World.Lithology.Id.IsValidIndex(I) ? World.Lithology.Id[I] : 255;
+			if (!Litho.Catalogue.IsValidIndex(R)) { continue; }
+			const float D = Litho.Catalogue[R].Hardness;
+
+			if (D > 0.9f && Z > 300.0f && P > PenteGranite) { PenteGranite = P; GraniteRaide = I; }
+			if (D < 0.5f && Z > 20.0f && Z < 200.0f && P < PenteCalcaire)
+			{
+				PenteCalcaire = P; CalcairePlat = I;
+			}
+			if (Cote == INDEX_NONE && Z > 2.0f && Z < 12.0f) { Cote = I; }
+		}
+
+		auto Dire = [&](const TCHAR* Nom, int32 I, const TCHAR* Pourquoi)
+		{
+			if (I == INDEX_NONE) { return; }
+			const double X = (static_cast<double>(I % World.Geometry.NX) / World.Geometry.NX - 0.5)
+				* World.Geometry.WidthM();
+			const double Y = (static_cast<double>(I / World.Geometry.NX) / World.Geometry.NY - 0.5)
+				* World.Geometry.HeightM;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] A VOIR : %-22s (%.0f, %.0f) m, altitude %.0f m -- %s"),
+				Nom, X, Y, World.ElevationM[I], Pourquoi);
+		};
+
+		Dire(TEXT("le sommet"), Sommet, TEXT("l'amplitude du nouveau relief"));
+		Dire(TEXT("granite le plus raide"), GraniteRaide,
+			TEXT("la roche dure qui tient la pente"));
+		Dire(TEXT("calcaire le plus plat"), CalcairePlat,
+			TEXT("la roche tendre decapee, a comparer au granite"));
+		Dire(TEXT("la cote"), Cote, TEXT("le fond marin releve et la texture d'eau"));
+	}
+
 	// --- LES DIACLASES, la cavite de la roche qui NE se dissout PAS ----------
 	//
 	// LA MESURE QUI COMPTE N'EST PAS LE VOLUME CREUSE. Une fente de deux metres

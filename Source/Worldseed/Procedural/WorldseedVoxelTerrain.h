@@ -173,7 +173,7 @@ public:
 	int32 FallbackSeed = 20260909;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde")
-	float FallbackHeightMeters = 8000.0f;
+	float FallbackHeightMeters = 32000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde")
 	int32 FallbackResolutionY = 1024;
@@ -267,6 +267,38 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
 	FString DiagnostiquerColonne(FVector MondeCm) const;
 
+	/**
+	 * Pose le joueur a un endroit choisi, en metres dans le repere du monde.
+	 *
+	 * IL NE SUFFIT PAS DE DEPLACER LE PION, ET LE PROJET A DEJA PAYE CE PIEGE.
+	 * Les chunks se batissent AUTOUR de lui : a l'arrivee il n'y a rien sous
+	 * ses pieds, il tombe, et comme c'est lui qui donne l'origine de la
+	 * diffusion il emmene la fenetre de chunks dans sa chute -- mesure, -4745 m.
+	 * On reutilise donc le filet qui existe deja : le pion est TENU EN VOL
+	 * jusqu'a ce que le chunk qui le porte ait une collision cuite, puis rendu
+	 * a la gravite. C'est exactement ce que fait la mise en place initiale, et
+	 * la refaire ici ferait diverger les deux moities.
+	 *
+	 * SEULE DIFFERENCE AVEC CETTE MISE EN PLACE : on ne cherche PAS de sol plat
+	 * alentour. L'endroit a ete demande, on y va.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
+	void TeleporterJoueur(double XMetres, double YMetres);
+
+	/** Ou est le joueur, et sur quoi. Pour juger une capture sans deviner. */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
+	FString OuSuisJe() const;
+
+	/**
+	 * Les endroits du monde CHARGE qui meritent d'etre vus.
+	 *
+	 * Calcules a la demande depuis le relief et la roche, jamais ecrits en dur :
+	 * une liste de coordonnees serait juste pour une graine et fausse pour
+	 * toutes les autres.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Voxel")
+	FString LieuxRemarquables() const;
+
 private:
 
 	void ReleaseChunk(const FIntVector& Key);
@@ -310,6 +342,13 @@ private:
 	 * peint un chunk.
 	 */
 	TArray<FLinearColor> CouleurParRoche;
+
+	/** Libelle de chaque roche, meme indexation. Pour le releve, pas le rendu. */
+	TArray<FString> NomParRoche;
+
+	/** Destination demandee, tant que le pion n'y est pas pose. */
+	bool bTeleportPose = false;
+	FVector2D TeleportXYM = FVector2D::ZeroVector;
 
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;

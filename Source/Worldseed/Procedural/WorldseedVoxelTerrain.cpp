@@ -135,9 +135,11 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			Density.SetLithology(Lithology, LR);
 
 			CouleurParRoche.Reset();
+			NomParRoche.Reset();
 			for (const FWorldseedLithologyEntry& E : LR.Catalogue)
 			{
 				CouleurParRoche.Add(E.Colour);
+				NomParRoche.Add(E.Label.IsEmpty() ? E.Key : E.Label);
 			}
 
 			// SANS CETTE LIGNE ON NE SAIT PAS SI LA ROCHE EST BRANCHEE, et la
@@ -854,7 +856,17 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		bPlayerHeld = false;
 	}
 
-	if (!bPlayerHeld)
+	if (!bPlayerHeld && bTeleportPose)
+	{
+		// UNE DESTINATION DEMANDEE NE SE CORRIGE PAS. FindFlatGround fouille un
+		// voisinage pour trouver du plat : tres bien au depart, ou l'endroit
+		// n'a aucune importance, mais il deplacerait de plusieurs centaines de
+		// metres un joueur venu voir UN sommet precis.
+		X = TeleportXYM.X;
+		Y = TeleportXYM.Y;
+		SurfaceM = Density.SurfaceHeightM(X, Y);
+	}
+	else if (!bPlayerHeld)
 	{
 		// ON CHOISIT L'ENDROIT, ON NE SE CONTENTE PAS DE CELUI DU PlayerStart.
 		// Il faut du plat, de l'emerge, et du plein dessous : une colonne sur
@@ -904,9 +916,11 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		}
 
 		bPlayerHeld = true;
+		bTeleportPose = false;
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] voxel : joueur tenu a z %.0f cm, surface %.1f m"),
-			PoseZCm, SurfaceM);
+			TEXT("[Worldseed] voxel : joueur tenu a (%.0f, %.0f) m, z %.0f cm, ")
+			TEXT("surface %.1f m"),
+			X, Y, PoseZCm, SurfaceM);
 		return;
 	}
 
@@ -956,4 +970,161 @@ FString AWorldseedVoxelTerrain::ReportState() const
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] voxel : %s"), *Resume);
 	return Resume;
+}
+
+
+// ------------------------------------------------------- aller, et savoir ou
+
+void AWorldseedVoxelTerrain::TeleporterJoueur(double XMetres, double YMetres)
+{
+	if (!bWorldReady)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] aller : le monde n'est pas encore charge"));
+		return;
+	}
+
+	TeleportXYM = FVector2D(XMetres, YMetres);
+	bTeleportPose = true;
+
+	// ON REARME LA MISE EN PLACE, ON NE DEPLACE PAS LE PION A LA MAIN. Elle
+	// sait tenir en vol, attendre la collision et relacher ; la dupliquer ici
+	// ferait deux codes a maintenir pour une seule regle.
+	bPlayerHeld = false;
+	bPlayerReleased = false;
+
+	const float SurfaceM = Density.SurfaceHeightM(XMetres, YMetres);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] aller : (%.0f, %.0f) m, surface %.0f m -- ")
+		TEXT("le joueur est tenu en vol jusqu'a ce que le sol soit solide"),
+		XMetres, YMetres, SurfaceM);
+
+	HoldOrReleasePlayer();
+}
+
+FString AWorldseedVoxelTerrain::OuSuisJe() const
+{
+	UWorld* const W = GetWorld();
+	APawn* const Pawn = W ? UGameplayStatics::GetPlayerPawn(W, 0) : nullptr;
+	if (!Pawn || !bWorldReady)
+	{
+		return TEXT("pas de joueur, ou monde pas encore charge");
+	}
+
+	const FVector PosCm = Pawn->GetActorLocation() - GetActorLocation();
+	const double X = PosCm.X / WorldseedMetersToCm;
+	const double Y = PosCm.Y / WorldseedMetersToCm;
+	const double Z = PosCm.Z / WorldseedMetersToCm;
+	const float SurfaceM = Density.SurfaceHeightM(X, Y);
+
+	// La roche se lit au PLUS PROCHE VOISIN : un identifiant est une categorie,
+	// et interpoler entre du granite et du calcaire donnerait du gres.
+	FString Roche = TEXT("inconnue");
+	if (Lithology.IsValid(Geometry.CellCount()))
+	{
+		const double U = FMath::Frac((X / Geometry.WidthM()) + 0.5);
+		const double V = FMath::Clamp((Y / Geometry.HeightM) + 0.5, 0.0, 1.0);
+		const int32 I = FMath::Clamp(FMath::RoundToInt(U * Geometry.NX),
+			0, Geometry.NX - 1);
+		const int32 J = FMath::Clamp(FMath::RoundToInt(V * Geometry.NY),
+			0, Geometry.NY - 1);
+		const uint8 Id = Lithology.Id[J * Geometry.NX + I];
+		Roche = NomParRoche.IsValidIndex(Id) ? NomParRoche[Id]
+			: FString::Printf(TEXT("roche %d"), Id);
+	}
+
+	// La pente se mesure sur le champ lui-meme, pas sur la grille : c'est le
+	// relief qu'on a REELLEMENT sous les pieds, deplacement 3D compris.
+	const double Pas = 4.0;
+	const double DX = Density.SurfaceHeightM(X + Pas, Y)
+		- Density.SurfaceHeightM(X - Pas, Y);
+	const double DY = Density.SurfaceHeightM(X, Y + Pas)
+		- Density.SurfaceHeightM(X, Y - Pas);
+	const double PenteDeg = FMath::RadiansToDegrees(
+		FMath::Atan(FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas)));
+
+	const FString Resume = FString::Printf(
+		TEXT("(%.0f, %.0f) m -- altitude %.0f m, surface %.0f m (%+.0f m), ")
+		TEXT("pente %.0f deg, roche %s"),
+		X, Y, Z, SurfaceM, Z - SurfaceM, PenteDeg, *Roche);
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] ou : %s"), *Resume);
+	return Resume;
+}
+
+FString AWorldseedVoxelTerrain::LieuxRemarquables() const
+{
+	if (!bWorldReady || HeightsM.Num() != Geometry.CellCount())
+	{
+		return TEXT("monde pas encore charge");
+	}
+
+	const bool bRoche = Lithology.IsValid(Geometry.CellCount());
+
+	int32 Sommet = INDEX_NONE;
+	float ZMax = -1e9f;
+	int32 Dure = INDEX_NONE;
+	float ZDure = -1e9f;
+	int32 Tendre = INDEX_NONE;
+	float ZTendre = 1e9f;
+	int32 Cote = INDEX_NONE;
+
+	for (int32 I = 0; I < HeightsM.Num(); ++I)
+	{
+		const float Z = HeightsM[I];
+		if (Z > ZMax) { ZMax = Z; Sommet = I; }
+		if (Z <= 0.0f) { continue; }
+		if (Cote == INDEX_NONE && Z > 2.0f && Z < 12.0f) { Cote = I; }
+
+		if (!bRoche) { continue; }
+		const uint8 R = Lithology.Id[I];
+
+		// Le contraste se lit entre la roche qui PORTE les hauteurs et celle
+		// qui reste en plaine -- c'est tout l'objet de l'erosion differentielle.
+		if (NomParRoche.IsValidIndex(R))
+		{
+			if (Z > ZDure && R == Lithology.Id[Sommet]) { ZDure = Z; Dure = I; }
+			if (Z < ZTendre && Z > 20.0f && R != Lithology.Id[Sommet])
+			{
+				ZTendre = Z; Tendre = I;
+			}
+		}
+	}
+
+	FString Sortie;
+	auto Ligne = [&](const TCHAR* Nom, int32 I, const TCHAR* Pourquoi)
+	{
+		if (I == INDEX_NONE) { return; }
+		const double X = (static_cast<double>(I % Geometry.NX) / Geometry.NX - 0.5)
+			* Geometry.WidthM();
+		const double Y = (static_cast<double>(I / Geometry.NX) / Geometry.NY - 0.5)
+			* Geometry.HeightM;
+		const uint8 R = bRoche ? Lithology.Id[I] : 0;
+		const FString Roche = (bRoche && NomParRoche.IsValidIndex(R))
+			? NomParRoche[R] : FString(TEXT("?"));
+		const FString L = FString::Printf(
+			TEXT("Worldseed.Aller %.0f %.0f   %-18s %5.0f m, %-10s -- %s"),
+			X, Y, Nom, HeightsM[I], *Roche, Pourquoi);
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] lieu : %s"), *L);
+		Sortie += L + LINE_TERMINATOR;
+	};
+
+	Ligne(TEXT("le sommet"), Sommet, TEXT("l'amplitude du relief"));
+	Ligne(TEXT("roche dure"), Dure, TEXT("le versant que la roche tient"));
+	Ligne(TEXT("roche tendre"), Tendre, TEXT("la plaine decapee, a comparer"));
+	Ligne(TEXT("la cote"), Cote, TEXT("le fond marin et l'eau"));
+
+	// LES OUVERTURES DE GROTTE NE SONT PAS RECALCULABLES ICI : le reseau ne
+	// retient que des chambres et des segments, pas le role de chacun. Elles
+	// sont journalisees a la generation -- c'est la qu'on les lit, et les
+	// conserver dans le reseau est un chantier a part (arbitrage B8).
+	if (CaveNetwork.IsValid())
+	{
+		Sortie += FString::Printf(
+			TEXT("%d chambres dans le monde ; les bouches, gouffres et dolines ")
+			TEXT("sont au journal de generation.") LINE_TERMINATOR,
+			CaveNetwork.Chambers.Num());
+	}
+
+	return Sortie;
 }
