@@ -35,8 +35,18 @@ struct FWorldseedVoxelStats;
 namespace WorldseedTransvoxel
 {
 	/**
-	 * Les six faces d'un chunk, en bits, pour dire lesquelles regardent un
-	 * voisin PLUS GROSSIER et reclament donc une cellule de transition.
+	 * Les six faces d'un chunk, en bits, pour dire lesquelles reclament une
+	 * cellule de transition.
+	 *
+	 * CE SONT LES FACES QUI BORDENT UN VOISIN PLUS FIN, ET NON L'INVERSE.
+	 * J'avais ecrit le contraire, et c'est faux : Lengyel place les cellules de
+	 * transition DANS LE BLOC GROSSIER, le long de sa frontiere avec le bloc
+	 * pleine resolution (section 4.3). C'est le bloc grossier qui doit ceder de
+	 * la place et raccorder, parce que c'est lui qui a trop peu d'echantillons
+	 * -- neuf valeurs fines arrivent sur une face qui n'en porte que quatre.
+	 *
+	 * Se tromper de sens ici aurait produit un mailleur cherchant a raccorder du
+	 * cote ou il n'y a rien a raccorder, et la fissure serait restee entiere.
 	 *
 	 * Zero = resolution uniforme, aucune transition : c'est le cas de tout le
 	 * terrain tant que les anneaux de resolution ne sont pas poses, et c'est
