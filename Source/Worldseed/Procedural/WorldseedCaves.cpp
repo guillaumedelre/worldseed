@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedCaves.h"
 
+#include "Algo/Reverse.h"
+
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedLithology.h"
 
@@ -34,6 +36,52 @@ namespace
 		const double Len2 = AB.SizeSquared();
 		OutT = (Len2 > 1e-6) ? FMath::Clamp(FVector::DotProduct(P - A, AB) / Len2, 0.0, 1.0) : 0.0;
 		return FVector::Dist(P, A + AB * OutT);
+	}
+
+	/**
+	 * Simplification de Douglas-Peucker, en TROIS dimensions.
+	 *
+	 * Le chemin sort de l'A* avec un point par cellule : une galerie de trois
+	 * cents metres en compte cinquante, donc autant de capsules a evaluer par
+	 * voxel. La simplification garde les points qui PORTENT LA FORME et jette
+	 * les alignes. On ne tronque surtout pas la liste a intervalle regulier :
+	 * cela couperait les coudes, qui sont precisement ce qu'on veut garder.
+	 */
+	void Douglas(const TArray<FVector>& P, int32 A, int32 B, double Tol, TArray<int32>& Garde)
+	{
+		if (B <= A + 1) { return; }
+
+		double Pire = -1.0;
+		int32 Index = INDEX_NONE;
+		for (int32 I = A + 1; I < B; ++I)
+		{
+			double T = 0.0;
+			const double D = DistanceAuSegment(P[I], P[A], P[B], T);
+			if (D > Pire) { Pire = D; Index = I; }
+		}
+
+		if (Pire > Tol && Index != INDEX_NONE)
+		{
+			Douglas(P, A, Index, Tol, Garde);
+			Garde.Add(Index);
+			Douglas(P, Index, B, Tol, Garde);
+		}
+	}
+
+	TArray<FVector> Simplifier(const TArray<FVector>& Points, double Tol)
+	{
+		if (Points.Num() <= 2 || Tol <= 0.0) { return Points; }
+
+		TArray<int32> Garde;
+		Garde.Add(0);
+		Douglas(Points, 0, Points.Num() - 1, Tol, Garde);
+		Garde.Add(Points.Num() - 1);
+		Garde.Sort();
+
+		TArray<FVector> Out;
+		Out.Reserve(Garde.Num());
+		for (const int32 I : Garde) { Out.Add(Points[I]); }
+		return Out;
 	}
 
 	/** Generateur deterministe : le monde doit se rejouer a l'identique. */
@@ -69,6 +117,14 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.LoopPct = Num(TEXT("bouclesPct"), 15.0);
 	Out.Neighbours = Rules.Int(CAV, TEXT("voisinsCandidats"), 8);
 	Out.BlendM = Num(TEXT("raccordM"), 2.5);
+
+	Out.RouteCellM = Num(TEXT("routageCelluleM"), 6.0);
+	Out.RouteCorridorM = Num(TEXT("routageCouloirM"), 48.0);
+	Out.RouteSurfaceM = Num(TEXT("routageSurfaceM"), 25.0);
+	Out.RouteSlopeCost = Num(TEXT("routagePenteCout"), 1.6);
+	Out.RouteRockCost = Num(TEXT("routageRocheCout"), 2.0);
+	Out.RouteShareBonus = Num(TEXT("routageMutualisation"), 0.45);
+	Out.RouteSimplifyM = Num(TEXT("routageSimplifieM"), 3.0);
 	return Out;
 }
 
@@ -148,6 +204,251 @@ double WorldseedCaves::AirAt(const FWorldseedCaveLocal& Local, const FVector& Po
 }
 
 // --------------------------------------------------------------------------
+
+namespace
+{
+	/**
+	 * Le contexte de routage : tout ce que le cout d'une cellule a besoin de
+	 * savoir. Il est monte une fois et partage par toutes les galeries.
+	 */
+	struct FContexteRoutage
+	{
+		const FWorldseedGeometry* Geo = nullptr;
+		const TArray<float>* ElevationM = nullptr;
+		const FWorldseedLithology* Litho = nullptr;
+		const FWorldseedLithologyRules* LithoRules = nullptr;
+		const FWorldseedCaveRules* Rules = nullptr;
+		float Exageration = 1.0f;
+
+		/**
+		 * Les cellules deja empruntees par une galerie.
+		 *
+		 * C'EST CE QUI FAIT UN RESEAU PLUTOT QU'UN PLAT DE SPAGHETTIS : deux
+		 * liaisons voisines empruntent un tronc commun au lieu de creuser deux
+		 * tubes paralleles. Le partage se paie d'une simple remise sur le cout.
+		 */
+		TSet<FIntVector> Empruntees;
+
+		FVector CentreDe(const FIntVector& C) const
+		{
+			const double A = Rules->RouteCellM;
+			return FVector((C.X + 0.5) * A, (C.Y + 0.5) * A, (C.Z + 0.5) * A);
+		}
+
+		FIntVector CelluleDe(const FVector& P) const
+		{
+			const double A = Rules->RouteCellM;
+			return FIntVector(FMath::FloorToInt(P.X / A), FMath::FloorToInt(P.Y / A),
+				FMath::FloorToInt(P.Z / A));
+		}
+
+		/**
+		 * Altitude de la surface a l'aplomb d'un point, exageration comprise.
+		 *
+		 * BILINEAIRE, ET C'EST LA MEME LECTURE QUE LE CHAMP DE DENSITE. La
+		 * premiere version lisait au PLUS PROCHE VOISIN : sur une grille dont
+		 * une cellule fait trente et un metres, l'ecart avec la surface reellement
+		 * maillee se compte en dizaines de metres sur un versant. Le routage
+		 * croyait donc creuser sous terre la ou il sortait, et le controle
+		 * croyait mesurer la meme surface que le joueur voit. Mesure du defaut :
+		 * 23,3 % des points de galerie au-dessus du sol, insensible a toutes les
+		 * corrections tentees -- corridor, plafond, simplification -- parce
+		 * qu'aucune ne touchait a la cause.
+		 */
+		float SurfaceA(double X, double Y) const
+		{
+			double U = X / Geo->WidthM() + 0.5;
+			U -= FMath::FloorToDouble(U);
+			const double V = FMath::Clamp(Y / Geo->HeightM + 0.5, 0.0, 1.0);
+			return WorldseedGrid::SampleUV(*ElevationM, Geo->NX, Geo->NY,
+				static_cast<float>(U), static_cast<float>(V)) * Exageration;
+		}
+
+		float KarstA(double X, double Y) const
+		{
+			if (!Litho || !Litho->IsValid(Geo->CellCount())) { return 1.0f; }
+			double U = X / Geo->WidthM() + 0.5;
+			U -= FMath::FloorToDouble(U);
+			const double V = FMath::Clamp(Y / Geo->HeightM + 0.5, 0.0, 1.0);
+			const int32 Col = FMath::Clamp(FMath::FloorToInt(U * Geo->NX), 0, Geo->NX - 1);
+			const int32 Row = FMath::Clamp(FMath::FloorToInt(V * Geo->NY), 0, Geo->NY - 1);
+			const uint8 R = Litho->Id[Row * Geo->NX + Col];
+			return LithoRules->Catalogue.IsValidIndex(R)
+				? LithoRules->Catalogue[R].Karstifiable : 1.0f;
+		}
+
+		/**
+		 * Cout d'occuper une cellule. C'EST ICI QUE LES REGLES S'EXPRIMENT, et
+		 * nulle part ailleurs : l'A* ne fait qu'obeir a ce nombre.
+		 */
+		double CoutDe(const FIntVector& C) const
+		{
+			const FVector P = CentreDe(C);
+			const double Profondeur = SurfaceA(P.X, P.Y) - P.Z;
+
+			// L'INTERDIT PORTE SUR LE PLAFOND DE LA GALERIE, PAS SUR SON AXE.
+			// Premiere version fautive : elle interdisait au centre de sortir du
+			// sol, ce qui laissait le dessus du tube percer allegrement -- une
+			// galerie de quatre metres de rayon dont l'axe est a trois metres
+			// sous la surface est a ciel ouvert. Mesure du defaut : 22,78 % des
+			// points de galerie au-dessus du sol APRES routage, contre 24,93 %
+			// sans routage du tout -- autant dire que le routage ne servait a
+			// rien.
+			if (Profondeur <= Rules->TunnelRadiusMaxM + 1.0)
+			{
+				return TNumericLimits<double>::Max();
+			}
+
+			double Cout = 1.0;
+
+			// Pres de la surface : tres cher, de facon continue. Un mur net
+			// ferait buter l'A* ; une rampe le fait plonger de lui-meme.
+			if (Profondeur < Rules->RouteSurfaceM)
+			{
+				const double Manque = (Rules->RouteSurfaceM - Profondeur) / FMath::Max(Rules->RouteSurfaceM, 1.0f);
+				Cout += 12.0 * Manque * Manque;
+			}
+
+			// La roche dure se creuse mal : le calcaire est bon marche.
+			Cout += Rules->RouteRockCost * (1.0 - KarstA(P.X, P.Y));
+
+			if (Empruntees.Contains(C))
+			{
+				Cout *= (1.0 - FMath::Clamp(Rules->RouteShareBonus, 0.0f, 0.95f));
+			}
+			return Cout;
+		}
+	};
+
+	/**
+	 * Vrai si toute la polyligne, PLAFOND COMPRIS, reste sous la surface.
+	 *
+	 * C'est le garde-fou de la simplification : sans lui, reduire le chemin
+	 * remplace un coude qui contournait une colline par une corde qui la
+	 * traverse, et le routage n'a servi a rien.
+	 */
+	bool SousTerrePartout(const FContexteRoutage& Ctx, const TArray<FVector>& P, float Rayon)
+	{
+		for (int32 K = 0; K + 1 < P.Num(); ++K)
+		{
+			const int32 Pas = FMath::Max(2, FMath::CeilToInt(FVector::Dist(P[K], P[K + 1]) / 3.0));
+			for (int32 I = 0; I <= Pas; ++I)
+			{
+				const FVector Q = FMath::Lerp(P[K], P[K + 1], static_cast<float>(I) / Pas);
+				if (Q.Z + Rayon > Ctx.SurfaceA(Q.X, Q.Y))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * A* sur une grille grossiere, BORNEE A UN COULOIR autour de la droite.
+	 *
+	 * Sans le couloir, la recherche couvrirait la boite englobante des deux
+	 * chambres et le cout exploserait pour un detour que personne ne veut. Avec,
+	 * il reste de quoi contourner un obstacle sans partir a l'aventure.
+	 *
+	 * Rend un chemin vide si la recherche echoue ou depasse son plafond : c'est
+	 * a l'appelant de decider quoi en faire, et il le signale.
+	 */
+	TArray<FVector> Router(const FContexteRoutage& Ctx, const FVector& Depart,
+		const FVector& Arrivee, int32 PlafondNoeuds)
+	{
+		const FIntVector CD = Ctx.CelluleDe(Depart);
+		const FIntVector CA = Ctx.CelluleDe(Arrivee);
+		const double Couloir = Ctx.Rules->RouteCorridorM;
+		const double Maille = Ctx.Rules->RouteCellM;
+		const double Pente = Ctx.Rules->RouteSlopeCost;
+
+		TMap<FIntVector, double> G;
+		TMap<FIntVector, FIntVector> Parent;
+		TArray<TPair<double, FIntVector>> File;
+
+		auto Heuristique = [&](const FIntVector& C)
+		{
+			return FVector::Dist(Ctx.CentreDe(C), Arrivee);
+		};
+
+		G.Add(CD, 0.0);
+		File.HeapPush(TPair<double, FIntVector>(Heuristique(CD), CD),
+			[](const TPair<double, FIntVector>& A, const TPair<double, FIntVector>& B)
+			{ return A.Key < B.Key; });
+
+		int32 Visites = 0;
+		bool bTrouve = false;
+
+		while (File.Num() > 0 && Visites < PlafondNoeuds)
+		{
+			TPair<double, FIntVector> Tete;
+			File.HeapPop(Tete,
+				[](const TPair<double, FIntVector>& A, const TPair<double, FIntVector>& B)
+				{ return A.Key < B.Key; });
+			const FIntVector C = Tete.Value;
+			++Visites;
+
+			if (C == CA) { bTrouve = true; break; }
+
+			const double GC = G.FindRef(C);
+
+			for (int32 dz = -1; dz <= 1; ++dz)
+			{
+				for (int32 dy = -1; dy <= 1; ++dy)
+				{
+					for (int32 dx = -1; dx <= 1; ++dx)
+					{
+						if (dx == 0 && dy == 0 && dz == 0) { continue; }
+						const FIntVector N(C.X + dx, C.Y + dy, C.Z + dz);
+
+						// Hors du couloir : on n'y va pas.
+						double T = 0.0;
+						if (DistanceAuSegment(Ctx.CentreDe(N), Depart, Arrivee, T) > Couloir)
+						{
+							continue;
+						}
+
+						const double Local = Ctx.CoutDe(N);
+						if (Local >= TNumericLimits<double>::Max() * 0.5) { continue; }
+
+						const double Pas = FMath::Sqrt(double(dx * dx + dy * dy + dz * dz)) * Maille;
+						const double Denivele = FMath::Abs(double(dz)) * Maille * Pente;
+						const double Candidat = GC + Pas * Local + Denivele;
+
+						const double* Ancien = G.Find(N);
+						if (!Ancien || Candidat < *Ancien)
+						{
+							G.Add(N, Candidat);
+							Parent.Add(N, C);
+							File.HeapPush(TPair<double, FIntVector>(Candidat + Heuristique(N), N),
+								[](const TPair<double, FIntVector>& A, const TPair<double, FIntVector>& B)
+								{ return A.Key < B.Key; });
+						}
+					}
+				}
+			}
+		}
+
+		TArray<FVector> Chemin;
+		if (!bTrouve) { return Chemin; }
+
+		FIntVector C = CA;
+		TArray<FIntVector> Cellules;
+		while (true)
+		{
+			Cellules.Add(C);
+			const FIntVector* P = Parent.Find(C);
+			if (!P) { break; }
+			C = *P;
+		}
+		Algo::Reverse(Cellules);
+
+		Chemin.Reserve(Cellules.Num());
+		for (const FIntVector& K : Cellules) { Chemin.Add(Ctx.CentreDe(K)); }
+		return Chemin;
+	}
+}
 
 void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	const TArray<float>& ElevationM, const TArray<float>& PrecipMm,
@@ -245,7 +546,15 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 		const double X = (static_cast<double>(Col) / NX - 0.5) * Geometry.WidthM();
 		const double Y = (static_cast<double>(Row) / NY - 0.5) * Geometry.HeightM;
-		const double Surface = ElevationM[Cell] * HeightExaggeration;
+		// MEME LECTURE QUE LE CHAMP DE DENSITE : bilineaire, et non la valeur
+		// brute de la cellule. Placer une chambre d'apres l'une et la juger
+		// d'apres l'autre laisse un ecart de plusieurs dizaines de metres sur
+		// un versant.
+		double Uc = X / Geometry.WidthM() + 0.5;
+		Uc -= FMath::FloorToDouble(Uc);
+		const double Vc = FMath::Clamp(Y / Geometry.HeightM + 0.5, 0.0, 1.0);
+		const double Surface = WorldseedGrid::SampleUV(ElevationM, NX, NY,
+			static_cast<float>(Uc), static_cast<float>(Vc)) * HeightExaggeration;
 
 		const float Profondeur = Tirage.Entre(Rules.DepthMinM, Rules.DepthMaxM);
 		const FVector P(X, Y, Surface - Profondeur);
@@ -380,16 +689,119 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		}
 	}
 
-	// --- 5. les galeries ------------------------------------------------------
-	Out.Segments.Reserve(Aretes.Num());
+	// --- 5. les galeries, ROUTEES ---------------------------------------------
+	//
+	// Une capsule DROITE entre deux chambres ignore tout : elle peut ressortir a
+	// l'air libre en franchissant une colline, traverser du granite comme du
+	// calcaire, et monter d'une pente impraticable. L'A* encode ces trois regles
+	// dans son COUT -- interdit au-dessus du sol, tres cher pres de la surface,
+	// surcout de la roche dure, penalite de denivele -- et n'a plus qu'a obeir.
+	FContexteRoutage Ctx;
+	Ctx.Geo = &Geometry;
+	Ctx.ElevationM = &ElevationM;
+	Ctx.Litho = &Lithology;
+	Ctx.LithoRules = &LithoRules;
+	Ctx.Rules = &Rules;
+	Ctx.Exageration = HeightExaggeration;
+
+	int32 Droites = 0;
+	// On note ou commencent les troncons de chaque liaison, pour pouvoir compter
+	// les percements SEPAREMENT selon qu'ils viennent d'un chemin route ou d'un
+	// repli sur la droite. Sans cette separation on mesure un melange, et aucune
+	// correction ne semble mordre -- ce qui est exactement ce qui vient de se
+	// produire quatre fois de suite.
+	TArray<bool> EstRepli;
+	TArray<int32> DebutTroncon;
+	Out.Segments.Reserve(Aretes.Num() * 4);
+
 	for (const TPair<int32, int32>& E : Aretes)
 	{
-		FWorldseedCaveSegment S;
-		S.AM = Out.Chambers[E.Key].CentreM;
-		S.BM = Out.Chambers[E.Value].CentreM;
-		S.RadiusAM = Tirage.Entre(Rules.TunnelRadiusMinM, Rules.TunnelRadiusMaxM);
-		S.RadiusBM = Tirage.Entre(Rules.TunnelRadiusMinM, Rules.TunnelRadiusMaxM);
-		Out.Segments.Add(S);
+		const FVector A = Out.Chambers[E.Key].CentreM;
+		const FVector B = Out.Chambers[E.Value].CentreM;
+		const float RA = Tirage.Entre(Rules.TunnelRadiusMinM, Rules.TunnelRadiusMaxM);
+		const float RB = Tirage.Entre(Rules.TunnelRadiusMinM, Rules.TunnelRadiusMaxM);
+
+		TArray<FVector> Chemin = Router(Ctx, A, B, 40000);
+		DebutTroncon.Add(Out.Segments.Num());
+		EstRepli.Add(Chemin.Num() < 2);
+
+		if (Chemin.Num() < 2)
+		{
+			// L'A* a echoue ou depasse son plafond -- c'est le cas des liaisons
+			// les plus longues. On NE PEUT PAS abandonner la liaison : la
+			// connexite est tout l'objet de cette passe. Mais on ne peut pas non
+			// plus se contenter d'une droite.
+			//
+			// MESURE QUI A IMPOSE CE REPLI-CI. Separees, les deux populations
+			// disent tout : les galeries ROUTEES ont 0,00 % de leurs points
+			// au-dessus du sol, les REPLIEES EN DROITE 39,20 % -- et comme elles
+			// sont les plus longues, elles portaient 58 % des points. Le chiffre
+			// global, 22,8 %, cachait donc un routage parfait derriere un repli
+			// defaillant, et quatre corrections successives n'y avaient rien
+			// change.
+			//
+			// Le repli DRAPE la droite sous le terrain : a chaque echantillon, on
+			// abaisse l'altitude autant qu'il faut pour que le PLAFOND de la
+			// galerie reste enfoui. Ce n'est pas un itineraire intelligent -- il
+			// ne contourne rien -- mais il ne perce plus, et il relie.
+			++Droites;
+			Chemin.Reset();
+
+			const int32 Pas = FMath::Max(2, FMath::CeilToInt(FVector::Dist(A, B) / Rules.RouteCellM));
+			const float Rayon = FMath::Max(RA, RB);
+			for (int32 K = 0; K <= Pas; ++K)
+			{
+				FVector P = FMath::Lerp(A, B, static_cast<float>(K) / Pas);
+				const double Plafond = Ctx.SurfaceA(P.X, P.Y) - Rayon - Rules.RouteSurfaceM * 0.25;
+				P.Z = FMath::Min(P.Z, Plafond);
+				Chemin.Add(P);
+			}
+
+			// Les extremites doivent retomber dans leurs chambres.
+			Chemin[0] = A;
+			Chemin.Last() = B;
+
+			const TArray<FVector> Reduit = Simplifier(Chemin, Rules.RouteSimplifyM);
+			if (SousTerrePartout(Ctx, Reduit, Rayon))
+			{
+				Chemin = Reduit;
+			}
+		}
+		else
+		{
+			Chemin[0] = A;
+			Chemin.Last() = B;
+
+			// LA SIMPLIFICATION PEUT DEFAIRE LE ROUTAGE, et c'est la seconde
+			// cause du defaut. Douglas-Peucker supprime les points intermediaires
+			// et remplace un coude par une corde -- or c'est precisement ce coude
+			// qui contournait la colline. On simplifie donc SOUS CONDITION : le
+			// chemin reduit n'est retenu que s'il reste entierement sous terre.
+			const TArray<FVector> Reduit = Simplifier(Chemin, Rules.RouteSimplifyM);
+			if (SousTerrePartout(Ctx, Reduit, FMath::Max(RA, RB)))
+			{
+				Chemin = Reduit;
+			}
+
+			// Les cellules du chemin deviennent empruntees : la galerie suivante
+			// aura interet a les reprendre.
+			for (const FVector& P : Chemin)
+			{
+				Ctx.Empruntees.Add(Ctx.CelluleDe(P));
+			}
+		}
+
+		for (int32 K = 0; K + 1 < Chemin.Num(); ++K)
+		{
+			const float T0 = static_cast<float>(K) / FMath::Max(Chemin.Num() - 1, 1);
+			const float T1 = static_cast<float>(K + 1) / FMath::Max(Chemin.Num() - 1, 1);
+			FWorldseedCaveSegment S;
+			S.AM = Chemin[K];
+			S.BM = Chemin[K + 1];
+			S.RadiusAM = FMath::Lerp(RA, RB, T0);
+			S.RadiusBM = FMath::Lerp(RA, RB, T1);
+			Out.Segments.Add(S);
+		}
 	}
 
 	// --- 6. l'index spatial ---------------------------------------------------
@@ -426,10 +838,48 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		Ranger(Out.SegmentBuckets, B.ExpandBy(R), I);
 	}
 
+	// --- 7. LE CONTROLE QUI DIT SI LE ROUTAGE A SERVI A QUELQUE CHOSE ---------
+	//
+	// Une galerie qui perce le sol est le defaut que l'A* est cense empecher.
+	// On echantillonne chaque troncon et on compte les points dont le PLAFOND --
+	// le dessus de la galerie -- passe au-dessus de la surface. Sans ce chiffre
+	// au journal, on croit le routage bon parce qu'il a tourne.
+	{
+		int32 Points[2] = { 0, 0 };
+		int32 Perces[2] = { 0, 0 };
+
+		for (int32 L = 0; L < DebutTroncon.Num(); ++L)
+		{
+			const int32 Fin = (L + 1 < DebutTroncon.Num())
+				? DebutTroncon[L + 1] : Out.Segments.Num();
+			const int32 Bac = EstRepli[L] ? 1 : 0;
+
+			for (int32 I = DebutTroncon[L]; I < Fin; ++I)
+			{
+				const FWorldseedCaveSegment& S = Out.Segments[I];
+				const int32 Pas = FMath::Max(2, FMath::CeilToInt(FVector::Dist(S.AM, S.BM) / 4.0));
+				for (int32 K = 0; K <= Pas; ++K)
+				{
+					const float T = static_cast<float>(K) / Pas;
+					const FVector P = FMath::Lerp(S.AM, S.BM, T);
+					const float R = FMath::Lerp(S.RadiusAM, S.RadiusBM, T);
+					++Points[Bac];
+					if (P.Z + R > Ctx.SurfaceA(P.X, P.Y)) { ++Perces[Bac]; }
+				}
+			}
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] grottes : ROUTEES %d points dont %d au-dessus du sol (%.2f %%) ")
+			TEXT("| REPLIEES %d points dont %d (%.2f %%)"),
+			Points[0], Perces[0], 100.0f * Perces[0] / FMath::Max(Points[0], 1),
+			Points[1], Perces[1], 100.0f * Perces[1] / FMath::Max(Points[1], 1));
+	}
+
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] grottes : %d chambres, %d galeries (%d de boucle), ")
-		TEXT("index %dx%d de %.0f m  (%.0f ms)"),
-		Out.Chambers.Num(), Out.Segments.Num(), ABoucler,
-		Out.Size.X, Out.Size.Y, Out.CellM,
+		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
+		TEXT("%d troncons routes, %d repliees sur la droite  (%.0f ms)"),
+		Out.Chambers.Num(), Aretes.Num(), ABoucler,
+		Out.Segments.Num(), Droites,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
 }

@@ -106,6 +106,53 @@ struct WORLDSEED_API FWorldseedCaveRules
 	/** Voisins candidats par chambre, pour batir le graphe avant l'arbre. */
 	int32 Neighbours = 8;
 
+	// --- routage des galeries ------------------------------------------------
+
+	/**
+	 * Cote d'une cellule de routage, en metres.
+	 *
+	 * L'A* ne tourne PAS a la resolution du voxel : une grille grossiere suffit
+	 * a decider d'un itineraire, et son cout croit au cube. La galerie reelle
+	 * est ensuite une chaine de capsules posee sur le chemin trouve.
+	 */
+	float RouteCellM = 6.0f;
+
+	/**
+	 * Demi-largeur du couloir de recherche autour de la droite, en metres.
+	 *
+	 * L'A* est borne a ce couloir : sans lui, la grille couvrirait la boite
+	 * englobante des deux chambres et le cout exploserait pour un detour que
+	 * personne ne veut. Avec, il reste de quoi contourner un obstacle.
+	 */
+	float RouteCorridorM = 48.0f;
+
+	/**
+	 * Profondeur sous laquelle une galerie cesse d'etre penalisee, en metres.
+	 *
+	 * C'EST LA REGLE QUI EMPECHE DE PERCER LE SOL. Une capsule droite entre une
+	 * chambre peu profonde et une chambre profonde peut ressortir a l'air libre ;
+	 * un cout eleve pres de la surface fait plonger l'itineraire.
+	 */
+	float RouteSurfaceM = 25.0f;
+
+	/** Penalite par metre de denivele : c'est elle qui rend la galerie praticable. */
+	float RouteSlopeCost = 1.6f;
+
+	/** Surcout de la roche dure, rapporte a son aptitude a la dissolution. */
+	float RouteRockCost = 2.0f;
+
+	/**
+	 * Remise accordee a une cellule deja empruntee, dans [0..1].
+	 *
+	 * Elle mutualise les galeries : deux liaisons voisines empruntent un tronc
+	 * commun au lieu de creuser deux tubes paralleles. C'est ce qui fait la
+	 * difference entre un reseau et un plat de spaghettis.
+	 */
+	float RouteShareBonus = 0.45f;
+
+	/** Tolerance de simplification du chemin, en metres. */
+	float RouteSimplifyM = 3.0f;
+
 	/**
 	 * Rayon de raccordement de l'union lisse, en metres.
 	 *

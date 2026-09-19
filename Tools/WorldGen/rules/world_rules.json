@@ -1037,6 +1037,14 @@
     "bouclesPct": 15.0,
     "voisinsCandidats": 8,
     "_comment_raccordM": "CALIBRE. Rayon de raccordement de l'union lisse d'Inigo Quilez. A ZERO l'union redevient un MAXIMUM DUR et les jonctions entre galerie et chambre prennent des aretes vives -- l'effet de tuyaux colles. Le proprietaire a demande un compromis entre les deux, ce qui est exactement une valeur basse de ce reglage : il degenere continument vers le maximum dur quand il tend vers zero.",
-    "raccordM": 2.5
+    "raccordM": 2.5,
+    "routageCouloirM": 48.0,
+    "_comment_routage": "LE ROUTAGE EN A*, ajoute le 19 septembre 2026 (fin de l'arbitrage B5). Une capsule DROITE entre deux chambres ignore tout : elle peut ressortir a l'air libre en franchissant une colline, traverser du granite comme du calcaire, et monter d'une pente impraticable. L'A* encode ces regles dans son COUT -- INTERDIT des que le PLAFOND de la galerie atteint la surface, tres cher au-dessous, surcout de la roche dure, penalite de denivele, remise sur une cellule deja empruntee pour mutualiser les troncs communs -- et n'a plus qu'a obeir. Il tourne sur une grille GROSSIERE bornee a un couloir autour de la droite : sans le couloir, la recherche couvrirait la boite englobante des deux chambres pour un detour que personne ne veut. MESURE : 0,00 % des points de galerie au-dessus du sol, contre 24,93 % avec des capsules droites. Cout 1,16 s, une fois par monde.",
+    "routageCelluleM": 6.0,
+    "routageSurfaceM": 25.0,
+    "routagePenteCout": 1.6,
+    "routageRocheCout": 2.0,
+    "routageMutualisation": 0.45,
+    "routageSimplifieM": 3.0
   }
 }

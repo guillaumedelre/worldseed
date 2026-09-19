@@ -3671,3 +3671,54 @@ l'eau est un plan infini a l'altitude zero.
 sont pour l'instant des capsules DROITES entre chambres. Le cout du routage --
 proximite de la surface, pente praticable, durete de la roche -- est ce qui
 donnera des galeries credibles plutot que des tubes tendus.
+
+### Le routage en A*, et le chiffre agrege qui cachait tout (19 septembre 2026)
+
+Fin de l'arbitrage B5. Une capsule DROITE entre deux chambres ignore tout : elle
+peut ressortir a l'air libre en franchissant une colline, traverser du granite
+comme du calcaire, et monter d'une pente impraticable. L'A* encode ces regles
+dans son COUT et n'a plus qu'a obeir -- interdit des que le PLAFOND de la galerie
+atteint la surface, tres cher au-dessous, surcout de la roche dure, penalite de
+denivele, remise sur une cellule deja empruntee pour mutualiser les troncs
+communs. Il tourne sur une grille GROSSIERE bornee a un couloir autour de la
+droite.
+
+**RESULTAT : 0,00 % des points de galerie au-dessus du sol**, contre **24,93 %**
+avec des capsules droites. 10 805 points echantillonnes. Cout 1,16 s par monde.
+
+**MAIS LA LECON EST AILLEURS, ET ELLE M'A COUTE QUATRE CORRECTIONS INUTILES.**
+
+Le premier releve donnait 22,78 % de points au-dessus du sol APRES routage,
+contre 24,93 % sans. Autant dire que le routage ne servait a rien. J'ai alors
+corrige, dans l'ordre : l'interdit qui portait sur l'axe de la galerie et non sur
+son plafond ; la simplification de Douglas-Peucker qui remplacait un coude
+contournant la colline par une corde qui la traverse ; la lecture de la surface
+au plus proche voisin la ou le champ de densite lit en bilineaire -- trente et un
+metres de cellule, donc des dizaines de metres d'ecart sur un versant ; puis la
+largeur du couloir. **Aucune des quatre n'a bouge le chiffre de plus d'un point.**
+
+Les trois premieres etaient de VRAIS defauts et sont gardees. Mais aucune
+n'etait LA cause, et c'est en separant enfin les deux populations que tout est
+apparu :
+
+| | points | au-dessus du sol |
+|---|---|---|
+| galeries ROUTEES | 4454 | **0,00 %** |
+| galeries REPLIEES sur la droite | 6174 | **39,20 %** |
+
+**Le routage etait parfait depuis le debut.** Les douze liaisons sur
+soixante-dix-neuf ou l'A* echoue -- les plus longues, donc les plus fournies en
+points -- portaient 58 % de l'echantillon et perçaient librement. Le chiffre
+global melangeait un resultat impeccable et un repli defaillant, et aucune
+correction du routage ne pouvait le deplacer.
+
+**REGLE A EN TIRER, et elle depasse largement ce cas : quand une correction ne
+bouge pas la mesure, se demander d'abord si la mesure MELANGE deux populations.**
+Un agregat sur des choses de natures differentes ne se corrige pas, il se
+decompose. J'aurais du le faire au premier echec, pas au quatrieme.
+
+**LE REPLI EST DESORMAIS DRAPE.** On ne peut pas abandonner une liaison -- la
+connexite est tout l'objet de la passe -- ni se contenter d'une droite. Le repli
+abaisse donc chaque echantillon de la droite autant qu'il faut pour que le
+plafond reste enfoui. Ce n'est pas un itineraire intelligent, il ne contourne
+rien, mais il ne perce plus et il relie : 0,00 % lui aussi.
