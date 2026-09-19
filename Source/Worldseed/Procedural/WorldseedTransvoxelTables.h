@@ -101,6 +101,42 @@ namespace WorldseedTransvoxel
 	 */
 	extern const unsigned short regularVertexData[256][12];
 
+	/**
+	 * L'ORDRE DES BITS DU CODE DE CAS D'UNE CELLULE DE TRANSITION.
+	 *
+	 * Il n'est NULLE PART en clair : ni dans la source des tables, ni dans le
+	 * texte de la these -- il est dans la figure 4.17, qui est une IMAGE. Le
+	 * deduire d'une phrase serait un pari, et un pari sur un ordre de bits
+	 * produit du maillage silencieusement faux.
+	 *
+	 * IL A DONC ETE DERIVE DES TABLES, QUI L'ENCODENT. `transitionVertexData`
+	 * liste les aretes portant un sommet ; or une arete ne porte un sommet que
+	 * si ses deux extremites sont de SIGNES OPPOSES. Pour le bon ordre, et pour
+	 * lui seul, les 512 cas sont coherents. Mesure exhaustive, 4 096 aretes :
+	 *
+	 *     perimetre     0 faute     0,00 %     <- retenu
+	 *     sequentiel    1 536      37,50 %
+	 *     perimetre2    2 048      50,00 %
+	 *
+	 * Rejouable : `perl Tools/Transvoxel/ordre_bits.pl`.
+	 *
+	 * Echantillons de la face PLEINE RESOLUTION, en ligne (figure 4.16) :
+	 *
+	 *     0 1 2
+	 *     3 4 5
+	 *     6 7 8
+	 *
+	 * et le code de cas parcourt le PERIMETRE, le centre en poids fort :
+	 *
+	 *     bit 0x001 -> 0     bit 0x008 -> 5     bit 0x040 -> 6
+	 *     bit 0x002 -> 1     bit 0x010 -> 8     bit 0x080 -> 3
+	 *     bit 0x004 -> 2     bit 0x020 -> 7     bit 0x100 -> 4
+	 *
+	 * ET LES QUATRE ECHANTILLONS DEMI-RESOLUTION NE SONT PAS DES INCONNUES.
+	 * Section 4.5 : « the voxel values for locations 0 and 9 are the same, as
+	 * are those for locations 2 and A, 6 and B, and 8 and C ». C'est ce qui
+	 * ramene treize echantillons a neuf bits.
+	 */
 	/** 512 cas de transition -> 56 classes. Bit haut : enroulement inverse. */
 	extern const unsigned char transitionCellClass[512];
 	extern const TransitionCellData transitionCellData[56];
