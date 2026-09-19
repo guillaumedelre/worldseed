@@ -117,7 +117,7 @@ void UWorldseedPhotographe::Photographier(double XMetres, double YMetres,
 	Demarrer();
 }
 
-int32 UWorldseedPhotographe::AjouterLesArches()
+int32 UWorldseedPhotographe::AjouterLesArches(int32 Combien)
 {
 	AWorldseedVoxelTerrain* const T = Terrain();
 	if (!T) { return 0; }
@@ -125,7 +125,7 @@ int32 UWorldseedPhotographe::AjouterLesArches()
 	const FWorldseedCaveNetwork& Reseau = T->MondeGrottes();
 	int32 Ajoutees = 0;
 
-	for (int32 I = 0; I < Reseau.Arches.Num(); ++I)
+	for (int32 I = 0; I < Reseau.Arches.Num() && Ajoutees < Combien; ++I)
 	{
 		const FWorldseedCaveArch& A = Reseau.Arches[I];
 
@@ -387,10 +387,16 @@ void UWorldseedPhotographe::Tick(float DeltaTime)
 
 		// Les falaises d'abord -- c'est ce que la passe littorale cree, et la
 		// condition des arches marines. Les arches ensuite.
-		AjouterLesFalaises(6);
-		AjouterLesArches();
-		AjouterLesTables(6);
-		AjouterLesCanyons(6);
+		// DEUX DE CHAQUE, demande du proprietaire. Une tournee courte se
+		// relit d'un coup d'oeil et, surtout, elle reste DANS LA JOURNEE :
+		// vingt-sept arrets faisaient huit heures de jeu et la moitie des
+		// vues sortait de nuit. L'heure est figee par ailleurs, mais une
+		// tournee breve coute de toute facon moins cher a relancer.
+		constexpr int32 ParForme = 2;
+		AjouterLesFalaises(ParForme);
+		AjouterLesArches(ParForme);
+		AjouterLesTables(ParForme);
+		AjouterLesCanyons(ParForme);
 		Demarrer();
 	}
 

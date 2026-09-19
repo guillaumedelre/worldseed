@@ -62,7 +62,7 @@ public:
 	void Photographier(double XMetres, double YMetres, const FString& Nom);
 
 	/** Les arches du monde, vues DANS L'AXE du percement. */
-	int32 AjouterLesArches();
+	int32 AjouterLesArches(int32 Combien);
 
 	/** Les plus hautes falaises littorales, vues depuis la mer. */
 	int32 AjouterLesFalaises(int32 Combien);

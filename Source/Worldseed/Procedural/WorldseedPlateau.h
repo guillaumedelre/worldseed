@@ -252,8 +252,22 @@ namespace WorldseedPlateau
 	 * applique deja au reseau de grottes, que le menu ne transporte pas et que
 	 * le terrain rebatit -- transporter une donnee deterministe la doublerait.
 	 */
+	/**
+	 * LES MEMES GARDES QUE LA PASSE, roche et pluie comprises.
+	 *
+	 * DEFAUT TROUVE A L IMAGE, ET DEUX FOIS. Premiere version : seul le
+	 * masque de region etait teste, et les sites designaient des MONTAGNES a
+	 * 700 et 1064 m. On y a ajoute des gardes GEOMETRIQUES -- sommet plat,
+	 * denivele d un escarpement -- et le defaut a change de visage sans
+	 * disparaitre : les sites tombaient alors sur des epaules enneigees et
+	 * des versants cotiers VERTS, c est-a-dire hors de la roche sedimentaire
+	 * et hors du climat aride. Un masque de region dit ou une forme a le
+	 * DROIT d exister ; seules les gardes PHYSIQUES disent ou elle existe.
+	 */
 	WORLDSEED_API void Sites(const FWorldseedGeometry& Geometry,
 		const TArray<float>& ElevationM, const FWorldseedPlateauRules& Rules,
+		const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& Litho,
+		const TArray<float>& PrecipMm,
 		int32 Seed, TArray<FWorldseedPlateauSite>& OutTables,
 		TArray<FWorldseedPlateauSite>* OutCanyons = nullptr);
 

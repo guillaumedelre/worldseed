@@ -142,6 +142,8 @@ float WorldseedPlateau::ZoneAt(double X, double Y,
 
 void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 	const TArray<float>& ElevationM, const FWorldseedPlateauRules& Rules,
+	const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& Litho,
+	const TArray<float>& PrecipMm,
 	int32 Seed, TArray<FWorldseedPlateauSite>& OutSites,
 	TArray<FWorldseedPlateauSite>* OutCanyons)
 {
@@ -166,6 +168,25 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 	const double LargeurM = Geometry.WidthM();
 	const double HauteurM = Geometry.HeightM;
 
+	// LES MEMES GARDES QUE LA PASSE. Un site designe hors de la roche
+	// sedimentaire ou hors du climat aride pointe un endroit que la passe
+	// n a jamais touche -- et l image l a dit deux fois : montagnes
+	// enneigees, versants cotiers verts.
+	const bool bPluie = (PrecipMm.Num() == Count);
+	const bool bRoche = Lithology.IsValid(Count);
+	auto Eligible = [&](int32 C)
+	{
+		if (bPluie && PrecipMm[C] > Rules.PrecipMaxMm) { return false; }
+		if (bRoche)
+		{
+			const uint8 Id = Lithology.Id[C];
+			const float D = Litho.Catalogue.IsValidIndex(Id)
+				? Litho.Catalogue[Id].Hardness : 1.0f;
+			if (D < Rules.HardnessMin || D > Rules.HardnessMax) { return false; }
+		}
+		return true;
+	};
+
 	struct FCandidat { int32 C; float Relief; };
 	TArray<FCandidat> Candidats;
 
@@ -175,6 +196,7 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 		{
 			const int32 C = J * NX + I;
 			if (ElevationM[C] <= Rules.MinElevationM) { continue; }
+			if (!Eligible(C)) { continue; }
 			if (ElevationM[C] < Plateau[C] - 12.0f) { continue; }
 
 			// --- TROIS GARDES, ET LES DEUX DERNIERES ONT ETE PAYEES A L'IMAGE
@@ -291,6 +313,7 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 				// Et son fond est a l'interieur des terres, pas sur l'estran :
 				// la meme borne d'altitude que les tables l'y maintient.
 				if (ElevationM[C] <= Rules.MinElevationM) { continue; }
+				if (!Eligible(C)) { continue; }
 
 				const float Creux = Plateau[C] - ElevationM[C];
 				if (Creux < 0.55f * Rules.ScarpM) { continue; }
@@ -603,7 +626,8 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 
 	if (OutSites)
 	{
-		Sites(Geometry, ElevationM, Rules, Seed, *OutSites);
+		Sites(Geometry, ElevationM, Rules, Lithology, LithoRules, PrecipMm,
+			Seed, *OutSites);
 	}
 
 	// LE RELEVE PORTE LA PART EN ZONE, ET PAS SEULEMENT LES CELLULES TOUCHEES.

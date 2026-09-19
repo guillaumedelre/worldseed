@@ -35,9 +35,11 @@ AWorldseedVoxelTerrain::AWorldseedVoxelTerrain()
 void AWorldseedVoxelTerrain::AdoptWorld(int32 InSeed,
 	const FWorldseedGeometry& InGeometry, const TArray<float>& InHeightsM,
 	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration,
-	const FWorldseedCaveNetwork& InCaves, const FWorldseedLithology& InLithology)
+	const FWorldseedCaveNetwork& InCaves, const FWorldseedLithology& InLithology,
+	const TArray<float>& InPrecipMm)
 {
 	CaveNetwork = InCaves;
+	PrecipMm = InPrecipMm;
 	Lithology = InLithology;
 	WorldSeed = InSeed;
 	Geometry = InGeometry;
@@ -193,7 +195,9 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		if (const UWorldseedRules* const R = WorldseedPipeline::GetRules(Err))
 		{
 			WorldseedPlateau::Sites(Geometry, HeightsM,
-				FWorldseedPlateauRules::FromRules(*R), WorldSeed, Tables, &Canyons);
+				FWorldseedPlateauRules::FromRules(*R), Lithology,
+				FWorldseedLithologyRules::FromRules(*R), PrecipMm,
+				WorldSeed, Tables, &Canyons);
 		}
 	}
 

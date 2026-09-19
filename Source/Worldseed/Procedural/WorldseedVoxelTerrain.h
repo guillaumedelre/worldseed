@@ -232,7 +232,8 @@ public:
 	void AdoptWorld(int32 InSeed, const FWorldseedGeometry& InGeometry,
 		const TArray<float>& InHeightsM, const FWorldseedBiomeMap& InBiomes,
 		float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves,
-		const FWorldseedLithology& InLithology);
+		const FWorldseedLithology& InLithology,
+		const TArray<float>& InPrecipMm);
 
 private:
 
@@ -362,6 +363,9 @@ private:
 
 	/** Fonds de canyon : l autre face du meme objet. */
 	TArray<FWorldseedPlateauSite> Canyons;
+
+	/** Pluie annuelle, pour appliquer aux sites les gardes de la passe. */
+	TArray<float> PrecipMm;
 
 	/** La serie stratigraphique, lue une fois au chargement. */
 	FWorldseedStratRules StratRules;
