@@ -4111,3 +4111,59 @@ solide`. Etat final : (-80, -80, 3,9) m en `MOVE_WALKING`.
 members`. Une `UPROPERTY` posee pres d'un membre prive herite de sa section ;
 la placer aupres des autres reglages editables, pas aupres du membre dont elle
 parle.
+
+### La doline d'effondrement, et le sol de fond corrige au passage (19 septembre 2026)
+
+Premiere des trois formes arbitrees. **LA SEULE FORME KARSTIQUE QUI SE VOIE DE
+LOIN** : la bouche s'ouvre dans un versant, l'aven perce un plateau, il faut les
+avoir trouves pour les voir. Une doline EST un accident du paysage.
+
+**ELLE NE SE POSE PAS, ELLE SE DEDUIT.** Le plafond d'une salle porte ce qui le
+surmonte ; sous une certaine epaisseur il cede, la surface s'affaisse en
+entonnoir jusqu'au vide, et les parois s'eboulent jusqu'a leur angle de repos --
+d'ou une ouverture plus LARGE que la salle. Le critere est `profondeur - rayon`,
+et rien d'autre. Profil en entonnoir, exactement l'inverse du profil en cloche
+de l'aven : les deux formes se distinguent d'un coup d'oeil pour cette seule
+raison.
+
+**COMPTEE A PART DES ENTREES, ET C'EST LA LECON DU GOUFFRE APPLIQUEE.** L'aven
+avait d'abord ete fabrique DANS la boucle des entrees, donc plafonne par leur
+budget : six pour tout le monde quoi qu'il arrive, et la forme n'existait pour
+ainsi dire pas. Une doline ne se forme pas parce qu'il manquait un acces, elle
+se forme parce que le plafond est mince.
+
+**MESURE**, graine 20260909 : 4 dolines sur 25 chambres, ouvertures de 39 a
+58 m, creux de 10 a 14 m, plafonds de 5 a 11 m. Coupe au sondage sur la plus
+grande : 74,9 m au bord, 55,8 au fond, 67,2 en remontant, et **au centre le
+sondage ne rencontre plus rien** -- le trou s'ouvre sur la salle.
+
+**A SAVOIR** : sur une pente raide la doline se lit comme une ENTAILLE plutot
+que comme une cuvette, et ses parois s'ouvrent en plusieurs trous distincts. Ce
+n'est pas un defaut -- un effondrement sur un versant ressemble a cela -- mais
+les quatre dolines de ce monde sont sur des pentes, donc aucune ne montre la
+cuvette franche.
+
+### Le sol de fond : « sous la nappe » n'est PAS « sous terre » (19 septembre 2026)
+
+**CORRECTION D'UN DEFAUT LIVRE UNE HEURE PLUS TOT**, et il se voyait en plein
+jour. Le premier critere comparait l'altitude de l'oeil a celle de la NAPPE A
+SON APLOMB : sous la nappe, on cachait. Or **sur une pente, la camera est
+derriere ET plus bas que le personnage, donc son aplomb tombe souvent sur du
+terrain PLUS HAUT qu'elle**. Mesure : camera en plein air a 83,5 m, surface a
+son aplomb 97,7 m -- « 14,2 m sous la nappe », decor masque, horizon disparu, et
+le monde reduit au disque de chunks charges au milieu de l'ocean.
+
+**La vraie question n'est pas une altitude, c'est une OCCULTATION.** Un decor
+d'horizon ne gene que s'il s'interpose, et il ne peut s'interposer que si l'on
+est sous un plafond. Un **sondage vertical** y repond exactement, sur la
+GEOMETRIE REELLE plutot que sur une approximation du relief -- et le sol de fond
+n'ayant pas de collision, il ne peut pas se sonder lui-meme. Plus d'hysteresis
+sur une hauteur : un anti-rebond a deux mesures concordantes suffit, parce que
+la reponse est binaire.
+
+**PIEGE DE PROTOCOLE, PAYE DEUX FOIS DANS LA MEME HEURE** : j'ai pose le pion a
+une altitude FIXE pres d'un relief accidente, sans sonder le sol. A 82 m sur un
+terrain qui en fait 99, on se retrouve DANS la colline -- et l'image qu'on
+obtient alors (lambeaux de terrain sur fond d'ocean, decor masque) ressemble
+trait pour trait a un defaut de generation. **Toujours sonder avant de poser**,
+et lire le mode de deplacement avant d'interpreter une altitude.

@@ -71,14 +71,9 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	{
 		return;
 	}
-	UProceduralMeshComponent* Nappe = GroundProxy->GetMesh();
-	if (!Nappe)
-	{
-		return;
-	}
-
-	const UWorld* const World = GetWorld();
-	if (!World)
+	UProceduralMeshComponent* const Nappe = GroundProxy->GetMesh();
+	UWorld* const World = GetWorld();
+	if (!Nappe || !World)
 	{
 		return;
 	}
@@ -95,28 +90,47 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	}
 	const FVector OeilCm = Cam->GetCameraLocation();
 
-	// On compare a la NAPPE elle-meme, pas au terrain : c'est elle qui se
-	// dessine, et le retrait de GroundProxyDropM la place un peu plus bas.
-	const float SolCm = GetHeightAtWorldXY(
-		static_cast<float>(OeilCm.X), static_cast<float>(OeilCm.Y));
-	const float NappeCm = SolCm
-		- GroundProxyDropM * WorldseedMetersToCm * HeightExaggeration;
+	// --- Y A-T-IL DE LA ROCHE ENTRE L'OEIL ET LE CIEL ? ----------------------
+	//
+	// PREMIERE VERSION FAUTIVE, ET ELLE SE VOYAIT EN PLEIN JOUR. Elle comparait
+	// l'altitude de l'oeil a celle de la NAPPE A SON APLOMB : sous la nappe,
+	// on cachait. Or sur une pente, la camera est derriere ET plus bas que le
+	// personnage, donc son aplomb tombe souvent sur du terrain PLUS HAUT
+	// qu'elle. Mesure : camera en plein air a 83,5 m, surface a son aplomb
+	// 97,7 m -- « 14,2 m sous la nappe », decor masque, horizon disparu et
+	// terrain reduit au disque de chunks charges au milieu de l'ocean.
+	//
+	// La vraie question n'est pas une altitude, c'est une OCCULTATION : un
+	// decor d'horizon ne gene que s'il s'interpose, et il ne peut s'interposer
+	// que si l'on est sous un plafond. Un sondage vertical repond exactement,
+	// sur la GEOMETRIE REELLE plutot que sur une approximation du relief. Le
+	// sol de fond n'a pas de collision : il ne peut pas se sonder lui-meme.
+	FHitResult Touche;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WorldseedProxyRoof), false);
+	if (const APawn* const Pion = UGameplayStatics::GetPlayerPawn(World, 0))
+	{
+		Params.AddIgnoredActor(Pion);
+	}
 
-	const double SousCm = NappeCm - OeilCm.Z;
-	const float SeuilCm = GroundProxyHideDepthM * WorldseedMetersToCm;
-	const float BandeCm = GroundProxyHideHysteresisM * WorldseedMetersToCm;
+	const bool bSousPlafond = World->LineTraceSingleByChannel(
+		Touche, OeilCm,
+		OeilCm + FVector(0.0, 0.0, GroundProxyRoofProbeM * WorldseedMetersToCm),
+		ECC_Visibility, Params);
 
-	// Hysteresis : on cache au-dela du seuil, on ne revient qu'apres avoir
-	// regagne la bande. Un seuil unique ferait clignoter le decor.
-	const bool bCacher = bGroundProxyHidden
-		? (SousCm > SeuilCm - BandeCm)
-		: (SousCm > SeuilCm);
-
-	if (bCacher == bGroundProxyHidden)
+	// ANTI-REBOND : au bord d'un plafond, deux sondages voisins peuvent ne pas
+	// dire la meme chose. On n'accepte une bascule qu'apres deux mesures
+	// concordantes, sans quoi le decor clignote au franchissement d'un seuil.
+	if (bSousPlafond == bGroundProxyHidden)
+	{
+		ProxyVotes = 0;
+		return;
+	}
+	if (++ProxyVotes < 2)
 	{
 		return;
 	}
-	bGroundProxyHidden = bCacher;
+	ProxyVotes = 0;
+	bGroundProxyHidden = bSousPlafond;
 
 	// ON SORT DU RENDU PRINCIPAL, PAS DE LA PASSE DE PROFONDEUR, et la nuance
 	// est vitale : ce sol de fond porte le UWaterTerrainComponent, c'est meme
@@ -128,11 +142,12 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	// entierement -- SetActorHiddenInGame -- l'aurait sortie des deux, et
 	// l'ocean cesse de se dessiner sans le moindre avertissement.
 	Nappe->SetRenderInDepthPass(true);
-	Nappe->SetRenderInMainPass(!bCacher);
+	Nappe->SetRenderInMainPass(!bSousPlafond);
 
-	UE_LOG(LogTemp, Verbose,
-		TEXT("[Worldseed] sol de fond : %s (oeil a %.1f m sous la nappe)"),
-		bCacher ? TEXT("retire") : TEXT("rendu"), SousCm / WorldseedMetersToCm);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] sol de fond : %s (plafond %s au-dessus de l'oeil)"),
+		bSousPlafond ? TEXT("retire") : TEXT("rendu"),
+		bSousPlafond ? TEXT("trouve") : TEXT("absent"));
 }
 
 void AWorldseedTerrain::EndPlay(const EEndPlayReason::Type Reason)

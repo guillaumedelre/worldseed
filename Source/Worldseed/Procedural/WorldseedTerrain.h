@@ -280,26 +280,15 @@ public:
 	bool bHideGroundProxyUnderground = true;
 
 	/**
-	 * Profondeur sous la nappe a partir de laquelle on la retire, en metres.
+	 * Hauteur sondee au-dessus de l'oeil pour chercher un plafond, en metres.
 	 *
-	 * Pas zero : a fleur de nappe, l'oeil passe d'un cote a l'autre a chaque
-	 * pas sur un terrain accidente. On attend d'etre franchement dessous.
+	 * Le sondage doit depasser le relief le plus epais qu'on puisse avoir
+	 * au-dessus de la tete. Cinq cents metres couvrent largement l'amplitude
+	 * du monde ; au-dela on paierait un rayon qui ne rencontre jamais rien.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "0.0", EditCondition = "bHideGroundProxyUnderground"))
-	float GroundProxyHideDepthM = 3.0f;
-
-	/**
-	 * Largeur de la bande d'hysteresis, en metres.
-	 *
-	 * SANS ELLE LE DECOR CLIGNOTE. Un seuil unique fait basculer l'affichage a
-	 * chaque oscillation de l'oeil autour de la valeur critique -- et l'oeil
-	 * d'une camera a bras oscille en permanence. On cache sous le seuil et on
-	 * ne revient qu'une fois cette bande regagnee.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "0.0", EditCondition = "bHideGroundProxyUnderground"))
-	float GroundProxyHideHysteresisM = 2.0f;
+		meta = (ClampMin = "10.0", EditCondition = "bHideGroundProxyUnderground"))
+	float GroundProxyRoofProbeM = 500.0f;
 
 	/** Inverse l'ordre des triangles si le terrain apparait retourne. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks")
@@ -435,6 +424,9 @@ protected:
 
 	FTimerHandle ProxyTimer;
 	bool bGroundProxyHidden = false;
+
+	/** Mesures concordantes avant de basculer. Anti-rebond au bord d'un plafond. */
+	int32 ProxyVotes = 0;
 
 	/** Le materiau correspondant au mode d'apparence courant. */
 	UMaterialInterface* ChooseTerrainMaterial(const FWorldseedAppearance& Mode) const;

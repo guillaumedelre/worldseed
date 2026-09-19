@@ -136,6 +136,10 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.ShaftTopRadiusM = Num(TEXT("gouffreRayonHautM"), 2.5);
 	Out.ShaftBottomRadiusM = Num(TEXT("gouffreRayonBasM"), 6.0);
 	Out.ShaftWanderM = Num(TEXT("gouffreOndulationM"), 3.0);
+
+	Out.DolineRoofMaxM = Num(TEXT("dolinePlafondMaxM"), 12.0);
+	Out.DolineFlareRatio = Num(TEXT("dolineEvasement"), 1.8);
+	Out.DolineRimNoiseM = Num(TEXT("dolineBordOndulationM"), 6.0);
 	Out.SeaMarginM = Num(TEXT("niveauMerMargeM"), 5.0);
 	return Out;
 }
@@ -1254,6 +1258,92 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		}
 	}
 
+	// --- 5 ter. LES DOLINES D'EFFONDREMENT ------------------------------------
+	//
+	// LA TROISIEME FORME D'OUVERTURE, ET LA SEULE QUI SE VOIE DE LOIN. La
+	// bouche s'ouvre dans un versant, l'aven perce un plateau : il faut les
+	// avoir trouves pour les voir. Une doline, elle, EST un accident du
+	// paysage -- une cuvette de plusieurs dizaines de metres, visible de
+	// l'autre versant de la vallee.
+	//
+	// ELLE NE SE POSE PAS, ELLE SE DEDUIT. Le plafond d'une salle porte ce qui
+	// le surmonte ; sous une certaine epaisseur il cede, la surface s'affaisse
+	// en entonnoir jusqu'au vide, et les parois s'eboulent jusqu'a leur angle
+	// de repos -- d'ou une ouverture plus large que la salle. Le critere est
+	// donc `profondeur - rayon`, et rien d'autre.
+	//
+	// ET ELLE EST COMPTEE A PART DES ENTREES, a dessein. L'aven avait d'abord
+	// ete fabrique DANS la boucle des entrees, donc plafonne par leur budget :
+	// six pour tout le monde, quoi qu'il arrive, et la forme n'existait pour
+	// ainsi dire pas. Une doline ne se forme pas parce qu'il manquait un
+	// acces, elle se forme parce que le plafond est mince.
+	int32 Dolines = 0;
+	if (Rules.DolineRoofMaxM > 0.0f && Rules.DolineFlareRatio > 1.0f)
+	{
+		for (int32 Ic = 0; Ic < Out.Chambers.Num(); ++Ic)
+		{
+			const FWorldseedCaveChamber& Ch = Out.Chambers[Ic];
+			const double Sol = Ctx.SurfaceA(Ch.CentreM.X, Ch.CentreM.Y);
+			const double Sommet = Ch.CentreM.Z + Ch.RadiusM;
+			const double Plafond = Sol - Sommet;
+
+			if (Plafond <= 0.0 || Plafond > Rules.DolineRoofMaxM)
+			{
+				continue;
+			}
+
+			// L'entonnoir va du SOL au sommet de la salle. On part un peu
+			// au-dessus du sol : la capsule de tete doit mordre la surface,
+			// sinon il reste une pellicule de roche sur le trou.
+			const double Haut = Sol + 2.0;
+			const double Bas = Sommet - Ch.RadiusM * 0.3;
+			const double RayonHaut = Ch.RadiusM * Rules.DolineFlareRatio;
+
+			const int32 Tranches = FMath::Max(3, FMath::CeilToInt((Haut - Bas) / 3.0));
+			FVector Precedent = FVector::ZeroVector;
+			for (int32 T = 0; T <= Tranches; ++T)
+			{
+				const double F = static_cast<double>(T) / Tranches;
+				const double Z = FMath::Lerp(Haut, Bas, F);
+
+				// LE BORD N'EST PAS UN CERCLE : un effondrement suit les
+				// fractures de la roche. Le bruit porte sur l'AXE, ce qui
+				// deforme le contour sans creuser plus profond.
+				const double Ox = Rules.DolineRimNoiseM * WorldseedPerlin::Perlin3D(
+					static_cast<float>(Ch.CentreM.X * 0.03),
+					static_cast<float>(Z * 0.08), 0.0f, Seed + 5101);
+				const double Oy = Rules.DolineRimNoiseM * WorldseedPerlin::Perlin3D(
+					0.0f, static_cast<float>(Z * 0.08),
+					static_cast<float>(Ch.CentreM.Y * 0.03), Seed + 5171);
+
+				const FVector Point(Ch.CentreM.X + Ox, Ch.CentreM.Y + Oy, Z);
+				if (T > 0)
+				{
+					FWorldseedCaveSegment S;
+					S.AM = Precedent;
+					S.BM = Point;
+					// EN ENTONNOIR : large en surface, resserre sur la salle.
+					// C'est l'inverse du profil en cloche de l'aven, et les
+					// deux formes se distinguent d'un coup d'oeil pour cette
+					// seule raison.
+					S.RadiusAM = FMath::Lerp(RayonHaut, Ch.RadiusM,
+						static_cast<float>((T - 1.0) / Tranches));
+					S.RadiusBM = FMath::Lerp(RayonHaut, Ch.RadiusM,
+						static_cast<float>(F));
+					Out.Segments.Add(S);
+				}
+				Precedent = Point;
+			}
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] grottes : DOLINE a (%.0f, %.0f) m, altitude %.0f m, ")
+				TEXT("plafond %.0f m, ouverture %.0f m de large, %.0f m de creux"),
+				Ch.CentreM.X, Ch.CentreM.Y, Sol, Plafond, RayonHaut * 2.0, Sol - Bas);
+
+			++Dolines;
+		}
+	}
+
 	// --- 6. l'index spatial ---------------------------------------------------
 	Out.ChamberBuckets.SetNum(Cases);
 	Out.SegmentBuckets.SetNum(Cases);
@@ -1328,8 +1418,9 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
-		TEXT("%d troncons, %d abandonnees, %d reseaux, %d entrees dont %d GOUFFRES  (%.0f ms)"),
+		TEXT("%d troncons, %d abandonnees, %d reseaux, ")
+		TEXT("%d entrees dont %d GOUFFRES, %d DOLINES  (%.0f ms)"),
 		Out.Chambers.Num(), Aretes.Num(), ABoucler,
-		Out.Segments.Num(), Abandonnees, ParComposante.Num(), Entrees, Gouffres,
+		Out.Segments.Num(), Abandonnees, ParComposante.Num(), Entrees, Gouffres, Dolines,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
 }

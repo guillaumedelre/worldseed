@@ -210,6 +210,44 @@ struct WORLDSEED_API FWorldseedCaveRules
 	/** Amplitude de l'ondulation de l'axe, en metres. Zero donne un forage. */
 	float ShaftWanderM = 3.0f;
 
+	// --- dolines ----------------------------------------------------------------
+
+	/**
+	 * Epaisseur de plafond sous laquelle une salle s'effondre, en metres.
+	 *
+	 * UNE DOLINE D'EFFONDREMENT N'EST PAS UNE FORME QU'ON POSE, C'EST UNE
+	 * CONSEQUENCE. Le plafond d'une salle porte le poids de ce qui le
+	 * surmonte ; quand il devient trop mince pour cette charge, il cede, et la
+	 * surface s'affaisse en entonnoir jusqu'au vide. Le critere est donc
+	 * l'epaisseur de roche entre le sommet de la salle et le sol --
+	 * profondeur moins rayon -- et rien d'autre.
+	 *
+	 * C'EST AUSSI LA LECON DU GOUFFRE, APPLIQUEE. L'aven avait d'abord ete
+	 * fabrique DANS la boucle des entrees, donc plafonne par leur budget : six
+	 * pour tout le monde, quoi qu'il arrive. Une doline ne se forme pas parce
+	 * qu'il manquait un acces, elle se forme parce que le plafond est mince.
+	 * Elle est donc comptee a part, et rien ne la limite que la geologie.
+	 */
+	float DolineRoofMaxM = 12.0f;
+
+	/**
+	 * Evasement de l'entonnoir : rayon en surface rapporte a celui de la salle.
+	 *
+	 * LA DOLINE EST PLUS LARGE QUE LA SALLE QUI L'A FAITE, toujours : les
+	 * parois de l'entonnoir s'eboulent jusqu'a leur angle de repos, ce qui
+	 * elargit l'ouverture bien au-dela du vide initial. Un puits de meme
+	 * diametre que la salle serait un trou de forage, pas un effondrement.
+	 */
+	float DolineFlareRatio = 1.8f;
+
+	/**
+	 * Amplitude de l'irregularite du bord, en metres.
+	 *
+	 * Le contour d'un effondrement n'est pas un cercle : il suit les fractures
+	 * de la roche. A zero, on obtient un cratere de compas.
+	 */
+	float DolineRimNoiseM = 6.0f;
+
 	/**
 	 * Distance minimale entre deux bouches, en metres.
 	 *
