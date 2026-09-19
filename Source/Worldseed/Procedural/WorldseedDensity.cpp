@@ -31,6 +31,12 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 
 	Out.OverhangAmplitudeM = Num(TEXT("overhangAmplitudeM"), 8.0);
 	Out.OverhangFrequency = Num(TEXT("overhangFrequency"), 0.016);
+	Out.DetailAmplitudeM = Num(TEXT("detailAmplitudeM"), 2.5);
+	Out.DetailFrequency = Num(TEXT("detailFrequence"), 0.085);
+	Out.DetailOctaves = FMath::RoundToInt(Num(TEXT("detailOctaves"), 4.0));
+	Out.DetailPenteMin = Num(TEXT("detailPenteMin"), 0.15);
+	Out.DetailPenteRef = Num(TEXT("detailPenteRef"), 0.6);
+	Out.DetailCoteM = Num(TEXT("detailCoteM"), 12.0);
 	Out.OverhangOctaves = Int(TEXT("overhangOctaves"), 3);
 	Out.OverhangWarpM = Num(TEXT("overhangWarpM"), 25.0);
 	Out.OverhangWarpFrequency = Num(TEXT("overhangWarpFrequency"), 0.012);
@@ -351,10 +357,31 @@ float FWorldseedDensity::SurfaceHeightM(double X, double Y) const
 	U -= FMath::FloorToDouble(U);
 	const double V = FMath::Clamp(Y / HeightM + 0.5, 0.0, 1.0);
 
-	const float Raw = WorldseedGrid::SampleUV(*ElevationM, Geometry.NX, Geometry.NY,
-		static_cast<float>(U), static_cast<float>(V));
+	// BICUBIQUE, PAS BILINEAIRE. Une bilineaire est C0 : sa derivee saute au
+	// bord de chaque maille, et le marching cubes rend ces sauts comme des
+	// ARETES -- a 64 km la maille fait 31 m, donc le monde entier se lisait
+	// comme un pavage de grands triangles. Aucune mesure chiffree ne voyait ce
+	// defaut : il a fallu regarder une photo.
+	const float Raw = WorldseedGrid::SampleUVCubic(*ElevationM,
+		Geometry.NX, Geometry.NY, static_cast<float>(U), static_cast<float>(V));
 
 	return Raw * HeightExaggeration;
+}
+
+float FWorldseedDensity::SurfacePenteM(double X, double Y) const
+{
+	if (!IsValid())
+	{
+		return 0.0f;
+	}
+
+	const double WidthM = Geometry.WidthM();
+	double U = X / WidthM + 0.5;
+	U -= FMath::FloorToDouble(U);
+	const double V = FMath::Clamp(Y / Geometry.HeightM + 0.5, 0.0, 1.0);
+
+	return WorldseedGrid::SampleUV(*ElevationM, Geometry.NX, Geometry.NY,
+		static_cast<float>(U), static_cast<float>(V)) * HeightExaggeration;
 }
 
 void FWorldseedDensity::SurfaceRangeM(double MinX, double MinY, double MaxX,
@@ -518,7 +545,13 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	// MESURE QUI A MOTIVE CETTE SORTIE : 45 082 evaluations par chunk de 32 m a
 	// 0,52 microseconde piece, soit 23,4 ms par chunk. Dans un chunk de 32 m
 	// centre sur le relief, la bande utile n'en fait que 17.
-	const double PorteeUtile = Rules.OverhangAmplitudeM + Rules.CaveRadiusM;
+	// LE DETAIL ENTRE DANS LA PORTEE, SINON IL EST ECRETE. La sortie rapide
+	// suppose que le bruit ne peut plus changer le signe au-dela de son
+	// amplitude : oublier un terme dans cette somme le fait disparaitre pres de
+	// la borne, et le defaut se lit comme une bande lisse a distance fixe de la
+	// surface -- impossible a attribuer sans connaitre cette ligne.
+	const double PorteeUtile = Rules.OverhangAmplitudeM + Rules.DetailAmplitudeM
+		+ Rules.CaveRadiusM;
 	if (D > PorteeUtile || D < -PorteeUtile - Rules.BandDepthM)
 	{
 		return FMath::Max(D, Air);
@@ -534,7 +567,7 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	// changer, et c'est trois des cinq bruits du calcul. La marge de 20 % evite
 	// de rogner les surplombs qui atteignent tout juste l'amplitude.
 	const bool bPresDeLaSurface =
-		FMath::Abs(D) <= Rules.OverhangAmplitudeM * 1.2;
+		FMath::Abs(D) <= (Rules.OverhangAmplitudeM + Rules.DetailAmplitudeM) * 1.2;
 
 	if (bPresDeLaSurface && Rules.OverhangAmplitudeM > 0.0f && Rules.OverhangOctaves > 0)
 	{
@@ -542,6 +575,50 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 			static_cast<float>(PosM.X), static_cast<float>(PosM.Y),
 			static_cast<float>(PosM.Z), Rules.OverhangFrequency,
 			Rules.OverhangOctaves, Seed + 1733);
+	}
+
+	// --- LE DETAIL, ET IL OCCUPE UNE BANDE QUE RIEN NE COUVRAIT --------------
+	//
+	// Le terme ci-dessus part de 62 m de longueur d'onde et descend a 15 en
+	// trois octaves : il donne le GRAIN du relief, pas sa texture. Sous quinze
+	// metres il n'y avait plus rien, et la grille macro en fait 31 -- d'ou un
+	// monde qui se lit en grands polygones, une fois l'interpolation rendue
+	// lisse.
+	//
+	// IL EST MODULE PAR LA PENTE, et ce n'est pas un raffinement. Une plage et
+	// un fond de vallee sont LISSES dans la nature : y poser deux metres de
+	// bosses donne un champ de taupinieres, et sur une plage cela decoupe le
+	// trait de cote en flaques et en ilots. Une paroi, elle, est rugueuse --
+	// c'est la ou la roche casse. La pente se lit sur le champ lui-meme, donc
+	// deplacement compris.
+	if (bPresDeLaSurface && Rules.DetailAmplitudeM > 0.0f
+		&& Rules.DetailOctaves > 0)
+	{
+		const double Pas = 6.0;
+		const double DX = SurfacePenteM(PosM.X + Pas, PosM.Y)
+			- SurfacePenteM(PosM.X - Pas, PosM.Y);
+		const double DY = SurfacePenteM(PosM.X, PosM.Y + Pas)
+			- SurfacePenteM(PosM.X, PosM.Y - Pas);
+		const double Pente = FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas);
+
+		double Force = FMath::Min(1.0,
+			Rules.DetailPenteMin + Pente / FMath::Max(Rules.DetailPenteRef, 1e-3f));
+
+		// ET IL S'EFFACE PRES DU NIVEAU DE LA MER. Le projet a deja paye cette
+		// lecon cote generateur : du bruit a pleine amplitude sur le trait de
+		// cote le decoupe en morceaux. On le fond sur les premiers metres.
+		if (Rules.DetailCoteM > 0.0f)
+		{
+			Force *= FMath::Clamp(FMath::Abs(Surface) / Rules.DetailCoteM, 0.0f, 1.0f);
+		}
+
+		if (Force > 0.01)
+		{
+			D -= Rules.DetailAmplitudeM * Force * WorldseedPerlin::Fbm3D(
+				static_cast<float>(PosM.X), static_cast<float>(PosM.Y),
+				static_cast<float>(PosM.Z), Rules.DetailFrequency,
+				Rules.DetailOctaves, Seed + 3319);
+		}
 	}
 
 	const double DepthM = -D;

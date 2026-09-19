@@ -244,13 +244,27 @@ public:
 	/**
 	 * Largeur du sol de fond, en sommets.
 	 *
-	 * Cale sur la texture d'information de l'eau, qui fait 512 pixels de cote
-	 * pour toute la zone : au-dela on paierait un detail qu'elle ne sait pas
-	 * lire, en deca c'est elle qu'on gaspillerait.
+	 * LE COMMENTAIRE D'ORIGINE NE VOYAIT QUE LA MOITIE DU PROBLEME. Il calait
+	 * cette valeur sur la texture d'information de l'eau -- 512 pixels pour
+	 * toute la zone -- au motif qu'au-dela on paierait un detail qu'elle ne
+	 * sait pas lire. C'est juste pour l'EAU, et faux pour l'OEIL : cette nappe
+	 * est aussi tout ce que le joueur voit au-dela du rayon de chargement des
+	 * chunks, soit 250 m.
+	 *
+	 * A 64 km, 512 sommets font 125 m par maille, et une maille de 125 m vue a
+	 * 500 m couvre quatorze degres du champ de vision : le monde lointain se
+	 * lit alors comme un pavage de grands triangles. C'est ce que montraient
+	 * les photos, et aucun travail sur le champ de densite ne pouvait y changer
+	 * quoi que ce soit -- il ne s'applique qu'aux 250 m proches.
+	 *
+	 * A 1024, la maille tombe a 62 m. Ce n'est pas une solution complete : il
+	 * faudrait des anneaux de resolution decroissante pour que les facettes
+	 * disparaissent vraiment, ce que le streaming des chunks fait deja pour le
+	 * proche. C'est la piste, le jour ou cela vaudra le travail.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "32", ClampMax = "1024", EditCondition = "bBuildGroundProxy"))
-	int32 GroundProxyWidth = 512;
+		meta = (ClampMin = "32", ClampMax = "2048", EditCondition = "bBuildGroundProxy"))
+	int32 GroundProxyWidth = 1024;
 
 	/**
 	 * Enfoncement du sol de fond sous le terrain detaille, en metres.

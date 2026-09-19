@@ -347,6 +347,64 @@ namespace WorldseedGrid
 			 + V11 * TI * TJ;
 	}
 
+	float SampleUVCubic(const TArray<float>& Field, int32 NX, int32 NY,
+		float U, float V)
+	{
+		if (NX < 4 || NY < 4 || Field.Num() != NX * NY)
+		{
+			return SampleUV(Field, NX, NY, U, V);
+		}
+
+		// CATMULL-ROM, ET LE CHOIX N'EST PAS ESTHETIQUE. Une interpolation
+		// bilineaire est C0 : sa derivee saute au bord de chaque maille, et le
+		// marching cubes rend ces sauts comme des ARETES. A 64 km la maille
+		// fait 31 m, donc le monde entier se lit comme un pavage de grands
+		// triangles -- c'est ce que montraient les photos. Catmull-Rom est C1,
+		// les aretes disparaissent, et elle passe par les points de la grille
+		// donc le relief macro n'est pas deplace.
+		//
+		// C'est aussi ce que faisait le generateur Python, qui montait le relief
+		// en bicubique (order=3) : le portage en C++ avait perdu la propriete
+		// sans que personne ne s'en apercoive, parce qu'aucune mesure chiffree
+		// ne la voit -- il faut regarder.
+		const float WrappedU = U - FMath::FloorToFloat(U);
+		const float FX = WrappedU * static_cast<float>(NX);
+		const int32 I1 = FMath::Clamp(static_cast<int32>(FX), 0, NX - 1);
+		const float TI = FX - static_cast<float>(I1);
+
+		const float FY = FMath::Clamp(V, 0.0f, 1.0f) * static_cast<float>(NY - 1);
+		const int32 J1 = FMath::Clamp(static_cast<int32>(FY), 0, NY - 2);
+		const float TJ = FY - static_cast<float>(J1);
+
+		auto Noyau = [](float T, float A, float B, float C, float D)
+		{
+			// Forme de Horner du noyau de Catmull-Rom : quatre multiplications
+			// au lieu des puissances explicites, et c'est chaud -- cette
+			// fonction tourne des millions de fois par chunk.
+			const float M0 = -0.5f * A + 1.5f * B - 1.5f * C + 0.5f * D;
+			const float M1 = A - 2.5f * B + 2.0f * C - 0.5f * D;
+			const float M2 = -0.5f * A + 0.5f * C;
+			return ((M0 * T + M1) * T + M2) * T + B;
+		};
+
+		float Colonnes[4];
+		for (int32 K = 0; K < 4; ++K)
+		{
+			// Y se BORNE, X s'ENROULE : meme convention que partout ailleurs --
+			// la carte fait le tour de la sphere, un pole n'a pas de voisin.
+			const int32 J = FMath::Clamp(J1 - 1 + K, 0, NY - 1);
+			const int32 Ligne = J * NX;
+			const int32 A = ((I1 - 1) % NX + NX) % NX;
+			const int32 B = I1 % NX;
+			const int32 C = (I1 + 1) % NX;
+			const int32 D = (I1 + 2) % NX;
+			Colonnes[K] = Noyau(TI, Field[Ligne + A], Field[Ligne + B],
+				Field[Ligne + C], Field[Ligne + D]);
+		}
+
+		return Noyau(TJ, Colonnes[0], Colonnes[1], Colonnes[2], Colonnes[3]);
+	}
+
 	float Quantile(const TArray<float>& Values, float Q)
 	{
 		if (Values.Num() == 0)

@@ -82,5 +82,17 @@ namespace WorldseedGrid
 	 * Quantile avec interpolation lineaire, la methode par defaut de numpy.
 	 * C'est lui qui fixe le niveau de la mer, donc la part de terres emergees.
 	 */
+	/**
+	 * Echantillonnage BICUBIQUE (Catmull-Rom), meme convention que SampleUV.
+	 *
+	 * UNE BILINEAIRE EST C0 : sa derivee saute au bord de chaque maille, et le
+	 * marching cubes rend ces sauts comme des ARETES. A 64 km la maille de
+	 * simulation fait 31 m, donc le monde se lit comme un pavage de grands
+	 * triangles. Catmull-Rom est C1 et passe par les points de la grille : les
+	 * aretes disparaissent sans que le relief macro soit deplace.
+	 */
+	WORLDSEED_API float SampleUVCubic(const TArray<float>& Field, int32 NX, int32 NY,
+		float U, float V);
+
 	WORLDSEED_API float Quantile(const TArray<float>& Values, float Q);
 }

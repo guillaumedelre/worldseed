@@ -44,6 +44,35 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	float OverhangAmplitudeM = 8.0f;
 
+	/**
+	 * Amplitude du DETAIL, en metres.
+	 *
+	 * IL OCCUPE UNE BANDE QUE RIEN NE COUVRAIT. Le terme de surplomb part de
+	 * 62 m de longueur d'onde et descend a 15 en trois octaves : il donne le
+	 * grain du relief, pas sa texture. Sous quinze metres il n'y avait plus
+	 * rien, et la maille de simulation en fait 31 a 64 km -- d'ou un monde qui
+	 * se lit en grands polygones.
+	 */
+	float DetailAmplitudeM = 2.5f;
+
+	float DetailFrequency = 0.085f;
+	int32 DetailOctaves = 4;
+
+	/**
+	 * Pente de reference du detail, et son plancher.
+	 *
+	 * UNE PLAGE ET UN FOND DE VALLEE SONT LISSES DANS LA NATURE. Deux metres
+	 * de bosses y donnent un champ de taupinieres, et sur une plage cela
+	 * decoupe le trait de cote en flaques. Une paroi, elle, est rugueuse : le
+	 * detail suit donc la pente, avec un plancher pour que le plat ne soit pas
+	 * parfaitement lisse non plus.
+	 */
+	float DetailPenteMin = 0.15f;
+	float DetailPenteRef = 0.6f;
+
+	/** Hauteur sur laquelle le detail s'efface pres du niveau de la mer. */
+	float DetailCoteM = 12.0f;
+
 	/** Frequence du deplacement, en cycles par metre. */
 	float OverhangFrequency = 0.016f;
 
@@ -342,6 +371,17 @@ public:
 
 	/** Altitude de la surface macro en un point, exageration comprise. */
 	float SurfaceHeightM(double X, double Y) const;
+
+	/**
+	 * La meme surface, mais en BILINEAIRE et sans exageration.
+	 *
+	 * RESERVEE AU CALCUL DE LA PENTE, et c'est une economie qui compte : la
+	 * pente du detail demande quatre echantillons par evaluation du champ, soit
+	 * SOIXANTE-QUATRE prises en bicubique. Elle n'a aucun besoin de continuite
+	 * C1 -- elle module une amplitude, elle ne dessine rien. Mesure de l'ecart :
+	 * 5,33 ms par chunk avec la bicubique partout.
+	 */
+	float SurfacePenteM(double X, double Y) const;
 
 	/**
 	 * Bornes d'altitude de la surface macro sur une empreinte rectangulaire.

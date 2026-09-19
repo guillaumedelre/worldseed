@@ -1342,7 +1342,15 @@ int32 AWorldseedVoxelTerrain::TourneeDesFalaises(int32 Combien)
 		// ON SE MET DU COTE DE LA MER, sinon on photographie le plateau et la
 		// falaise est hors champ -- elle est DERRIERE la camera.
 		E.DepuisM = K.VersLeBas;
-		E.DistanceM = FMath::Max(180.0f, K.Chute * 4.0f);
+		// DANS LE RAYON DE CHARGEMENT, SINON ON PHOTOGRAPHIE LE SOL DE FOND.
+		// Les chunks ne se batissent que dans 250 m autour du pion ; au-dela
+		// c'est la nappe d'horizon qu'on voit, qui fait 512 sommets pour tout
+		// le monde -- soit 125 m par maille a 64 km. Mes premieres photos
+		// etaient prises a 420-580 m : elles montraient les facettes de CETTE
+		// nappe, et aucun travail sur le champ de densite ne pouvait les
+		// changer. Une heure perdue faute d'avoir verifie ce que le cadre
+		// contenait.
+		E.DistanceM = FMath::Clamp(K.Chute * 2.2f, 90.0f, 170.0f);
 		E.HauteurM = 10.0f;
 		Tournee.Add(E);
 
