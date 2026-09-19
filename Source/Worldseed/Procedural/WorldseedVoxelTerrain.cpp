@@ -14,6 +14,7 @@
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
 #include "Camera/PlayerCameraManager.h"
@@ -106,6 +107,22 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	Super::BeginPlay();
 
 	StartSeconds = FPlatformTime::Seconds();
+
+	// LE RAYON SE PILOTE DEPUIS LA LIGNE DE COMMANDE, pour le banc.
+	// Sans ce levier, comparer deux rayons demanderait de recompiler entre
+	// les deux mesures -- et le depot a une regle contre les A/B dont les
+	// deux moities ne sont pas montees a l'identique.
+	{
+		float Rayon = 0.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRayon="), Rayon)
+			&& Rayon > 32.0f)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : rayon de chargement force a %.0f m ")
+				TEXT("(defaut %.0f)"), Rayon, LoadRadiusM);
+			LoadRadiusM = Rayon;
+		}
+	}
 
 	if (!LoadWorld())
 	{
@@ -1009,6 +1026,16 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] voxel : joueur rendu a la gravite, chunk %d,%d,%d solide"),
 		Key.X, Key.Y, Key.Z);
+}
+
+int32 AWorldseedVoxelTerrain::TravauxEnVol() const
+{
+	int32 N = 0;
+	for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	{
+		if (Pair.Value.Job.IsValid()) { ++N; }
+	}
+	return N;
 }
 
 FString AWorldseedVoxelTerrain::ReportState() const

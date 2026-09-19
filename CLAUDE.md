@@ -5096,6 +5096,80 @@ une ligne de journal qui manque.**
 3. **Le recul est uniforme par banc.** Une vraie corniche recule plus vite la
    ou elle est mieux drainee ; ici seule la tendrete du talus module `reculM`.
 
+### Elargir la distance de vue : ce n'est pas le rendu qui bloque (19 septembre 2026)
+
+Question posee apres quatre tournees photo ou aucune grande forme -- mesa,
+gorge, marge de plateau -- ne se lisait : combien couterait un rayon de
+chargement plus grand ? Je l'avais estime a « neuf a seize fois les chunks »
+sans le verifier. Mesure faite, l'estimation etait juste sur les chunks et
+COMPLETEMENT A COTE sur ce qui bloque.
+
+**D'OU VIENT LE BANC.** `PerformanceService` passe par l'outillage externe, qui
+tombe des qu'on relance l'editeur plusieurs fois -- donc a chaque compilation.
+Et un commandlet ne rend rien : il n'y a pas de rendu. D'ou `WorldseedBanc`, un
+sous-systeme qui mesure DANS le jeu, sur ses propres `DeltaTime`. Il est au
+passage a l'abri du piege le plus couteux du depot -- l'editeur non focalise
+bride son rendu et l'outillage attribue le plafond au GPU -- puisqu'il n'y a
+pas d'editeur a brider.
+
+    UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc
+      -game -WorldseedBanc -WorldseedRayon=600 -WorldseedQuitter
+      -windowed -resx=1600 -resy=900
+
+**MESURE, graine 20260909, 64 x 32 km :**
+
+| rayon | chunks | stabilise | trame | images/s | memoire |
+|---|---|---|---|---|---|
+| **250 m** | **814** | **oui, 31 s** | **7,46 ms** | **134** | 4,53 Go |
+| 400 m | 1663 | non, plafond 180 s | 14,80 ms | 68 | 4,66 Go |
+| 600 m | 1663 | non, plafond 180 s | 17,77 ms | 56 | 4,71 Go |
+| 800 m | 1663 | non, plafond 180 s | 17,72 ms | 56 | 4,67 Go |
+
+**LES TROIS DERNIERS DONNENT EXACTEMENT 1663 CHUNKS, et c'est LA reponse.** Ce
+n'est pas le rayon qui les limite, c'est le DEBIT du streaming : en 180 s le
+mailleur en batit 1663, quel que soit le rayon demande. Au-dela de 250 m on ne
+mesure plus un monde charge, on mesure une file d'attente.
+
+**CE N'EST DONC PAS LE COUT D'IMAGE QUI BLOQUE, C'EST LE TEMPS DE
+REMPLISSAGE**, et c'est bien plus redhibitoire. A 9,2 chunks par seconde, et le
+nombre requis croissant en R carre :
+
+    rayon    chunks requis    remplissage
+    250 m       814           31 s        (mesure)
+    400 m     ~2 100          ~3,8 min
+    600 m     ~4 700          ~8,5 min
+    800 m     ~8 300          ~15 min
+
+**Un joueur a 6 km/h franchit 600 m en SIX MINUTES.** Il distancerait le
+mailleur en permanence, et definitivement. Le cout d'image suit d'ailleurs :
+extrapole depuis le seul point propre -- 814 chunks pour 7,46 ms -- 4 700
+chunks donneraient environ 43 ms, soit 23 images par seconde.
+
+**VERDICT : elargir la distance de vue est impossible avec un mailleur a
+RESOLUTION UNIFORME.** Les deux barrieres tombent ensemble, et la seconde est la
+plus dure.
+
+**ET CELA CHIFFRE ENFIN LE CHANTIER DES ANNEAUX**, ouvert depuis longtemps sans
+justification numerique. Avec des chunks quatre fois plus larges au-dela de
+250 m, le nombre cesse de croitre en R carre : un rayon de 800 m reviendrait a
+l'ordre de grandeur du 250 m actuel, en remplissage comme en image. C'est la
+condition pour qu'une mesa, une gorge ou une marge de plateau soient VUES.
+
+**UNE FAUTE DE MESURE PAYEE EN CHEMIN, ET C'EST TOUJOURS LA MEME SIGNATURE.** La
+premiere version du banc chauffait un nombre FIXE de secondes, et le releve a
+rendu **exactement 552 chunks a 250 m comme a 400** -- alors qu'a 400 m il en
+faut plus de deux mille. On mesurait un transitoire identique des deux cotes, et
+l'A/B ne comparait rien. **Deux mesures identiques au chiffre pres pour deux
+reglages differents : ce depot a maintenant rencontre ce signe quatre fois.** Le
+banc attend desormais la STABILISATION reelle -- compte de chunks fige et aucun
+travail en vol -- et DIT quand il mesure un transitoire au lieu de le taire.
+
+**LIMITE DE CE RELEVE, dite franchement** : seul le point a 250 m est vraiment
+stabilise. Les trois autres sont des instantanes a 180 s, et les chiffres de
+trame qu'ils portent incluent le maillage en cours, donc ils SURESTIMENT le
+cout d'un monde pose. L'extrapolation ci-dessus part du point propre, pas
+d'eux.
+
 ### Le Python est parti : tout est en C++ (19 septembre 2026)
 
 Demande du proprietaire : « je souhaite vraiment tout passer en C++ de maniere

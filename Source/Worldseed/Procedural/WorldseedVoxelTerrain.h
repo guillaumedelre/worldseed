@@ -309,6 +309,14 @@ public:
 
 	/** Les fonds de canyon, rebatis au chargement comme les tables. */
 	const TArray<FWorldseedPlateauSite>& MondeCanyons() const { return Canyons; }
+
+	/** Rayon de chargement effectif, en metres. Lu par le banc. */
+	float RayonDeChargementM() const { return LoadRadiusM; }
+
+	/** Chunks suivis, et travaux en vol. Le banc s en sert pour savoir
+	 *  quand le streaming est STABILISE -- un compte fige et aucun travail. */
+	int32 NombreDeChunks() const { return Chunks.Num(); }
+	int32 TravauxEnVol() const;
 	const FWorldseedDensity& MondeChamp() const { return Density; }
 
 	/** Vrai quand le pion a ete rendu a la gravite sur un sol solide. */
