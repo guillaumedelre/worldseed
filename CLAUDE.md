@@ -5170,6 +5170,89 @@ trame qu'ils portent incluent le maillage en cours, donc ils SURESTIMENT le
 cout d'un monde pose. L'extrapolation ci-dessus part du point propre, pas
 d'eux.
 
+### Le rayon de vue : j'avais conclu l'inverse, et mon banc etait faux (19 septembre 2026)
+
+**J'AVAIS ECRIT : « elargir la distance de vue est impossible avec un mailleur a
+resolution uniforme », le debit de streaming etant le mur, et il fallait les
+anneaux de resolution. C'ETAIT FAUX.** A 800 m de rayon le monde se remplit en
+soixante-deux secondes, tient 147 images par seconde avec dix millions de
+triangles, et ne fait AUCUN a-coup. Le chantier des anneaux n'est pas necessaire
+pour la distance de vue.
+
+**LA CAUSE ETAIT UN DEFAUT DE MON PROPRE BANC.** L'option `-WorldseedRayon=`
+ne forcait que `LoadRadiusM`. `UnloadRadiusM` restait fige a 350 m : au-dela,
+les chunks etaient batis puis DETRUITS aussitot, et le monde tournait en boucle
+sur le meme millier. Toutes les mesures a 400, 600 et 800 m portaient donc sur
+une configuration cassee.
+
+**LE SIGNE ETAIT LA, ET C'EST LA CINQUIEME FOIS DANS CE DEPOT.** Les trois
+rayons rendaient EXACTEMENT 1679 chunks et 1 819 660 triangles. Un chiffre
+identique au chiffre pres pour trois reglages differents n'est jamais un hasard
+-- c'est un plafond cache. Le depot l'avait deja rencontre sur l'A/B des
+grottes, sur le seuil des diaclases, sur le pont des arches et sur la premiere
+version de ce banc. **Je l'ai vu, je l'ai meme ECRIT dans le banc, et je ne l'ai
+pas applique a mon propre harnais.**
+
+**MESURE, banc repare, machine au repos, monde 4096x2048 :**
+
+| rayon | chunks | remplissage | trame | p95 | pire | memoire |
+|---|---|---|---|---|---|---|
+| 250 m | 809 | 9 s | 6,42 ms | 7,50 | 8,93 | 6,50 Go |
+| 400 m | 2 167 | 18 s | 6,38 ms | 6,97 | 8,23 | 6,94 Go |
+| 600 m | 5 085 | 36 s | 6,61 ms | 7,27 | 9,15 | 7,63 Go |
+| 800 m | 9 242 | 62 s | 6,78 ms | 7,36 | 8,31 | 8,61 Go |
+
+**LE COUT EST LA MEMOIRE, PAS LES IMAGES.** Quadrupler le rayon coute 0,36 ms
+de trame et 2,1 Go. La pire trame ne bouge pas : il n'y a pas d'a-coup.
+**Retenu : 600 m**, ou une mesa entiere tient dans la vue en voxel.
+
+### Le debit de streaming etait un REGLAGE, pas une limite (19 septembre 2026)
+
+Verrou 3 des quatre. Deux notes du depot etaient perimees, et il a fallu les
+verifier plutot que les croire :
+
+- **`bUseAsyncCooking` est a `true` depuis longtemps.** La note qui affirme
+  qu'il est « a false partout » ne vaut plus.
+- **`RealtimeMeshComponent` n'est pas installe** -- seul VibeUE est dans
+  `Plugins/`. L'arbitrage A2 le prevoyait ; ce serait une dependance a ajouter,
+  pas un reglage. Il n'a PAS ete utilise.
+
+**CE QUI BRIDAIT REELLEMENT.** `UploadsPerPass` valait 6, et `UpdateChunks`
+tourne toutes les `UpdatePeriod` : six televersements toutes les 0,2 s
+plafonnent le remplissage a TRENTE chunks par seconde, par construction. Et
+c'est exactement le vingt-six par seconde observe a 250 m -- le plafond etait
+atteint.
+
+**IL AVAIT ETE POSE QUAND LE TELEVERSEMENT ETAIT SUPPOSE CHER. IL NE L'EST
+PAS**, et l'instrumentation l'a tranche : **0,21 ms par chunk, 1,17 au pire,
+0,2 seconde CUMULEE pour neuf cents chunks**. Le maillage est deja sur le pool
+de fils (6,5 ms par chunk, vingt-quatre en parallele sur trente-deux coeurs) et
+la cuisson est asynchrone. Il ne restait donc rien de cher sur le fil de jeu.
+
+Porte a 16 televersements toutes les 0,1 s : le remplissage a 250 m passe de
+**31 a 9 secondes**, sans que la trame bouge ni que la pire trame se degrade.
+
+**LA LECON : avant de remplacer un composant de rendu, mesurer ce qui coute.**
+Le verrou 3 s'annoncait comme un chantier -- changer le composant de tout le
+terrain -- et il s'est resolu en deux constantes, parce que le cout suppose
+n'etait pas le cout reel.
+
+### Le verrou 4 n'est peut-etre pas necessaire (19 septembre 2026)
+
+Les anneaux de resolution decroissante etaient justifies par une seule chose :
+un rayon de vue plus grand serait autrement inabordable. La mesure ci-dessus dit
+le contraire -- 800 m tient a 147 images par seconde sans anneaux.
+
+**CE POUR QUOI ILS RESTERAIENT UTILES**, et il faut le dire pour ne pas fermer
+la porte : la MEMOIRE, qui est desormais le seul cout qui monte (2,1 Go pour
+passer de 250 a 800 m), et le nombre de COMPOSANTS -- un par chunk, donc neuf
+mille deux cents a 800 m. Aucun des deux n'est un probleme sur cette machine ;
+les deux le deviendraient sur une machine modeste, ou si le rayon devait encore
+doubler.
+
+**Ce chantier est donc REPORTE, pas abandonne, et pour une raison mesuree et non
+par manque de temps.**
+
 ### Le Python est parti : tout est en C++ (19 septembre 2026)
 
 Demande du proprietaire : « je souhaite vraiment tout passer en C++ de maniere

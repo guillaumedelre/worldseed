@@ -116,10 +116,33 @@ public:
 		meta = (ClampMin = "0.0"))
 	float PlayerRescueMarginM = 20.0f;
 
-	/** Rayon de construction autour du joueur, en metres. */
+	/**
+	 * Rayon de construction autour du joueur, en metres.
+	 *
+	 * PORTE DE 250 A 600 LE 19 SEPTEMBRE, SUR MESURE ET CONTRE MA PROPRE
+	 * CONCLUSION. J'avais ecrit qu'elargir la distance de vue etait
+	 * « impossible avec un mailleur a resolution uniforme », le debit de
+	 * streaming etant le mur. C'ETAIT FAUX, et la cause etait un defaut de mon
+	 * banc : il ne forcait que ce rayon-ci, pas `UnloadRadiusM` fige a 350, si
+	 * bien que les chunks lointains etaient batis puis DETRUITS aussitot. Le
+	 * monde tournait en boucle sur le meme millier de chunks.
+	 *
+	 * MESURE UNE FOIS LE BANC REPARE, machine au repos, monde 4096x2048 :
+	 *
+	 *   rayon   chunks   remplissage   trame        pire    memoire
+	 *   250 m      809       9 s       6,42 ms      8,93    6,50 Go
+	 *   400 m    2 167      18 s       6,38 ms      8,23    6,94 Go
+	 *   600 m    5 085      36 s       6,61 ms      9,15    7,63 Go
+	 *   800 m    9 242      62 s       6,78 ms      8,31    8,61 Go
+	 *
+	 * A 800 m : dix millions de triangles, 147 images par seconde, AUCUN
+	 * a-coup -- la pire trame reste a 8 ms. Le cout est la MEMOIRE, pas les
+	 * images. 600 m est retenu comme compromis : une mesa entiere tient dans
+	 * la vue, le remplissage reste sous la minute, et l'on garde de la marge.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "32.0"))
-	float LoadRadiusM = 250.0f;
+	float LoadRadiusM = 600.0f;
 
 	/**
 	 * Rayon de destruction, volontairement plus grand que celui de construction.
@@ -128,7 +151,7 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "32.0"))
-	float UnloadRadiusM = 350.0f;
+	float UnloadRadiusM = 840.0f;
 
 	// IL Y AVAIT ICI UN RAYON DE COLLISION, plus court que le rayon de
 	// chargement, au motif que cuire une collision coute plus cher que mailler.
@@ -150,14 +173,27 @@ public:
 	 * LE MAILLAGE EST HORS DU FIL DE JEU, PAS LE TELEVERSEMENT : creer une
 	 * section de ProceduralMesh touche au moteur de rendu et doit donc rester
 	 * sur le fil de jeu. C'est la seule part du cout qui se paie en images.
+	 *
+	 * PORTE DE 6 A 16 LE 19 SEPTEMBRE, SUR MESURE. Six televersements toutes
+	 * les 0,2 s plafonnaient le remplissage a TRENTE chunks par seconde, par
+	 * construction -- et c'est exactement le 26 par seconde observe a 250 m,
+	 * donc le plafond etait atteint. Le debit n'etait pas une limite physique,
+	 * c'etait un REGLAGE, pose a une epoque ou le televersement etait suppose
+	 * cher.
+	 *
+	 * IL NE L'EST PAS : instrumente, il coute 0,21 ms par chunk et 1,17 au
+	 * pire, soit 0,2 s CUMULEES pour neuf cents chunks. Le maillage, lui, est
+	 * deja sur le pool de fils, et la cuisson de collision est asynchrone
+	 * depuis longtemps -- la note du depot qui affirme le contraire est
+	 * perimee.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "1", ClampMax = "64"))
-	int32 UploadsPerPass = 6;
+	int32 UploadsPerPass = 16;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "0.05"))
-	float UpdatePeriod = 0.2f;
+	float UpdatePeriod = 0.1f;
 
 	/** Materiau des chunks. Il lit la couleur de sommet telle quelle. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
@@ -422,6 +458,21 @@ private:
 	int32 TotalTriangles = 0;
 	double TotalMeshMs = 0.0;
 	double WorstMeshMs = 0.0;
+
+	/**
+	 * Temps passe sur le FIL DE JEU a televerser les chunks.
+	 *
+	 * LE MAILLAGE EST DEJA HORS DU FIL DE JEU, et la cuisson de collision
+	 * aussi (bUseAsyncCooking). Ce qui reste sur le fil de jeu est la
+	 * creation du COMPOSANT -- un par chunk -- et son enregistrement, plus
+	 * la copie du maillage. C est donc le seul candidat restant pour
+	 * expliquer le debit, et il faut le MESURER avant de le supposer : le
+	 * depot a une note perimee affirmant que la cuisson est synchrone, ce
+	 * qui n est plus vrai depuis longtemps.
+	 */
+	double TotalUploadMs = 0.0;
+	double WorstUploadMs = 0.0;
+	int32 UploadCount = 0;
 	double FirstFillSeconds = 0.0;
 	double StartSeconds = 0.0;
 };

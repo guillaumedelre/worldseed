@@ -190,8 +190,13 @@ int32 UWorldseedPhotographe::AjouterLesTables(int32 Combien)
 		// une plaine. C'est ce qui a fait ramener les tables a l'echelle d'une
 		// BUTTE -- la forme doit tenir dans la distance de vue, sinon elle
 		// existe dans la donnee et pas pour le joueur.
+		// LA FENETRE S'EST OUVERTE. Tant que le rayon valait 250 m, on ne
+		// pouvait cadrer qu'une PAROI : au-dela c'etait le sol de fond. A
+		// 600 m, une mesa entiere tient dans la vue en voxel, et c'est la
+		// SILHOUETTE qui fait lire la forme -- un trait horizontal pose sur
+		// un socle.
 		E.DepuisM = FVector2D(0.82, 0.57);
-		E.DistanceM = 350.0f;
+		E.DistanceM = 520.0f;
 
 		// Au PIED de la paroi, le regard vers le haut : c'est la seule position
 		// d'ou une butte se lit -- un mur vertical surmonte d'un trait

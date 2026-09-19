@@ -117,10 +117,30 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRayon="), Rayon)
 			&& Rayon > 32.0f)
 		{
+			// LE RAYON DE DECHARGEMENT SUIT, ET C'EST OBLIGATOIRE.
+			//
+			// DEFAUT DE BANC PAYE COMPTANT. La premiere version ne forcait que
+			// LoadRadiusM : au-dela de `UnloadRadiusM`, fige a 350 m, les
+			// chunks etaient batis puis DETRUITS aussitot. A 400 comme a 600 m
+			// le monde tournait donc en boucle sur le meme millier de chunks,
+			// et le releve rendait EXACTEMENT 1679 des deux cotes -- la
+			// cinquieme fois dans ce depot qu'un chiffre identique au chiffre
+			// pres trahit un plafond cache. Toutes les conclusions tirees de
+			// ces mesures, dont « le debit est le mur », portaient sur une
+			// configuration cassee.
+			//
+			// L'hysteresis d'origine -- 350 pour 250, soit 1,4 fois -- est
+			// conservee : sans elle, un pas en avant et un pas en arriere sur
+			// la frontiere feraient construire et detruire le meme chunk en
+			// boucle.
+			const float Hysteresis = (LoadRadiusM > 0.0f)
+				? (UnloadRadiusM / LoadRadiusM) : 1.4f;
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : rayon de chargement force a %.0f m ")
-				TEXT("(defaut %.0f)"), Rayon, LoadRadiusM);
+				TEXT("[Worldseed] voxel : rayons forces a %.0f m de chargement ")
+				TEXT("et %.0f de dechargement (defauts %.0f / %.0f)"),
+				Rayon, Rayon * Hysteresis, LoadRadiusM, UnloadRadiusM);
 			LoadRadiusM = Rayon;
+			UnloadRadiusM = Rayon * Hysteresis;
 		}
 	}
 
@@ -733,6 +753,8 @@ void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
 
 	PaintVertices(Job->Mesh);
 
+	const double DebutUpload = FPlatformTime::Seconds();
+
 	if (!State.Mesh)
 	{
 		const FName Nom(*FString::Printf(TEXT("Voxel_%d_%d_%d"),
@@ -772,6 +794,11 @@ void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
 		Job->Mesh.Colours, TArray<FProcMeshTangent>(), true);
 
 	State.bHasCollision = true;
+
+	const double UploadMs = (FPlatformTime::Seconds() - DebutUpload) * 1000.0;
+	TotalUploadMs += UploadMs;
+	WorstUploadMs = FMath::Max(WorstUploadMs, UploadMs);
+	++UploadCount;
 
 	++BuiltChunks;
 	TotalTriangles += Job->Mesh.TriangleCount();
@@ -1053,10 +1080,13 @@ FString AWorldseedVoxelTerrain::ReportState() const
 
 	const FString Resume = FString::Printf(
 		TEXT("%d chunks suivis (%d mailles, %d vides, %d en vol, %d avec collision)  |  ")
-		TEXT("%d triangles  |  %.2f ms/chunk en moyenne, %.2f au pire  |  ")
-		TEXT("premier remplissage %.1f s"),
+		TEXT("%d triangles  |  maillage %.2f ms/chunk, %.2f au pire  |  ")
+		TEXT("TELEVERSEMENT sur le fil de jeu %.2f ms/chunk, %.2f au pire, ")
+		TEXT("%.1f s cumulees  |  premier remplissage %.1f s"),
 		Chunks.Num(), BuiltChunks, EmptyChunks, EnVol, AvecCollision,
-		TotalTriangles, Moyenne, WorstMeshMs, FirstFillSeconds);
+		TotalTriangles, Moyenne, WorstMeshMs,
+		(UploadCount > 0) ? TotalUploadMs / UploadCount : 0.0, WorstUploadMs,
+		TotalUploadMs / 1000.0, FirstFillSeconds);
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] voxel : %s"), *Resume);
 	return Resume;
