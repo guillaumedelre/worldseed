@@ -5552,3 +5552,94 @@ change a l'ecran.
    reglage que personne ne lit encore ;
 3. la mesure au banc, puis **des photos des jointures** -- une forme qui n'a pas
    ete vue n'est pas validee, et c'est une regle du depot.
+
+### Les anneaux de resolution : 2400 m de vue pour un quart des chunks (20 septembre 2026)
+
+Fin du verrou 4. Le mailleur savait deja raccorder deux resolutions sans
+fissure ; il manquait le diffuseur qui les DEMANDE.
+
+**LES GRILLES DES NIVEAUX SONT EMBOITEES, ET C'EST CE QUI REND L'AFFAIRE SURE.**
+Un chunk de niveau L fait `ChunkSideM * 2^L` de cote, porte toujours le MEME
+nombre de cellules -- seul le voxel double -- et se decoupe exactement en huit
+chunks de niveau L-1 alignes sur la meme origine. La diffusion descend alors
+depuis le niveau le plus grossier : un noeud est soit maille, soit remplace par
+ses huit enfants, **jamais les deux**. Ni recouvrement, ni trou, quels que
+soient les rayons.
+
+**LE PIEGE QUE CETTE DESCENTE EVITE.** Le reflexe est de decider le niveau d'un
+chunk par sa distance a l'origine. **C'est faux, et de deux facons** : deux
+chunks de niveaux differents n'ont pas le meme centre, donc un critere pose sur
+la seule distance peut en emettre DEUX pour le meme volume -- geometrie dessinee
+en double -- ou AUCUN -- trou. La descente recursive n'a pas ce defaut par
+construction, et elle ne coute rien de plus.
+
+**MESURE, graine 20260909, monde 4096x2048, machine au repos :**
+
+| configuration | rayon | chunks | par niveau | remplissage | trame | p95 | memoire |
+|---|---|---|---|---|---|---|---|
+| uniforme (temoin) | 600 m | 5 085 | -- | 36 s | 6,43 | 7,06 | 7,44 Go |
+| uniforme (documente) | 800 m | 9 242 | -- | 62 s | 6,78 | 7,36 | 8,61 Go |
+| un anneau | 600 m | 1 439 | 794/645 | 13 s | 6,22 | 6,84 | 6,89 Go |
+| deux anneaux | 1200 m | 2 168 | 1170/567/431 | 18 s | 6,29 | 6,81 | 6,88 Go |
+| **trois anneaux** | **2400 m** | **2 436** | 1170/567/427/272 | 20 s | 6,36 | 6,93 | 7,27 Go |
+
+**Quatre fois la distance de vue, un quart des chunks, moins de memoire**, et la
+trame ne bouge pas. Le compte cesse de croitre en R au carre, ce que le chantier
+promettait depuis longtemps sans l'avoir jamais chiffre.
+
+**LA PROPRIETE DE SURETE SE VERIFIE, ELLE NE SE SUPPOSE PAS.** A `NiveauMax = 0`
+la diffusion rend EXACTEMENT les 5 085 chunks deja mesures a 600 m, sur le meme
+binaire -- les anneaux se pilotent par `-WorldseedNiveaux=` et `-WorldseedAnneau0=`,
+parce qu'un A/B dont les deux moities demandent une recompilation n'en est pas
+un. Ils arrivent donc ETEINTS et ne peuvent rien casser tant qu'on ne les arme
+pas.
+
+**LE MASQUE SE RECALCULE, PARCE QU'IL BOUGE.** Les faces de transition d'un
+chunk dependent du niveau de ses VOISINS, donc de la position du joueur : un
+chunk garde son niveau et voit son masque changer. On le retient dans l'etat et
+l'on remaille quand il differe. Sans cela il rouvrirait exactement la fissure que
+la cellule de transition ferme, **et rien ne le signalerait**.
+
+**UNE PREMIERE EXPLICATION FAUSSE, ET LA REGLE QUI A SERVI.** A 2400 m le p95
+montait a 14 ms pour une moyenne de 6,6 -- un pic periodique, a la cadence exacte
+de la passe. J'ai accuse mon balayage des masques et je l'ai borne a 512 feuilles
+par passe : **le chiffre n'a pas bouge d'un dixieme** (13,81 contre 13,84). Le
+depot interdit d'enchainer une deuxieme hypothese a l'aveugle, et c'est ce qui a
+evite de regler quatre fois le mauvais bouton.
+
+Le controle qui a innocente le niveau 3 au passage : deux anneaux a 2400 m
+(3 934 feuilles, deux niveaux) donnent le MEME pic que trois anneaux (2 436
+feuilles, trois niveaux). Ce n'est donc ni le nombre de chunks, ni la profondeur.
+
+**ALORS J'AI CHRONOMETRE LA PASSE AU LIEU DE LA SUPPOSER** : 13,65 ms a 2400 m
+contre 6,17 a 1200. Le pic etait bien la, et la cause est `SurfaceRangeM`, qui
+echantillonne au pas de la grille -- **un noeud de 256 m demande 289 lectures**,
+et la descente la rappelle pour le noeud que la boucle de tete vient
+d'interroger. Or **le relief 2D ne change pas en cours de partie** : ces bornes
+sont une constante du monde, pas une grandeur a recalculer dix fois par seconde.
+Mises en cache par colonne et par niveau :
+
+    passe de diffusion  13,65 -> 1,83 ms     p95  13,77 -> 6,93 ms
+                                             pire 16,71 -> 8,09 ms
+
+Le balayage borne est garde : il ne reglait pas ce pic-la, mais il reste juste --
+il etale un cout qui suivrait autrement le produit feuilles x niveaux.
+
+**ET LES JOINTURES ONT ETE REGARDEES.** Tournee photo avec deux anneaux : terrain
+continu jusqu'a l'horizon, aucune fissure, aucun ciel au travers, y compris sur
+une falaise cotiere ou une jointure se verrait le plus.
+
+**UN DEFAUT PREEXISTANT VU AU PASSAGE, ET LE TEMOIN QUI L'ATTRIBUE.** Les vues
+rapprochees montrent des TROUS sombres dans le sol et un aspect cotele tres
+marque. La meme tournee **anneaux eteints** montre les memes trous aux memes
+endroits : ce n'est donc pas les anneaux. Une partie sont des ouvertures de
+cavites, qui sont voulues ; le reste est a reprendre a part. **Sans le temoin
+j'aurais impute a ce chantier un defaut qui lui est anterieur.**
+
+**RESTE A FAIRE :**
+1. **fixer les rayons**, arbitrage que le proprietaire a voulu prendre APRES
+   mesure -- le tableau ci-dessus est fait pour cela ;
+2. `NiveauMax`, `RayonAnneau0M` et `LargeurTransition` devront passer dans
+   `world_rules.json`, ou vivent les seuils, une fois les valeurs arretees ;
+3. le rayon de dechargement suit le rayon de chargement par une hysteresis
+   fixe : a trois anneaux il monte a 3360 m, ce qui n'a pas ete mesure a part.
