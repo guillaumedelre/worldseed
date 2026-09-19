@@ -4167,3 +4167,47 @@ terrain qui en fait 99, on se retrouve DANS la colline -- et l'image qu'on
 obtient alors (lambeaux de terrain sur fond d'ocean, decor masque) ressemble
 trait pour trait a un defaut de generation. **Toujours sonder avant de poser**,
 et lire le mode de deplacement avant d'interpreter une altitude.
+
+### Trois formes d'ouverture, et elles ne se valent pas (19 septembre 2026)
+
+Deuxieme des trois formes arbitrees. L'aven etait fabrique DANS la boucle des
+entrees, donc plafonne par leur budget -- six pour tout le monde quoi qu'il
+arrive -- et il fallait en plus qu'aucune falaise ne l'ait devance. Mesure
+avant : **UN seul aven dans le monde**.
+
+**LA DISTINCTION QUI STRUCTURE DESORMAIS LA PASSE.** Deux formes se FORMENT
+toutes seules, par geologie, et ne doivent rien devoir a un budget :
+
+- **la doline** la ou le plafond est MINCE : il cede, la surface s'affaisse ;
+- **l'aven** la ou le plafond est EPAIS mais le terrain PLAT au-dessus : l'eau
+  s'y infiltre et dissout un puits.
+
+Les deux criteres sont complementaires et se partagent les chambres sans se
+recouvrir -- une chambre dont le plafond a cede n'a pas eu le temps de se
+dissoudre. La troisieme forme, **la bouche de falaise, est la GARANTIE** : elle
+existe pour qu'aucun reseau ne reste mure, et son compte tient compte de ce que
+les deux autres ont deja ouvert.
+
+**MESURE, graine 20260909** (25 chambres, 4 reseaux) :
+
+    avant   6 bouches de falaise   1 aven    0 doline
+    apres   1 bouche de falaise    9 avens   4 dolines
+
+**UNE SEULE FONCTION CREUSE LES DEUX PUITS** (`CreuserPuits`) : doline et aven
+sont le meme objet -- une chaine de capsules le long d'un axe vertical ondulant
+-- et ne different que par le SENS de la variation de rayon. La doline s'evase
+vers le HAUT (entonnoir d'effondrement), l'aven vers le BAS (cloche de
+dissolution). Les ecrire deux fois aurait fait diverger deux moities qui
+doivent rester identiques.
+
+**LA GARANTIE SE VERIFIE, ELLE NE SE SUPPOSE PAS.** La bouche de falaise peut
+ECHOUER -- aucun escarpement assez raide dans le voisinage -- et l'echec est
+silencieux. Un compte des reseaux sans ouverture est journalise a chaque
+generation : `les 4 reseaux ont au moins une ouverture`. Sans lui, on croirait
+la garantie tenue parce que le code a tourne.
+
+**CONSEQUENCE A ARBITRER, ET ELLE EST DE JOUABILITE** : la bouche de falaise a
+quasiment disparu (6 -> 1) parce que le plancher de densite est entierement
+consomme par ce qui s'ouvre tout seul. Or c'est la SEULE des trois ou l'on
+ENTRE en marchant ; dans les deux autres, on tombe. Le monde est desormais un
+monde de puits.

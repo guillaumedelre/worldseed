@@ -504,6 +504,54 @@ namespace
 		for (const FIntVector& K : Cellules) { Chemin.Add(Ctx.CentreDe(K)); }
 		return Chemin;
 	}
+
+	/**
+	 * Creuse un puits vertical a rayon variable, de Haut vers Bas.
+	 *
+	 * UNE SEULE FONCTION POUR LA DOLINE ET POUR L'AVEN, et c'est voulu : les
+	 * deux sont le meme objet -- une chaine de capsules le long d'un axe
+	 * vertical ondulant -- et ne different que par le SENS de la variation de
+	 * rayon. La doline s'evase vers le haut (entonnoir d'effondrement), l'aven
+	 * vers le bas (cloche de dissolution). Les ecrire deux fois aurait fait
+	 * diverger deux moities qui doivent rester identiques.
+	 *
+	 * L'AXE ONDULE : ni un effondrement ni une dissolution ne suivent un trait
+	 * a la regle. Le bruit porte sur l'AXE et non sur le rayon, ce qui deforme
+	 * le contour sans creuser plus profond.
+	 */
+	void CreuserPuits(FWorldseedCaveNetwork& Out, const FVector& CentreM,
+		double Haut, double Bas, double RayonHaut, double RayonBas,
+		double Ondulation, double PasM, int32 Seed)
+	{
+		const int32 Tranches = FMath::Max(3, FMath::CeilToInt((Haut - Bas) / PasM));
+		FVector Precedent = FVector::ZeroVector;
+
+		for (int32 T = 0; T <= Tranches; ++T)
+		{
+			const double F = static_cast<double>(T) / Tranches;
+			const double Z = FMath::Lerp(Haut, Bas, F);
+
+			const double Ox = Ondulation * WorldseedPerlin::Perlin3D(
+				static_cast<float>(CentreM.X * 0.04),
+				static_cast<float>(Z * 0.06), 0.0f, Seed);
+			const double Oy = Ondulation * WorldseedPerlin::Perlin3D(
+				0.0f, static_cast<float>(Z * 0.06),
+				static_cast<float>(CentreM.Y * 0.04), Seed + 61);
+
+			const FVector Point(CentreM.X + Ox, CentreM.Y + Oy, Z);
+			if (T > 0)
+			{
+				FWorldseedCaveSegment S;
+				S.AM = Precedent;
+				S.BM = Point;
+				S.RadiusAM = static_cast<float>(FMath::Lerp(RayonHaut, RayonBas,
+					(T - 1.0) / Tranches));
+				S.RadiusBM = static_cast<float>(FMath::Lerp(RayonHaut, RayonBas, F));
+				Out.Segments.Add(S);
+			}
+			Precedent = Point;
+		}
+	}
 }
 
 void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
@@ -995,21 +1043,172 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		ParComposante.FindOrAdd(Trouver(I)).Add(I);
 	}
 
+	// --- CE QUE LES TROIS PASSES SE PARTAGENT --------------------------------
+	//
+	// TROIS FORMES D'OUVERTURE, ET ELLES NE SE VALENT PAS. Deux se FORMENT
+	// toutes seules, par geologie : la doline la ou le plafond cede, l'aven la
+	// ou l'eau s'infiltre a travers un plateau. La troisieme, la bouche de
+	// falaise, est la GARANTIE : elle existe pour qu'aucun reseau ne reste
+	// mure. Les deux premieres ne doivent donc rien devoir a un budget, et la
+	// troisieme doit tenir compte de ce qu'elles ont deja ouvert.
+	TArray<float> DY;
+	TArray<float> DX;
+	WorldseedGrid::Gradient(ElevationM, NX, NY, MetresParPixel, DY, DX);
+
+	// LES OUVERTURES DEJA POSEES, pour qu'une paroi ne serve qu'une fois, et
+	// pour qu'un aven ne perce pas le bord d'une doline.
+	TArray<FVector2D> BouchesPosees;
+	TArray<bool> ChambreOuverte;
+	ChambreOuverte.Init(false, N);
+	TSet<int32> ComposantesOuvertes;
+
+	auto TropPres = [&BouchesPosees, &Rules](double X, double Y)
+	{
+		for (const FVector2D& B : BouchesPosees)
+		{
+			if (FVector2D::Distance(FVector2D(X, Y), B) < Rules.EntranceSpacingM)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
 	int32 Entrees = 0;
 	int32 Gouffres = 0;
 	const int32 Souhaitees = (Rules.EntrancePerChambers > 0.0f)
 		? FMath::Max(1, FMath::RoundToInt(N / Rules.EntrancePerChambers)) : 0;
 	// AU MOINS UNE PAR COMPOSANTE : le nombre demande est un PLANCHER de
 	// densite, pas un plafond d'accessibilite.
+
+	// --- 5 bis. LES DOLINES D'EFFONDREMENT -----------------------------------
+	//
+	// LA SEULE FORME KARSTIQUE QUI SE VOIE DE LOIN. La bouche s'ouvre dans un
+	// versant, l'aven perce un plateau : il faut les avoir trouves pour les
+	// voir. Une doline EST un accident du paysage.
+	//
+	// ELLE NE SE POSE PAS, ELLE SE DEDUIT. Le plafond d'une salle porte ce qui
+	// le surmonte ; sous une certaine epaisseur il cede, la surface s'affaisse
+	// en entonnoir jusqu'au vide, et les parois s'eboulent jusqu'a leur angle
+	// de repos -- d'ou une ouverture plus LARGE que la salle. Le critere est
+	// `profondeur - rayon`, et rien d'autre.
+	int32 Dolines = 0;
+	if (Rules.DolineRoofMaxM > 0.0f && Rules.DolineFlareRatio > 1.0f)
+	{
+		for (int32 Ic = 0; Ic < Out.Chambers.Num(); ++Ic)
+		{
+			const FWorldseedCaveChamber& Ch = Out.Chambers[Ic];
+			const double Sol = Ctx.SurfaceA(Ch.CentreM.X, Ch.CentreM.Y);
+			const double Sommet = Ch.CentreM.Z + Ch.RadiusM;
+			const double Plafond = Sol - Sommet;
+
+			if (Plafond <= 0.0 || Plafond > Rules.DolineRoofMaxM) { continue; }
+			if (TropPres(Ch.CentreM.X, Ch.CentreM.Y)) { continue; }
+
+			const double Haut = Sol + 2.0;
+			const double Bas = Sommet - Ch.RadiusM * 0.3;
+			const double RayonHaut = Ch.RadiusM * Rules.DolineFlareRatio;
+
+			CreuserPuits(Out, Ch.CentreM, Haut, Bas, RayonHaut, Ch.RadiusM,
+				Rules.DolineRimNoiseM, 3.0, Seed + 5101);
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] grottes : DOLINE a (%.0f, %.0f) m, altitude %.0f m, ")
+				TEXT("plafond %.0f m, ouverture %.0f m de large, %.0f m de creux"),
+				Ch.CentreM.X, Ch.CentreM.Y, Sol, Plafond, RayonHaut * 2.0, Sol - Bas);
+
+			BouchesPosees.Add(FVector2D(Ch.CentreM.X, Ch.CentreM.Y));
+			ChambreOuverte[Ic] = true;
+			ComposantesOuvertes.Add(Trouver(Ic));
+			++Dolines;
+		}
+	}
+
+	// --- 5 ter. LES GOUFFRES, OU AVENS ---------------------------------------
+	//
+	// LA DEUXIEME FORME QUI SE FORME TOUTE SEULE, et elle est complementaire de
+	// la doline : plafond MINCE, il cede et fait une cuvette ; plafond EPAIS
+	// mais plateau au-dessus, l'eau s'y infiltre pendant des millenaires et
+	// creuse un puits. Une chambre deja ouverte par une doline n'a donc pas
+	// d'aven -- le plafond a cede, il n'a pas eu le temps de se dissoudre.
+	//
+	// ELLE EST SORTIE DE LA BOUCLE DES ENTREES, ET C'EST TOUT L'OBJET DE CETTE
+	// PASSE. L'aven y etait fabrique, donc plafonne par le budget des entrees :
+	// six pour tout le monde quoi qu'il arrive, et il fallait en plus qu'aucune
+	// falaise ne l'ait devance. Mesure avant : UN seul aven dans le monde. Un
+	// aven ne se creuse pas parce qu'il manquait un acces, il se creuse parce
+	// que le terrain au-dessus est plat.
+	if (Rules.ShaftSlopeMaxDeg > 0.0f)
+	{
+		const float PentePlateau =
+			FMath::Tan(FMath::DegreesToRadians(Rules.ShaftSlopeMaxDeg));
+
+		for (int32 Ic = 0; Ic < Out.Chambers.Num(); ++Ic)
+		{
+			if (ChambreOuverte[Ic]) { continue; }
+
+			const FWorldseedCaveChamber& Ch = Out.Chambers[Ic];
+			const int32 Col = FMath::Clamp(
+				FMath::FloorToInt((Ch.CentreM.X / Geometry.WidthM() + 0.5) * NX), 0, NX - 1);
+			const int32 Row = FMath::Clamp(
+				FMath::FloorToInt((Ch.CentreM.Y / Geometry.HeightM + 0.5) * NY), 0, NY - 1);
+			const int32 Cell = Row * NX + Col;
+
+			// LE CRITERE EST A L'APLOMB, PAS ALENTOUR. Premiere version fautive :
+			// je cherchais d'abord une falaise dans un rayon de cent
+			// quatre-vingts metres et ne posais un aven que si je n'en trouvais
+			// AUCUNE. Un tel voisinage en contient presque toujours une.
+			const float Pente = FMath::Sqrt(
+				DX[Cell] * DX[Cell] + DY[Cell] * DY[Cell]);
+			if (Pente > PentePlateau) { continue; }
+
+			const double Sol = Ctx.SurfaceA(Ch.CentreM.X, Ch.CentreM.Y);
+			const double Haut = Sol + Rules.ShaftTopRadiusM * 0.5;
+			const double Bas = Ch.CentreM.Z + Ch.RadiusM * 0.5;
+			if (Haut - Bas < 8.0) { continue; }
+			if (TropPres(Ch.CentreM.X, Ch.CentreM.Y)) { continue; }
+
+			// LE PROFIL EN CLOCHE : etroit en surface, evase dessous. C'est la
+			// forme meme de l'aven -- la dissolution a le moins travaille en
+			// haut, et l'eau a stagne en bas. Un puits cylindrique se lit tout
+			// de suite comme un forage. C'est exactement l'inverse de
+			// l'entonnoir de la doline, et les deux se distinguent d'un coup
+			// d'oeil pour cette seule raison.
+			CreuserPuits(Out, Ch.CentreM, Haut, Bas,
+				Rules.ShaftTopRadiusM, Rules.ShaftBottomRadiusM,
+				Rules.ShaftWanderM, 4.0, Seed + 3313);
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] grottes : GOUFFRE a (%.0f, %.0f) m, altitude %.0f m, ")
+				TEXT("%.0f m de haut, pente du plateau %.0f deg"),
+				Ch.CentreM.X, Ch.CentreM.Y, Sol, Haut - Bas,
+				FMath::RadiansToDegrees(FMath::Atan(Pente)));
+
+			BouchesPosees.Add(FVector2D(Ch.CentreM.X, Ch.CentreM.Y));
+			ChambreOuverte[Ic] = true;
+			ComposantesOuvertes.Add(Trouver(Ic));
+			++Gouffres;
+		}
+	}
+
+	// --- 5 quater. LES BOUCHES DE FALAISE, QUI SONT LA GARANTIE --------------
+	//
+	// CE QUI PRECEDE S'EST FORME TOUT SEUL, ET NE GARANTIT RIEN. Un reseau
+	// entier peut n'avoir ni plafond mince ni plateau : il resterait mure. La
+	// bouche de falaise existe pour cela, et son compte tient desormais compte
+	// des ouvertures deja faites -- le nombre demande est un PLANCHER de
+	// densite, pas un quota a remplir coute que coute.
+	int32 SansOuverture = 0;
+	for (const TPair<int32, TArray<int32>>& Paire : ParComposante)
+	{
+		if (!ComposantesOuvertes.Contains(Paire.Key)) { ++SansOuverture; }
+	}
+
 	const int32 EntreesVoulues = (Souhaitees > 0)
-		? FMath::Max(Souhaitees, ParComposante.Num()) : 0;
+		? FMath::Max(Souhaitees - (Dolines + Gouffres), SansOuverture) : 0;
 
 	if (EntreesVoulues > 0)
 	{
-		TArray<float> DY;
-		TArray<float> DX;
-		WorldseedGrid::Gradient(ElevationM, NX, NY, MetresParPixel, DY, DX);
-
 		const float PenteMin = FMath::Tan(FMath::DegreesToRadians(Rules.EntranceSlopeDeg));
 
 		// Une bouche par chambre au plus, et on commence par les chambres les
@@ -1027,8 +1226,16 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			});
 			Files.Add(Paire.Value);
 		}
-		Files.Sort([](const TArray<int32>& A2, const TArray<int32>& B2)
+		// LES COMPOSANTES ENCORE MUREES PASSENT DEVANT. La bouche de falaise est
+		// la garantie d'accessibilite ; elle doit servir d'abord aux reseaux que
+		// ni doline ni aven n'ont ouverts.
+		Files.Sort([&](const TArray<int32>& A2, const TArray<int32>& B2)
 		{
+			const bool OA = A2.Num() > 0 && ChambreOuverte.IsValidIndex(A2[0])
+				&& ComposantesOuvertes.Contains(Trouver(A2[0]));
+			const bool OB = B2.Num() > 0 && ChambreOuverte.IsValidIndex(B2[0])
+				&& ComposantesOuvertes.Contains(Trouver(B2[0]));
+			if (OA != OB) { return !OA; }
 			return A2.Num() > B2.Num();
 		});
 
@@ -1043,41 +1250,20 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			if (!bEncore) { break; }
 		}
 
-		// LES BOUCHES DEJA POSEES, pour qu'une paroi ne serve qu'une fois. On
-		// ECARTE LES CANDIDATES PENDANT LA RECHERCHE plutot qu'apres : refuser
-		// a la fin ferait simplement perdre l'entree, alors qu'ecarter en cours
-		// de route laisse la recherche trouver le SECOND escarpement du
-		// voisinage, qui fait tres bien l'affaire.
-		TArray<FVector2D> BouchesPosees;
-
 		for (const int32 Ic : Ordre)
 		{
 			if (Entrees >= EntreesVoulues) { break; }
+			// Une chambre deja percee par une doline ou un aven n'a pas besoin
+			// d'une bouche en plus.
+			if (ChambreOuverte[Ic]) { continue; }
 			const FWorldseedCaveChamber& C = Out.Chambers[Ic];
 
-			// --- LA FORME DE L'ENTREE SE DECIDE A L'APLOMB DE LA CHAMBRE -------
-			//
-			// Premiere version fautive : je cherchais d'abord une falaise dans
-			// un rayon de cent quatre-vingts metres, et ne posais un gouffre que
-			// si je n'en trouvais AUCUNE. Comme un tel rayon contient presque
-			// toujours un escarpement, le gouffre n'est jamais arrive -- mesure :
-			// zero sur six entrees.
-			//
-			// Le bon critere est le terrain DIRECTEMENT AU-DESSUS. Un aven se
-			// creuse la ou l'eau s'infiltre a travers un plateau ; une bouche
-			// s'ouvre la ou une galerie est recoupee par un versant. Ce n'est pas
-			// une preference, c'est la facon dont chacun se forme.
 			// On cherche, autour de la chambre, la cellule la plus RAIDE.
 			const int32 Col0 = FMath::Clamp(
 				FMath::FloorToInt((C.CentreM.X / Geometry.WidthM() + 0.5) * NX), 0, NX - 1);
 			const int32 Row0 = FMath::Clamp(
 				FMath::FloorToInt((C.CentreM.Y / Geometry.HeightM + 0.5) * NY), 0, NY - 1);
 
-			const int32 CellHaut = Row0 * NX + Col0;
-			const float PenteHaut = FMath::Sqrt(
-				DX[CellHaut] * DX[CellHaut] + DY[CellHaut] * DY[CellHaut]);
-			const bool bPlateau =
-				PenteHaut <= FMath::Tan(FMath::DegreesToRadians(Rules.ShaftSlopeMaxDeg));
 			const int32 Rayon = FMath::Max(2, FMath::CeilToInt(Espacement / MetresParPixel));
 
 			float MeilleurePente = PenteMin;
@@ -1115,83 +1301,9 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 					}
 				}
 			}
-			// --- PAS DE FALAISE ? ALORS UN GOUFFRE ------------------------------
-			//
-			// Le terrain decide de la forme de l'entree, et c'est ce qui rend les
-			// deux credibles : une bouche s'ouvre a l'HORIZONTALE dans un
-			// escarpement, un aven s'ouvre a la VERTICALE sur un plateau. Quand
-			// aucune paroi assez raide ne borde la chambre, c'est donc qu'on est
-			// en terrain plat -- exactement le cas de l'aven.
-			if (bPlateau || MeilleureCellule == INDEX_NONE)
-			{
-				const FWorldseedCaveChamber& Ch = Out.Chambers[Ic];
-				const double Sol = Ctx.SurfaceA(Ch.CentreM.X, Ch.CentreM.Y);
-
-				const double Haut = Sol + Rules.ShaftTopRadiusM * 0.5;
-				const double Bas = Ch.CentreM.Z + Ch.RadiusM * 0.5;
-				if (Haut - Bas < 8.0) { continue; }
-
-				bool bTropPres2 = false;
-				for (const FVector2D& B2 : BouchesPosees)
-				{
-					if (FVector2D::Distance(FVector2D(Ch.CentreM.X, Ch.CentreM.Y), B2)
-						< Rules.EntranceSpacingM)
-					{
-						bTropPres2 = true;
-						break;
-					}
-				}
-				if (bTropPres2) { continue; }
-
-				// LE PROFIL EN CLOCHE : etroit en surface, evase dessous. C'est
-				// la forme meme de l'aven -- la dissolution a le moins travaille
-				// en haut, et l'eau a stagne en bas. Un puits cylindrique se lit
-				// tout de suite comme un forage.
-				const int32 Tranches = FMath::Max(3, FMath::CeilToInt((Haut - Bas) / 4.0));
-				FVector Precedent = FVector::ZeroVector;
-				for (int32 T = 0; T <= Tranches; ++T)
-				{
-					const double F = static_cast<double>(T) / Tranches;
-					const double Z = FMath::Lerp(Haut, Bas, F);
-
-					// L'axe ONDULE : un aven n'est pas un trait a la regle.
-					const double Ox = Rules.ShaftWanderM * WorldseedPerlin::Perlin3D(
-						static_cast<float>(Ch.CentreM.X * 0.05),
-						static_cast<float>(Z * 0.05), 0.0f, Seed + 3313);
-					const double Oy = Rules.ShaftWanderM * WorldseedPerlin::Perlin3D(
-						0.0f, static_cast<float>(Z * 0.05),
-						static_cast<float>(Ch.CentreM.Y * 0.05), Seed + 3373);
-
-					const FVector Point(Ch.CentreM.X + Ox, Ch.CentreM.Y + Oy, Z);
-					if (T > 0)
-					{
-						FWorldseedCaveSegment S;
-						S.AM = Precedent;
-						S.BM = Point;
-						S.RadiusAM = FMath::Lerp(Rules.ShaftTopRadiusM,
-							Rules.ShaftBottomRadiusM, static_cast<float>((T - 1.0) / Tranches));
-						S.RadiusBM = FMath::Lerp(Rules.ShaftTopRadiusM,
-							Rules.ShaftBottomRadiusM, static_cast<float>(F));
-						Out.Segments.Add(S);
-					}
-					Precedent = Point;
-				}
-
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed] grottes : GOUFFRE %d a (%.0f, %.0f) m, ")
-					TEXT("%.0f m de haut, pente du plateau %.0f deg"),
-					Entrees + 1, Ch.CentreM.X, Ch.CentreM.Y, Haut - Bas,
-					FMath::RadiansToDegrees(FMath::Atan(PenteHaut)));
-
-				BouchesPosees.Add(FVector2D(Ch.CentreM.X, Ch.CentreM.Y));
-				++Entrees;
-				++Gouffres;
-				continue;
-			}
-
-			// Le gouffre n'a pas pu se poser : si une falaise existe, elle prend
-			// le relais. Sinon cette chambre restera sans entree propre -- elle
-			// reste reliee au reseau, qui en a une ailleurs.
+			// Aucun escarpement dans le voisinage : cette chambre n'aura pas de
+			// bouche propre. Elle reste reliee au reseau, qui a son acces
+			// ailleurs -- c'est tout l'objet de l'arbre couvrant.
 			if (MeilleureCellule == INDEX_NONE) { continue; }
 
 			const int32 Ce = MeilleureCellule % NX;
@@ -1254,93 +1366,42 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 				FMath::RadiansToDegrees(FMath::Atan(MeilleurePente)));
 
 			BouchesPosees.Add(FVector2D(Bouche.X, Bouche.Y));
+			ChambreOuverte[Ic] = true;
+			ComposantesOuvertes.Add(Trouver(Ic));
 			++Entrees;
 		}
 	}
 
-	// --- 5 ter. LES DOLINES D'EFFONDREMENT ------------------------------------
+	// --- LA GARANTIE SE VERIFIE, ELLE NE SE SUPPOSE PAS ----------------------
 	//
-	// LA TROISIEME FORME D'OUVERTURE, ET LA SEULE QUI SE VOIE DE LOIN. La
-	// bouche s'ouvre dans un versant, l'aven perce un plateau : il faut les
-	// avoir trouves pour les voir. Une doline, elle, EST un accident du
-	// paysage -- une cuvette de plusieurs dizaines de metres, visible de
-	// l'autre versant de la vallee.
-	//
-	// ELLE NE SE POSE PAS, ELLE SE DEDUIT. Le plafond d'une salle porte ce qui
-	// le surmonte ; sous une certaine epaisseur il cede, la surface s'affaisse
-	// en entonnoir jusqu'au vide, et les parois s'eboulent jusqu'a leur angle
-	// de repos -- d'ou une ouverture plus large que la salle. Le critere est
-	// donc `profondeur - rayon`, et rien d'autre.
-	//
-	// ET ELLE EST COMPTEE A PART DES ENTREES, a dessein. L'aven avait d'abord
-	// ete fabrique DANS la boucle des entrees, donc plafonne par leur budget :
-	// six pour tout le monde, quoi qu'il arrive, et la forme n'existait pour
-	// ainsi dire pas. Une doline ne se forme pas parce qu'il manquait un
-	// acces, elle se forme parce que le plafond est mince.
-	int32 Dolines = 0;
-	if (Rules.DolineRoofMaxM > 0.0f && Rules.DolineFlareRatio > 1.0f)
+	// Toute cette passe existe pour qu'aucun reseau ne reste mure. Or la bouche
+	// de falaise peut ECHOUER -- aucun escarpement assez raide dans le
+	// voisinage -- et l'echec est silencieux. Sans ce compte, on croirait la
+	// garantie tenue parce que le code a tourne.
 	{
-		for (int32 Ic = 0; Ic < Out.Chambers.Num(); ++Ic)
+		int32 Murees = 0;
+		for (const TPair<int32, TArray<int32>>& Paire : ParComposante)
 		{
-			const FWorldseedCaveChamber& Ch = Out.Chambers[Ic];
-			const double Sol = Ctx.SurfaceA(Ch.CentreM.X, Ch.CentreM.Y);
-			const double Sommet = Ch.CentreM.Z + Ch.RadiusM;
-			const double Plafond = Sol - Sommet;
-
-			if (Plafond <= 0.0 || Plafond > Rules.DolineRoofMaxM)
+			bool bOuverte = false;
+			for (const int32 Ic : Paire.Value)
 			{
-				continue;
+				if (ChambreOuverte[Ic]) { bOuverte = true; break; }
 			}
+			if (!bOuverte) { ++Murees; }
+		}
 
-			// L'entonnoir va du SOL au sommet de la salle. On part un peu
-			// au-dessus du sol : la capsule de tete doit mordre la surface,
-			// sinon il reste une pellicule de roche sur le trou.
-			const double Haut = Sol + 2.0;
-			const double Bas = Sommet - Ch.RadiusM * 0.3;
-			const double RayonHaut = Ch.RadiusM * Rules.DolineFlareRatio;
-
-			const int32 Tranches = FMath::Max(3, FMath::CeilToInt((Haut - Bas) / 3.0));
-			FVector Precedent = FVector::ZeroVector;
-			for (int32 T = 0; T <= Tranches; ++T)
-			{
-				const double F = static_cast<double>(T) / Tranches;
-				const double Z = FMath::Lerp(Haut, Bas, F);
-
-				// LE BORD N'EST PAS UN CERCLE : un effondrement suit les
-				// fractures de la roche. Le bruit porte sur l'AXE, ce qui
-				// deforme le contour sans creuser plus profond.
-				const double Ox = Rules.DolineRimNoiseM * WorldseedPerlin::Perlin3D(
-					static_cast<float>(Ch.CentreM.X * 0.03),
-					static_cast<float>(Z * 0.08), 0.0f, Seed + 5101);
-				const double Oy = Rules.DolineRimNoiseM * WorldseedPerlin::Perlin3D(
-					0.0f, static_cast<float>(Z * 0.08),
-					static_cast<float>(Ch.CentreM.Y * 0.03), Seed + 5171);
-
-				const FVector Point(Ch.CentreM.X + Ox, Ch.CentreM.Y + Oy, Z);
-				if (T > 0)
-				{
-					FWorldseedCaveSegment S;
-					S.AM = Precedent;
-					S.BM = Point;
-					// EN ENTONNOIR : large en surface, resserre sur la salle.
-					// C'est l'inverse du profil en cloche de l'aven, et les
-					// deux formes se distinguent d'un coup d'oeil pour cette
-					// seule raison.
-					S.RadiusAM = FMath::Lerp(RayonHaut, Ch.RadiusM,
-						static_cast<float>((T - 1.0) / Tranches));
-					S.RadiusBM = FMath::Lerp(RayonHaut, Ch.RadiusM,
-						static_cast<float>(F));
-					Out.Segments.Add(S);
-				}
-				Precedent = Point;
-			}
-
+		if (Murees > 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] grottes : %d reseau(x) sur %d restent MURES -- ")
+				TEXT("aucun escarpement ni plateau exploitable"),
+				Murees, ParComposante.Num());
+		}
+		else
+		{
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] grottes : DOLINE a (%.0f, %.0f) m, altitude %.0f m, ")
-				TEXT("plafond %.0f m, ouverture %.0f m de large, %.0f m de creux"),
-				Ch.CentreM.X, Ch.CentreM.Y, Sol, Plafond, RayonHaut * 2.0, Sol - Bas);
-
-			++Dolines;
+				TEXT("[Worldseed] grottes : les %d reseaux ont au moins une ouverture"),
+				ParComposante.Num());
 		}
 	}
 
@@ -1419,7 +1480,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] grottes : %d chambres, %d liaisons (%d de boucle), ")
 		TEXT("%d troncons, %d abandonnees, %d reseaux, ")
-		TEXT("%d entrees dont %d GOUFFRES, %d DOLINES  (%.0f ms)"),
+		TEXT("%d bouches, %d GOUFFRES, %d DOLINES  (%.0f ms)"),
 		Out.Chambers.Num(), Aretes.Num(), ABoucler,
 		Out.Segments.Num(), Abandonnees, ParComposante.Num(), Entrees, Gouffres, Dolines,
 		(FPlatformTime::Seconds() - StartTime) * 1000.0);
