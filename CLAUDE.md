@@ -5335,3 +5335,121 @@ autrement.
 
 Non-regression verifiee apres suppression : 822 chambres, 8 reseaux, 9 arches
 dont 8 vraies, au chiffre pres.
+
+### Transvoxel : la licence est levee, et le mailleur du moteur deborde (19 septembre 2026)
+
+Verrou 4, premiere moitie. Le plan du chantier posait une condition explicite --
+« a verifier avant d'ecrire une ligne : la licence des tables de Lengyel ». Elle
+est levee : `github.com/EricLengyel/Transvoxel` est en **MIT**, la notice dit
+`Copyright (c) 2009 Eric Lengyel`, et `transvoxel.org` declare l'algorithme
+**libre de tout brevet**. Le repli sur des colliers a resolution uniforme, prevu
+au cas ou, n'a pas lieu d'etre.
+
+**UN OBSTACLE QUE L'ARBITRAGE D'ORIGINE NE CONNAISSAIT PAS.** Le projet maille
+avec `FMarchingCubes` de GeometryCore, qui fait du marching cubes STANDARD.
+Transvoxel n'est pas un jeu de tables qu'on lui brancherait : il ajoute une
+seconde famille de cellules, les cellules de TRANSITION. Et les deux familles ne
+se separent pas -- une cellule de transition attend que les regulieres voisines
+lui aient laisse la place, leurs sommets de bord etant retractes d'un demi-voxel.
+Mailler les unes avec le moteur et les autres a la main donnerait deux maillages
+qui ne se rejoignent pas, c'est-a-dire exactement la fissure qu'on cherche a
+supprimer. D'ou un mailleur COMPLET, `WorldseedTransvoxel`.
+
+**UNE TABLE NE SE RECOPIE PAS, ELLE SE TRANSFORME PAR SCRIPT.** Une table de
+correspondance fausse produit du maillage silencieusement faux, et aucune
+relecture a l'oeil ne trouverait le chiffre change parmi **6 486**. Les sept
+tables sont donc obtenues par transformation mecanique du fichier publie : seules
+les deux definitions de structure passent dans l'en-tete, et les tables recoivent
+`extern` -- sans quoi `const` a portee de namespace a une liaison **interne** et
+l'edition de liens echoue sur des symboles pourtant bien definis. Le controle est
+rejouable et tient en une ligne (`ThirdParty/Transvoxel/PROVENANCE.md`) : le flux
+des litteraux hexadecimaux doit etre identique, aux deux `0x0F` des methodes
+pres.
+
+**UBT COMPILE TOUT `.cpp` SOUS `Source/`.** La copie de reference y avait d'abord
+ete posee : elle se compilait a chaque build, pour rien, et le depot portait deux
+copies des tables dont une morte. Elle vit maintenant sous `ThirdParty/` a la
+racine, avec sa licence. **Une donnee tierce non compilee n'a rien a faire sous
+`Source/`.**
+
+**LE MAILLEUR DU MOTEUR DEBORDE D'UN VOXEL, ET CE N'ETAIT PAS DOCUMENTE.**
+Mesure : `FMarchingCubes` sur une boite de 32 m a un metre de voxel maille
+**33 cellules par axe**, donc jusqu'a `Max + 1`. **Chaque chunk du terrain
+empiete donc d'un metre sur ses voisins**, et environ **neuf pour cent des
+triangles du terrain sont de la geometrie dessinee deux fois.** Ce n'est pas un
+defaut introduit par ce chantier, c'est l'etat en vigueur depuis le premier
+maillage voxel ; il disparaitra a la bascule.
+
+**LA LECON DE METHODE, ET C'EST LA MEME QUE CELLE DU ROUTAGE DES GALERIES.** La
+sonde annoncait **9,2 % d'ecart d'aire** entre les deux mailleurs. Un tel ecart a
+**deux explications exactement opposees** -- l'un RATE de la surface, l'autre en
+maille EN TROP -- qui donnent le meme pourcentage et n'appellent pas du tout la
+meme reponse. Corriger le mien alors que c'etait l'autre qui debordait aurait ete
+le « quatre corrections qui ne bougent pas la mesure » a l'identique. La bonne
+demarche est de mesurer la grandeur qui SEPARE les deux cas : le debordement hors
+de la boite, 1,00 m pour le moteur et 0,00 pour le mien.
+
+Puis un TEMOIN qui le prouve : le mailleur maison lance sur la boite **elargie
+d'un voxel**, c'est-a-dire sur l'emprise que le moteur couvre reellement.
+
+| mailleur | triangles | aire m2 | \|dens\| moy | bords hors paroi | ms |
+|---|---|---|---|---|---|
+| moteur | 61 276 | 20 532,9 | 0,2753 | **1 892** | 257 |
+| transvoxel | 55 694 | 18 640,3 | 0,2759 | **0** | 238 |
+| transvoxel, meme emprise | 61 284 | **20 531,9** | -- | -- | 265 |
+
+**0,005 % d'ecart d'aire**, et 8 triangles sur 61 000. Les deux mailleurs
+decrivent la meme surface ; les 9,2 % etaient entierement le debordement. Cout :
+**+3 %** sur la meme emprise -- comparer les deux premieres lignes serait
+malhonnete, elles ne maillent pas le meme volume.
+
+**DEUX CONTROLES QUI NE COMPARENT RIEN ET JUGENT CHAQUE MAILLEUR SEUL**, ce qui
+vaut mieux qu'un A/B ou l'on suppose que l'un des deux a raison :
+- **|densite| aux sommets.** Un sommet est cense etre POSE sur l'isovaleur zero.
+  0,2759 contre 0,2753, meme maximum a 2,2955 au dix-millieme.
+- **Les aretes n'appartenant qu'a UN triangle et qui ne sont pas sur la paroi de
+  la boite**, c'est-a-dire des trous : maison **0**, moteur **1 892** -- toutes
+  au bord de son debordement. Zero arete non manifold des deux cotes. **C'est ce
+  controle qui verra les fissures quand les cellules de transition arriveront, et
+  il est pose MAINTENANT :** une mesure installee apres coup n'a pas de temoin
+  d'avant le defaut qu'elle doit voir.
+
+**L'ENROULEMENT SE MESURE, IL NE SE DEDUIT PAS.** L'ordre des sommets decide de
+la face avant ; se tromper ne casse rien dans la geometrie et rend le terrain
+invisible de l'exterieur, ou noir -- le depot a deja paye cette lecon deux fois
+sur le mailleur du moteur. Deux conventions se superposent ici et se compensent
+peut-etre : Lengyel travaille en repere DIRECT avec le solide en negatif, Unreal
+en repere INDIRECT. Raisonner sur leur produit a une chance sur deux d'etre
+juste. La sonde confronte donc l'enroulement geometrique aux normales issues du
+**gradient**, qui ne doivent rien a aucune convention : premiere mesure **0,1 %**
+de faces a l'endroit, donc inversion ; deuxieme mesure **99,9 %**. La reponse
+d'une telle mesure est binaire, et elle l'a ete.
+
+**LES SOMMETS SONT SOUDES PAR L'ARETE DE GRILLE, ET NON PAR LES TABLES DE
+REUTILISATION.** Lengyel resout le meme probleme par ses figures 3.8 et 4.17, qui
+disent de quelle cellule deja maillee reprendre un sommet. C'est plus rapide, et
+cela exige un cache indexe par cellule dans un balayage **ordonne** -- ce qu'une
+propagation depuis des germes ne fait justement pas. Or l'identite d'un sommet
+est de toute facon celle de son arete. On indexe donc par l'arete, ce qui donne
+le meme maillage soude sans imposer d'ordre de parcours. **L'arete doit etre
+orientee du coin bas vers le coin haut**, sans quoi deux cellules voisines lui
+donnent deux cles differentes, donc deux sommets, donc une fissure invisible a la
+lecture du code.
+
+**CE QUI EST FAIT, ET CE QUI NE L'EST PAS.** Ce chantier ne pose que les cellules
+REGULIERES, et le code le DIT : un masque de transition non nul journalise un
+avertissement au lieu d'etre traite en silence comme « pas de transition ». Le
+masque n'est jamais arme tant que les anneaux n'existent pas. `voxel.transvoxel`
+vaut 0 : rien ne change a l'ecran, et l'A/B se fait sans recompiler.
+
+**RESTE A FAIRE, dans l'ordre :**
+1. les cellules de TRANSITION (tables `transitionCellClass` / `transitionCellData`
+   / `transitionCornerData` / `transitionVertexData`, deja en place et non lues ;
+   **211 des 512 cas portent le bit haut, qui inverse l'enroulement**) ;
+2. la retraction d'un demi-voxel des sommets de bord des cellules regulieres qui
+   bordent une face de transition -- sans elle, les deux familles ne se
+   rejoignent pas ;
+3. les anneaux dans le diffuseur : cle de chunk portant un NIVEAU, rayons par
+   anneau, et le masque des faces tournees vers un voisin plus grossier ;
+4. la mesure au banc -- le compte de chunks a 1 200 m doit tomber bien sous les
+   **9 242** que coutent 800 m aujourd'hui -- puis des photos des jointures.
