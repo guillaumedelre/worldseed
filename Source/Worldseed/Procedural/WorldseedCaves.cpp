@@ -152,6 +152,7 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 	Out.ArchOpeningWidthM = Num(TEXT("archeOuvertureLargeurM"), 30.0);
 	Out.ArchOpeningShare = Num(TEXT("archeOuverturePartFalaise"), 0.45);
 	Out.ArchCliffMinM = Num(TEXT("archeFalaiseMinM"), 45.0);
+	Out.ArchRoofReachM = Num(TEXT("archePorteeToitM"), 22.0);
 	Out.ArchBelowSummitM = Num(TEXT("archeSousSommetM"), 20.0);
 	Out.ArchRadiusMinM = Num(TEXT("archeRayonMinM"), 6.0);
 	Out.ArchRadiusMaxM = Num(TEXT("archeRayonMaxM"), 14.0);
@@ -1527,6 +1528,7 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 		int32 Examines = 0;
 		int32 ColTropLarge = 0;
+		int32 ToitTropCourt = 0;
 		int32 PasDeMer = 0;
 		int32 RocheRefusee = 0;
 
@@ -1630,6 +1632,39 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 			const double CoteB = MacroEn(X - Travers.X * Marge, Y - Travers.Y * Marge);
 			if (CoteA > SeuilVue || CoteB > SeuilVue) { ++PasDeMer; continue; }
 
+			// --- LE SECOND SONDAGE, A LA HAUTEUR DU PONT ---------------------
+			//
+			// LE PREMIER NE REGARDE QUE LE RAS DE L'EAU, et cela ne suffit pas :
+			// un cap s'amincit en montant, donc une pointe effilee peut avoir
+			// un col parfait a deux metres et n'etre plus qu'une lame a
+			// quarante. Mesure sans ce test : le pont tombait a ZERO sur la
+			// moitie des arches, toujours a quinze ou vingt metres du centre,
+			// c'est-a-dire la ou le cap s'etait deja retreci.
+			//
+			// On mesure donc la PORTEE DU TOIT : jusqu'ou, le long du
+			// percement, la roche reste au-dessus de la cle de voute. C'est
+			// exactement la grandeur qui manquait -- pas une largeur au centre,
+			// mais une longueur de part et d'autre.
+			const double ZToit = ZHaut + Rules.ArchBridgeMinM;
+			double PorteeToit = PorteeM;
+			for (int32 Sens = -1; Sens <= 1; Sens += 2)
+			{
+				double T = 0.0;
+				while (T < Col)
+				{
+					const double TT = T + 4.0;
+					if (MacroEn(X + Travers.X * TT * Sens,
+						Y + Travers.Y * TT * Sens) < ZToit)
+					{
+						break;
+					}
+					T = TT;
+				}
+				PorteeToit = FMath::Min(PorteeToit, T);
+			}
+
+			if (PorteeToit < Rules.ArchRoofReachM) { ++ToitTropCourt; continue; }
+
 			// --- LA ROCHE ----------------------------------------------------
 			//
 			// Etretat est de la CRAIE, et les arches marines se font dans la
@@ -1705,8 +1740,9 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] grottes : ARCHE MARINE a (%.0f, %.0f) m, ")
-				TEXT("cap de %.0f m perce sur %.0f x %.0f m, falaise %.0f m, %s"),
-				X, Y, Col, Largeur, HauteurOuverture, Falaise,
+				TEXT("cap de %.0f m perce sur %.0f x %.0f m, toit %.0f m, ")
+				TEXT("falaise %.0f m, %s"),
+				X, Y, Col, Largeur, HauteurOuverture, PorteeToit, Falaise,
 				WorldseedLithology::Name(LithoRules, Roche));
 		}
 
@@ -1715,9 +1751,10 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 		// est un fait du littoral, l'absence de mer derriere un mauvais choix de
 		// site, une roche refusee un reglage.
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] grottes : arches -- %d caps examines, %d cols trop ")
-			TEXT("larges, %d sans mer derriere, %d refuses sur la roche, %d POSEES"),
-			Examines, ColTropLarge, PasDeMer, RocheRefusee, Arches);
+			TEXT("[Worldseed] grottes : arches -- %d caps examines, %d cols hors ")
+			TEXT("bornes, %d sans vue au travers, %d toits trop courts, ")
+			TEXT("%d refuses sur la roche, %d POSEES"),
+			Examines, ColTropLarge, PasDeMer, ToitTropCourt, RocheRefusee, Arches);
 	}
 
 	// --- 6. l'index spatial ---------------------------------------------------

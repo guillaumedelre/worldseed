@@ -367,6 +367,21 @@ struct WORLDSEED_API FWorldseedCaveRules
 	/** Falaise minimale d'un cap percable, en metres. */
 	float ArchCliffMinM = 45.0f;
 
+	/**
+	 * Portee minimale du TOIT de part et d'autre du centre, en metres.
+	 *
+	 * LE SONDAGE AU RAS DE L'EAU NE SUFFIT PAS. Un cap s'amincit en montant :
+	 * une pointe effilee peut avoir un col parfait a deux metres et n'etre plus
+	 * qu'une lame a quarante. Mesure sans ce second test : le pont tombait a
+	 * ZERO sur la moitie des arches, toujours a quinze ou vingt metres du
+	 * centre, c'est-a-dire la ou le cap s'etait deja retreci.
+	 *
+	 * La grandeur qui manquait n'est pas une largeur au centre mais une
+	 * LONGUEUR : jusqu'ou, le long du percement, la roche reste au-dessus de la
+	 * cle de voute.
+	 */
+	float ArchRoofReachM = 22.0f;
+
 	/** Profondeur sous le sommet ou l'on mesure la crete, en metres. */
 	float ArchBelowSummitM = 20.0f;
 

@@ -1157,6 +1157,8 @@
     "archeOuvertureLargeurM": 30.0,
     "archeOuverturePartFalaise": 0.45,
     "archeFalaiseMinM": 45.0,
+    "_comment_archePorteeToitM": "CALIBRE. LE SONDAGE AU RAS DE L EAU NE SUFFIT PAS : un cap s amincit en montant, donc une pointe effilee peut avoir un col parfait a deux metres et n etre plus qu une lame a quarante. Sans ce second test le pont tombait a ZERO sur la moitie des arches, toujours a quinze ou vingt metres du centre. La grandeur qui manquait n est pas une largeur au centre mais une LONGUEUR : jusqu ou, le long du percement, la roche reste au-dessus de la cle de voute.",
+    "archePorteeToitM": 22.0,
     "archeLargeurCreteMaxM": 80.0,
     "archeSousSommetM": 20.0,
     "archeRayonMinM": 6.0,
