@@ -155,6 +155,13 @@ namespace WorldseedPipeline
 						Out.Climate.PrecipMm,
 						FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
 
+					// LE RESEAU VIENT APRES LA LITHOLOGIE ET LE CLIMAT, et c'est
+					// l'ordre qui compte : c'est la ROCHE qui dit ou un karst peut
+					// se creuser, et la PLUIE qui dit s'il y a de quoi dissoudre.
+					WorldseedCaves::Build(Geometry, Out.ElevationM, Out.Climate.PrecipMm,
+						Out.Lithology, FWorldseedLithologyRules::FromRules(*BioRules),
+						FWorldseedCaveRules::FromRules(*BioRules), 1.0f, Seed, Out.Caves);
+
 					// LE RELEVE VIENT ICI ET NULLE PART AILLEURS : c'est la seule
 					// place ou TOUTES les cles ont ete demandees. Pose plus haut,
 					// il ne voyait rien de ce que la classification et les champs
@@ -321,6 +328,10 @@ namespace WorldseedPipeline
 				WorldseedFields::Compute(Geometry, Out.ElevationM,
 					Out.Climate.PrecipMm,
 					FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
+
+				WorldseedCaves::Build(Geometry, Out.ElevationM, Out.Climate.PrecipMm,
+					Out.Lithology, FWorldseedLithologyRules::FromRules(*BioRules),
+					FWorldseedCaveRules::FromRules(*BioRules), 1.0f, Seed, Out.Caves);
 
 				BioRules->ReportMissingKeys();
 			}

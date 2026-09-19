@@ -27,8 +27,10 @@ AWorldseedVoxelTerrain::AWorldseedVoxelTerrain()
 
 void AWorldseedVoxelTerrain::AdoptWorld(int32 InSeed,
 	const FWorldseedGeometry& InGeometry, const TArray<float>& InHeightsM,
-	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration)
+	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration,
+	const FWorldseedCaveNetwork& InCaves)
 {
+	CaveNetwork = InCaves;
 	WorldSeed = InSeed;
 	Geometry = InGeometry;
 	HeightsM = InHeightsM;
@@ -59,6 +61,8 @@ bool AWorldseedVoxelTerrain::LoadWorld()
 			Geometry = Loaded.Geometry;
 			HeightsM = MoveTemp(Loaded.ElevationM);
 			Biomes = MoveTemp(Loaded.Biomes);
+			// Le reseau n'est pas transporte par le menu : il se rebatit ici.
+			CaveNetwork.Reset();
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : monde repris du menu, seed=%d  %dx%d"),
@@ -341,12 +345,20 @@ void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
 	const FWorldseedDensity* const Champ = &Density;
 	const float VoxelSizeM = DensityRules.VoxelSizeM;
 
+	// L'EXTRACTION SE FAIT ICI, SUR LE FIL DE JEU, ET UNE SEULE FOIS. Le chunk
+	// est elargi du rayon de raccordement : une capsule qui ne touche pas la
+	// boite peut quand meme arrondir une arete a l'interieur.
+	if (CaveNetwork.IsValid())
+	{
+		CaveNetwork.Query(Job->BoundsM.ExpandBy(DensityRules.CaveBlendM + 4.0f), Job->Caves);
+	}
+
 	Async(EAsyncExecution::ThreadPool, [Job, Champ, VoxelSizeM]()
 	{
 		if (!Job->bCancel.load(std::memory_order_acquire))
 		{
 			Job->bHasSurface = WorldseedVoxelChunk::Build(
-				*Champ, Job->BoundsM, VoxelSizeM, Job->Mesh, Job->Stats,
+				*Champ, &Job->Caves, Job->BoundsM, VoxelSizeM, Job->Mesh, Job->Stats,
 				[Job]() { return Job->bCancel.load(std::memory_order_acquire); });
 		}
 

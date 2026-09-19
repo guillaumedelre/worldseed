@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedDensity.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 
@@ -31,6 +32,14 @@ struct FWorldseedVoxelJob
 	FBox BoundsM = FBox(ForceInit);
 
 	FWorldseedVoxelMesh Mesh;
+
+	/**
+	 * Les primitives de grottes qui touchent CE chunk, extraites une fois.
+	 *
+	 * Elles voyagent avec le travail plutot que d'etre lues depuis l'acteur :
+	 * le fil de maillage ne doit rien tenir qui puisse mourir avant lui.
+	 */
+	FWorldseedCaveLocal Caves;
 	FWorldseedVoxelStats Stats;
 	bool bHasSurface = false;
 
@@ -202,7 +211,7 @@ public:
 	 */
 	void AdoptWorld(int32 InSeed, const FWorldseedGeometry& InGeometry,
 		const TArray<float>& InHeightsM, const FWorldseedBiomeMap& InBiomes,
-		float InHeightExaggeration);
+		float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves);
 
 private:
 
@@ -254,6 +263,9 @@ private:
 	TArray<float> HeightsM;
 	FWorldseedBiomeMap Biomes;
 	int32 WorldSeed = 0;
+
+	/** Le reseau de grottes du monde charge. */
+	FWorldseedCaveNetwork CaveNetwork;
 
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;

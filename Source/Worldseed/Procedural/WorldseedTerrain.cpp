@@ -98,6 +98,14 @@ bool AWorldseedTerrain::AcquireWorld()
 				? EWorldseedTerrainColouring::BiomeColour
 				: EWorldseedTerrainColouring::TexturePack;
 
+			// LE RESEAU DE GROTTES N'EST PAS TRANSPORTE PAR LE MENU, et il ne
+			// doit pas l'etre : il se rebatit a l'identique depuis la graine,
+			// la lithologie et le climat. Le transporter doublerait une donnee
+			// deterministe. En revanche il FAUT le rebatir, sans quoi une
+			// partie lancee depuis le menu n'aurait aucune grotte la ou une
+			// partie lancee en PIE en a.
+			RebuildCaveNetwork();
+
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] monde repris du menu : seed=%d  %dx%d  saisons=%d"),
 				WorldSeed, Geometry.NX, Geometry.NY, SeasonalAmpC.Num());
@@ -124,7 +132,28 @@ bool AWorldseedTerrain::AcquireWorld()
 	SeasonalAmpC = MoveTemp(World.Climate.SeasonalAmpC);
 	ContinentalityGrid = MoveTemp(World.Climate.Continentality);
 	Biomes = MoveTemp(World.Biomes);
+	Caves = MoveTemp(World.Caves);
 	return true;
+}
+
+void AWorldseedTerrain::RebuildCaveNetwork()
+{
+	Caves.Reset();
+
+	FString Error;
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules)
+	{
+		return;
+	}
+
+	// La lithologie n'est pas transportee non plus sur ce chemin : elle se
+	// recalcule depuis la tectonique, qu'on n'a pas ici. On se rabat donc sur
+	// un reseau sans contrainte de roche, plutot que sur pas de reseau du tout.
+	FWorldseedLithology Vide;
+	WorldseedCaves::Build(Geometry, HeightsM, PrecipMm, Vide,
+		FWorldseedLithologyRules::FromRules(*Rules),
+		FWorldseedCaveRules::FromRules(*Rules), HeightExaggeration, WorldSeed, Caves);
 }
 
 void AWorldseedTerrain::Rebuild()
@@ -207,7 +236,7 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 	if (VoxelTerrain)
 	{
 		VoxelTerrain->AdoptWorld(WorldSeed, Geometry, HeightsM, Biomes,
-			HeightExaggeration);
+			HeightExaggeration, Caves);
 
 		// LE MATERIAU AUSSI SE TRANSMET. Sans lui les chunks voxel prennent le
 		// gris par defaut, qui ne lit pas la couleur de sommet : le relief

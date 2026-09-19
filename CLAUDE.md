@@ -3603,3 +3603,71 @@ bridage, **3,4 ms de GPU et 210 a 224 FPS sans**. Un facteur dix.
 stabilite, elles peuvent prouver que la trame n'avance pas. Le controle qui
 tranche est de changer quelque chose de visible entre deux lectures et de
 verifier que le chiffre bouge.
+
+### La passe macro des grottes : la connexite acquise par construction (19 septembre 2026)
+
+Arbitrages B5 a B8 du proprietaire. Le bruit a cretes deja en place produit des
+conduits credibles -- 12,35 % des colonnes avec 2 m de libre, verifies en fil de
+fer -- mais **rien n'assure qu'ils communiquent, ni qu'un seul debouche a l'air
+libre**. Cette passe repond a ce manque, et a lui seul.
+
+**LA CHAINE.** Chambres semees a distance minimale (refus par grille de hachage,
+sinon le cout serait quadratique), la ou la ROCHE est karstifiable et la PLUIE
+suffisante -- jamais d'apres le biome, qui est une etiquette. Puis un **arbre
+couvrant minimal** : il touche tous les sommets par definition, donc la connexite
+est acquise et **il n'y a RIEN a verifier apres coup**. Puis quelques aretes
+courtes en plus, sans quoi un arbre n'a aucun cycle et le joueur revient toujours
+sur ses pas.
+
+**Le controle interne qui rassure** : un arbre couvrant sur 124 sommets a
+exactement 123 aretes. Releve : `124 chambres, 141 galeries (18 de boucle)`, soit
+123 + 18. Cout : **4 ms**, une fois par monde.
+
+**CE QU'ELLE COUTE A L'EVALUATION, ET COMMENT ON L'EVITE.** Tester toutes les
+primitives a chaque voxel serait du O(voxels x primitives). Un index spatial en
+XY -- la bande creusable etant mince -- est bati une fois, et **chaque chunk
+extrait UNE FOIS la liste des primitives qui le touchent**, elargie du rayon de
+raccordement. La liste voyage avec le TRAVAIL, pas avec l'acteur : le fil de
+maillage ne doit rien tenir qui puisse mourir avant lui.
+
+**LE PIEGE QUI AURAIT TOUT ANNULE, ET IL EST SUBTIL.** La sortie rapide du champ
+de densite ne connait que la portee du BRUIT -- dix-sept metres. Une chambre a
+quatre-vingt-dix metres de profondeur serait donc sortie AVANT d'etre evaluee, et
+n'aurait tout simplement jamais existe. Le reseau est desormais lu **avant** la
+sortie rapide, et le socle force au plein rend `max(-1, air)` et non `-1`.
+
+**L'UNION EST LISSE, ET C'EST UN REGLAGE CONTINU.** `UnionLisse` degenere
+EXACTEMENT vers le maximum dur quand son rayon tend vers zero : "un compromis
+entre maximum dur et lisse" n'est donc pas un choix binaire mais une valeur de
+`cavites.raccordM`.
+
+**MESURE, A/B sur la meme graine et la meme grille**, sondes verticales tous les
+5 m sur 400 m de cote :
+
+| | colonnes a repli | vide median |
+|---|---|---|
+| sans reseau | 805 (13,17 %) | 40,7 m |
+| avec reseau | 974 (**15,94 %**) | 45,2 m |
+
+Un cinquieme de colonnes traversables en plus -- mais l'essentiel n'est pas la
+quantite, c'est que celles-la sont RELIEES.
+
+**PIEGE DE PROTOCOLE PAYE DEUX FOIS SUR CE MEME A/B.** Mon premier temoin a rendu
+des chiffres RIGOUREUSEMENT identiques a la mesure avec reseau -- au centieme.
+Cause : **le PIE ne relit pas `world_rules.json`**, seules les sondes le font
+(`WorldseedPipeline::ReloadRules`). Changer une regle puis relancer le PIE ne
+change donc RIEN, et le temoin mesure la meme chose que le cas teste. Il faut
+appeler une sonde entre les deux. Le controle qui tranche est dans le journal :
+la ligne `grottes : ...` doit DISPARAITRE quand on desactive le reseau.
+
+**RESTE OUVERT, et ce n'est pas anodin** : une chambre creusee sous une terre
+basse se retrouve SOUS LE NIVEAU DE LA MER -- celle qu'on a photographiee est a
+-56 m -- et le plugin Water y applique alors son rendu sous-marin, teinte
+turquoise comprise. Physiquement ce n'est pas absurde (une grotte sous le niveau
+marin est noyee), mais rien ne le decide : c'est un effet de bord du fait que
+l'eau est un plan infini a l'altitude zero.
+
+**PAS ENCORE FAIT, et annonce comme tel** : le routage en A* des galeries. Elles
+sont pour l'instant des capsules DROITES entre chambres. Le cout du routage --
+proximite de la surface, pente praticable, durete de la roche -- est ce qui
+donnera des galeries credibles plutot que des tubes tendus.

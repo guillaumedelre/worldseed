@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedFields.h"
+#include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedJob.h"
 #include "Procedural/WorldseedRules.h"
@@ -70,6 +71,15 @@ namespace WorldseedPipeline
 		 * qui gouvernera les reseaux de grottes.
 		 */
 		FWorldseedLithology Lithology;
+
+		/**
+		 * Le reseau de grottes : chambres, galeries, index spatial.
+		 *
+		 * Bati par une passe MACRO, une fois par monde. Il ne peut pas se
+		 * calculer par chunk -- une galerie traverse les frontieres -- et sa
+		 * connexite est acquise par construction, donc jamais a verifier.
+		 */
+		FWorldseedCaveNetwork Caves;
 
 		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
 		bool bFromCache = false;

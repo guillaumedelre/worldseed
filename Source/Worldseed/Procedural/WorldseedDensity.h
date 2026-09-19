@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedRules.h"
 
+struct FWorldseedCaveLocal;
+
 /**
  * Reglages du champ, lus dans la section "voxel" de world_rules.json.
  *
@@ -86,6 +88,9 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	float CaveThreshold = 0.86f;
 
+	/** Rayon de raccordement de l'union lisse des cavites, en metres. */
+	float CaveBlendM = 2.5f;
+
 	/** Rayon des galeries, en metres, pour un depassement de seuil maximal. */
 	float CaveRadiusM = 9.0f;
 
@@ -142,7 +147,19 @@ public:
 	 * en centimetres approchent le million — la ou un float perd ses decimales.
 	 * La conversion en centimetres se fait au dernier moment, sur les sommets.
 	 */
-	double At(const FVector& PosM) const;
+	double At(const FVector& PosM) const { return At(PosM, nullptr); }
+
+	/**
+	 * Densite en un point, avec les primitives de grottes qui touchent le chunk.
+	 *
+	 * POURQUOI LA LISTE ARRIVE PAR PARAMETRE ET NON PAR MEMBRE. Ce champ est
+	 * partage par tous les fils de maillage et doit rester SANS ETAT MUTABLE.
+	 * La liste, elle, est propre a un chunk : elle est extraite une fois par le
+	 * mailleur et capturee dans sa lambda. Tester toutes les primitives a chaque
+	 * voxel serait du O(voxels x primitives), redhibitoire des quelques milliers
+	 * de capsules.
+	 */
+	double At(const FVector& PosM, const FWorldseedCaveLocal* Caves) const;
 
 	/** Altitude de la surface macro en un point, exageration comprise. */
 	float SurfaceHeightM(double X, double Y) const;

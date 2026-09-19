@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 class FWorldseedDensity;
+struct FWorldseedCaveLocal;
 
 /**
  * Un maillage de chunk, dans la forme attendue par ProceduralMeshComponent.
@@ -71,7 +72,14 @@ namespace WorldseedVoxelChunk
 	 * Rend faux si la boite ne contient aucune surface, ou si ShouldStop a
 	 * demande l'arret.
 	 */
-	WORLDSEED_API bool Build(const FWorldseedDensity& Density, const FBox& BoundsM,
+	/**
+	 * Caves peut etre nul : le chunk est alors maille sans reseau de grottes.
+	 * La liste est EXTRAITE UNE FOIS par chunk et capturee dans la lambda du
+	 * mailleur -- tester toutes les primitives a chaque voxel serait du
+	 * O(voxels x primitives).
+	 */
+	WORLDSEED_API bool Build(const FWorldseedDensity& Density,
+		const FWorldseedCaveLocal* Caves, const FBox& BoundsM,
 		float VoxelSizeM, FWorldseedVoxelMesh& Out, FWorldseedVoxelStats& OutStats,
 		TFunction<bool()> ShouldStop = nullptr);
 }

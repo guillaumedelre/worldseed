@@ -2,6 +2,7 @@
 
 #include "Procedural/WorldseedDensity.h"
 
+#include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 
@@ -37,6 +38,7 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.CaveThreshold = Num(TEXT("caveThreshold"), 0.86);
 	Out.CaveRadiusM = Num(TEXT("caveRadiusM"), 9.0);
 	Out.CaveSurfaceFadeM = Num(TEXT("caveSurfaceFadeM"), 25.0);
+	Out.CaveBlendM = static_cast<float>(Rules.Num(TEXT("cavites"), TEXT("raccordM"), 2.5));
 
 	return Out;
 }
@@ -172,7 +174,7 @@ double FWorldseedDensity::CaveAt(const FVector& PosM, double DepthM) const
 	return Normalise * Rules.CaveRadiusM * Fondu;
 }
 
-double FWorldseedDensity::At(const FVector& PosM) const
+double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Caves) const
 {
 	if (!IsValid())
 	{
@@ -211,6 +213,22 @@ double FWorldseedDensity::At(const FVector& PosM) const
 	// Distance signee a la surface macro : negative sous terre.
 	double D = PosM.Z - Surface;
 
+	// --- le RESEAU, et il se lit AVANT la sortie rapide ----------------------
+	//
+	// La sortie rapide ne connait que la portee du BRUIT -- une vingtaine de
+	// metres. Le reseau, lui, ouvre de l'air jusqu'a quatre-vingt-dix metres
+	// sous la surface : evalue apres elle, il aurait ete purement et simplement
+	// ignore, et les chambres n'auraient jamais existe.
+	//
+	// IL EST CREUSE, JAMAIS AJOUTE : on enleve de la matiere a un solide, ce qui
+	// ne peut pas produire de lambeau flottant. C'est la difference de fond avec
+	// les surplombs par deformation, qui dechiraient la surface.
+	double Air = -1.0;
+	if (Caves && !Caves->IsEmpty())
+	{
+		Air = WorldseedCaves::AirAt(*Caves, PosM, Rules.CaveBlendM);
+	}
+
 	// --- sortie rapide ------------------------------------------------------
 	//
 	// LOIN DE LA SURFACE, LE BRUIT NE PEUT PLUS CHANGER LE SIGNE, donc il ne
@@ -230,7 +248,7 @@ double FWorldseedDensity::At(const FVector& PosM) const
 	const double PorteeUtile = Rules.OverhangAmplitudeM + Rules.CaveRadiusM;
 	if (D > PorteeUtile || D < -PorteeUtile - Rules.BandDepthM)
 	{
-		return D;
+		return FMath::Max(D, Air);
 	}
 
 	// --- surplombs ----------------------------------------------------------
@@ -260,7 +278,7 @@ double FWorldseedDensity::At(const FVector& PosM) const
 	// aucune surface, donc rien a mailler.
 	if (DepthM > Rules.BandDepthM)
 	{
-		return -1.0;
+		return FMath::Max(-1.0, Air);
 	}
 
 	// --- galeries -----------------------------------------------------------
@@ -273,5 +291,7 @@ double FWorldseedDensity::At(const FVector& PosM) const
 		D = FMath::Max(D, Vide);
 	}
 
-	return D;
+	// Le bruit ci-dessus donne le GRAIN -- des conduits credibles, mais sans
+	// garantie qu'ils communiquent. Le reseau, lui, garantit la connexite.
+	return FMath::Max(D, Air);
 }

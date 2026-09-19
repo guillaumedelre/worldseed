@@ -1017,5 +1017,26 @@
       }
     ]
   },
-  "_comment_origine": "CONVENTION D'ORIGINE, posee le 18 septembre 2026. Tout commentaire de reglage qui a tranche un arbitrage commence par UN MOT FIXE : SOURCE (la valeur vient d'une reference publiee et ne se deplace pas pour ameliorer un score), CALIBRE (la valeur a ete reglee sur notre monde, elle se rediscute quand le monde change), ou ARBITRAIRE (personne ne l'a jamais mesuree). Ce depot a refuse trois fois de bouger une valeur SOURCE pour gagner quelques dixiemes : 0,25 plutot que 0,20 pour le mediterraneen, 10 degres plutot que 8 pour la limite des arbres, et saturationScaleC laisse en place en septembre. Sans ce mot, la difference ne se lit qu'en relisant tout le commentaire."
+  "_comment_origine": "CONVENTION D'ORIGINE, posee le 18 septembre 2026. Tout commentaire de reglage qui a tranche un arbitrage commence par UN MOT FIXE : SOURCE (la valeur vient d'une reference publiee et ne se deplace pas pour ameliorer un score), CALIBRE (la valeur a ete reglee sur notre monde, elle se rediscute quand le monde change), ou ARBITRAIRE (personne ne l'a jamais mesuree). Ce depot a refuse trois fois de bouger une valeur SOURCE pour gagner quelques dixiemes : 0,25 plutot que 0,20 pour le mediterraneen, 10 degres plutot que 8 pour la limite des arbres, et saturationScaleC laisse en place en septembre. Sans ce mot, la difference ne se lit qu'en relisant tout le commentaire.",
+  "cavites": {
+    "_comment": "LE RESEAU DE GROTTES, passe MACRO ajoutee le 19 septembre 2026. Arbitrages B5 a B8 du proprietaire. LE BRUIT SEUL NE GARANTIT AUCUNE PROPRIETE GLOBALE : le bruit a cretes deja en place produit des conduits credibles -- 12,35 % des colonnes avec 2 m de libre, verifies en fil de fer -- mais rien n'assure qu'ils communiquent, ni qu'un seul debouche a l'air libre. Cette passe seme des chambres a distance minimale, puis les relie par un ARBRE COUVRANT MINIMAL : la connexite est alors acquise PAR CONSTRUCTION, donc jamais a verifier. On ajoute ensuite quelques aretes courtes, sans quoi un arbre n'a aucun cycle et le joueur revient toujours sur ses pas. ELLE NE PEUT PAS SE CALCULER PAR CHUNK -- une galerie traverse les frontieres -- donc elle tourne une fois par monde, a basse resolution, et son resultat devient un PARAMETRE de la fonction de densite, qui reste sans etat. OU : c'est la ROCHE qui decide, pas le biome. Un karst se creuse par dissolution, il lui faut du calcaire et de l'eau ; le climat n'entre donc que par la pluie, qui est un champ continu. Faire dependre les cavites de l'etiquette de biome reviendrait a lui laisser decider d'une geometrie.",
+    "_comment_chambreEspacementM": "CALIBRE. Distance minimale entre deux chambres. Un tirage uniforme donne des amas et des vides ; l'espacement minimal donne la repartition reguliere qu'on attend d'un reseau. Il fixe aussi, a lui seul, le NOMBRE de chambres : le semis s'arrete quand le refus domine.",
+    "chambreEspacementM": 180.0,
+    "profondeurMinM": 20.0,
+    "profondeurMaxM": 90.0,
+    "_comment_profondeur": "CALIBRE. Profondeur des chambres sous la surface. Le maximum doit rester sous voxel.bandDepthM (100 m), sinon les chambres tombent dans le socle force au plein et n'existent pas.",
+    "chambreRayonMinM": 6.0,
+    "chambreRayonMaxM": 22.0,
+    "_comment_pluieMinMm": "SOURCE (dissolution). Un karst se creuse a l'eau : sous ce cumul annuel, aucune chambre n'est semee, quelle que soit la roche.",
+    "pluieMinMm": 600.0,
+    "_comment_karstifiableMin": "CALIBRE. Aptitude minimale de la roche a se dissoudre, lue dans substrat.lithologies. A 0,5 seul le calcaire passe ; l'abaisser ouvrirait les grottes au gres.",
+    "karstifiableMin": 0.5,
+    "galerieRayonMinM": 1.5,
+    "galerieRayonMaxM": 4.0,
+    "_comment_bouclesPct": "CALIBRE. Part d'aretes courtes ajoutees a l'arbre couvrant. A zero le reseau est un arbre pur, sans aucun cycle : tout cul-de-sac oblige a revenir sur ses pas.",
+    "bouclesPct": 15.0,
+    "voisinsCandidats": 8,
+    "_comment_raccordM": "CALIBRE. Rayon de raccordement de l'union lisse d'Inigo Quilez. A ZERO l'union redevient un MAXIMUM DUR et les jonctions entre galerie et chambre prennent des aretes vives -- l'effet de tuyaux colles. Le proprietaire a demande un compromis entre les deux, ce qui est exactement une valeur basse de ce reglage : il degenere continument vers le maximum dur quand il tend vers zero.",
+    "raccordM": 2.5
+  }
 }

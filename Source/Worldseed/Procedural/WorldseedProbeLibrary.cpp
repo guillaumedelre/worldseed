@@ -179,7 +179,7 @@ FString UWorldseedProbeLibrary::ProbeVoxel(int32 Seed, float HeightMeters,
 
 				const double Debut = FPlatformTime::Seconds();
 				const bool bPlein = WorldseedVoxelChunk::Build(
-					Density, Boite, DensityRules.VoxelSizeM, Maillage, Stats);
+				Density, nullptr, Boite, DensityRules.VoxelSizeM, Maillage, Stats);
 				const double Ms = (FPlatformTime::Seconds() - Debut) * 1000.0;
 
 				TotalMs += Ms;

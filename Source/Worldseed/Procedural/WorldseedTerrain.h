@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
 #include "Procedural/WorldseedTexturePack.h"
 #include "WorldseedTerrain.generated.h"
@@ -341,6 +342,9 @@ protected:
 	/** Pose l'acteur voxel qui prend le relief proche en charge. */
 	void SpawnVoxelTerrain();
 
+	/** Rebatit le reseau de grottes quand le monde vient du menu. */
+	void RebuildCaveNetwork();
+
 	/** Echantillonne le climat sous le joueur et le pousse au ciel. */
 	void FeedSky(float DeltaSeconds);
 
@@ -448,6 +452,15 @@ protected:
 
 	/** Les 19 biomes du monde charge. */
 	FWorldseedBiomeMap Biomes;
+
+	/**
+	 * Le reseau de grottes du monde charge.
+	 *
+	 * Il n'est pas transporte par le menu -- il se rebatit depuis la lithologie
+	 * et le climat -- et il est transmis tel quel au mailleur voxel, pour que
+	 * les deux acteurs decrivent bien le meme sous-sol.
+	 */
+	FWorldseedCaveNetwork Caves;
 
 	/** L'acteur voxel pose par cet acteur, quand bUseVoxelMesher est vrai. */
 	UPROPERTY()
