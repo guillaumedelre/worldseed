@@ -122,6 +122,25 @@ public:
 	static FString ProbeWhittaker(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);
 
+	/**
+	 * Y a-t-il des LAMES de roche assez minces pour porter une arche ?
+	 *
+	 * C'EST LA SEULE QUESTION QUI DECIDE DES ARCHES, et elle avait ete tranchee
+	 * par la negative sur le monde de 16 x 8 km : zero site sur 402 points
+	 * emerges. Une arche est une ouverture TRAVERSANTE sous un pont de roche ;
+	 * percer une colline de deux cents metres ne donne pas une arche, ca donne
+	 * un tunnel. Il faut donc d'abord une crete mince.
+	 *
+	 * La mesure interroge le CHAMP REEL et non la grille macro : le relief de
+	 * simulation a 31 m de maille sur une grande carte, et une lame de soixante
+	 * metres y tient dans deux cellules. Si une lame existe, elle vient de la
+	 * couche voxel, qui travaille au metre.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeArches(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024, int32 Sites = 400, float SousLeSommetM = 20.0f,
+		float LargeurMaxM = 80.0f);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeCaves(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f,

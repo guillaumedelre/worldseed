@@ -983,6 +983,164 @@ FString UWorldseedProbeLibrary::ProbeWhittaker(int32 Seed, float HeightMeters,
 		Tally.Num(), LandTotal);
 }
 
+FString UWorldseedProbeLibrary::ProbeArches(int32 Seed, float HeightMeters,
+	int32 ResolutionY, int32 Sites, float SousLeSommetM, float LargeurMaxM)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules)
+	{
+		return FString::Printf(TEXT("regles illisibles : %s"), *Error);
+	}
+
+	const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*Rules);
+	FWorldseedDensity Density;
+	Density.Init(World.Geometry, World.ElevationM, 1.0f, Seed, DR);
+	Density.SetLithology(World.Lithology, FWorldseedLithologyRules::FromRules(*Rules));
+
+	// --- CHOISIR LES SITES : LES PLUS HAUTS, PAS AU HASARD -------------------
+	//
+	// Une lame ne se trouve pas en plaine. Prendre les sommets donne donc un
+	// MAJORANT : si la forme n'existe pas la, elle n'existe nulle part.
+	const int32 NX = World.Geometry.NX;
+	const int32 NY = World.Geometry.NY;
+	TArray<int32> Candidats;
+	Candidats.Reserve(World.ElevationM.Num() / 8);
+	for (int32 Cell = 0; Cell < World.ElevationM.Num(); ++Cell)
+	{
+		if (World.ElevationM[Cell] > 30.0f) { Candidats.Add(Cell); }
+	}
+	if (Candidats.Num() == 0)
+	{
+		return TEXT("aucune terre au-dessus de 30 m");
+	}
+	Candidats.Sort([&World](int32 A, int32 B)
+	{
+		return World.ElevationM[A] > World.ElevationM[B];
+	});
+
+	// Les sommets voisins decrivent la MEME montagne : sans ecart minimal on
+	// mesurerait quatre cents fois le meme point et le releve ne vaudrait rien.
+	const double EcartMinM = FMath::Max(200.0, World.Geometry.MetersPerPixel() * 4.0);
+	TArray<FVector2D> Retenus;
+	for (int32 Cell : Candidats)
+	{
+		if (Retenus.Num() >= Sites) { break; }
+		const double X = (static_cast<double>(Cell % NX) / NX - 0.5)
+			* World.Geometry.WidthM();
+		const double Y = (static_cast<double>(Cell / NX) / NY - 0.5)
+			* World.Geometry.HeightM;
+		bool bTropPres = false;
+		for (const FVector2D& P : Retenus)
+		{
+			if (FVector2D::DistSquared(P, FVector2D(X, Y)) < EcartMinM * EcartMinM)
+			{
+				bTropPres = true; break;
+			}
+		}
+		if (!bTropPres) { Retenus.Emplace(X, Y); }
+	}
+
+	// --- MESURER LA CRETE, SUR LE CHAMP REEL --------------------------------
+	//
+	// A vingt metres sous le sommet, on marche vers l'exterieur dans huit
+	// directions jusqu'a sortir de la roche. La largeur d'une direction est la
+	// somme des deux rayons opposes ; la LARGEUR DE LA CRETE est la plus PETITE
+	// des quatre, c'est-a-dire l'epaisseur de la lame et non sa longueur.
+	const double PasM = 2.0;
+	const double PorteeM = 400.0;
+	TArray<double> Largeurs;
+	Largeurs.Reserve(Retenus.Num());
+	int32 Minces = 0;
+	double LaPlusMince = PorteeM * 2.0;
+	FVector2D OuEllEst = FVector2D::ZeroVector;
+
+	int32 Vides = 0;
+	for (const FVector2D& P : Retenus)
+	{
+		const double Sommet = Density.SurfaceHeightM(P.X, P.Y);
+		const double Z = Sommet - SousLeSommetM;
+
+		// UN SITE DONT LE CENTRE EST DEJA DE L'AIR N'EST PAS UNE LAME MINCE.
+		// Le sommet vient de la grille MACRO, lue en bilineaire ; le champ
+		// reel, lui, deplace la surface et peut y avoir ouvert une diaclase.
+		// Compter ces sites comme des cretes de deux metres gonflerait le
+		// releve d'exactement ce qu'on cherche a prouver -- deux populations
+		// dans un meme chiffre, le piege qui a deja coute quatre corrections
+		// inutiles sur le routage des galeries.
+		if (Density.At(FVector(P.X, P.Y, Z)) > 0.0)
+		{
+			++Vides;
+			continue;
+		}
+
+		double Rayons[8];
+		for (int32 D = 0; D < 8; ++D)
+		{
+			const double Angle = D * (UE_DOUBLE_PI / 4.0);
+			const double CX = FMath::Cos(Angle);
+			const double CY = FMath::Sin(Angle);
+			double R = 0.0;
+			while (R < PorteeM)
+			{
+				const FVector Q(P.X + CX * (R + PasM), P.Y + CY * (R + PasM), Z);
+				if (Density.At(Q) > 0.0) { break; }   // > 0 = air
+				R += PasM;
+			}
+			Rayons[D] = R;
+		}
+
+		double Largeur = PorteeM * 2.0;
+		for (int32 D = 0; D < 4; ++D)
+		{
+			Largeur = FMath::Min(Largeur, Rayons[D] + Rayons[D + 4] + PasM);
+		}
+		Largeurs.Add(Largeur);
+		if (Largeur <= LargeurMaxM) { ++Minces; }
+		if (Largeur < LaPlusMince) { LaPlusMince = Largeur; OuEllEst = P; }
+	}
+
+	if (Largeurs.Num() == 0)
+	{
+		return TEXT("aucun site valide : tous les centres sont dans l'air");
+	}
+	Largeurs.Sort();
+	auto Centile = [&Largeurs](double Q)
+	{
+		const int32 I = FMath::Clamp(
+			FMath::RoundToInt(Q * (Largeurs.Num() - 1)), 0, Largeurs.Num() - 1);
+		return Largeurs[I];
+	};
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] --- lames de roche, %d sites ---"),
+		Largeurs.Num());
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   largeur de crete a %.0f m sous le sommet : ")
+		TEXT("min %.0f, p10 %.0f, mediane %.0f, p90 %.0f m"),
+		SousLeSommetM, Largeurs[0], Centile(0.10), Centile(0.50), Centile(0.90));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   sous %.0f m (une lame percable) : %d sites, soit %.2f %%"),
+		LargeurMaxM, Minces, 100.0 * Minces / FMath::Max(Largeurs.Num(), 1));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   la plus mince : %.0f m a (%.0f, %.0f) m"),
+		LaPlusMince, OuEllEst.X, OuEllEst.Y);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   ecartes, centre deja dans l'air : %d sites"), Vides);
+
+	const FString Resume = FString::Printf(
+		TEXT("%d sites, crete mediane %.0f m, %d sous %.0f m"),
+		Largeurs.Num(), Centile(0.50), Minces, LargeurMaxM);
+	return Resume;
+}
+
 FString UWorldseedProbeLibrary::ProbeCaves(int32 Seed, float HeightMeters,
 	int32 ResolutionY, float AreaM, float StepM, bool bSteepest)
 {
