@@ -1,4 +1,8 @@
-// Worldseed - portage fidele de Tools/WorldGen/worldgen/noise.py.
+// Worldseed - le bruit.
+//
+// L'ORIGINAL PYTHON A ETE SUPPRIME : ce fichier est la SEULE
+// implementation. Il ne faut plus chercher de reference ailleurs, ni supposer
+// qu'un autre fichier dit la meme chose autrement.
 
 #pragma once
 

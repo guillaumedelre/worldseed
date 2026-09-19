@@ -1,4 +1,8 @@
-// Worldseed - portage de Tools/WorldGen/export_uds_climate.py.
+// Worldseed - les prereglages climatiques.
+//
+// L'ORIGINAL PYTHON A ETE SUPPRIME : ce fichier est la SEULE
+// implementation. Il ne faut plus chercher de reference ailleurs, ni supposer
+// qu'un autre fichier dit la meme chose autrement.
 
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedRules.h"

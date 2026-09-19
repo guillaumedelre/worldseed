@@ -1,4 +1,8 @@
-// Worldseed - portage de Tools/WorldGen/export_uds_climate.py.
+// Worldseed - les prereglages climatiques.
+//
+// L'ORIGINAL PYTHON A ETE SUPPRIME : ce fichier est la SEULE
+// implementation. Il ne faut plus chercher de reference ailleurs, ni supposer
+// qu'un autre fichier dit la meme chose autrement.
 //
 // Ce fichier Python a ete cale sur les 23 prereglages LIVRES par Ultra Dynamic
 // Sky, lus dans l'editeur : ses formules sont des mesures, pas des suppositions.

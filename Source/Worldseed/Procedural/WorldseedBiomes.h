@@ -1,6 +1,10 @@
 // Worldseed - etape 5 : classification des biomes.
 //
-// Portage de Tools/WorldGen/worldgen/biomes.py.
+// Worldseed - les biomes.
+//
+// L'ORIGINAL PYTHON A ETE SUPPRIME : ce fichier est la SEULE
+// implementation. Il ne faut plus chercher de reference ailleurs, ni supposer
+// qu'un autre fichier dit la meme chose autrement.
 
 #pragma once
 
@@ -306,6 +310,23 @@ namespace WorldseedBiomes
 	 * Poids des quatre matieres pour un biome, dans l'ordre de
 	 * EWorldseedGroundSlot. La somme vaut un.
 	 */
+	/**
+	 * Le biome que donne un CLIMAT seul : Whittaker, limite des arbres,
+	 * mediterraneen, desert froid.
+	 *
+	 * EXTRAITE POUR QU'ON PUISSE LA TESTER SUR DES RELEVES REELS. Le bulletin
+	 * terrestre confronte vingt-trois climats de villes reelles a notre
+	 * diagramme ; tant que cette logique vivait dans la boucle de Classify, le
+	 * bulletin devait la REIMPLEMENTER -- il le faisait, en Python, et l'on
+	 * risquait donc de valider une copie plutot que le classificateur. Le depot
+	 * a une regle pour cela : ne jamais recopier une formule dans deux fichiers.
+	 *
+	 * Elle ne connait que le climat : ni altitude, ni pente, ni couverture. Les
+	 * surcharges qui s'appuient dessus restent dans Classify.
+	 */
+	WORLDSEED_API EWorldseedBiome FromClimate(float T, float P, float TempMaxC,
+		float SummerFrac, bool bTempMaxConnu, const FWorldseedBiomeRules& Rules);
+
 	WORLDSEED_API FLinearColor SlotWeights(EWorldseedBiome Biome);
 
 	/** Couleur de reference d'un biome, depuis debugColors. */

@@ -1,4 +1,8 @@
-// Worldseed - portage de Tools/WorldGen/worldgen/erosion.py.
+// Worldseed - l'erosion.
+//
+// L'ORIGINAL PYTHON A ETE SUPPRIME : ce fichier est la SEULE
+// implementation. Il ne faut plus chercher de reference ailleurs, ni supposer
+// qu'un autre fichier dit la meme chose autrement.
 
 #pragma once
 

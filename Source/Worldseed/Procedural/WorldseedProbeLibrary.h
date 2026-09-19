@@ -118,6 +118,23 @@ public:
 	static FString ProbeBiomes(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);
 
+	/**
+	 * Le BULLETIN DE CONFORMITE TERRESTRE, porte du Python vers le C++.
+	 *
+	 * Un monde procedural peut etre coherent avec lui-meme et faux par rapport
+	 * a la Terre : rien, dans la chaine, ne l'empeche de produire des deserts a
+	 * l'equateur. C'est le seul controle qui confronte le monde a des valeurs
+	 * EXTERIEURES au projet.
+	 *
+	 * Deux controles distincts. Vingt-trois climats de VILLES REELLES passes
+	 * dans notre diagramme -- celui-la juge le CLASSIFICATEUR, pas le monde.
+	 * Puis le bulletin sur des criteres SOURCES, jamais un pourcentage de biome
+	 * sorti de memoire.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeTerre(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeWhittaker(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);

@@ -4719,3 +4719,86 @@ pas une preuve. Releve identique avant et apres les trois chantiers :
   a etre eclatees par question posee, ce qui est le vrai critere pour une
   sonde : lithologie / relief / diaclases d'un cote, cretes / couverture des
   lames / verification des arches de l'autre.
+
+### Le Python est parti : tout est en C++ (19 septembre 2026)
+
+Demande du proprietaire : « je souhaite vraiment tout passer en C++ de maniere
+propre ». Les 5 770 lignes de `Tools/WorldGen` etaient LEGATAIRES -- aucun code
+du jeu ne les appelait -- mais elles restaient une seconde implementation, avec
+tout ce que cela porte de risque de divergence.
+
+**INVENTAIRE AVANT DE SUPPRIMER, et il tranche seul.** Vingt-six fichiers, dont
+vingt-quatre servent l'ancien pipeline PNG -- generer hors du moteur, exporter
+des images, les tuiler, les importer dans l'editeur -- qui n'existe plus depuis
+que le monde se calcule DANS LE JEU. Ils lisent tous un dossier de sortie qui
+n'est plus produit : ils etaient deja morts en pratique.
+
+**DEUX AVAIENT ENCORE DE LA VALEUR**, et elle a ete portee :
+
+- `terre.py` -- le BULLETIN DE CONFORMITE TERRESTRE. C'est le seul controle qui
+  confronte le monde a des valeurs EXTERIEURES au projet : un monde procedural
+  peut etre parfaitement coherent avec lui-meme et faux par rapport a la Terre.
+- `metrics.py` -- un harnais de non-regression. Il lisait le manifeste et les
+  PNG de l'ancienne sortie ; son role est desormais tenu par les sondes C++,
+  qui mesurent le monde genere en memoire.
+
+**`ProbeTerre` REMPLACE `terre.py`, ET CORRIGE UN DEFAUT DE FOND.** La version
+Python REIMPLEMENTAIT le diagramme de Whittaker pour confronter les vingt-trois
+climats reels. Elle validait donc une COPIE du classificateur, pas le
+classificateur -- exactement ce que la regle du depot interdit, « ne jamais
+recopier une formule dans deux fichiers ». D'ou l'extraction de
+`WorldseedBiomes::FromClimate(T, P, TempMax, FractionEte, Rules)` hors de la
+boucle de `Classify` : la sonde appelle desormais la MEME fonction que la
+generation.
+
+**RESULTAT : 20 sur 23 contre 19 avec le Python**, et les trois echecs sont
+tous explicables :
+
+- *Mediterranean_Cool_Summer* (13,2 C, 809 mm) tombe en foret subtropicale
+  humide. **C'EST UN DEFAUT REVELE PAR LE PORTAGE**, pas un artefact : la foret
+  subtropicale humide, ajoutee apres le mediterraneen, capture la case AVANT
+  que la surcharge mediterraneenne ne s'applique -- et celle-ci ne regarde que
+  `TemperateForest`, `Grassland` et `Steppe`. A reprendre.
+- *Subarctic-Severe_Winter* tombe en toundra. Le portage applique la LIMITE DES
+  ARBRES, que la version Python n'appliquait pas du tout : elle passait donc ce
+  releve en ne le testant pas. Notre approximation du mois le plus chaud par la
+  moyenne de la saison d'ete est plus froide que le vrai maximum mensuel, d'ou
+  la bascule. Le releve reel de ce climat est d'ailleurs un cas dur connu : il
+  est PLUS FROID en moyenne (-11,6 C) que la toundra polaire (-8,4), et porte
+  pourtant de la taiga.
+- *Cold_Semi-Arid* -- echec deja documente et assume : 610 mm a 6 degres EST
+  une foret dans un diagramme de Whittaker, et le releve gonfle sa pluie en
+  comptant l'equivalent-eau de la neige.
+
+**DEUX SEUILS QUI NE DOIVENT PAS ETRE UNIFIES, et le portage les preserve.** La
+part estivale de notre monde est plus CONTRASTEE que la realite -- 0,15 a 0,21
+entre 38 et 50 degres chez nous, contre 0,24 a 0,30 sur les villes
+mediterraneennes reelles -- parce que le modele de circulation est purement
+zonal. Le seuil du MOTEUR vaut donc 0,25, celui des RELEVES 0,31. Les confondre
+ferait basculer Oceanic (0,427) ou Humid_Subtropical (0,413).
+
+**ET UN PIEGE DE PORTAGE PAYE COMPTANT : UN LIBELLE N'EST PAS UNE CLE.** Le
+premier jet comparait la case obtenue au nom attendu, en chaines -- « Foret
+temperee mixte » contre « Forêt tempérée mixte ». QUATRE releves sur vingt-trois
+passaient : exactement ceux dont le nom n'a pas d'accent. La comparaison se fait
+sur l'ENUMERATION, comme pour les identifiants de biome et de roche.
+
+**CE QUI RESTE DANS `Tools/WorldGen`, ET C'EST DE LA DONNEE, PAS DU CODE :**
+
+    rules/world_rules.json    la source de verite des reglages, lue par le C++
+                              a WorldseedRules.cpp:99
+    rules/climats_reels.json  les 23 releves de stations reelles extraits
+                              d'Ultra Dynamic Sky, que le bulletin confronte
+
+Le second vivait dans `Saved/WorldGen/20260909/`, c'est-a-dire dans un dossier
+de SORTIE : une donnee de reference n'a rien a faire la, elle aurait disparu au
+premier menage.
+
+**LES EN-TETES QUI DISAIENT « portage de worldgen/climate.py » ONT ETE
+CORRIGES.** Neuf fichiers designaient un original qui n'existe plus. Ils disent
+desormais qu'ils sont la SEULE implementation -- il ne faut plus chercher de
+reference ailleurs, ni supposer qu'un autre fichier dit la meme chose
+autrement.
+
+Non-regression verifiee apres suppression : 822 chambres, 8 reseaux, 9 arches
+dont 8 vraies, au chiffre pres.

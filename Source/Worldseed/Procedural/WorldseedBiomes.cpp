@@ -343,6 +343,112 @@ namespace WorldseedBiomes
 		});
 	}
 
+	/**
+	 * Le biome que donne un CLIMAT seul. Voir la declaration pour le pourquoi.
+	 */
+	EWorldseedBiome FromClimate(float T, float P, float TempMaxC,
+		float SummerFrac, bool bTempMaxConnu, const FWorldseedBiomeRules& Rules)
+	{
+		if (Rules.Bands.Num() == 0 || Rules.Bands.Last().Cuts.Num() == 0)
+		{
+			return EWorldseedBiome::Ocean;
+		}
+
+		const bool bSummerFrac = true;
+
+		// --- diagramme de Whittaker ---------------------------------------
+		// Bandes de la plus froide a la plus chaude ; la premiere dont
+		// tMax depasse la temperature l'emporte, puis le premier seuil
+		// de pluie depasse a l'interieur.
+		EWorldseedBiome Biome = Rules.Bands.Last().Cuts.Last().Biome;
+		for (const FWorldseedWhittakerBand& Band : Rules.Bands)
+		{
+			if (T > Band.MaxTempC)
+			{
+				continue;
+			}
+			for (const FWorldseedWhittakerCut& Cut : Band.Cuts)
+			{
+				if (P <= Cut.MaxPrecipMm)
+				{
+					Biome = Cut.Biome;
+					break;
+				}
+			}
+			break;
+		}
+
+		// --- la limite des arbres se joue sur l'ETE, pas sur l'annee -------
+		//
+		// C'est le critere de Koppen (isotherme 10 degres du mois le plus
+		// chaud) et c'est le seul qui marche : un arbre a besoin d'une
+		// SAISON DE CROISSANCE. Le diagramme, qui ne connait que la
+		// moyenne annuelle, ne peut pas le voir -- le releve reel de la
+		// toundra polaire est PLUS CHAUD en moyenne (-8,4 C) que celui du
+		// subarctique a hiver severe (-11,6 C), qui porte pourtant de la
+		// taiga. Aucun seuil sur l'annee ne separe ces deux-la.
+		//
+		// Le critere joue DANS LES DEUX SENS, sans quoi il ne ferait que
+		// deshabiller les terres froides : sous la limite, une foret
+		// redevient toundra ; au-dessus, une toundra assez arrosee devient
+		// de la taiga.
+		if (bTempMaxConnu)
+		{
+			const bool bArbresPossibles = TempMaxC >= Rules.TreeLineWarmestMonthC;
+
+			if (!bArbresPossibles)
+			{
+				if (Biome == EWorldseedBiome::Taiga
+					|| Biome == EWorldseedBiome::TemperateForest
+					|| Biome == EWorldseedBiome::TemperateRainforest)
+				{
+					Biome = EWorldseedBiome::Tundra;
+				}
+			}
+			else if (Biome == EWorldseedBiome::Tundra
+				&& P > Rules.TaigaMinPrecipMm)
+			{
+				Biome = EWorldseedBiome::Taiga;
+			}
+		}
+
+		// --- le climat mediterraneen : un ETE SEC sous une annee qui ne l'est pas
+		//
+		// C'est le seul grand biome terrestre que le diagramme ne pouvait
+		// pas produire, parce qu'il ne connaissait que le CUMUL annuel.
+		// Trois releves reels le montraient : Mediterranean_Cool_Summer
+		// (13,2 C, 809 mm) tombait en foret temperee, alors qu'il n'y
+		// pousse ni la meme foret ni la meme chose.
+		//
+		// IL NE PREND QUE CE QUI LUI REVIENT : seules les cases que le
+		// diagramme donne a une vegetation temperee ou herbacee peuvent
+		// basculer. Une foret tropicale a mousson a elle aussi une saison
+		// seche, et elle n'est pas mediterraneenne pour autant.
+		if (bSummerFrac
+			&& (Biome == EWorldseedBiome::TemperateForest
+				|| Biome == EWorldseedBiome::Grassland
+				|| Biome == EWorldseedBiome::Steppe)
+			&& SummerFrac < Rules.MediterraneanSummerFracMax
+			&& T >= Rules.MediterraneanMinTempC
+			&& T <= Rules.MediterraneanMaxTempC
+			&& P >= Rules.MediterraneanMinPrecipMm
+			&& P <= Rules.MediterraneanMaxPrecipMm)
+		{
+			Biome = EWorldseedBiome::Mediterranean;
+		}
+
+		// --- un desert FROID se definit par son hiver -----------------------
+		// 18 degres de moyenne annuelle est la frontiere k/h de Koppen.
+		// Le diagramme ne pouvait pas trancher : le releve reel du
+		// Cold_Desert est a +17 C de moyenne, donc dans la bande chaude.
+		if (Biome == EWorldseedBiome::HotDesert && T < Rules.ColdDesertMaxTempC)
+		{
+			Biome = EWorldseedBiome::ColdDesert;
+		}
+		return Biome;
+	}
+
+
 	void Classify(const FWorldseedGeometry& Geometry, const TArray<float>& ElevationM,
 		const TArray<float>& TempMeanC, const TArray<float>& TempMaxC,
 		const TArray<float>& PrecipMm, const TArray<bool>& LakeMask,
@@ -437,95 +543,8 @@ namespace WorldseedBiomes
 				const float P = PrecipMm[I];
 				const float Slope = Out.SlopeDeg[I];
 
-				// --- diagramme de Whittaker ---------------------------------------
-				// Bandes de la plus froide a la plus chaude ; la premiere dont
-				// tMax depasse la temperature l'emporte, puis le premier seuil
-				// de pluie depasse a l'interieur.
-				EWorldseedBiome Biome = Rules.Bands.Last().Cuts.Last().Biome;
-				for (const FWorldseedWhittakerBand& Band : Rules.Bands)
-				{
-					if (T > Band.MaxTempC)
-					{
-						continue;
-					}
-					for (const FWorldseedWhittakerCut& Cut : Band.Cuts)
-					{
-						if (P <= Cut.MaxPrecipMm)
-						{
-							Biome = Cut.Biome;
-							break;
-						}
-					}
-					break;
-				}
-
-				// --- la limite des arbres se joue sur l'ETE, pas sur l'annee -------
-				//
-				// C'est le critere de Koppen (isotherme 10 degres du mois le plus
-				// chaud) et c'est le seul qui marche : un arbre a besoin d'une
-				// SAISON DE CROISSANCE. Le diagramme, qui ne connait que la
-				// moyenne annuelle, ne peut pas le voir -- le releve reel de la
-				// toundra polaire est PLUS CHAUD en moyenne (-8,4 C) que celui du
-				// subarctique a hiver severe (-11,6 C), qui porte pourtant de la
-				// taiga. Aucun seuil sur l'annee ne separe ces deux-la.
-				//
-				// Le critere joue DANS LES DEUX SENS, sans quoi il ne ferait que
-				// deshabiller les terres froides : sous la limite, une foret
-				// redevient toundra ; au-dessus, une toundra assez arrosee devient
-				// de la taiga.
-				if (bHasTempMax)
-				{
-					const bool bArbresPossibles = TempMaxC[I] >= Rules.TreeLineWarmestMonthC;
-
-					if (!bArbresPossibles)
-					{
-						if (Biome == EWorldseedBiome::Taiga
-							|| Biome == EWorldseedBiome::TemperateForest
-							|| Biome == EWorldseedBiome::TemperateRainforest)
-						{
-							Biome = EWorldseedBiome::Tundra;
-						}
-					}
-					else if (Biome == EWorldseedBiome::Tundra
-						&& P > Rules.TaigaMinPrecipMm)
-					{
-						Biome = EWorldseedBiome::Taiga;
-					}
-				}
-
-				// --- le climat mediterraneen : un ETE SEC sous une annee qui ne l'est pas
-				//
-				// C'est le seul grand biome terrestre que le diagramme ne pouvait
-				// pas produire, parce qu'il ne connaissait que le CUMUL annuel.
-				// Trois releves reels le montraient : Mediterranean_Cool_Summer
-				// (13,2 C, 809 mm) tombait en foret temperee, alors qu'il n'y
-				// pousse ni la meme foret ni la meme chose.
-				//
-				// IL NE PREND QUE CE QUI LUI REVIENT : seules les cases que le
-				// diagramme donne a une vegetation temperee ou herbacee peuvent
-				// basculer. Une foret tropicale a mousson a elle aussi une saison
-				// seche, et elle n'est pas mediterraneenne pour autant.
-				if (bSummerFrac
-					&& (Biome == EWorldseedBiome::TemperateForest
-						|| Biome == EWorldseedBiome::Grassland
-						|| Biome == EWorldseedBiome::Steppe)
-					&& SummerFrac < Rules.MediterraneanSummerFracMax
-					&& T >= Rules.MediterraneanMinTempC
-					&& T <= Rules.MediterraneanMaxTempC
-					&& P >= Rules.MediterraneanMinPrecipMm
-					&& P <= Rules.MediterraneanMaxPrecipMm)
-				{
-					Biome = EWorldseedBiome::Mediterranean;
-				}
-
-				// --- un desert FROID se definit par son hiver -----------------------
-				// 18 degres de moyenne annuelle est la frontiere k/h de Koppen.
-				// Le diagramme ne pouvait pas trancher : le releve reel du
-				// Cold_Desert est a +17 C de moyenne, donc dans la bande chaude.
-				if (Biome == EWorldseedBiome::HotDesert && T < Rules.ColdDesertMaxTempC)
-				{
-					Biome = EWorldseedBiome::ColdDesert;
-				}
+				EWorldseedBiome Biome = FromClimate(T, P,
+					bHasTempMax ? TempMaxC[I] : 0.0f, SummerFrac, bHasTempMax, Rules);
 
 				// --- surcharges, de la moins a la plus prioritaire -----------------
 				// ELLES NE VALENT QU'A TERRE : sous la mer, le diagramme dit la
