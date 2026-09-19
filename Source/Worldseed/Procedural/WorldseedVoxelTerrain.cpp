@@ -144,6 +144,33 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
+	// LES ANNEAUX AUSSI SE PILOTENT DEPUIS LA LIGNE DE COMMANDE, et pour la
+	// meme raison : un A/B dont les deux moities demandent une recompilation
+	// n'est pas un A/B. C'est ce qui permet de verifier, sur la MEME binaire,
+	// que `NiveauMax = 0` rend exactement la diffusion d'avant les anneaux.
+	{
+		int32 Niveaux = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNiveaux="), Niveaux)
+			&& Niveaux >= 0)
+		{
+			NiveauMax = FMath::Clamp(Niveaux, 0, 4);
+		}
+		float Anneau0 = 0.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedAnneau0="), Anneau0)
+			&& Anneau0 > 32.0f)
+		{
+			RayonAnneau0M = Anneau0;
+		}
+		if (NiveauMax > 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : %d anneaux, le premier a %.0f m, ")
+				TEXT("puis %.0f, %.0f -- dalle de transition %.2f cellule"),
+				NiveauMax + 1, RayonAnneauM(0), RayonAnneauM(1), RayonAnneauM(2),
+				LargeurTransition);
+		}
+	}
+
 	if (!LoadWorld())
 	{
 		return;
@@ -261,7 +288,7 @@ void AWorldseedVoxelTerrain::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// partage sur leur propre structure, jamais sur l'acteur : ils peuvent donc
 	// finir dans le vide sans rien toucher de mort. Attendre les bloquerait le
 	// fil de jeu pendant la fermeture du PIE, pour rien.
-	for (TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	for (TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
 		if (Pair.Value.Job.IsValid())
 		{
@@ -287,14 +314,154 @@ FVector AWorldseedVoxelTerrain::StreamingOriginCm() const
 	return GetActorLocation();
 }
 
-FBox AWorldseedVoxelTerrain::ChunkBoundsM(const FIntVector& Key) const
+FBox AWorldseedVoxelTerrain::ChunkBoundsM(const FWorldseedChunkKey& Key) const
 {
-	const double Side = ChunkSideM;
-	const FVector Min(Key.X * Side, Key.Y * Side, Key.Z * Side);
+	const double Side = CoteM(Key.Niveau);
+	const FVector Min(Key.C.X * Side, Key.C.Y * Side, Key.C.Z * Side);
 	return FBox(Min, Min + FVector(Side, Side, Side));
 }
 
-FVector AWorldseedVoxelTerrain::ChunkCentreCm(const FIntVector& Key) const
+int32 AWorldseedVoxelTerrain::NiveauEn(const FVector& PointM,
+	const FVector& OrigineM) const
+{
+	int32 Niveau = FMath::Max(NiveauMax, 0);
+	while (Niveau > 0)
+	{
+		const double Cote = CoteM(Niveau);
+		const FWorldseedChunkKey Contenant{
+			FIntVector(
+				FMath::FloorToInt(PointM.X / Cote),
+				FMath::FloorToInt(PointM.Y / Cote),
+				FMath::FloorToInt(PointM.Z / Cote)),
+			Niveau };
+
+		// MEME PREDICAT QUE LA DIFFUSION, et c'est toute la raison d'etre de
+		// cette fonction : un masque calcule avec un autre critere que celui qui
+		// decide des niveaux armerait des faces de transition la ou il n'y a pas
+		// de changement de resolution, et en oublierait ailleurs.
+		const FVector Centre = ChunkBoundsM(Contenant).GetCenter();
+		if (FVector::Dist(Centre, OrigineM) < RayonAnneauM(Niveau - 1))
+		{
+			--Niveau;
+		}
+		else
+		{
+			break;
+		}
+	}
+	return Niveau;
+}
+
+uint8 AWorldseedVoxelTerrain::MasqueDe(const FWorldseedChunkKey& Key,
+	const FVector& OrigineM) const
+{
+	// Le niveau le plus fin ne peut pas avoir de voisin plus fin.
+	if (Key.Niveau <= 0) { return 0; }
+
+	const double Cote = CoteM(Key.Niveau);
+	const FVector Centre = ChunkBoundsM(Key).GetCenter();
+
+	// Meme ordre que WorldseedTransvoxel::EFace : -X, +X, -Y, +Y, -Z, +Z.
+	static const FVector Normales[6] =
+	{
+		FVector(-1, 0, 0), FVector(1, 0, 0),
+		FVector(0, -1, 0), FVector(0, 1, 0),
+		FVector(0, 0, -1), FVector(0, 0, 1),
+	};
+
+	uint8 Masque = 0;
+	for (int32 F = 0; F < 6; ++F)
+	{
+		const FVector Voisin = Centre + Normales[F] * Cote;
+		if (NiveauEn(Voisin, OrigineM) < Key.Niveau)
+		{
+			Masque |= static_cast<uint8>(1 << F);
+		}
+	}
+	return Masque;
+}
+
+void AWorldseedVoxelTerrain::PlageSurface(int32 CX, int32 CY, int32 Niveau,
+	float& OutMinM, float& OutMaxM) const
+{
+	const FIntVector Cle(CX, CY, Niveau);
+	if (const FVector2D* Deja = CacheSurface.Find(Cle))
+	{
+		OutMinM = static_cast<float>(Deja->X);
+		OutMaxM = static_cast<float>(Deja->Y);
+		return;
+	}
+
+	const double Cote = CoteM(Niveau);
+	Density.SurfaceRangeM(CX * Cote, CY * Cote,
+		(CX + 1) * Cote, (CY + 1) * Cote, OutMinM, OutMaxM);
+
+	// LE CACHE SE VIDE PLUTOT QUE DE GONFLER SANS FIN. Un joueur qui traverse
+	// le monde finirait par l'emplir ; le repartir de zero coute une passe de
+	// recalcul et rien d'autre, puisque la donnee est deterministe.
+	if (CacheSurface.Num() > 200000)
+	{
+		CacheSurface.Reset();
+	}
+	CacheSurface.Add(Cle, FVector2D(OutMinM, OutMaxM));
+}
+
+void AWorldseedVoxelTerrain::Enumerer(const FWorldseedChunkKey& Key,
+	const FVector& OrigineM,
+	TArray<TPair<FWorldseedChunkKey, double>>& Sortie) const
+{
+	const FBox Boite = ChunkBoundsM(Key);
+
+	// ON ECARTE PAR LA DISTANCE A LA BOITE, PAS AU CENTRE, et seulement ici.
+	// Un noeud grossier dont le CENTRE est hors du rayon peut tres bien avoir
+	// des enfants dedans : l'ecarter sur son centre creuserait un trou. La
+	// distance a la boite, elle, ne peut que diminuer en descendant.
+	if (Boite.ComputeSquaredDistanceToPoint(OrigineM) >
+		static_cast<double>(LoadRadiusM) * LoadRadiusM)
+	{
+		return;
+	}
+
+	// LA GRILLE 2D DECIDE DE LA VERTICALE : on ne descend pas dans un noeud que
+	// la surface ne traverse pas, ni dans la bande creusable sous elle.
+	float SurfaceMin = 0.0f;
+	float SurfaceMax = 0.0f;
+	PlageSurface(Key.C.X, Key.C.Y, Key.Niveau, SurfaceMin, SurfaceMax);
+	if (Boite.Min.Z > SurfaceMax ||
+		Boite.Max.Z < SurfaceMin - DensityRules.BandDepthM)
+	{
+		return;
+	}
+
+	const FVector Centre = Boite.GetCenter();
+	const double Dist = FVector::Dist(Centre, OrigineM);
+
+	// SUBDIVISER OU EMETTRE, JAMAIS LES DEUX. C'est ce qui fait de la diffusion
+	// une partition : ni recouvrement, ni trou, quelle que soit la facon dont
+	// les rayons sont choisis.
+	if (Key.Niveau > 0 && Dist < RayonAnneauM(Key.Niveau - 1))
+	{
+		for (int32 I = 0; I < 8; ++I)
+		{
+			const FWorldseedChunkKey Enfant{
+				FIntVector(
+					Key.C.X * 2 + (I & 1),
+					Key.C.Y * 2 + ((I >> 1) & 1),
+					Key.C.Z * 2 + ((I >> 2) & 1)),
+				Key.Niveau - 1 };
+			Enumerer(Enfant, OrigineM, Sortie);
+		}
+		return;
+	}
+
+	if (Dist > LoadRadiusM)
+	{
+		return;
+	}
+	Sortie.Emplace(Key, Dist);
+}
+
+FVector AWorldseedVoxelTerrain::ChunkCentreCm(const FWorldseedChunkKey& Key) const
 {
 	const FBox B = ChunkBoundsM(Key);
 	const FVector CentreM = B.GetCenter();
@@ -304,6 +471,22 @@ FVector AWorldseedVoxelTerrain::ChunkCentreCm(const FIntVector& Key) const
 // ---------------------------------------------------------------- diffusion
 
 void AWorldseedVoxelTerrain::UpdateChunks()
+{
+	// ON MESURE AU LIEU DE SUPPOSER. Le banc a montre un pic periodique a 2400 m
+	// -- p95 a 14 ms pour une moyenne de 6,6 -- et ma premiere explication,
+	// « c-est le balayage des masques », a ete DEMENTIE : le borner n-a pas
+	// deplace le chiffre d-un dixieme. Plutot que d-essayer une deuxieme
+	// hypothese a l-aveugle, on chronometre la passe elle-meme : si le pic n-est
+	// pas ici, il est ailleurs, et ce sera dit.
+	const double DebutPasse = FPlatformTime::Seconds();
+	UpdateChunksInterne();
+	const double Ms = (FPlatformTime::Seconds() - DebutPasse) * 1000.0;
+	TotalUpdateMs += Ms;
+	++UpdateCount;
+	WorstUpdateMs = FMath::Max(WorstUpdateMs, Ms);
+}
+
+void AWorldseedVoxelTerrain::UpdateChunksInterne()
 {
 	if (!bWorldReady)
 	{
@@ -315,8 +498,8 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 	const double Side = ChunkSideM;
 
 	// --- 1. relacher ce qui est trop loin -----------------------------------
-	TArray<FIntVector> ARelacher;
-	for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	TArray<FWorldseedChunkKey> ARelacher;
+	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
 		const FVector CentreM = ChunkBoundsM(Pair.Key).GetCenter();
 		if (FVector::Dist(CentreM, OriginM) > UnloadRadiusM)
@@ -324,14 +507,14 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 			ARelacher.Add(Pair.Key);
 		}
 	}
-	for (const FIntVector& Key : ARelacher)
+	for (const FWorldseedChunkKey& Key : ARelacher)
 	{
 		ReleaseChunk(Key);
 	}
 
 	// --- 2. recolter les travaux termines -----------------------------------
 	int32 Televerses = 0;
-	for (TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	for (TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
 		FWorldseedVoxelChunkState& State = Pair.Value;
 		if (!State.Job.IsValid())
@@ -353,7 +536,7 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 
 	// --- 3. lancer ce qui manque --------------------------------------------
 	int32 EnVol = 0;
-	for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
 		if (Pair.Value.Job.IsValid())
 		{
@@ -375,8 +558,8 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 	// distinction faite a la reception -- sans lui, on a seulement remplace un
 	// trou marque "vide" par un trou sans marque.
 	{
-		TArray<FIntVector> ARelancer;
-		for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+		TArray<FWorldseedChunkKey> ARelancer;
+		for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 		{
 			const FWorldseedVoxelChunkState& S = Pair.Value;
 			if (!S.bEmpty && !S.Mesh && !S.Job.IsValid())
@@ -384,7 +567,7 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 				ARelancer.Add(Pair.Key);
 			}
 		}
-		for (const FIntVector& Key : ARelancer)
+		for (const FWorldseedChunkKey& Key : ARelancer)
 		{
 			if (EnVol >= MaxJobsInFlight) { break; }
 			LaunchJob(Key);
@@ -396,16 +579,18 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 	// donne : on ne considere que les etages ou la surface peut se trouver,
 	// plus la bande creusable dessous. Les etages de socle n'existent meme pas
 	// dans cette enumeration.
-	const int32 Portee = FMath::CeilToInt(LoadRadiusM / Side);
-	const int32 CX0 = FMath::FloorToInt(OriginM.X / Side);
-	const int32 CY0 = FMath::FloorToInt(OriginM.Y / Side);
+	//
+	// ON PART DU NIVEAU LE PLUS GROSSIER ET L'ON DESCEND. Avec `NiveauMax` a
+	// zero, il n'y a qu'un niveau et la descente ne fait rien : l'enumeration
+	// est alors RIGOUREUSEMENT celle d'avant les anneaux, ce qui est la
+	// propriete de surete de ce chantier.
+	const int32 NiveauHaut = FMath::Max(NiveauMax, 0);
+	const double CoteHaute = CoteM(NiveauHaut);
+	const int32 Portee = FMath::CeilToInt(LoadRadiusM / CoteHaute) + 1;
+	const int32 CX0 = FMath::FloorToInt(OriginM.X / CoteHaute);
+	const int32 CY0 = FMath::FloorToInt(OriginM.Y / CoteHaute);
 
-	struct FCandidat
-	{
-		FIntVector Key;
-		double DistM;
-	};
-	TArray<FCandidat> Candidats;
+	TArray<TPair<FWorldseedChunkKey, double>> Feuilles;
 
 	for (int32 DY = -Portee; DY <= Portee; ++DY)
 	{
@@ -414,58 +599,96 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 			const int32 CX = CX0 + DX;
 			const int32 CY = CY0 + DY;
 
-			const double MinX = CX * Side;
-			const double MinY = CY * Side;
-
 			float SurfaceMin = 0.0f;
 			float SurfaceMax = 0.0f;
-			Density.SurfaceRangeM(MinX, MinY, MinX + Side, MinY + Side,
-				SurfaceMin, SurfaceMax);
+			PlageSurface(CX, CY, NiveauHaut, SurfaceMin, SurfaceMax);
 
 			const int32 ZBas = FMath::FloorToInt(
-				(SurfaceMin - DensityRules.BandDepthM) / Side);
-			const int32 ZHaut = FMath::FloorToInt(SurfaceMax / Side);
+				(SurfaceMin - DensityRules.BandDepthM) / CoteHaute);
+			const int32 ZHaut = FMath::FloorToInt(SurfaceMax / CoteHaute);
 
 			for (int32 CZ = ZBas; CZ <= ZHaut; ++CZ)
 			{
-				const FIntVector Key(CX, CY, CZ);
-				if (Chunks.Contains(Key))
-				{
-					continue;
-				}
-
-				const FVector CentreM = ChunkBoundsM(Key).GetCenter();
-				const double DistM = FVector::Dist(CentreM, OriginM);
-				if (DistM > LoadRadiusM)
-				{
-					continue;
-				}
-
-				Candidats.Add({ Key, DistM });
+				Enumerer(FWorldseedChunkKey{ FIntVector(CX, CY, CZ), NiveauHaut },
+					OriginM, Feuilles);
 			}
 		}
 	}
 
-	// Les plus proches d'abord : c'est ce que le joueur voit en premier.
-	Candidats.Sort([](const FCandidat& A, const FCandidat& B)
+	// --- 3 ter. LES MASQUES PERIMES ------------------------------------------
+	//
+	// Le masque d'un chunk depend du niveau de ses VOISINS, donc de la position
+	// du joueur : il change sans que le chunk change de niveau. Un chunk qui
+	// garde un masque perime rouvre exactement la fissure que la cellule de
+	// transition etait censee fermer -- et rien ne le signalerait. On remaille
+	// donc, en gardant l'ancien maillage visible jusqu'au televersement du neuf.
+	//
+	// LE BALAYAGE EST BORNE PAR PASSE, ET LA MESURE L'A EXIGE. La premiere
+	// version repassait sur TOUTES les feuilles a chaque mise a jour, ce qui
+	// coute `feuilles x 6 x niveaux` descentes de NiveauEn -- et cela se voyait :
+	// a 2400 m, p95 a 14 ms pour une moyenne de 6,6, soit un pic periodique a la
+	// cadence exacte de la passe. Le controle qui a designe le coupable : deux
+	// anneaux a 2400 m (3 934 feuilles, deux niveaux) donnent le MEME pic que
+	// trois anneaux (2 436 feuilles, trois niveaux). C'est donc le PRODUIT qui
+	// compte et non le nombre de chunks -- le niveau 3, un temps soupconne, est
+	// innocent.
+	//
+	// Un balayage tournant etale le cout : la fissure eventuelle ne dure que le
+	// temps d'un tour, soit quelques dixiemes de seconde, et le pic disparait.
+	if (NiveauMax > 0 && Feuilles.Num() > 0)
 	{
-		return A.DistM < B.DistM;
+		constexpr int32 BudgetParPasse = 512;
+
+		TArray<FWorldseedChunkKey> ARemailler;
+		const int32 Nombre = Feuilles.Num();
+		const int32 Examen = FMath::Min(BudgetParPasse, Nombre);
+
+		for (int32 I = 0; I < Examen; ++I)
+		{
+			if (CurseurMasque >= Nombre) { CurseurMasque = 0; }
+			const FWorldseedChunkKey& Cle = Feuilles[CurseurMasque].Key;
+			++CurseurMasque;
+
+			const FWorldseedVoxelChunkState* const S = Chunks.Find(Cle);
+			if (!S || S->Job.IsValid() || S->bEmpty) { continue; }
+			if (S->Masque != MasqueDe(Cle, OriginM))
+			{
+				ARemailler.Add(Cle);
+			}
+		}
+		for (const FWorldseedChunkKey& Key : ARemailler)
+		{
+			if (EnVol >= MaxJobsInFlight) { break; }
+			LaunchJob(Key);
+			++EnVol;
+		}
+	}
+
+	// Les plus proches d'abord : c'est ce que le joueur voit en premier.
+	Feuilles.Sort([](const TPair<FWorldseedChunkKey, double>& A,
+		const TPair<FWorldseedChunkKey, double>& B)
+	{
+		return A.Value < B.Value;
 	});
 
-	for (const FCandidat& C : Candidats)
+	for (const TPair<FWorldseedChunkKey, double>& F : Feuilles)
 	{
 		if (EnVol >= MaxJobsInFlight)
 		{
 			break;
 		}
-		LaunchJob(C.Key);
+		if (Chunks.Contains(F.Key))
+		{
+			continue;
+		}
+		LaunchJob(F.Key);
 		++EnVol;
 	}
 
 	HoldOrReleasePlayer();
 }
 
-void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
+void AWorldseedVoxelTerrain::LaunchJob(const FWorldseedChunkKey& Key)
 {
 	FWorldseedVoxelChunkState& State = Chunks.FindOrAdd(Key);
 
@@ -480,8 +703,22 @@ void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
 	// en meme temps sans verrou. Ce qui NE serait pas sur, c'est de capturer
 	// l'acteur : il peut mourir avant la fin du travail.
 	const FWorldseedDensity* const Champ = &Density;
-	const float VoxelSizeM = DensityRules.VoxelSizeM;
-	const bool bTransvoxel = DensityRules.bTransvoxel;
+	const float VoxelSizeM = VoxelM(Key.Niveau);
+	const float Largeur = LargeurTransition;
+
+	// LE MASQUE EST CALCULE ICI, SUR LE FIL DE JEU, ET RETENU DANS L'ETAT. Il
+	// depend de l'origine de diffusion, qui bouge : le retenir est ce qui permet
+	// de savoir, a la passe suivante, qu'il a change et qu'il faut remailler.
+	const FVector OrigineM =
+		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
+	const uint8 Masque = MasqueDe(Key, OrigineM);
+	State.Masque = Masque;
+
+	// LES CELLULES DE TRANSITION IMPLIQUENT LE MAILLEUR MAISON. Le marching
+	// cubes du moteur ne sait pas les produire : demander un raccord tout en
+	// maillant avec lui donnerait une fissure silencieuse. Des qu'un masque est
+	// arme, on passe donc par Transvoxel, quel que soit le reglage.
+	const bool bTransvoxel = DensityRules.bTransvoxel || (Masque != 0);
 
 	// L'EXTRACTION SE FAIT ICI, SUR LE FIL DE JEU, ET UNE SEULE FOIS. Le chunk
 	// est elargi du rayon de raccordement : une capsule qui ne touche pas la
@@ -491,14 +728,15 @@ void AWorldseedVoxelTerrain::LaunchJob(const FIntVector& Key)
 		CaveNetwork.Query(Job->BoundsM.ExpandBy(DensityRules.CaveBlendM + 4.0f), Job->Caves);
 	}
 
-	Async(EAsyncExecution::ThreadPool, [Job, Champ, VoxelSizeM, bTransvoxel]()
+	Async(EAsyncExecution::ThreadPool,
+		[Job, Champ, VoxelSizeM, bTransvoxel, Masque, Largeur]()
 	{
 		if (!Job->bCancel.load(std::memory_order_acquire))
 		{
 			Job->bHasSurface = WorldseedVoxelChunk::Build(
 				*Champ, &Job->Caves, Job->BoundsM, VoxelSizeM, Job->Mesh, Job->Stats,
 				[Job]() { return Job->bCancel.load(std::memory_order_acquire); },
-				bTransvoxel);
+				bTransvoxel, Masque, Largeur);
 		}
 
 		// EN DERNIER, ET EN LIBERATION : tout ce qui precede doit etre visible
@@ -543,7 +781,7 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 
 	for (int32 CZ = ZBas; CZ <= ZHaut; ++CZ)
 	{
-		const FIntVector Key(CX, CY, CZ);
+		const FWorldseedChunkKey Key{ FIntVector(CX, CY, CZ), 0 };
 		const FVector CentreM = ChunkBoundsM(Key).GetCenter();
 		const double DistM = FVector::Dist(CentreM, OriginM);
 		const FWorldseedVoxelChunkState* S = Chunks.Find(Key);
@@ -703,7 +941,7 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 	}
 }
 
-void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
+void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	FWorldseedVoxelChunkState& State)
 {
 	FWorldseedVoxelJobPtr Job = State.Job;
@@ -759,8 +997,10 @@ void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
 
 	if (!State.Mesh)
 	{
-		const FName Nom(*FString::Printf(TEXT("Voxel_%d_%d_%d"),
-			Key.X, Key.Y, Key.Z));
+		// LE NIVEAU ENTRE DANS LE NOM : sans lui, deux chunks de niveaux
+		// differents mais de memes indices porteraient le meme nom de composant.
+		const FName Nom(*FString::Printf(TEXT("Voxel_L%d_%d_%d_%d"),
+			Key.Niveau, Key.C.X, Key.C.Y, Key.C.Z));
 		State.Mesh = NewObject<UProceduralMeshComponent>(this, Nom);
 		State.Mesh->SetupAttachment(RootScene);
 		State.Mesh->bUseAsyncCooking = true;
@@ -811,7 +1051,7 @@ void AWorldseedVoxelTerrain::UploadChunk(const FIntVector& Key,
 	}
 }
 
-void AWorldseedVoxelTerrain::ReleaseChunk(const FIntVector& Key)
+void AWorldseedVoxelTerrain::ReleaseChunk(const FWorldseedChunkKey& Key)
 {
 	FWorldseedVoxelChunkState* const State = Chunks.Find(Key);
 	if (!State)
@@ -830,12 +1070,24 @@ void AWorldseedVoxelTerrain::ReleaseChunk(const FIntVector& Key)
 	Chunks.Remove(Key);
 }
 
-FIntVector AWorldseedVoxelTerrain::KeyForPoint(double X, double Y, double Z) const
+FWorldseedChunkKey AWorldseedVoxelTerrain::KeyForPoint(double X, double Y, double Z) const
 {
-	return FIntVector(
-		FMath::FloorToInt(X / ChunkSideM),
-		FMath::FloorToInt(Y / ChunkSideM),
-		FMath::FloorToInt(Z / ChunkSideM));
+	// LE NIVEAU SE DEDUIT, IL NE SE SUPPOSE PAS. Le chunk qui couvre un point
+	// n-est au niveau le plus fin que si le point est dans le premier anneau ;
+	// chercher ailleurs une cle de niveau zero ne trouverait rien, et le filet
+	// du joueur conclurait que le sol n-existe pas.
+	const FVector PointM(X, Y, Z);
+	const FVector OrigineM =
+		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
+	const int32 Niveau = NiveauEn(PointM, OrigineM);
+	const double Cote = CoteM(Niveau);
+
+	return FWorldseedChunkKey{
+		FIntVector(
+			FMath::FloorToInt(X / Cote),
+			FMath::FloorToInt(Y / Cote),
+			FMath::FloorToInt(Z / Cote)),
+		Niveau };
 }
 
 bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
@@ -1034,7 +1286,7 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	}
 
 	// --- relacher, quand le sol existe VRAIMENT -----------------------------
-	const FIntVector Key = KeyForPoint(X, Y, SurfaceM);
+	const FWorldseedChunkKey Key = KeyForPoint(X, Y, SurfaceM);
 	const FWorldseedVoxelChunkState* const State = Chunks.Find(Key);
 	if (!State || !State->bHasCollision || State->Job.IsValid())
 	{
@@ -1053,14 +1305,15 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	bPlayerReleased = true;
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] voxel : joueur rendu a la gravite, chunk %d,%d,%d solide"),
-		Key.X, Key.Y, Key.Z);
+		TEXT("[Worldseed] voxel : joueur rendu a la gravite, chunk %d,%d,%d ")
+		TEXT("de niveau %d solide"),
+		Key.C.X, Key.C.Y, Key.C.Z, Key.Niveau);
 }
 
 int32 AWorldseedVoxelTerrain::TravauxEnVol() const
 {
 	int32 N = 0;
-	for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
 		if (Pair.Value.Job.IsValid()) { ++N; }
 	}
@@ -1071,10 +1324,26 @@ FString AWorldseedVoxelTerrain::ReportState() const
 {
 	int32 EnVol = 0;
 	int32 AvecCollision = 0;
-	for (const TPair<FIntVector, FWorldseedVoxelChunkState>& Pair : Chunks)
+	int32 ParNiveau[5] = { 0, 0, 0, 0, 0 };
+	int32 AvecTransition = 0;
+	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
 		if (Pair.Value.Job.IsValid()) { ++EnVol; }
 		if (Pair.Value.bHasCollision) { ++AvecCollision; }
+		if (Pair.Value.Masque != 0) { ++AvecTransition; }
+		++ParNiveau[FMath::Clamp(Pair.Key.Niveau, 0, 4)];
+	}
+
+	// LA REPARTITION PAR NIVEAU EST CE QUI DIT SI LES ANNEAUX MORDENT. Le compte
+	// total seul ne le dit pas : il baisse aussi quand le rayon baisse, et l'on
+	// croirait a un gain des anneaux la ou l'on n'a fait que voir moins loin.
+	if (NiveauMax > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : chunks par niveau  %d / %d / %d / %d / %d")
+			TEXT("  |  %d portent une face de transition"),
+			ParNiveau[0], ParNiveau[1], ParNiveau[2], ParNiveau[3], ParNiveau[4],
+			AvecTransition);
 	}
 
 	const double Moyenne = (BuiltChunks + EmptyChunks) > 0
@@ -1083,10 +1352,12 @@ FString AWorldseedVoxelTerrain::ReportState() const
 	const FString Resume = FString::Printf(
 		TEXT("%d chunks suivis (%d mailles, %d vides, %d en vol, %d avec collision)  |  ")
 		TEXT("%d triangles  |  maillage %.2f ms/chunk, %.2f au pire  |  ")
+		TEXT("PASSE DE DIFFUSION %.2f ms en moyenne, %.2f au pire  |  ")
 		TEXT("TELEVERSEMENT sur le fil de jeu %.2f ms/chunk, %.2f au pire, ")
 		TEXT("%.1f s cumulees  |  premier remplissage %.1f s"),
 		Chunks.Num(), BuiltChunks, EmptyChunks, EnVol, AvecCollision,
 		TotalTriangles, Moyenne, WorstMeshMs,
+		(UpdateCount > 0) ? TotalUpdateMs / UpdateCount : 0.0, WorstUpdateMs,
 		(UploadCount > 0) ? TotalUploadMs / UploadCount : 0.0, WorstUploadMs,
 		TotalUploadMs / 1000.0, FirstFillSeconds);
 

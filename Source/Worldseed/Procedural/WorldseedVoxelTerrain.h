@@ -21,6 +21,35 @@ class UMaterialInterface;
 class UProceduralMeshComponent;
 
 /**
+ * La cle d'un chunk : sa cellule, ET SON NIVEAU DE DETAIL.
+ *
+ * LES GRILLES DES NIVEAUX SONT EMBOITEES, et c'est ce qui rend les anneaux
+ * possibles. Un chunk de niveau L fait `ChunkSideM * 2^L` de cote et porte
+ * toujours le MEME nombre de cellules -- seule la taille du voxel double. Un
+ * chunk de niveau L se decoupe donc exactement en huit chunks de niveau L-1,
+ * tous alignes sur l'origine du monde.
+ *
+ * C'est cet emboitement qui garantit que la diffusion est une PARTITION : un
+ * noeud est soit maille, soit remplace par ses huit enfants, jamais les deux.
+ * Ni recouvrement -- donc pas de geometrie dessinee en double -- ni trou.
+ */
+struct FWorldseedChunkKey
+{
+	FIntVector C = FIntVector::ZeroValue;
+	int32 Niveau = 0;
+
+	bool operator==(const FWorldseedChunkKey& Autre) const
+	{
+		return C == Autre.C && Niveau == Autre.Niveau;
+	}
+};
+
+FORCEINLINE uint32 GetTypeHash(const FWorldseedChunkKey& Cle)
+{
+	return HashCombine(GetTypeHash(Cle.C), ::GetTypeHash(Cle.Niveau));
+}
+
+/**
  * Un maillage de chunk en cours de fabrication sur un fil de travail.
  *
  * MEME DISCIPLINE QUE LA GENERATION DU MONDE DEPUIS LE MENU : le travailleur ne
@@ -31,7 +60,7 @@ class UProceduralMeshComponent;
  */
 struct FWorldseedVoxelJob
 {
-	FIntVector Key = FIntVector::ZeroValue;
+	FWorldseedChunkKey Key;
 	FBox BoundsM = FBox(ForceInit);
 
 	FWorldseedVoxelMesh Mesh;
@@ -64,6 +93,16 @@ struct FWorldseedVoxelChunkState
 	bool bEmpty = false;
 
 	bool bHasCollision = false;
+
+	/**
+	 * Les faces de transition avec lesquelles ce chunk a ete maille.
+	 *
+	 * IL FAUT LE RETENIR : le masque depend du niveau des VOISINS, donc de la
+	 * position du joueur. Il change sans que le chunk change de niveau, et un
+	 * chunk qui garde un masque perime rouvre la fissure qu-il etait cense
+	 * fermer. On le compare a chaque passe et l-on remaille quand il differe.
+	 */
+	uint8 Masque = 0;
 
 	/** Pourquoi le dernier maillage n'a rien rendu. Diagnostic. */
 	FWorldseedVoxelStats::ECause Cause = FWorldseedVoxelStats::ECause::Maille;
@@ -152,6 +191,50 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "32.0"))
 	float UnloadRadiusM = 840.0f;
+
+	// ------------------------------------------------ anneaux de resolution
+
+	/**
+	 * Nombre d'anneaux au-dela du plus fin. ZERO = resolution uniforme.
+	 *
+	 * A ZERO, LA DIFFUSION EST RIGOUREUSEMENT CELLE D'AVANT -- c'est la
+	 * propriete de surete de ce chantier, et elle se verifie : meme compte de
+	 * chunks, meme geometrie. L'arbitrage du proprietaire etant « mesurer
+	 * d'abord, decouper ensuite », les anneaux arrivent ETEINTS et se mesurent
+	 * au banc avant qu'on fixe quoi que ce soit.
+	 *
+	 * A un niveau de plus, les chunks lointains font 64 m pour des voxels de
+	 * 2 m : ils couvrent huit fois le volume d'un chunk fin, donc le compte
+	 * cesse de croitre en R au carre.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
+		meta = (ClampMin = "0", ClampMax = "4"))
+	int32 NiveauMax = 0;
+
+	/**
+	 * Rayon du premier anneau -- celui qui reste a pleine resolution, en metres.
+	 *
+	 * Les suivants DOUBLENT : anneau L jusqu'a `RayonAnneau0M * 2^L`. Ce n'est
+	 * pas un choix esthetique : la taille d'un chunk double aussi d'un niveau a
+	 * l'autre, donc un rayon qui double garde a peu pres CONSTANT le nombre de
+	 * chunks par anneau. Tout autre progression fait enfler un anneau au
+	 * detriment des autres.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
+		meta = (ClampMin = "32.0"))
+	float RayonAnneau0M = 250.0f;
+
+	/**
+	 * Epaisseur de la dalle de transition, en FRACTION d'une cellule du chunk.
+	 *
+	 * Jamais en metres : elle doit suivre le niveau de detail. Une epaisseur
+	 * nulle raccorde geometriquement sans fissure mais « leads to severe shading
+	 * problems » (Lengyel, section 4.3) -- les triangles lateraux degenerent et
+	 * leurs normales n'ont plus de sens.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
+		meta = (ClampMin = "0.0", ClampMax = "0.9"))
+	float LargeurTransition = 0.5f;
 
 	// IL Y AVAIT ICI UN RAYON DE COLLISION, plus court que le rayon de
 	// chargement, au motif que cuire une collision coute plus cher que mailler.
@@ -279,16 +362,64 @@ private:
 	FVector StreamingOriginCm() const;
 
 	/** Centre d'un chunk, en centimetres monde. */
-	FVector ChunkCentreCm(const FIntVector& Key) const;
+	FVector ChunkCentreCm(const FWorldseedChunkKey& Key) const;
 
 	/** Boite d'un chunk, en metres dans le repere de l'acteur. */
-	FBox ChunkBoundsM(const FIntVector& Key) const;
+	FBox ChunkBoundsM(const FWorldseedChunkKey& Key) const;
+
+	/** Cote d'un chunk et taille d'un voxel, au niveau donne. */
+	double CoteM(int32 Niveau) const
+	{
+		return static_cast<double>(ChunkSideM) * static_cast<double>(1 << Niveau);
+	}
+	float VoxelM(int32 Niveau) const
+	{
+		return DensityRules.VoxelSizeM * static_cast<float>(1 << Niveau);
+	}
+
+	/** Rayon exterieur de l'anneau de niveau L. Double a chaque cran. */
+	double RayonAnneauM(int32 Niveau) const
+	{
+		return static_cast<double>(RayonAnneau0M) * static_cast<double>(1 << Niveau);
+	}
+
+	/**
+	 * Le niveau REELLEMENT emis en un point, obtenu par la MEME descente que la
+	 * diffusion.
+	 *
+	 * IL NE SUFFIT PAS DE LIRE UNE DISTANCE. Deux chunks de niveaux differents
+	 * n'ont pas le meme centre, donc un critere pose sur la distance seule peut
+	 * faire emettre les deux -- geometrie en double -- ou aucun des deux -- trou.
+	 * La seule definition sure est celle que la diffusion applique : on descend
+	 * depuis le niveau le plus grossier en subdivisant tant que le noeud qui
+	 * contient le point est assez proche. Meme predicat, donc resultat coherent
+	 * par construction.
+	 */
+	int32 NiveauEn(const FVector& PointM, const FVector& OrigineM) const;
+
+	/**
+	 * Les faces de ce chunk qui bordent un voisin PLUS FIN.
+	 *
+	 * Ce sont celles-la qui reclament une cellule de transition : Lengyel les
+	 * place dans le bloc GROSSIER, parce que c'est lui qui a trop peu
+	 * d'echantillons. Le niveau le plus fin n'en a donc jamais.
+	 */
+	uint8 MasqueDe(const FWorldseedChunkKey& Key, const FVector& OrigineM) const;
+
+	/** Descend un noeud jusqu'aux feuilles de la partition, et les collecte. */
+	void Enumerer(const FWorldseedChunkKey& Key, const FVector& OrigineM,
+		TArray<TPair<FWorldseedChunkKey, double>>& Sortie) const;
 
 	/** Lance le maillage d'un chunk sur le pool de fils. */
-	void LaunchJob(const FIntVector& Key);
+	/** Bornes d-altitude d-une colonne de chunks, par le cache. */
+	void PlageSurface(int32 CX, int32 CY, int32 Niveau,
+		float& OutMinM, float& OutMaxM) const;
+
+	void UpdateChunksInterne();
+	void LaunchJob(const FWorldseedChunkKey& Key);
 
 	/** Televerse un maillage termine dans son composant. */
-	void UploadChunk(const FIntVector& Key, FWorldseedVoxelChunkState& State);
+	void UploadChunk(const FWorldseedChunkKey& Key, FWorldseedVoxelChunkState& State);
 
 	/** Couleur et teinte d'un sommet, depuis la carte des biomes. */
 	void PaintVertices(FWorldseedVoxelMesh& Mesh) const;
@@ -370,13 +501,13 @@ public:
 
 private:
 
-	void ReleaseChunk(const FIntVector& Key);
+	void ReleaseChunk(const FWorldseedChunkKey& Key);
 
 	/** Tient le joueur en l'air, puis le rend a la gravite quand le sol existe. */
 	void HoldOrReleasePlayer();
 
 	/** Clef du chunk qui porte un point donne, en metres repere acteur. */
-	FIntVector KeyForPoint(double X, double Y, double Z) const;
+	FWorldseedChunkKey KeyForPoint(double X, double Y, double Z) const;
 
 	/**
 	 * Cherche un endroit ou POSER le joueur : plat, emerge, et plein dessous.
@@ -437,7 +568,40 @@ private:
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;
 
-	TMap<FIntVector, FWorldseedVoxelChunkState> Chunks;
+	/**
+	 * Ou en est le balayage des masques perimes.
+	 *
+	 * IL EST BORNE PAR PASSE, ET LA MESURE L-A EXIGE. Repasser sur TOUTES les
+	 * feuilles a chaque mise a jour coute `feuilles x 6 x niveaux` descentes de
+	 * NiveauEn, et cela se voit : a 2400 m le p95 montait a 14 ms pour une
+	 * moyenne de 6,6 -- un pic periodique, exactement la cadence de la passe.
+	 * Le controle qui l-a prouve : deux anneaux a 2400 m (3 934 feuilles, deux
+	 * niveaux) donnent le MEME pic que trois anneaux (2 436 feuilles, trois
+	 * niveaux), alors que les comptes de chunks n-ont rien de commun. C-est donc
+	 * le produit qui compte, pas le nombre de chunks -- et le niveau 3, un temps
+	 * soupconne, est innocent.
+	 */
+	double TotalUpdateMs = 0.0;
+	double WorstUpdateMs = 0.0;
+	int32 UpdateCount = 0;
+
+	/**
+	 * Bornes d-altitude par colonne et par niveau, calculees UNE FOIS.
+	 *
+	 * MESURE : la passe de diffusion coutait 13,65 ms a 2400 m -- soit le pic de
+	 * p95 observe au banc, retrouve en la chronometrant au lieu de le supposer.
+	 * La cause est SurfaceRangeM, qui echantillonne au pas de la grille : un
+	 * noeud de 256 m demande 289 lectures, et la descente la rappelle pour le
+	 * meme noeud que la boucle de tete vient d-interroger.
+	 *
+	 * Or LE RELIEF 2D NE CHANGE PAS EN COURS DE PARTIE. Ces bornes sont donc une
+	 * constante du monde, pas une grandeur a recalculer dix fois par seconde.
+	 */
+	mutable TMap<FIntVector, FVector2D> CacheSurface;
+
+	int32 CurseurMasque = 0;
+
+	TMap<FWorldseedChunkKey, FWorldseedVoxelChunkState> Chunks;
 
 	FTimerHandle UpdateTimer;
 
