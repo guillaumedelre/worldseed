@@ -388,40 +388,6 @@ crash handler — MCP will hang; relaunch); fresh and small → the editor is fi
   garantie de compatibilite entre versions moteur.
 
 
-### PCGBiomeCore : ce qui a ete compris, et ou ca coince (9 septembre 2026)
-
-- **BiomeCore reconnait les biomes par COULEUR, pas par identifiant.** Chaque `BiomeDefinition`
-  porte un `BiomeColor` compare a la couleur echantillonnee, a `BiomeColorTolerance` pres (0,01
-  par defaut). Les couleurs de `biome_debug_rgb.png` ne conviennent pas : la paire la plus proche
-  n'est ecartee que de 14/255. D'ou `export_biome_texture.py --biomecore`, qui sort une palette
-  sur un reseau a trois niveaux par canal : ecart lineaire minimal 0,216, soit 22 fois la
-  tolerance. Le sample d'Epic met **alpha = 0** dans ses `BiomeColor`.
-- **Le sampler interne de BiomeCore est deja en `Point` avec `force_editor_only_cpu_sampling`**
-  (`BiomeLocalCache_Texture`, texel 800 cm) : Epic a fait le bon choix, ce qui confirme le
-  diagnostic sur `EPCGTextureFilter`.
-- **Il faut un acteur `BP_PCGBiomeCore` dans le niveau**, dont la boite recouvre les acteurs de
-  biome, sinon chaque `BP_PCGBiomeTexture` s'arrete sur "No Overlapping BiomeCore, add one or
-  enable Local Preview".
-- **La taille de la surface vient de l'ECHELLE DE L'ACTEUR, pas de l'extent de la boite.**
-  L'extent non scale vaut 100 uu et le construction script pose l'echelle a la resolution de la
-  texture. Pour couvrir une demi-portee de H centimetres il faut donc
-  `set_actor_scale3d(H / 100)` ; poser l'extent numeriquement ne sert a rien et donne
-  "Texture data has a texel size larger than its data - will return empty data"
-  (le controle est `2 * Transform.Scale / TexelSize`, `PCGTextureData.cpp:315`).
-- **NON RESOLU** : une fois ces trois points corriges, le montage ne sort toujours aucune
-  instance, sur `GetAttributeFromPointIndex : index 0 hors limites, 0 elements` a l'interieur de
-  `LocalBiomeCore`. Reste a determiner si l'appariement de couleur se fait en espace LINEAIRE ou
-  sRGB (le sample n'utilise que des 0 et des 1, ou les deux coincident, donc il ne tranche pas).
-  Le montage est en place et desactive dans le niveau (`Worldseed_BiomeCore`,
-  `Worldseed_BiomeTex_*`) pour etre repris sans le refaire.
-- **Le chemin natif, lui, marche et est prouve exact** : `PCGTextureSampler` en `Point` +
-  `PCGConvertToPointData` + `PCGProjection` sur le Landscape + `PCGStaticMeshSpawner`. Voir
-  `Tools/UE/pcg_bench.py`.
-- **Une texture 4065x4065 s'importe sans redimensionnement** (`power_of_two_mode = NONE`) et
-  reste exacte : 0 ecart sur 16 524 225 texels, 19 biomes presents. Compter 66 Mo par tuile en
-  B8G8R8A8 non compresse, 264 Mo pour le monde.
-
-
 ### Semis de vegetation PCG a l'echelle du monde (9 septembre 2026)
 
 - **La densite survit intacte a `PCGProjection` sur le Landscape.** Mesure : apres projection,
@@ -520,19 +486,6 @@ Quatre points, tous payes comptant :
   donne le detail ; attention, ses colonnes `ResExcKB` sur-comptent (la somme depassait la
   memoire physique du processus).
 
-### Ultra Dynamic Sky : ne compile pas dans ce projet (9 septembre 2026)
-
-Depose dans le niveau, `Ultra_Dynamic_Sky` n'instancie AUCUN de ses 20 composants (ni soleil, ni
-atmosphere, ni nuages) : la scene reste noire. Cause : le Blueprint est en `BS_ERROR`, et il n'est
-pas seul - **34 des 85 Blueprints du pack sont en erreur au chargement**, 39 apres une double
-passe de recompilation. Les messages designent des classes de composants non resolues
-(`Cloud Paint Actors Manager`, `UDS_PlayerOcclusion`, `UDS_Utility_Opener`), des enums invalides et
-des tableaux de references objet incompatibles avec eux-memes - la signature d'un pack qui ne
-correspond pas a cette version du moteur. Les 823 assets sont pourtant bien presents : il ne
-manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
-(`Worldseed_SunLight` / `_SkyLight` / `_Atmosphere` / `_Fog`) a ete restaure.
-
-
 ### Vegetation semee sous l'eau : un desaccord de reechantillonnage (9 septembre 2026)
 
 - **Symptome** : herbe et arbres sous la surface de l'ocean, jusqu'a -12 m.
@@ -593,6 +546,38 @@ manque pas de fichiers. Recompiler ne repare rien. L'eclairage manuel
 <!-- Section propre au projet Worldseed. Placee APRES le marqueur de fin VibeUE
      a dessein : tout ce qui precede est regenere par VibeUE.GenerateAgentConfig
      et serait efface. Ne pas deplacer au-dessus. -->
+
+## A ZERO. CE QUI N'EXISTE PLUS (lire avant tout le reste)
+
+**Le contenu de ce fichier est cumulatif : il raconte des sessions successives,
+et certaines notes decrivent un etat qui n'existe plus.** Elles sont gardees
+parce que le RAISONNEMENT qui a tranche garde sa valeur -- une piste abandonnee
+est une piste qu'on ne retente pas. Mais il faut savoir ce qui est mort.
+
+| ce qui est cite plus bas | etat au 19 septembre 2026 |
+|---|---|
+| `Tools/WorldGen/worldgen/*` (le generateur Python) | **SUPPRIME.** Toute la chaine est en C++ dans `Source/Worldseed/Procedural/` |
+| `terre.py`, `metrics.py` | **SUPPRIMES.** Remplaces par `ProbeTerre` et les sondes C++ |
+| `export_biome_texture.py`, `tile_world.py`, `export_uds_climate.py`, `spawn_point.py`, `diag_*.py`, `montage.py`, `rebuild_report.py`, `refresh_manifest.py`, `tune_coast.py` | **SUPPRIMES.** Ils servaient le pipeline PNG -> Landscape, qui n'existe plus |
+| `python -m worldgen`, `metrics.py --diff`, le banc `--preview` a 50 s | **N'EXISTENT PLUS.** Le monde se genere DANS LE JEU ; on mesure avec les sondes |
+| le Landscape, ses couches peintes, les tuiles, le rapport HTML | **N'EXISTENT PLUS.** Le relief est un champ de densite maille en voxels |
+| `Tools/UE/*` (12 scripts d'editeur) | **GARDES A DESSEIN**, jusqu'au portage de la vegetation. Ils visent un Landscape disparu, mais `vegetation.py` porte le semis PCG et c'est la seule implementation qui en existe |
+
+**CE QUI RESTE DE `Tools/WorldGen` EST DE LA DONNEE, PAS DU CODE :**
+`rules/world_rules.json`, la source de verite des reglages lue par le C++ a
+`WorldseedRules.cpp:99`, et `rules/climats_reels.json`, les vingt-trois releves
+de stations reelles que le bulletin terrestre confronte.
+
+**COMMENT ON MESURE AUJOURD'HUI.** Les sondes sont des `UFUNCTION` appelables
+depuis Python d'editeur ou en commandlet : `ProbeTerre` (bulletin de conformite
+terrestre), `ProbeLithology`, `ProbeBiomes`, `ProbeWhittaker`, `ProbeGlobe`,
+`ProbeGroundFields`, `ProbeVoxel`, `ProbeCaves`, `ProbeArches`. Et l'on REGARDE
+avec la tournee photo, qui n'exige aucun outillage externe :
+
+    UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc
+      -game -WorldseedPhotos -WorldseedQuitter -windowed -resx=1600 -resy=900
+
+---
 
 ## A. Comment travailler avec le proprietaire du projet
 
@@ -682,6 +667,13 @@ en a 7 a 8. Consequence visible : trop de forets, pas assez de prairies.
 BREAKING CHANGE: le monde doit etre regenere, puis re-tuile et reimporte.
 Relancer `python -m worldgen`, `tile_world.py`, puis `rebuild_world.rebuild()`.
 ```
+*(EXEMPLE HISTORIQUE. Ces trois commandes n'existent plus : le monde se
+regenere desormais tout seul au lancement des que
+`WORLDSEED_PIPELINE_VERSION` change ou que l'empreinte de `world_rules.json`
+bouge. Le pied d'un commit qui casse doit donc dire quoi REMESURER, pas quoi
+relancer.)*
+```
+```
 
 **CE QUE LA CONVENTION NE CHANGE PAS, ET QUI COMPTE PLUS QU'ELLE.** Elle
 normalise la ligne de sujet ; elle n'autorise pas a raccourcir le corps. Les
@@ -708,8 +700,9 @@ section 11 gagnerait a etre deplacee ici un jour.)*
   celle-la sautait de 4,7. Sortie dans `tectonics.poleContinentBonusM`. Second
   cas du meme genre : le fondu cotier du detail dans `export.py`
   (`smoothstep(-20, 40)`), sorti dans `world.detailCoastFadeStartM/FullM`.
-  **Apres toute mise a l'echelle, lancer `metrics.py --diff` contre l'ancien
-  monde : c'est le seul controle qui voit ce genre d'erreur.**
+  **Apres toute mise a l'echelle, comparer un releve AVANT et APRES : c'est le
+  seul controle qui voit ce genre d'erreur.** (A l'epoque `metrics.py --diff` ;
+  aujourd'hui les sondes C++, dont le releve se lit au journal.)
 - **Reduire la resolution de sortie impose de retirer une octave de detail.**
   A 8129 pixels la 6e octave de `detailFrequency` = 160 tombait a 1,6 pixel ; a
   4065 elle tomberait a 0,8, soit sous Nyquist, donc de l'aliasing pur.
@@ -1065,9 +1058,9 @@ hors du monde et tombe dans la mer.
 
 ### Ultra Dynamic Sky : le pack COMPILE maintenant (11 septembre 2026)
 
-**La note du 9 septembre plus haut est PERIMEE.** Elle disait que 34 des 85
-Blueprints d'UDS etaient en erreur et que la scene restait noire. Le pack
-reimporte donne **87 Blueprints sur 87 en `BS_UP_TO_DATE`**, et l'acteur
+**UNE NOTE DU 9 SEPTEMBRE DISAIT L'INVERSE, ET ELLE A ETE SUPPRIMEE** -- elle
+affirmait que 34 des 85 Blueprints d'UDS etaient en erreur et que la scene
+restait noire. Le pack reimporte donne **87 Blueprints sur 87 en `BS_UP_TO_DATE`**, et l'acteur
 instancie bien ses **56 composants** (Sun, Moon, SkyAtmosphere, HeightFog,
 VolumetricCloud, deux SkyLight). Ne pas rouvrir ce constat d'echec.
 
@@ -2095,7 +2088,10 @@ minuteur de changement qui court vers 200-300 s, horloge qui avance
 pôle sud : biome 3, météo retirée au sort en `Clear_Skies` et **minuteur remis à
 0,0 s** — c'est la signature de `Clear and Restart`.
 
-**Reste ouvert, sans gravité** : au-dessus de l'océan le biome vaut 0, pour lequel
+**FERMÉ LE 13 SEPTEMBRE** -- voir « En mer, le climat est celui de la côte la
+plus proche » : une transformée de distance sur la grille donne à chaque cellule
+d'eau le biome côtier le plus proche, 0 cellule à zéro sur 16 384. Le constat
+d'alors, gardé parce qu'il dit le SYMPTÔME : au-dessus de l'océan le biome valait 0, pour lequel
 aucun préréglage n'existe. Le `Cast` échoue, la chaîne s'arrête, et la météo du
 dernier biome terrestre persiste. C'est un comportement acceptable ; le corriger
 demanderait une branche « biome maritime » et un préréglage océanique.
@@ -2897,13 +2893,17 @@ l'execution**, depuis une graine choisie dans `L_Menu`, et le relief est un
 maillage procedural par chunks au lieu d'un Landscape. `Source/Worldseed/Procedural/`
 en porte tout le code ; la carte de jeu est `L_Worldseed_Proc`.
 
-**`Tools/WorldGen` est donc LEGATAIRE.** Aucun code du jeu ne l'appelle. Le seul
-lien entre les deux moities est `world_rules.json`, lu par les deux. Ne pas
-croire, en lisant `pipeline.py`, qu'on lit ce que le jeu execute : le fichier
-qui fait foi est `WorldseedPipeline.cpp`.
+**LE GENERATEUR PYTHON A ETE SUPPRIME LE 19 SEPTEMBRE.** Cette note disait
+qu'il etait legataire ; il n'existe plus du tout. Il ne reste de
+`Tools/WorldGen` que de la DONNEE -- `rules/world_rules.json`, la source de
+verite des reglages lue par le C++, et `rules/climats_reels.json`, les
+vingt-trois releves de stations reelles que le bulletin terrestre confronte.
+Voir la section « Le Python est parti » en fin de fichier.
 
-Mesures de la chaine C++ (18 septembre, graine 22169, 2048x1024) : tectonique
-855 ms, climat 9212, erosion 8241, climat 9247, **total 27,6 s**, cache 21,5 Mo.
+Mesures de la chaine, graine 20260909 en 2048x1024 sur 64 x 32 km, apres la
+boucle soulevement / erosion et la passe littorale : tectonique 780 ms,
+lithologie 88, climat 8 832, **erosion 31 698**, littoral 222, climat 9 221,
+biomes 26, cavites 9 684 -- **total 62 s**, cache 18,4 Mo, chaine v12.
 
 ### L'hydrologie a ete RETIREE du generateur (18 septembre 2026)
 
@@ -3189,9 +3189,11 @@ sont pas le meme et ne doivent jamais etre unifies sans refaire la mesure.
 au fil de la session (etiquettes, seuil de foret pluviale, desert froid,
 mediterraneen).
 
-**CE QUI RESTE OUVERT, et c'est chiffre :**
+**CE QUI RESTAIT OUVERT CE JOUR-LA, et c'est chiffre** *(le premier point a ete
+TRAITE le jour meme -- voir « La foret subtropicale humide » juste apres ; les
+deux autres restent ouverts)* **:**
 
-- *Foret subtropicale humide.* `Humid_Subtropical` (14,0 C, 673 mm) et sa
+- *Foret subtropicale humide.* **FAIT.** `Humid_Subtropical` (14,0 C, 673 mm) et sa
   variante a hiver sec (14,4 C, 1364 mm) tombent en foret temperee. La table des
   attendus les envoie vers `foret_temperee_humide`, ce qui est un pis-aller :
   une foret subtropicale humide n'est pas une foret PLUVIALE temperee. La case
@@ -3253,7 +3255,11 @@ reprend a zero.
 9. Ajouter la **foret subtropicale humide**, identifiant 20, puis s'arreter.
 10. Le desequilibre des terres froides : **plus tard, apres la vegetation**.
 11. **Quinze biomes, et la regle est gravee : aucun nouveau biome sans un releve
-    reel qui tombe mal.**
+    reel qui tombe mal.** *(La regle a tenu : la foret subtropicale humide a
+    ete ajoutee parce que deux releves reels tombaient mal, et rien d'autre
+    depuis. Le registre compte aujourd'hui VINGT-ET-UNE entrees, dont trois
+    couvertures -- ocean, lac, riviere -- qui ne sont plus attribuees depuis le
+    retrait de l'hydrologie.)*
 
 **D -- la vegetation.**
 12. **Courbes de tolerance par espece** sur les champs continus -- temperature,
@@ -3318,6 +3324,13 @@ karstique a besoin.
 quand la surface se creuse, et l'erosion ne transforme pas du granite en
 calcaire. **2D pour l'instant**, une roche dominante par colonne.
 
+*(CES CHIFFRES SONT CEUX DU MONDE DE 8 KM ET A CINQ ROCHES. Le catalogue en
+compte HUIT depuis le 19 septembre -- craie, dolomie et tuf volcanique
+ajoutes -- et le seuil du socle est passe d'une constante metrique a un
+quantile. Les valeurs a jour sont plus bas, section « Trois roches de plus ».
+On garde celles-ci parce que c'est le releve qui a valide l'ATTRIBUTION a
+l'epoque, et que le raisonnement qui suit porte sur elle.)*
+
 | roche | des terres | des mers | altitude moyenne | karst |
 |---|---|---|---|---|
 | Basalte | 18,17 % | **80,86 %** | 42 m | 0,00 |
@@ -3331,7 +3344,9 @@ rien : un tirage au hasard donnerait les memes. Ce qui tranche est le croisement
 avec l'altitude et la mer -- basalte sous l'eau a 81 %, granite le plus haut a
 180 m de moyenne, roches de bassin dans les bas pays a 32-37 m. **26,67 % des
 terres sont karstifiables** ; sur Terre le karst couvre 15 a 20 % des terres
-libres de glace. Cout : **54 ms**.
+libres de glace. Cout : **54 ms**. *(Chiffre du monde de 8 km a CINQ roches.
+Avec huit roches et le seuil de socle par quantile, il vaut 23,26 % -- voir
+« Trois roches de plus ».)*
 
 **DEUX PIEGES PAYES COMPTANT :**
 
@@ -3344,7 +3359,9 @@ libres de glace. Cout : **54 ms**.
   revenait avec l'ancienne carte des roches et la sonde rendait le meme chiffre
   qu'avant correction, sans le moindre signe. C'est exactement ce que
   `WORLDSEED_PIPELINE_VERSION` existe pour couvrir -- l'empreinte de
-  `world_rules.json` couvre les REGLAGES, ce compteur couvre le CODE. Porte a 7.
+  `world_rules.json` couvre les REGLAGES, ce compteur couvre le CODE. Porte a 7
+  ce jour-la ; il vaut **12** au 19 septembre 2026, et chaque cran a une raison
+  ecrite dans son commit.
   **Toute correction future de l'attribution des roches doit le bumper.**
 
 **A SURVEILLER** : 18,17 % des terres reposent sur de la croute oceanique, donc
@@ -3800,8 +3817,10 @@ demande devient un PLANCHER de densite, pas un plafond d'accessibilite, et
 l'attribution tourne entre les composantes -- sans quoi la plus haute raflerait
 toutes les entrees et les autres resteraient murees.
 
-**ETAT FINAL** : 28 chambres, 31 liaisons dont 8 abandonnees, **5 reseaux**,
-**7 entrees**, 297 troncons, 466 ms. Percement **0,29 %**, soit exactement les
+**ETAT FINAL SUR LE MONDE DE 8 KM** : 28 chambres, 31 liaisons dont 8
+abandonnees, **5 reseaux**, **7 entrees**, 297 troncons, 466 ms. *(Sur 64 x
+32 km : 822 chambres, 944 liaisons, 8 reseaux, 66 bouches, 574 gouffres,
+154 dolines, 9 arches, 9,7 s.)* Percement **0,29 %**, soit exactement les
 sept bouches, qui percent a dessein. Le repli drape n'est plus jamais employe.
 
 ### Arbitrage de la profondeur des grottes (19 septembre 2026)
@@ -3919,7 +3938,7 @@ valait 0,16 ; le code en tirait un seuil en supposant le bruit UNIFORME sur
 cense garder 16 % n'en gardait que 1,59**. Meme famille d'erreur que les 715 mm
 pris pour une mediane. Renomme `diaclaseZoneSeuil`, avec la courbe relevee dans
 le commentaire de la regle -- part de la roche insoluble emergee : 0,15 -> 32,53 % ;
-0,35 -> 14,44 ; 0,55 -> 5,00 ; 0,68 -> 1,59. Retenu 0,55, soit **2,44 % des terres**.
+0,35 -> 14,44 ; 0,55 -> 5,00 ; 0,68 -> 1,59. Retenu 0,55 ce jour-la, **0,45 aujourd'hui**.
 
 **LE COUT SE PAIE DANS LA GARDE, PAS DANS LE WORLEY.** Le Worley ne tourne que
 sur une fraction du volume ; c'est le test qui decide de l'appeler qui s'evalue
@@ -4009,8 +4028,10 @@ marque.
   appels qu'il etait pose sur le sol de fond a 42 m alors que le terrain est a
   13 m. Lire le mode de deplacement avant d'interpreter une altitude.
 
-**RESTE OUVERT : le sol de fond entre DANS les cavites.** Distinct des trous, et
-non corrige. Dans la salle sous le gouffre, le masquer laisse de la roche pleine
+**LE SOL DE FOND ENTRAIT DANS LES CAVITES. CORRIGE LE JOUR MEME** -- voir « Le
+sol de fond sort du RENDU PRINCIPAL » : `SetRenderInMainPass(false)` plus
+`SetRenderInDepthPass(true)`, ce qui le retire de l'IMAGE sans le retirer de
+l'EAU. Le constat d'alors : Dans la salle sous le gouffre, le masquer laisse de la roche pleine
 partout -- il est donc bien dessine a l'interieur. Un decor d'horizon n'a rien a
 faire dans un volume ferme.
 
@@ -4217,69 +4238,18 @@ interchangeables deux experiences de jeu qui ne le sont pas.
 **ETAT FINAL** : 6 bouches, 9 avens, 4 dolines pour 25 chambres et 4 reseaux,
 368 troncons, 275 ms, percement des galeries 0,00 %, 2,85 ms/chunk.
 
-### Les arches : il n'y a rien a percer (19 septembre 2026)
+### La distance PERPENDICULAIRE a une paroi (19 septembre 2026)
 
-Troisieme des trois formes arbitrees, et la seule qui n'aboutit pas. Le terme
-existe, il est mesure, il est **desactive** (`archeAmplitudeM: 0`), garde inerte
-comme `overhangWarpM` pour que la mesure reste rejouable.
+Seul acquis durable d'une tentative d'arches par bruit en nappes, par ailleurs
+abandonnee et remplacee deux fois le meme jour (voir « Tailler les lames » puis
+« Percer les caps a leur base »).
 
-**LA DEFINITION QUI TRANCHE, donnee par le proprietaire** : une arche naturelle
-est une **OUVERTURE TRAVERSANTE sous un pont de roche continu**, creee par
-SOUSTRACTION de matiere. Ce n'est ni une grotte, ni un abri sous roche, ni une
-visiere. Le critere est le trou qui traverse.
-
-**ELLE DEMANDE DONC UNE LAME, ET CE MONDE N'EN A AUCUNE.** Mesure : sur 402
-points emerges au-dessus de 30 m, **ZERO** n'a de crete plus etroite que 80 m a
-vingt metres sous son sommet. Percer une colline de deux cents metres ne donne
-pas une arche, ca donne un tunnel. **Ce n'est pas un defaut de reglage, c'est
-une absence de support** -- et aucun reglage du bruit ne pouvait y remedier.
-
-**CE QUE LE TERME PRODUISAIT REELLEMENT** : des nappes horizontales mordant dans
-un versant, donc des abris sous roche au mieux, et des TERRASSES au pire -- un
-escalier de marches regulieres, parce qu'a 1/59 m en horizontal les nappes
-s'etendent en bandes continues le long du versant au lieu de former des poches.
-Resserrer a 1/22 m n'a pas suffi.
-
-**MESURE, temoin avec/sans sur le terrain le plus raide** (visieres = toit de
-15 m au plus sur un vide commencant a 20 m au plus sous la surface) :
-
-    sans le terme    2,17 %
-    seuil 0,55       2,37 %
-    seuil 0,30      14,41 %
-    seuil 0,15      30,35 %
-
-Le terme MARCHE. Ce qu'il produit n'est simplement pas une arche.
-
-**CE QUI RESTE ACQUIS ET UTILE** : la distance PERPENDICULAIRE. Le champ mesure
-une distance VERTICALE a la surface, et sur une falaise cette distance est
-enorme des le premier metre dans la roche -- la surface a l'aplomb se trouve
-loin au-dessus. Toute porte posee sur elle ne mord JAMAIS sur une paroi. On
-divise par la norme du gradient, `sqrt(1 + |grad H|^2)`, ce qui rend la distance
-vraie a la paroi au premier ordre. A reprendre pour toute forme de PAROI.
-
-**LA PISTE QUI RESTE** : faire de l'arche une forme POSEE, comme la doline et
-l'aven -- choisir un site sur un eperon raide, creuser la LAME ET LE TROU
-ensemble. On construit alors la propriete qui la definit au lieu d'esperer qu'un
-bruit la rencontre.
-
-**QUATRE ERREURS DE PROTOCOLE DANS LA MEME HEURE, toutes de placement**, et
-elles m'ont fait annoncer deux fois un resultat faux -- dont un « desastre » qui
-n'existait pas :
-
-- **trois fois, pion pose a une altitude FIXE sur un relief accidente**, donc
-  DANS la colline. L'image qu'on obtient alors -- lambeaux de terrain sur fond
-  d'ocean, decor masque -- ressemble trait pour trait a un defaut de generation.
-  Le controle qui tranche est un sondage VERTICAL depuis la camera : s'il touche
-  du voxel, on est sous la roche, et rien de ce qu'on voit ne prouve quoi que ce
-  soit ;
-- **une fois, `end_play` / sonde / `begin_play` enchaines dans un seul script**.
-  La fermeture du PIE est asynchrone -- c'est deja note plus haut pour les
-  chargements d'asset -- donc le pion place ensuite ne l'a jamais ete, et la
-  capture « temoin » a ete prise au point d'apparition. Un appel par etape.
-
-**Procedure de placement, desormais obligatoire avant toute capture** : sonder
-vers le bas pour trouver le sol, poser dessus avec une marge, puis sonder vers
-le HAUT pour confirmer le ciel libre.
+**LE CHAMP MESURE UNE DISTANCE VERTICALE A LA SURFACE, et sur une falaise cette
+distance est enorme des le premier metre dans la roche** -- la surface a
+l'aplomb se trouve loin au-dessus. Toute porte posee sur elle ne mord donc
+JAMAIS sur une paroi. On divise par la norme du gradient,
+`sqrt(1 + |grad H|^2)`, ce qui rend la distance vraie a la paroi au premier
+ordre. **A reprendre pour toute forme de PAROI.**
 
 ### La durete est branchee sur l'erosion, et ca ne change rien (19 septembre 2026)
 
@@ -4464,7 +4434,9 @@ plus d'elle mais de la couche voxel, qui travaille au metre.
   interieurs continentaux redeviennent maritimes ;
 - les cavites sont metriques (espacement 180 m, profondeurs) : seize fois la
   surface donnera seize fois les chambres, donc un cout a mesurer ;
-- le sol de fond fait 512 sommets, soit **125 m par maille** a 64 km ;
+- le sol de fond faisait 512 sommets, soit **125 m par maille** a 64 km ;
+  *(porte a 1024 le 19 septembre, soit 63 m -- ce n'est toujours pas assez, la
+  vraie reponse serait des anneaux de resolution decroissante)* ;
 - le bulletin terrestre est entierement a reprendre.
 
 **VerticalScale PLAFONNE A 4,0.** Au-dela de 32 km de hauteur, le facteur cesse
@@ -4601,9 +4573,14 @@ de percement, epaisseur, rayon, pont). C'est l'arbitrage B8, et c'est ce qui
 permet a `Worldseed.Lieux` d'y envoyer le joueur. Le reseau etant REBATI a
 chaque chargement et jamais serialise, aucun impact sur le cache.
 
-**RESTE OUVERT** : une arche sur dix a son pont perce (0 m a deux metres du
-centre) -- probablement une chambre ou une galerie qui passe juste au-dessus.
-Et rien n'a encore ete REGARDE en jeu.
+**CE « PONT PERCE » ÉTAIT UN DÉFAUT DE MESURE, PAS DE GÉOMÉTRIE.** La sonde
+annonçait 0 m d'épaisseur au MÊME décalage de -22 m sur les DIX arches -- une
+coïncidence trop parfaite pour être géologique, et c'est ce qui a mis sur la
+piste. Elle commençait à compter la roche DEPUIS L'INTÉRIEUR du trou qu'on
+venait de creuser. Corrigée en sortant d'abord de l'air, puis en comptant.
+**RÈGLE : une mesure identique au chiffre près sur dix cas indépendants mesure
+le mesureur, pas le mesuré.** Et les arches ont depuis été regardées en jeu, par
+la tournée photo.
 
 ### Assainissement : ce qui a ete decoupe, et ce qui reste (19 septembre 2026)
 
@@ -4613,10 +4590,14 @@ des responsabilites ? » La reponse mesuree etait **oui pour le C++, non pour
 trois fichiers**, et il a demande l'assainissement.
 
 **LE C++ : SANS RESERVE.** Toute la chaine que le jeu execute est dans
-`Source/Worldseed/Procedural/`. Les 5 770 lignes de Python de `Tools/WorldGen`
-sont LEGATAIRES : aucune ligne du jeu ne les appelle, le seul lien est
-`world_rules.json` lu par les deux (`WorldseedRules.cpp:99`). En lisant
-`worldgen/climate.py`, on ne lit PAS ce que le jeu execute.
+`Source/Worldseed/Procedural/`.
+
+*(Cette note disait, une heure avant sa suppression, que les 5 770 lignes de
+Python de `Tools/WorldGen` etaient LEGATAIRES. Elles ont ete supprimees le meme
+jour -- voir « Le Python est parti » en fin de fichier. Il reste `Tools/UE`,
+douze scripts d'automatisation d'EDITEUR, gardes a dessein jusqu'au portage de
+la vegetation : ils visent un Landscape qui n'existe plus, mais `vegetation.py`
+porte le semis PCG et c'est la seule implementation qui en existe.)*
 
 **CE QUI ETAIT PROPRE, et c'est la majorite.** Chaque passe de la chaine est un
 module autonome : un espace de noms, une structure de regles chargee du JSON,
