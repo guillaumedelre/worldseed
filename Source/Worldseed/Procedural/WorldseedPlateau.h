@@ -208,6 +208,16 @@ struct WORLDSEED_API FWorldseedPlateauSite
 
 	/** Denivele local autour, en metres : la hauteur de la paroi. */
 	float EscarpementM = 0.0f;
+
+	/**
+	 * Direction de la plus forte CHUTE, normalisee. Zero si inconnue.
+	 *
+	 * ON SE PLACE DU COTE BAS, sinon on photographie le plateau et la paroi
+	 * est DERRIERE la camera. C est exactement ce que fait deja le selecteur
+	 * de falaises marines, dont les vues sont les seules de la tournee a
+	 * montrer une vraie paroi.
+	 */
+	FVector2D VersLeBas = FVector2D::ZeroVector;
 };
 
 namespace WorldseedPlateau

@@ -289,47 +289,57 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 	// descendu.
 	if (OutCanyons)
 	{
-		struct FFond { int32 C; float Creux; };
+		// --- ON CLASSE PAR CHUTE, PAS PAR PROFONDEUR ------------------------
+		//
+		// DEFAUT TROUVE A L'IMAGE, APRES QUATRE TOURNEES. Les sites etaient
+		// classes par CREUX -- l'ecart entre la surface et le plateau -- ce qui
+		// designe les points les plus BAS. Or profond n'est pas escarpe : les
+		// vues tombaient systematiquement sur des pentes douces, alors que la
+		// mesure disait qu'il y avait bien 660 cellules a plus de 45 degres
+		// dans la zone. Les parois EXISTAIENT, je photographiais ailleurs.
+		//
+		// Le bon critere etait sous les yeux : le selecteur de falaises
+		// marines classe par CHUTE LOCALE, et ses vues sont les seules de la
+		// tournee a montrer une vraie paroi. On reprend le meme, gardes de la
+		// passe en plus.
+		struct FFond { int32 C; float Chute; FVector2D VersLeBas; };
 		TArray<FFond> Fonds;
 
-		for (int32 J = 0; J < NY; ++J)
+		for (int32 J = 2; J < NY - 2; ++J)
 		{
-			for (int32 I = 0; I < NX; ++I)
+			for (int32 I = 2; I < NX - 2; ++I)
 			{
 				const int32 C = J * NX + I;
-
-				// --- LE CREUX SE BORNE DES DEUX COTES, ET LA SECONDE BORNE A
-				//     ETE PAYEE AU JOURNAL
-				//
-				// La premiere version n'exigeait qu'un creux MINIMAL. Resultat
-				// sans appel : « creuse de 745 m sous le plateau », fond a
-				// 18 m d'altitude -- c'est-a-dire une plaine COTIERE au pied
-				// d'une montagne, pas un canyon. La surface d'aplanissement
-				// etant un maximum glissant, elle est enorme des qu'un haut
-				// relief est dans la fenetre, et n'importe quel bas-fond voisin
-				// passait.
-				//
-				// Un canyon est creuse d'environ UN escarpement, pas de sept.
-				// Et son fond est a l'interieur des terres, pas sur l'estran :
-				// la meme borne d'altitude que les tables l'y maintient.
 				if (ElevationM[C] <= Rules.MinElevationM) { continue; }
 				if (!Eligible(C)) { continue; }
-
-				const float Creux = Plateau[C] - ElevationM[C];
-				if (Creux < 0.55f * Rules.ScarpM) { continue; }
-				if (Creux > 1.5f * Rules.ScarpM) { continue; }
-				if (Relief[C] < 0.6f * Rules.ScarpM) { continue; }
 
 				const double X = (static_cast<double>(I) / NX - 0.5) * LargeurM;
 				const double Y = (static_cast<double>(J) / NY - 0.5) * HauteurM;
 				if (ZoneAt(X, Y, Rules, Seed) <= 0.0f) { continue; }
 
-				Fonds.Add({ C, Creux });
+				float Chute = 0.0f;
+				FIntPoint Vers = FIntPoint::ZeroValue;
+				for (int32 DJ = -2; DJ <= 2; ++DJ)
+				{
+					for (int32 DI = -2; DI <= 2; ++DI)
+					{
+						const int32 V = (J + DJ) * NX + (((I + DI) % NX + NX) % NX);
+						const float D = ElevationM[C] - ElevationM[V];
+						if (D > Chute) { Chute = D; Vers = FIntPoint(DI, DJ); }
+					}
+				}
+				if (Chute < 0.35f * Rules.ScarpM) { continue; }
+
+				Fonds.Add({ C, Chute,
+					FVector2D(Vers.X, Vers.Y).GetSafeNormal() });
 			}
 		}
 
-		Fonds.Sort([](const FFond& A, const FFond& B) { return A.Creux > B.Creux; });
+		Fonds.Sort([](const FFond& A, const FFond& B) { return A.Chute > B.Chute; });
 
+		// Deux fois l'ecart des tables : une paroi est LONGUE, donc ses
+		// cellules escarpees se suivent, et un ecart calibre sur la largeur
+		// d'une table ne les separe pas.
 		for (const FFond& K : Fonds)
 		{
 			if (OutCanyons->Num() >= 16) { break; }
@@ -339,10 +349,6 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 			const double X = (static_cast<double>(I) / NX - 0.5) * LargeurM;
 			const double Y = (static_cast<double>(J) / NY - 0.5) * HauteurM;
 
-			// DEUX FOIS L'ECART DES TABLES. Les trois premiers sites du premier
-			// releve tombaient dans les mille memes metres : un canyon est long,
-			// donc ses cellules profondes se suivent, et un ecart calibre sur la
-			// largeur d'une table ne les separe pas.
 			bool bTropPres = false;
 			for (const FWorldseedPlateauSite& S : *OutCanyons)
 			{
@@ -357,19 +363,20 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 			FWorldseedPlateauSite S;
 			S.CentreM = FVector2D(X, Y);
 			S.AltitudeM = ElevationM[K.C];
-			S.EscarpementM = K.Creux;
+			S.EscarpementM = K.Chute;
+			S.VersLeBas = K.VersLeBas;
 			OutCanyons->Add(S);
 		}
 
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] canyons : %d sites retenus sur %d fonds"),
+			TEXT("[Worldseed] canyons : %d parois retenues sur %d candidates"),
 			OutCanyons->Num(), Fonds.Num());
 		for (int32 I = 0; I < OutCanyons->Num() && I < 6; ++I)
 		{
 			const FWorldseedPlateauSite& S = (*OutCanyons)[I];
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed]   canyon %2d : (%.0f, %.0f) m, fond %.0f m, ")
-				TEXT("creuse de %.0f m sous le plateau"),
+				TEXT("[Worldseed]   paroi %2d : (%.0f, %.0f) m, sommet %.0f m, ")
+				TEXT("chute %.0f m sur 63 m"),
 				I + 1, S.CentreM.X, S.CentreM.Y, S.AltitudeM, S.EscarpementM);
 		}
 	}

@@ -223,18 +223,22 @@ int32 UWorldseedPhotographe::AjouterLesCanyons(int32 Combien)
 		E.Nom = FString::Printf(TEXT("canyon%02d"), I + 1);
 		E.CibleM = FVector(S.CentreM.X, S.CentreM.Y, S.AltitudeM);
 
-		// DE PRES, ET AU RAS DU PLANCHER. Un canyon ne se photographie pas de
-		// loin : a 350 m on est deja sur le plateau, donc on voit une rayure.
-		// Au fond, les parois sortent du cadre et c est ce qui le fait lire.
-		E.DepuisM = FVector2D(-0.57, 0.82);
-		E.DistanceM = 120.0f;
-		E.HauteurM = 6.0f;
+		// LE MEME CADRAGE QUE LES FALAISES MARINES, qui sont les seules vues de
+		// la tournee a montrer une vraie paroi. On vise la MI-HAUTEUR de la
+		// chute et l'on se place DU COTE BAS -- sans quoi on photographie le
+		// plateau et la paroi est derriere la camera. La distance suit la
+		// hauteur, bornee par le rayon de chargement.
+		E.CibleM.Z = S.AltitudeM - 0.5f * S.EscarpementM;
+		E.DepuisM = S.VersLeBas.IsNearlyZero()
+			? FVector2D(-0.57, 0.82) : S.VersLeBas;
+		E.DistanceM = FMath::Clamp(S.EscarpementM * 2.2f, 90.0f, 170.0f);
+		E.HauteurM = 10.0f;
 		Tournee.Add(E);
 		++Ajoutees;
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] photo : %d canyons a la tournee (sur %d sites)"),
+		TEXT("[Worldseed] photo : %d parois a la tournee (sur %d sites)"),
 		Ajoutees, Sites.Num());
 	return Ajoutees;
 }
