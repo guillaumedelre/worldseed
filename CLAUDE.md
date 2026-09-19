@@ -4409,3 +4409,64 @@ climat.
 3. mesurer a pleine resolution, ou le cout des 300 passes sera bien plus lourd
    qu'a 256 ;
 4. seulement ensuite, decider du passage au modele PUR.
+
+### 64 x 32 km : le relief credible etait a portee de regle (19 septembre 2026)
+
+Signale par le proprietaire : « environ 300 m pour le plus haut sommet, ca ne me
+parait pas tres realiste ». Il avait raison, et la reponse n'etait pas celle
+qu'on croit.
+
+**LES 300 m NE SONT PAS UN RESULTAT, C'EST UNE BORNE.** La tectonique finit par
+`E = FMath::Clamp(E, MinElev, MaxElev)` avec `world.minElevationM` et
+`maxElevationM`. Le sommet est un reglage, pas une consequence.
+
+**MAIS IL N'EST PAS LIBRE, ET LE PROJET L'AVAIT DEJA MESURE.** Le commentaire au
+dessus du code le dit : sur une carte de 1 km de hauteur, garder l'amplitude
+metrique donne **92 % des sommets au-dela de l'angle de roche, un terrain
+integralement gris**. L'altitude et la largeur sont liees par un budget de
+pente : mettre 2000 m sur 16 km ne ferait pas des montagnes, ca ferait des
+eboulis.
+
+**LA DECOUVERTE QUI DEBLOQUE TOUT : `world.sizeKm` N'EST PAS LA TAILLE DU MONDE,
+C'EST LA HAUTEUR DE REFERENCE DU CALAGE METRIQUE.**
+
+    VerticalScale = clamp(Geo.HeightM / (world.sizeKm * 1000), 0,05, 4,0)
+
+Les deux se trouvaient egales -- 8 km partout -- ce qui masquait completement la
+distinction. Une carte de 32 km de hauteur avec une reference restee a 8 donne
+donc un facteur **4**, et tout ce qui est metrique suit : profondeur oceanique,
+base continentale, hauteur de montagne, bornes d'altitude. **Sans toucher a une
+seule valeur.**
+
+**MESURE, monde de 64 x 32 km, grille 2048x1024 :**
+
+    altitudes        -1244 .. 1205 m   (contre -331 .. 405 a 16 x 8 km)
+    part des terres        29,2 %      inchangee, elle est recalee
+    pluie moyenne           714 mm     ancree, cible 715
+    generation             58,9 s      tectonique 0,8 / climat 2 x 9,3 / erosion 39,4
+    maille de simulation    31,3 m     contre 7,8 m a 16 km
+
+**Des sommets a 1205 m.** Le relief credible n'a rien coute : il etait dans la
+regle d'echelle, il suffisait de cesser de confondre la reference et la taille.
+
+**CE QUI PLAFONNE MAINTENANT LA GRILLE, ET LE COMMENTAIRE D'ORIGINE EST
+PERIME.** Il disait « au-dela, le maillage devient trop lourd sans decoupage en
+chunks » : le terrain est desormais maille en voxels diffuses autour du joueur,
+la grille de simulation n'est plus ce qui se dessine. Ce qui plafonne est le
+COUT de la chaine -- doubler la grille quadruplerait les 59 s. La contrepartie
+est que **la maille s'elargit sur une grande carte** ; le detail fin ne vient
+plus d'elle mais de la couche voxel, qui travaille au metre.
+
+**RECALIBRAGE A PREVOIR, et il n'est pas fait :**
+- `climate.oceanModerationRangeKm` vaut 0,75 km, calibre pour un monde de 8 km
+  (« 300 a 800 km sur Terre, soit 0,06 a 0,16 km rapporte a un monde 5000 fois
+  plus petit »). A 4 fois la taille il devrait valoir **3,0** -- sans quoi les
+  interieurs continentaux redeviennent maritimes ;
+- les cavites sont metriques (espacement 180 m, profondeurs) : seize fois la
+  surface donnera seize fois les chambres, donc un cout a mesurer ;
+- le sol de fond fait 512 sommets, soit **125 m par maille** a 64 km ;
+- le bulletin terrestre est entierement a reprendre.
+
+**VerticalScale PLAFONNE A 4,0.** Au-dela de 32 km de hauteur, le facteur cesse
+de suivre et le relief redeviendrait plat en proportion. C'est la prochaine
+borne a lever si la carte grandit encore.

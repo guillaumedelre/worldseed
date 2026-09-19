@@ -48,9 +48,23 @@ namespace
 	 * tailles inferieures restent utiles pour iterer vite, mais seules les
 	 * valeurs relevees a 8 km sont conformes a la Terre.
 	 */
-	static const TArray<float> MapSizeChoices = { 500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f };
+	static const TArray<float> MapSizeChoices = {
+		500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f, 16000.0f, 32000.0f };
 
-	/** Au-dela, le maillage devient trop lourd sans decoupage en chunks. */
+	/**
+	 * Plafond de la grille de SIMULATION.
+	 *
+	 * Le commentaire d'origine -- « au-dela, le maillage devient trop lourd
+	 * sans decoupage en chunks » -- est PERIME : le terrain est desormais
+	 * maille en voxels diffuses autour du joueur, et la grille de simulation
+	 * n'est plus ce qui se dessine. Ce qui plafonne maintenant, c'est le COUT
+	 * de la chaine : 2048x1024 coute 59 s sur un monde de 64 km, dont 39 pour
+	 * l'erosion couplee. Doubler la grille quadruplerait ce chiffre.
+	 *
+	 * CONSEQUENCE A CONNAITRE : sur une grande carte, la maille de simulation
+	 * s'elargit. 31,3 m a 64 km contre 7,8 m a 16 km. Le detail fin ne vient
+	 * plus de la grille mais de la couche voxel, qui travaille au metre.
+	 */
 	constexpr int32 MaxResolution = 1024;
 
 	/** Resolution visee : environ un quad tous les 2 m, plafonnee. */
@@ -61,11 +75,16 @@ namespace
 
 	FString LabelForSize(float SizeMeters)
 	{
-		if (SizeMeters >= 8000.0f)
+		if (FMath::IsNearlyEqual(SizeMeters, 8000.0f))
 		{
-			// On signale la taille de reference : c'est la seule pour laquelle
-			// les valeurs mesurees sont comparables a celles de terre.py.
-			return FString::Printf(TEXT("%.0f x %.0f km  (reference)"), SizeMeters / 500.0f, SizeMeters / 1000.0f);
+			// LA TAILLE DE REFERENCE N'EST PLUS LA PLUS GRANDE. Huit kilometres
+			// reste la hauteur sur laquelle le calage metrique est fait --
+			// `world.sizeKm`, dont `VerticalScale` tire son rapport -- mais la
+			// carte peut desormais etre quatre fois plus grande, et le relief
+			// suit alors automatiquement : -1244 a 1205 m mesures a 64 x 32 km,
+			// contre -331 a 405 a 16 x 8.
+			return FString::Printf(TEXT("%.0f x %.0f km  (reference)"),
+				SizeMeters / 500.0f, SizeMeters / 1000.0f);
 		}
 		if (SizeMeters >= 1000.0f)
 		{
