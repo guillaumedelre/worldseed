@@ -2,6 +2,7 @@
 
 #include "Procedural/WorldseedCoast.h"
 
+#include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedRules.h"
 
@@ -26,71 +27,6 @@ FWorldseedCoastRules FWorldseedCoastRules::FromRules(const UWorldseedRules& Rule
 	return Out;
 }
 
-namespace
-{
-	/**
-	 * Distance a la mer, en metres, par double balayage de chanfrein.
-	 *
-	 * DEUX PASSES SUFFISENT, ET C'EST LA RAISON DE CE CHOIX. Une transformee
-	 * exacte demanderait un parcours par file ; le chanfrein approche la
-	 * distance euclidienne a quelques pour cent pres en O(N), ce qui est
-	 * largement assez pour decider ou mord une falaise. La longitude
-	 * S'ENROULE -- le monde est une sphere deroulee -- donc les balayages
-	 * traitent le bord est et le bord ouest comme voisins.
-	 */
-	void DistanceALaMer(const TArray<float>& ElevationM, int32 NX, int32 NY,
-		float MetresParCellule, TArray<float>& Out)
-	{
-		const float Grand = 1e9f;
-		const float Droit = MetresParCellule;
-		const float Diagonal = MetresParCellule * 1.41421356f;
-
-		Out.SetNumUninitialized(ElevationM.Num());
-		for (int32 I = 0; I < ElevationM.Num(); ++I)
-		{
-			Out[I] = (ElevationM[I] <= 0.0f) ? 0.0f : Grand;
-		}
-
-		auto Enroule = [NX](int32 I) { return ((I % NX) + NX) % NX; };
-
-		for (int32 J = 0; J < NY; ++J)
-		{
-			for (int32 I = 0; I < NX; ++I)
-			{
-				const int32 C = J * NX + I;
-				if (Out[C] == 0.0f) { continue; }
-				float D = Out[C];
-				if (J > 0)
-				{
-					D = FMath::Min(D, Out[(J - 1) * NX + I] + Droit);
-					D = FMath::Min(D, Out[(J - 1) * NX + Enroule(I - 1)] + Diagonal);
-					D = FMath::Min(D, Out[(J - 1) * NX + Enroule(I + 1)] + Diagonal);
-				}
-				D = FMath::Min(D, Out[J * NX + Enroule(I - 1)] + Droit);
-				Out[C] = D;
-			}
-		}
-
-		for (int32 J = NY - 1; J >= 0; --J)
-		{
-			for (int32 I = NX - 1; I >= 0; --I)
-			{
-				const int32 C = J * NX + I;
-				if (Out[C] == 0.0f) { continue; }
-				float D = Out[C];
-				if (J < NY - 1)
-				{
-					D = FMath::Min(D, Out[(J + 1) * NX + I] + Droit);
-					D = FMath::Min(D, Out[(J + 1) * NX + Enroule(I - 1)] + Diagonal);
-					D = FMath::Min(D, Out[(J + 1) * NX + Enroule(I + 1)] + Diagonal);
-				}
-				D = FMath::Min(D, Out[J * NX + Enroule(I + 1)] + Droit);
-				Out[C] = D;
-			}
-		}
-	}
-}
-
 void WorldseedCoast::Build(const FWorldseedGeometry& Geometry,
 	const FWorldseedLithology& Lithology,
 	const FWorldseedLithologyRules& LithoRules,
@@ -107,9 +43,69 @@ void WorldseedCoast::Build(const FWorldseedGeometry& Geometry,
 		return;
 	}
 
+	// LA TRANSFORMEE DU PROJET, PAS UN CHANFREIN MAISON. Elle est EXACTE et
+	// lineaire (Felzenszwalb et Huttenlocher), elle est deja eprouvee, et la
+	// regle du depot interdit de recopier une formule dans deux fichiers : la
+	// lithologie a besoin de la meme distance a la mer.
+	TArray<uint8> Terre;
+	Terre.SetNumUninitialized(Count);
+	for (int32 I = 0; I < Count; ++I)
+	{
+		Terre[I] = (ElevationM[I] > 0.0f) ? 1 : 0;
+	}
 	TArray<float> Distance;
-	DistanceALaMer(ElevationM, NX, NY,
-		FMath::Max(Geometry.MetersPerPixel(), 1e-3f), Distance);
+	WorldseedGrid::DistanceTransform(Terre, NX, NY, Distance);
+
+	// --- LA HAUTEUR DU PLATEAU DERRIERE LE FRONT -----------------------------
+	//
+	// ET C'EST ELLE LA CIBLE, PAS L'ALTITUDE DE LA CELLULE. Premiere version :
+	// le profil remontait vers H, l'altitude du point lui-meme. Comme H suit
+	// deja la rampe existante, la passe abaissait tout proportionnellement et
+	// PRESERVAIT la forme de rampe -- a l'image, une pyramide a facettes au
+	// lieu d'une paroi. Verdict sans appel : la falaise faisait quarante
+	// degres la ou la face demandee en valait soixante-dix.
+	//
+	// Le plateau se prend par un maximum glissant : c'est ce que le front
+	// AURAIT entame s'il avait recule jusque-la. Le min() final garantit qu'on
+	// ne monte jamais le terrain, donc aucune bosse la ou le plateau depasse.
+	const float MailleM = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
+	const int32 Rayon = FMath::Clamp(
+		FMath::CeilToInt(Rules.ReachM * 1.6f / MailleM), 1, 32);
+
+	TArray<float> Plateau = ElevationM;
+	{
+		TArray<float> Tampon;
+		Tampon.SetNumUninitialized(Count);
+
+		// Separable : deux passes 1D valent une fenetre carree, et le cout
+		// suit le rayon au lieu de son carre.
+		for (int32 J = 0; J < NY; ++J)
+		{
+			for (int32 I = 0; I < NX; ++I)
+			{
+				float M = -1e9f;
+				for (int32 D = -Rayon; D <= Rayon; ++D)
+				{
+					const int32 K = ((I + D) % NX + NX) % NX;
+					M = FMath::Max(M, Plateau[J * NX + K]);
+				}
+				Tampon[J * NX + I] = M;
+			}
+		}
+		for (int32 J = 0; J < NY; ++J)
+		{
+			for (int32 I = 0; I < NX; ++I)
+			{
+				float M = -1e9f;
+				for (int32 D = -Rayon; D <= Rayon; ++D)
+				{
+					const int32 L = FMath::Clamp(J + D, 0, NY - 1);
+					M = FMath::Max(M, Tampon[L * NX + I]);
+				}
+				Plateau[J * NX + I] = M;
+			}
+		}
+	}
 
 	const bool bRoche = Lithology.IsValid(Count);
 	const double LargeurM = Geometry.WidthM();
@@ -153,7 +149,7 @@ void WorldseedCoast::Build(const FWorldseedGeometry& Geometry,
 			Recul *= 1.0f + Rules.NoiseAmount * Bruit;
 			if (Recul <= 1.0f) { continue; }
 
-			const float T = Distance[C] / Recul;
+			const float T = Distance[C] * MailleM / Recul;
 			if (T >= 1.0f) { continue; }
 
 			// --- LE PROFIL : PLATEFORME, PUIS FACE, PUIS RIEN ----------------
@@ -166,7 +162,7 @@ void WorldseedCoast::Build(const FWorldseedGeometry& Geometry,
 			// zero.
 			const float Profil = FMath::SmoothStep(Rules.PlatformFraction,
 				Rules.PlatformFraction + Rules.FaceFraction, T);
-			const float Cible = FMath::Lerp(Rules.PlatformM, H, Profil);
+			const float Cible = FMath::Lerp(Rules.PlatformM, Plateau[C], Profil);
 			const float Neuf = FMath::Min(H, FMath::Lerp(H, Cible, Rules.Strength));
 
 			if (Neuf < H - 0.01f)

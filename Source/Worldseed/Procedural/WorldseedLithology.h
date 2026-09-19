@@ -34,6 +34,31 @@ struct WORLDSEED_API FWorldseedLithologyEntry
 };
 
 /** Reglages de la lithologie, section "substrat" de world_rules.json. */
+/**
+ * Un DOMAINE de depot : un milieu geologique, et les roches qu'on y trouve.
+ *
+ * POURQUOI LE LIEU DECIDE, ET PAS SEULEMENT UN BRUIT. Le modele d'avant tirait
+ * les roches de bassin par un bruit et des quantiles, sans aucun lien avec
+ * l'endroit : de la craie pouvait apparaitre au coeur d'un continent. Or ces
+ * roches se deposent dans des milieux precis -- la craie sur une PLATE-FORME
+ * MARINE, le tuf pres d'un arc VOLCANIQUE, la dolomie dans une plate-forme
+ * carbonatee prise dans un PLISSEMENT. Et comme, dans ce projet, c'est la roche
+ * qui decide des formes, une roche mal placee met la forme au mauvais endroit :
+ * une falaise de craie en haute montagne, un karst sans paroi.
+ *
+ * Le bruit garde son role A L'INTERIEUR du domaine : c'est lui qui fait les
+ * massifs d'un seul tenant dont un reseau karstique a besoin.
+ */
+struct WORLDSEED_API FWorldseedLithoDomaine
+{
+	FString Cle;
+	TArray<int32> Ids;
+	TArray<float> Parts;
+
+	/** Seuils de quantile, calcules sur les cellules DE CE DOMAINE seulement. */
+	TArray<float> Seuils;
+};
+
 struct WORLDSEED_API FWorldseedLithologyRules
 {
 	/** Le catalogue, INDEXE PAR IDENTIFIANT, comme le registre des biomes. */
@@ -60,6 +85,55 @@ struct WORLDSEED_API FWorldseedLithologyRules
 	/** Frequence du motif sedimentaire, en cycles par tour de monde. */
 	float MotifFrequency = 6.0f;
 	int32 MotifOctaves = 3;
+
+	/**
+	 * Part des terres les plus HAUTES qui comptent comme socle decape.
+	 *
+	 * UNE CONSTANTE METRIQUE EN DUR SUFFIT A FAUSSER UN MONDE ENTIER, et
+	 * celle-ci l'a fait. Le seuil valait 150 m, cale sur un monde de 8 km dont
+	 * les sommets plafonnaient a 300 ; porte a 64 km, le meme monde culmine a
+	 * 1700 m et ce seuil avale presque tout le relief. Mesure : granite 41,1 %
+	 * des terres et basalte 28,5, soit SEPTANTE POUR CENT de cristallin,
+	 * pendant que le gres tombait a 3,3 % et le schiste a 1,7 -- et que la
+	 * dolomie, qui vit dans la bande de convergence SOUS le socle, n'existait
+	 * plus du tout (0,01 %).
+	 *
+	 * Un quantile ne connait pas l'echelle : il tient la proportion demandee
+	 * quelle que soit l'amplitude du relief. C'est deja la doctrine du fichier
+	 * de regles pour les parts de roches ; elle valait aussi pour ce seuil.
+	 * A zero, on retombe sur le seuil metrique.
+	 */
+	float SoclePartHaute = 0.15f;
+
+	/**
+	 * Les domaines de depot, dans l'ordre d'evaluation.
+	 *
+	 * L'ORDRE COMPTE : un cap de craie au pied d'un arc volcanique est de la
+	 * craie, pas du tuf. Le milieu de DEPOT prime sur le contexte tectonique.
+	 */
+	TArray<FWorldseedLithoDomaine> Domaines;
+
+	/** Altitude maximale d'une plate-forme marine, en metres. */
+	float PlateformeAltitudeMaxM = 80.0f;
+
+	/** Portee depuis la mer d'une plate-forme marine, en metres. */
+	float PlateformePorteeM = 4000.0f;
+
+	/** Portee depuis la croute oceanique d'un arc volcanique, en metres. */
+	float VolcanPorteeM = 3000.0f;
+
+	/** Convergence minimale d'un arc volcanique. */
+	float VolcanConvergenceMin = 0.12f;
+
+	/**
+	 * Convergence minimale d'une couverture plissee.
+	 *
+	 * ELLE DOIT RESTER SOUS CELLE DU SOCLE : au-dela, le decapage a emporte la
+	 * couverture et il ne reste que du cristallin. La dolomie vit donc dans la
+	 * bande entre les deux -- ce qui est exactement la position des Dolomites,
+	 * une plate-forme carbonatee soulevee mais non decapee.
+	 */
+	float PlisseConvergenceMin = 0.18f;
 
 	static FWorldseedLithologyRules FromRules(const UWorldseedRules& Rules);
 };

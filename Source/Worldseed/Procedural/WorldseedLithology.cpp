@@ -115,6 +115,55 @@ FWorldseedLithologyRules FWorldseedLithologyRules::FromRules(const UWorldseedRul
 		}
 	}
 
+	Out.SoclePartHaute = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologieSoclePartHaute"), 0.15));
+
+	// --- LES DOMAINES DE DEPOT ------------------------------------------------
+	Out.PlateformeAltitudeMaxM = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologiePlateformeAltitudeMaxM"), 80.0));
+	Out.PlateformePorteeM = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologiePlateformePorteeM"), 4000.0));
+	Out.VolcanPorteeM = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologieVolcanPorteeM"), 3000.0));
+	Out.VolcanConvergenceMin = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologieVolcanConvergenceMin"), 0.12));
+	Out.PlisseConvergenceMin = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologiePlisseConvergenceMin"), 0.08));
+
+	if (const TArray<TSharedPtr<FJsonValue>>* Domaines =
+		Rules.Array(WorldseedSection::Substrat, TEXT("lithologieDomaines")))
+	{
+		for (const TSharedPtr<FJsonValue>& V : *Domaines)
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!V.IsValid() || !V->TryGetObject(Obj) || !Obj) { continue; }
+
+			FWorldseedLithoDomaine D;
+			if (!(*Obj)->TryGetStringField(TEXT("cle"), D.Cle)) { continue; }
+
+			const TArray<TSharedPtr<FJsonValue>>* Roches = nullptr;
+			if (!(*Obj)->TryGetArrayField(TEXT("roches"), Roches) || !Roches) { continue; }
+
+			for (const TSharedPtr<FJsonValue>& RV : *Roches)
+			{
+				const TSharedPtr<FJsonObject>* RObj = nullptr;
+				if (!RV.IsValid() || !RV->TryGetObject(RObj) || !RObj) { continue; }
+				FString Cle;
+				double Part = 0.0;
+				if (!(*RObj)->TryGetStringField(TEXT("cle"), Cle)) { continue; }
+				(*RObj)->TryGetNumberField(TEXT("part"), Part);
+				const int32 Id = IdDeCle(Out.Catalogue, Cle);
+				if (Id != INDEX_NONE && Part > 0.0)
+				{
+					D.Ids.Add(Id);
+					D.Parts.Add(static_cast<float>(Part));
+				}
+			}
+
+			if (D.Ids.Num() > 0) { Out.Domaines.Add(MoveTemp(D)); }
+		}
+	}
+
 	return Out;
 }
 
@@ -191,6 +240,27 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 	const uint8 IdOcean = static_cast<uint8>(FMath::Max(Rules.IdOceanique, 0));
 	const uint8 IdSocle = static_cast<uint8>(FMath::Max(Rules.IdSocle, 0));
 
+	// --- LE SEUIL DU SOCLE, PAR QUANTILE ET NON EN METRES ---------------------
+	//
+	// Voir le commentaire de SoclePartHaute : un seuil metrique cale sur un
+	// monde de 8 km avale tout le relief d'un monde de 64. Le quantile porte
+	// sur les TERRES seules -- y inclure les fonds marins reviendrait a mesurer
+	// la part haute d'une distribution que la mer domine.
+	float SeuilSocleM = Rules.SocleElevationM;
+	if (Rules.SoclePartHaute > 0.0f && Rules.SoclePartHaute < 1.0f)
+	{
+		TArray<float> Terres;
+		Terres.Reserve(Count / 3 + 1);
+		for (int32 I = 0; I < Count; ++I)
+		{
+			if (ElevationM[I] > 0.0f) { Terres.Add(ElevationM[I]); }
+		}
+		if (Terres.Num() > 0)
+		{
+			SeuilSocleM = WorldseedGrid::Quantile(Terres, 1.0f - Rules.SoclePartHaute);
+		}
+	}
+
 	// --- le motif sedimentaire -----------------------------------------------
 	//
 	// UN BRUIT COHERENT, PAS UN TIRAGE PAR CELLULE. Les bassins sont des
@@ -200,6 +270,128 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 	TArray<float> Motif;
 	WorldseedPerlin::FBMSphere(Motif, Geometry, Rules.MotifFrequency,
 		FMath::Max(Rules.MotifOctaves, 1), Seed + 7717);
+
+	// --- LES DOMAINES DE DEPOT -----------------------------------------------
+	//
+	// LE LIEU DECIDE, PUIS LE BRUIT. Le modele d'avant tirait toutes les roches
+	// de bassin dans une seule loterie : de la craie pouvait apparaitre au
+	// coeur d'un continent, et comme c'est la ROCHE qui decide des formes, la
+	// forme se retrouvait au mauvais endroit -- une falaise de craie en haute
+	// montagne, un karst sans paroi ou s'ouvrir. On partitionne donc d'abord
+	// par le milieu de depot ; le bruit ne decide qu'a l'interieur, ce qui
+	// garde les massifs d'un seul tenant dont un reseau karstique a besoin.
+	// COPIE LOCALE : les seuils se calculent ici, et les regles sont const --
+	// les forcer serait un mensonge au compilateur autant qu'un piege pour le
+	// jour ou deux mondes se generont en parallele.
+	TArray<FWorldseedLithoDomaine> Domaines = Rules.Domaines;
+	TArray<int32> DomaineDe;
+	if (Domaines.Num() > 0)
+	{
+		// Distance a la MER et distance a la CROUTE OCEANIQUE sont deux choses
+		// differentes : un plateau continental est immerge mais continental.
+		// La premiere place les plates-formes de craie, la seconde les arcs.
+		TArray<uint8> Terre;
+		TArray<uint8> Continental;
+		Terre.SetNumUninitialized(Count);
+		Continental.SetNumUninitialized(Count);
+		for (int32 I = 0; I < Count; ++I)
+		{
+			Terre[I] = (ElevationM[I] > 0.0f) ? 1 : 0;
+			Continental[I] = (bHasCont && IsContinental[I] == 0) ? 0 : 1;
+		}
+
+		TArray<float> DistMer;
+		TArray<float> DistCroute;
+		WorldseedGrid::DistanceTransform(Terre, Geometry.NX, Geometry.NY, DistMer);
+		WorldseedGrid::DistanceTransform(Continental, Geometry.NX, Geometry.NY,
+			DistCroute);
+
+		const float MailleM = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
+
+		int32 IMarin = INDEX_NONE;
+		int32 IVolcan = INDEX_NONE;
+		int32 IPlisse = INDEX_NONE;
+		int32 IContinental = INDEX_NONE;
+		for (int32 D = 0; D < Domaines.Num(); ++D)
+		{
+			const FString& C = Domaines[D].Cle;
+			if (C == TEXT("marin")) { IMarin = D; }
+			else if (C == TEXT("volcanique")) { IVolcan = D; }
+			else if (C == TEXT("plisse")) { IPlisse = D; }
+			else if (C == TEXT("continental")) { IContinental = D; }
+		}
+		if (IContinental == INDEX_NONE) { IContinental = Domaines.Num() - 1; }
+
+		DomaineDe.SetNumUninitialized(Count);
+		for (int32 I = 0; I < Count; ++I)
+		{
+			DomaineDe[I] = INDEX_NONE;
+
+			const bool bOceanique = bHasCont && IsContinental[I] == 0;
+			const bool bSocle =
+				(bHasConv && Convergence[I] > Rules.SocleConvergence)
+				|| (ElevationM[I] > SeuilSocleM);
+			if (bOceanique || bSocle || ElevationM[I] <= 0.0f) { continue; }
+
+			const float Conv = bHasConv ? Convergence[I] : 0.0f;
+
+			// L'ORDRE COMPTE : un cap de craie au pied d'un arc volcanique est
+			// de la craie. Le milieu de DEPOT prime sur le contexte tectonique.
+			if (IMarin != INDEX_NONE
+				&& ElevationM[I] < Rules.PlateformeAltitudeMaxM
+				&& DistMer[I] * MailleM < Rules.PlateformePorteeM)
+			{
+				DomaineDe[I] = IMarin;
+			}
+			else if (IVolcan != INDEX_NONE
+				&& Conv > Rules.VolcanConvergenceMin
+				&& DistCroute[I] * MailleM < Rules.VolcanPorteeM)
+			{
+				DomaineDe[I] = IVolcan;
+			}
+			else if (IPlisse != INDEX_NONE && Conv > Rules.PlisseConvergenceMin)
+			{
+				DomaineDe[I] = IPlisse;
+			}
+			else
+			{
+				DomaineDe[I] = IContinental;
+			}
+		}
+
+		// --- LES SEUILS, PAR DOMAINE ----------------------------------------
+		//
+		// ET SUR LE DOMAINE LUI-MEME, JAMAIS SUR L'ENSEMBLE. C'est la lecon
+		// deja payee sur le socle : echantillonner un domaine plus large que
+		// celui auquel les quantiles s'appliquent ne tient pas les proportions
+		// demandees -- 40,8 / 38,1 / 21,1 % pour 45 / 35 / 20.
+		for (int32 D = 0; D < Domaines.Num(); ++D)
+		{
+			FWorldseedLithoDomaine& Dom = Domaines[D];
+			Dom.Seuils.Reset();
+			if (Dom.Ids.Num() < 2) { continue; }
+
+			TArray<float> Echantillon;
+			Echantillon.Reserve(Count / 8 + 1);
+			for (int32 I = 0; I < Count; ++I)
+			{
+				if (DomaineDe[I] == D) { Echantillon.Add(Motif[I]); }
+			}
+			if (Echantillon.Num() == 0) { continue; }
+
+			float Somme = 0.0f;
+			for (const float P : Dom.Parts) { Somme += P; }
+			Somme = FMath::Max(Somme, 1e-6f);
+
+			float Cumul = 0.0f;
+			for (int32 K = 0; K + 1 < Dom.Ids.Num(); ++K)
+			{
+				Cumul += Dom.Parts[K] / Somme;
+				Dom.Seuils.Add(WorldseedGrid::Quantile(Echantillon,
+					FMath::Clamp(Cumul, 0.0f, 1.0f)));
+			}
+		}
+	}
 
 	// --- les seuils, PAR QUANTILE --------------------------------------------
 	//
@@ -222,7 +414,7 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 			const bool bOceanique = bHasCont && IsContinental[I] == 0;
 			const bool bSocle =
 				(bHasConv && Convergence[I] > Rules.SocleConvergence)
-				|| (ElevationM[I] > Rules.SocleElevationM);
+				|| (ElevationM[I] > SeuilSocleM);
 
 			if (!bOceanique && !bSocle && ElevationM[I] > 0.0f)
 			{
@@ -262,14 +454,26 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 		//    l'altitude les reliefs anciens deja decapes.
 		const bool bSocle =
 			(bHasConv && Convergence[I] > Rules.SocleConvergence)
-			|| (ElevationM[I] > Rules.SocleElevationM);
+			|| (ElevationM[I] > SeuilSocleM);
 		if (bSocle)
 		{
 			Out.Id[I] = IdSocle;
 			return;
 		}
 
-		// 3. Le reste est un bassin : sa roche suit le motif.
+		// 3. Le reste est un bassin : son MILIEU DE DEPOT donne la palette, le
+		//    motif choisit dedans.
+		if (DomaineDe.Num() == Count && Domaines.IsValidIndex(DomaineDe[I]))
+		{
+			const FWorldseedLithoDomaine& Dom = Domaines[DomaineDe[I]];
+			int32 K = 0;
+			while (K < Dom.Seuils.Num() && Motif[I] > Dom.Seuils[K]) { ++K; }
+			Out.Id[I] = static_cast<uint8>(Dom.Ids[FMath::Min(K, Dom.Ids.Num() - 1)]);
+			return;
+		}
+
+		// Repli : l'ancienne loterie unique, si le fichier de regles ne decrit
+		// aucun domaine. Un fichier plus ancien garde donc son comportement.
 		if (Rules.IdsSedimentaires.Num() == 0)
 		{
 			Out.Id[I] = IdSocle;

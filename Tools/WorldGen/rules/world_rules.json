@@ -1023,15 +1023,72 @@
         ],
         "karstifiable": 0.1,
         "durete": 0.35
+      },
+      {
+        "_comment": "SOURCE. LA ROCHE DE LA FALAISE VERTICALE. Etretat, Douvres, les Seven Sisters : la craie est TRES tendre (0,25) et porte pourtant cent metres de paroi verticale, parce qu'elle est homogene et bien diaclasee et qu'elle rompt par effondrement de blocs, non par fluage. C'est exactement ce que la passe littorale exploite : plus la roche est tendre, plus le front recule, donc plus la falaise est haute. Sans elle, aucune arche marine n'est possible ici.",
+        "cle": "craie",
+        "id": 5,
+        "libelle": "Craie",
+        "couleur": [
+          236,
+          234,
+          226
+        ],
+        "karstifiable": 0.55,
+        "durete": 0.25
+      },
+      {
+        "_comment": "SOURCE. LA SEULE ROCHE A LA FOIS SOLUBLE ET CAPABLE DE TENIR UNE PAROI, et elle comble un manque reel : notre calcaire a 0,45 de durete ne tient aucun mur, si bien que TOUT le karst se trouvait en pays plat et que les bouches de grotte n'avaient aucune falaise ou s'ouvrir. La dolomie donne les Dolomites -- tours, aiguilles, parois -- avec la solubilite en prime.",
+        "cle": "dolomie",
+        "id": 6,
+        "libelle": "Dolomie",
+        "couleur": [
+          198,
+          188,
+          170
+        ],
+        "karstifiable": 0.8,
+        "durete": 0.65
+      },
+      {
+        "_comment": "SOURCE. Le tuf d'ignimbrite de Cappadoce : une cendre volcanique soudee, tendre et cohesive, qui s'erode en CHEMINEES DE FEE coiffees d'un bloc dur. Forme entierement absente du monde jusqu'ici, et impossible a tirer d'une autre roche.",
+        "cle": "tuf",
+        "id": 7,
+        "libelle": "Tuf volcanique",
+        "couleur": [
+          206,
+          182,
+          162
+        ],
+        "karstifiable": 0.05,
+        "durete": 0.3
       }
     ],
     "_comment_lithologieAttribution": "CALIBRE. Trois regles, dans cet ordre. (1) La croute OCEANIQUE est basaltique : vrai partout sur Terre, aucun reglage. (2) Un OROGENE expose son socle -- soulevement et decapage emportent la couverture sedimentaire -- d'ou un basculement vers le cristallin au-dela d'une convergence ou d'une altitude. (3) Le reste est un BASSIN, dont la roche suit un bruit coherent : les bassins sont des ensembles etendus, un calcaire poivre au hasard dans du gres ne donnerait jamais le massif d'un seul tenant dont un reseau karstique a besoin. Les proportions sont tenues par QUANTILE et non par seuil en dur, sans quoi elles bougeraient a chaque changement de frequence ou d'octave.",
     "lithologieOceanique": "basalte",
     "lithologieSocle": "granite",
     "lithologieSocleConvergence": 0.35,
+    "_comment_lithologieSoclePartHaute": "SOURCE (methode) + CALIBRE. UNE CONSTANTE METRIQUE EN DUR SUFFIT A FAUSSER UN MONDE ENTIER, et celle du socle l a fait. lithologieSocleElevationM valait 150 m, cale sur un monde de 8 km dont les sommets plafonnaient a 300 ; porte a 64 km le meme monde culmine a 1700 m et ce seuil avale presque tout le relief. Mesure : granite 41,1 pour cent des terres et basalte 28,5, soit septante pour cent de cristallin, pendant que le gres tombait a 3,3 et le schiste a 1,7 -- et que la dolomie, qui vit dans la bande de convergence SOUS le socle, n existait plus du tout (0,01). Un quantile ne connait pas l echelle : il tient la proportion demandee quelle que soit l amplitude du relief. C etait deja la doctrine de ce fichier pour les parts de roches, elle valait aussi pour ce seuil. A zero, on retombe sur le seuil metrique.",
+    "lithologieSoclePartHaute": 0.15,
+    "_comment_lithologieSocleElevationM": "REPLI. Ignore des que lithologieSoclePartHaute est non nul.",
     "lithologieSocleElevationM": 150.0,
     "lithologieMotifFrequency": 6.0,
     "lithologieMotifOctaves": 3,
+    "_comment_lithologieDomaines": "SOURCE (milieux de depot) + CALIBRE. LE LIEU DECIDE, PUIS LE BRUIT. Le modele d avant tirait toutes les roches de bassin dans UNE seule loterie, sans aucun lien avec l endroit : de la craie pouvait apparaitre au coeur d un continent. Or comme c est la ROCHE qui decide des formes dans ce projet, une roche mal placee met la FORME au mauvais endroit -- une falaise de craie en haute montagne, un karst sans paroi ou s ouvrir. MARIN : plate-forme carbonatee peu profonde, la craie d Etretat, donc la falaise verticale et l arche marine. VOLCANIQUE : arc insulaire, le tuf de Cappadoce, donc les cheminees de fee. PLISSE : plate-forme carbonatee soulevee mais NON decapee -- la bande de convergence entre le seuil plisse et celui du socle est exactement la position des Dolomites. CONTINENTAL : le reste. L ORDRE D EVALUATION COMPTE : un cap de craie au pied d un arc volcanique est de la craie, le milieu de DEPOT prime sur le contexte tectonique. Le bruit garde son role A L INTERIEUR du domaine, c est lui qui fait les massifs d un seul tenant dont un reseau karstique a besoin. ET LES QUANTILES SE CALCULENT SUR CHAQUE DOMAINE SEPAREMENT, jamais sur l ensemble : lecon deja payee sur le socle, ou l echantillonnage trop large donnait 40,8 / 38,1 / 21,1 pour 45 / 35 / 20 demandes.",
+    "lithologieDomaines": [
+      {"cle": "marin", "roches": [{"cle": "craie", "part": 0.6}, {"cle": "calcaire", "part": 0.4}]},
+      {"cle": "volcanique", "roches": [{"cle": "tuf", "part": 0.65}, {"cle": "basalte", "part": 0.35}]},
+      {"cle": "plisse", "roches": [{"cle": "dolomie", "part": 0.55}, {"cle": "calcaire", "part": 0.25}, {"cle": "gres", "part": 0.2}]},
+      {"cle": "continental", "roches": [{"cle": "gres", "part": 0.45}, {"cle": "calcaire", "part": 0.3}, {"cle": "schiste", "part": 0.25}]}
+    ],
+    "lithologiePlateformeAltitudeMaxM": 80.0,
+    "lithologiePlateformePorteeM": 4000.0,
+    "lithologieVolcanPorteeM": 3000.0,
+    "lithologieVolcanConvergenceMin": 0.12,
+    "_comment_lithologiePlisseConvergenceMin": "SOURCE. ELLE DOIT RESTER SOUS CELLE DU SOCLE (0,35) : au-dela, le decapage a emporte la couverture et il ne reste que du cristallin. La dolomie vit donc dans la bande entre les deux -- une plate-forme carbonatee soulevee mais non decapee, ce qu'est le massif des Dolomites.",
+    "lithologiePlisseConvergenceMin": 0.08,
+
+    "_comment_lithologieBassin": "REPLI. Conserve pour qu'un fichier de regles sans lithologieDomaines garde le comportement d'avant. Ignore des que les domaines sont decrits.",
     "lithologieBassin": [
       {
         "cle": "calcaire",
