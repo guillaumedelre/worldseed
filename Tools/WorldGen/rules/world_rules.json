@@ -109,12 +109,12 @@
     "beltShiftDeg": 8.0
   },
   "erosion": {
-    "iterations": 60,
+    "iterations": 300,
     "flowUpdateEvery": 5,
-    "incisionRateM": 0.25,
+    "incisionRateM": 6.0,
     "areaExponent": 0.5,
     "slopeExponent": 1.0,
-    "maxIncisionPerStepM": 1.5,
+    "maxIncisionPerStepM": 6.0,
     "depositionRate": 0.25,
     "talusAngleDeg": 34.0,
     "thermalIterationsPerStep": 1,
@@ -125,7 +125,10 @@
     "_comment_endoreisme": "Sous ce cumul annuel, un bassin ferme est plausible : l'evaporation consomme l'apport avant qu'il ne deborde (mer d'Aral, lac Tchad). Au-dessus, un bassin qui ne deverse pas signale une erreur de routage. Plage utile : 150 a 400 mm.",
     "aridPrecipThresholdMm": 250.0,
     "duretePoids": 1.0,
-    "_comment_duretePoids": "LA ROCHE DANS L'EROSION, arbitrage ouvert par le proprietaire le 19 septembre 2026. Jusqu'ici substrat.lithologies.durete n'etait lue par PERSONNE : le relief etait organique mais INDIFFERENCIE, sa raideur un accident du bruit plutot qu'une consequence de la roche. OU LE TERME ENTRE, ET POURQUOI LA : dans la loi de puissance de courant E = K . A^m . S^n, c'est K -- l'erodabilite -- qui porte la resistance du substrat. Le mettre dans l'exposant ou en post-traitement reviendrait a bricoler un resultat au lieu de decrire une cause. RAPPORTEE A LA MOYENNE DU MONDE, et c'est delibere : une erodabilite absolue changerait la quantite TOTALE d'erosion, donc l'amplitude du relief, donc tout le calage terrestre -- pour une question qui ne porte que sur sa REPARTITION. La moyenne est ponderee par la SURFACE reellement couverte, pas prise sur le catalogue : deux roches a 1 % et 40 % des terres ne pesent pas pareil dans le bilan. A ZERO, LE COMPORTEMENT EST CELUI D'AVANT, A L'IDENTIQUE -- c'est ce qui permet de revenir sans toucher au code, et de mesurer le temoin. CE QU'IL NE FERA PAS : des arches. La grille de simulation fait 31,4 m par cellule et une lame d'arche 5 a 20 m -- c'est sous sa resolution, quel que soit le modele d'erosion."
+    "_comment_duretePoids": "LA ROCHE DANS L'EROSION, arbitrage ouvert par le proprietaire le 19 septembre 2026. Jusqu'ici substrat.lithologies.durete n'etait lue par PERSONNE : le relief etait organique mais INDIFFERENCIE, sa raideur un accident du bruit plutot qu'une consequence de la roche. OU LE TERME ENTRE, ET POURQUOI LA : dans la loi de puissance de courant E = K . A^m . S^n, c'est K -- l'erodabilite -- qui porte la resistance du substrat. Le mettre dans l'exposant ou en post-traitement reviendrait a bricoler un resultat au lieu de decrire une cause. RAPPORTEE A LA MOYENNE DU MONDE, et c'est delibere : une erodabilite absolue changerait la quantite TOTALE d'erosion, donc l'amplitude du relief, donc tout le calage terrestre -- pour une question qui ne porte que sur sa REPARTITION. La moyenne est ponderee par la SURFACE reellement couverte, pas prise sur le catalogue : deux roches a 1 % et 40 % des terres ne pesent pas pareil dans le bilan. A ZERO, LE COMPORTEMENT EST CELUI D'AVANT, A L'IDENTIQUE -- c'est ce qui permet de revenir sans toucher au code, et de mesurer le temoin. CE QU'IL NE FERA PAS : des arches. La grille de simulation fait 31,4 m par cellule et une lame d'arche 5 a 20 m -- c'est sous sa resolution, quel que soit le modele d'erosion.",
+    "soulevementContinentalM": 0.18,
+    "soulevementConvergenceM": 0.36,
+    "_comment_soulevement": "LE SOULEVEMENT DANS LA BOUCLE D'EROSION, chantier ouvert par le proprietaire le 19 septembre 2026. C'EST LUI QUI FAIT DE L'EROSION UN SCULPTEUR AU LIEU D'UN POLISSEUR. Sans apport, un relief qui s'erode se contente de se relaxer : il converge vers la meme forme, un peu plus tot ou un peu plus tard, et tout terme qu'on ajoute a la loi -- la durete comprise -- ne fait que reechelonner le temps. MESURE A L'APPUI : duretePoids branche sur le modele SANS soulevement ne deplacait que 4 a 7 CENTIMETRES. Avec apport, le systeme tend vers l'equilibre U = K . A^m . S^n, donc vers une pente S = (U / K.A^m)^(1/n). A soulevement egal, une roche dure tient une pente plus RAIDE : escarpements, corniches et marges de plateau en decoulent sans qu'on les dessine. LE SOULEVEMENT VIENT DE LA CONVERGENCE DES PLAQUES, deja calculee par la tectonique et que personne ne lisait a ce stade, plus une composante continentale uniforme (isostasie). Il ne s'applique QU'AU CONTINENTAL : soulever le plancher oceanique changerait la part des terres a chaque passe. LES DEUX VALEURS MONTENT ENSEMBLE AVEC incisionRateM, ET C'EST LEUR RAPPORT QUI FIXE L'AMPLITUDE DU RELIEF. Un soulevement seul submergerait l'incision actuelle, qui ne retire que 0,04 m par passe. A zero, comportement d'avant a l'identique."
   },
   "voxel": {
     "_comment": "REPRESENTATION DU TERRAIN A L'EXECUTION. Le relief n'est plus une carte d'altitude maillee telle quelle mais un CHAMP DE DENSITE : negatif dans la roche, positif dans l'air, la surface etant l'isovaleur zero. Il n'existe aucune grille 3D en memoire et il ne peut pas en exister -- a un metre de cote, ce monde ferait soixante-seize milliards de voxels. Le champ est une fonction de la grille 2D deja calculee plus du bruit 3D ; seules les modifications du joueur sont stockees.",

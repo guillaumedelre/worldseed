@@ -245,9 +245,42 @@ namespace WorldseedPipeline
 			static_cast<float>(Rules->Num(TEXT("erosion"), TEXT("duretePoids"), 0.0)),
 			Erodabilite);
 
+		// --- LE SOULEVEMENT, TIRE DE LA TECTONIQUE ---------------------------
+		//
+		// La convergence des plaques est deja calculee et n'etait lue par
+		// personne a ce stade : `> 0` collision, `< 0` rift. C'est la source
+		// naturelle du soulevement, et elle place les montagnes la ou la
+		// tectonique les met -- pas la ou un bruit les a posees.
+		//
+		// IL NE S'APPLIQUE QU'AU CONTINENTAL. Soulever le plancher oceanique
+		// remonterait les fonds et changerait la part des terres a chaque
+		// passe, ce qui n'a aucun sens physique et ruinerait le calage.
+		const float SoulContinental = static_cast<float>(
+			Rules->Num(TEXT("erosion"), TEXT("soulevementContinentalM"), 0.0));
+		const float SoulConvergence = static_cast<float>(
+			Rules->Num(TEXT("erosion"), TEXT("soulevementConvergenceM"), 0.0));
+
+		TArray<float> Soulevement;
+		if ((SoulContinental > 0.0f || SoulConvergence > 0.0f)
+			&& Tectonic.IsContinental.Num() == Out.ElevationM.Num()
+			&& Tectonic.Convergence.Num() == Out.ElevationM.Num())
+		{
+			Soulevement.SetNumUninitialized(Out.ElevationM.Num());
+			for (int32 I = 0; I < Soulevement.Num(); ++I)
+			{
+				if (Tectonic.IsContinental[I] == 0)
+				{
+					Soulevement[I] = 0.0f;
+					continue;
+				}
+				const float Conv = FMath::Max(0.0f, Tectonic.Convergence[I]);
+				Soulevement[I] = SoulContinental + SoulConvergence * Conv;
+			}
+		}
+
 		FWorldseedErosionReport ErosionReport;
 		if (!WorldseedErosion::Run(*Rules, Geometry, Out.Climate.PrecipMm, Erodabilite,
-			Out.ElevationM, ErosionReport, ErosionScope))
+			Soulevement, Out.ElevationM, ErosionReport, ErosionScope))
 		{
 			OutError = TEXT("generation interrompue");
 			return false;
@@ -278,6 +311,38 @@ namespace WorldseedPipeline
 			}
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] erosion : perte moyenne par roche --%s"), *Ligne);
+
+			// LA PENTE PAR ROCHE EST LA SEULE VRAIE SIGNATURE. A l'equilibre
+			// `U = K . A^m . S^n`, donc `S = (U / K.A^m)^(1/n)` : a soulevement
+			// egal, une roche dure tient une pente plus RAIDE. C'est cela qu'on
+			// vient chercher, et ni l'altitude ni la perte ne le disent -- les
+			// deux sont dominees par la POSITION que la regle d'attribution
+			// donne a chaque roche.
+			TArray<float> PenteY, PenteX;
+			WorldseedGrid::Gradient(Out.ElevationM, Geometry.NX, Geometry.NY,
+				Geometry.MetersPerPixel(), PenteY, PenteX);
+
+			TArray<double> Pente; Pente.Init(0.0, LR.Catalogue.Num());
+			TArray<int32> N2; N2.Init(0, LR.Catalogue.Num());
+			for (int32 I = 0; I < Out.ElevationM.Num(); ++I)
+			{
+				if (Out.ElevationM[I] <= 0.0f) { continue; }
+				const uint8 R = Out.Lithology.Id[I];
+				if (!Pente.IsValidIndex(R)) { continue; }
+				Pente[R] += FMath::RadiansToDegrees(FMath::Atan(
+					FMath::Sqrt(PenteX[I] * PenteX[I] + PenteY[I] * PenteY[I])));
+				++N2[R];
+			}
+
+			FString L2;
+			for (int32 R = 0; R < LR.Catalogue.Num(); ++R)
+			{
+				if (N2[R] == 0) { continue; }
+				L2 += FString::Printf(TEXT("  %s %.1f deg (durete %.2f)"),
+					*LR.Catalogue[R].Label, Pente[R] / N2[R], LR.Catalogue[R].Hardness);
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] erosion : pente moyenne par roche --%s"), *L2);
 		}
 
 		// --- recalage du niveau marin apres erosion --------------------------

@@ -4345,3 +4345,67 @@ par roche ni la perte brute par roche ne mesurent l'erosion differentielle.
 Toutes deux sont dominees par la POSITION -- le granite est haut parce que la
 regle d'attribution le pose sur les orogenes, et il perd le plus parce qu'il est
 raide et arrose. Seul l'ECART AU TEMOIN isole le terme qu'on teste.
+
+### La boucle soulevement / erosion : la roche s'exprime enfin (19 septembre 2026)
+
+Chantier ouvert par le proprietaire apres le constat que la durete branchee sur
+une erosion sans apport ne deplacait que quatre a sept centimetres. Decision :
+**hybride d'abord** -- le relief tectonique reste la condition initiale, la
+boucle le retravaille -- et **qualite d'abord**, le cout sera optimise ensuite.
+
+**LE MODELE.** `dz/dt = U - K.A^m.S^n + D.grad^2 z`. Les trois termes existaient
+sauf le premier. Le soulevement vient de la **convergence des plaques**, deja
+calculee par la tectonique et que personne ne lisait a ce stade, plus une
+composante continentale uniforme. Il ne s'applique qu'au continental : soulever
+le plancher oceanique changerait la part des terres a chaque passe.
+
+**POURQUOI IL FALLAIT AUSSI MONTER L'INCISION, et ce n'etait pas evident.** A
+l'equilibre `U = K.A^m.S^n`. L'incision d'alors ne retirait que **0,04 m par
+passe** : un soulevement capable de faire du relief l'aurait submergee. Les deux
+montent donc ensemble, et c'est leur RAPPORT qui fixe l'amplitude -- pas leurs
+valeurs. `incisionRateM` 0,25 -> 6,0 et `maxIncisionPerStepM` 1,5 -> 6,0, pour
+300 passes au lieu de 60.
+
+**MESURE, pente moyenne par roche -- LA SEULE VRAIE SIGNATURE :**
+
+    roche      durete   temoin   couple   ecart
+    Granite     0,95    16,9 deg 25,0 deg  +8,1
+    Basalte     0,85    17,9     13,6      -4,3
+    Gres        0,55     9,9      9,1      -0,8
+    Calcaire    0,45     9,8      9,5      -0,3
+    Schiste     0,35     8,7      8,6      -0,1
+
+**L'ecart granite / calcaire passe de 7,1 a 15,5 degres.** La roche dure tient
+desormais une pente que la tendre ne tient pas -- c'est exactement
+`S = (U / K.A^m)^(1/n)`, et c'est ce qu'on etait venu chercher. Le basalte
+BAISSE, et c'est coherent : il est oceanique a 80,9 %, et le peu qui emerge est
+marginal et peu souleve.
+
+**NI L'ALTITUDE NI LA PERTE NE MESURENT CELA**, et je m'y suis laisse prendre
+deux fois de suite. Les deux sont dominees par la POSITION que la regle
+d'attribution donne a chaque roche : le granite est haut parce qu'il est pose
+sur les orogenes, et il perd le plus parce qu'il y est raide et arrose. Seule la
+PENTE dit quelque chose de la resistance, et seul l'ecart au temoin l'isole.
+
+**CE QUE CA COUTE, mesure a la resolution 256 :**
+
+    relief        -296..306 m  ->  -331..405 m    (1,3 fois plus ample)
+    part des terres   29,2 %   ->    29,2 %       (inchangee, elle est recalee)
+    pluie moyenne      714 mm  ->     714 mm      (inchangee, elle est ancree)
+    erosion            367 ms  ->    1896 ms      (5,2 fois, pour 5 fois les passes)
+    ecart aux 8 biomes  44,1 % ->     49,6 %      **degradation a reprendre**
+
+La degradation du bulletin etait attendue -- c'est la dette de recalibrage que
+le proprietaire a acceptee en ouvrant le chantier. Le mix se refroidit :
+calotte glaciaire entre dans les trois premiers biomes, parce que le relief est
+plus haut donc plus froid. A reprendre par le couple
+`soulevement / incisionRateM`, qui pilote l'amplitude, avant de toucher au
+climat.
+
+**RESTE A FAIRE, dans l'ordre :**
+1. recalibrer l'amplitude pour ramener le bulletin au moins a 44 % ;
+2. verifier a l'image que les escarpements sont la -- **rien n'a encore ete
+   regarde en jeu** ;
+3. mesurer a pleine resolution, ou le cout des 300 passes sera bien plus lourd
+   qu'a 256 ;
+4. seulement ensuite, decider du passage au modele PUR.

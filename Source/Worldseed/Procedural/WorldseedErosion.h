@@ -45,8 +45,26 @@ namespace WorldseedErosion
 	 *
 	 * Tableau vide : comportement d'avant, a l'identique.
 	 */
+	/**
+	 * Soulevement par passe, en metres et par cellule.
+	 *
+	 * C'EST LUI QUI FAIT DE L'EROSION UN SCULPTEUR AU LIEU D'UN POLISSEUR. Sans
+	 * apport, un relief qui s'erode se contente de se relaxer : il converge
+	 * vers la meme forme, un peu plus tot ou un peu plus tard, et tout terme
+	 * qu'on ajoute a la loi -- la roche comprise -- ne fait que reechelonner le
+	 * temps. Mesure a l'appui : la durete branchee sur un modele sans
+	 * soulevement ne deplacait que quatre a sept CENTIMETRES.
+	 *
+	 * Avec apport, le systeme tend vers un equilibre ou `U = K . A^m . S^n`,
+	 * donc vers une pente `S = (U / K.A^m)^(1/n)`. A soulevement egal, une
+	 * roche dure tient une pente plus RAIDE : escarpements, corniches et
+	 * marges de plateau en decoulent sans qu'on les dessine.
+	 *
+	 * Tableau vide : comportement d'avant, a l'identique.
+	 */
 	WORLDSEED_API bool Run(const UWorldseedRules& Rules, const FWorldseedGeometry& Geometry,
 		const TArray<float>& PrecipMm, const TArray<float>& Erodibility,
+		const TArray<float>& UpliftM,
 		TArray<float>& InOutElevationM,
 		FWorldseedErosionReport& OutReport,
 		const FWorldseedProgressScope& Progress = FWorldseedProgressScope());

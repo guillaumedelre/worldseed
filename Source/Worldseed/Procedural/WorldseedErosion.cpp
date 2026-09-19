@@ -139,6 +139,7 @@ namespace WorldseedErosion
 
 	bool Run(const UWorldseedRules& Rules, const FWorldseedGeometry& Geo,
 		const TArray<float>& PrecipMm, const TArray<float>& Erodibility,
+		const TArray<float>& UpliftM,
 		TArray<float>& Dem,
 		FWorldseedErosionReport& OutReport, const FWorldseedProgressScope& Progress)
 	{
@@ -160,6 +161,9 @@ namespace WorldseedErosion
 		// sert a rien sur la moitie du monde sans jamais le savoir.
 		int64 SaturesTotal = 0;
 		int32 PassesComptees = 0;
+
+		const bool bAvecSoulevement = (UpliftM.Num() == Count);
+		double SoulevementTotal = 0.0;
 
 		const double StartTime = FPlatformTime::Seconds();
 		const float Spacing = Geo.MetersPerPixel();
@@ -264,6 +268,20 @@ namespace WorldseedErosion
 				}
 			}
 
+			// --- SOULEVEMENT, AVANT L'INCISION -------------------------------
+			//
+			// L'ordre compte : la matiere doit etre la avant qu'on l'arrache.
+			// Soulever apres reviendrait a eroder le relief de la passe
+			// precedente puis a le remonter, ce qui n'est pas la meme chose.
+			if (bAvecSoulevement)
+			{
+				for (int32 I = 0; I < Count; ++I)
+				{
+					Dem[I] += UpliftM[I];
+					SoulevementTotal += UpliftM[I];
+				}
+			}
+
 			// --- incision par puissance de courant ---------------------------
 			double ErodedTotal = 0.0;
 			float MaxIncisionThisStep = 0.0f;
@@ -353,6 +371,14 @@ namespace WorldseedErosion
 
 			OutReport.TotalIncisionM += static_cast<float>(ErodedTotal);
 			OutReport.MaxIncisionM = FMath::Max(OutReport.MaxIncisionM, MaxIncisionThisStep);
+		}
+
+		if (bAvecSoulevement)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] erosion : soulevement cumule %.1f m en moyenne ")
+				TEXT("sur %d passes"),
+				SoulevementTotal / FMath::Max(Count, 1), Iterations);
 		}
 
 		if (PassesComptees > 0)
