@@ -4470,3 +4470,59 @@ plus d'elle mais de la couche voxel, qui travaille au metre.
 **VerticalScale PLAFONNE A 4,0.** Au-dela de 32 km de hauteur, le facteur cesse
 de suivre et le relief redeviendrait plat en proportion. C'est la prochaine
 borne a lever si la carte grandit encore.
+
+### Le fond marin ne suit plus l'agrandissement (19 septembre 2026)
+
+Propose par le proprietaire : « on n'a pas besoin in-game de plus de 200 m de
+profondeur en mer, on pourrait peut-etre recuperer le delta pour avoir des
+sommets plus hauts ». **L'intuition etait bonne, le mecanisme non**, et la
+mesure a tranche les deux.
+
+**IL N'Y A PAS DE BUDGET COMMUN A REPARTIR.** `minElevationM` et
+`maxElevationM` sont deux ecretages independants ; baisser l'un ne donne rien a
+l'autre. Et le plafond ne mordait meme pas : 1600 m autorises, **1205 mesures**.
+Ce qui limitait les sommets etait `tectonics.mountainHeightM`, pas la borne.
+
+**LE PLAFOND NE BORNE D'AILLEURS PLUS RIEN.** L'ecretage est applique dans la
+tectonique, AVANT la boucle couplee ; le soulevement le franchit ensuite --
+1698 m mesures pour 1600 autorises. Il ne borne que l'entree de la tectonique.
+
+**CE QUE COUTENT DES SOMMETS PLUS HAUTS**, `mountainHeightM` 325 -> 500 :
+
+    sommet          1205 -> 1698 m
+    pente basalte   26,3 -> 33,5 deg
+    pente granite   19,0 -> 21,8 deg
+    pente calcaire   9,5 ->  9,4 deg   (inchangee)
+    pente gres       8,6 ->  8,7 deg   (inchangee)
+
+**Le cout tombe entierement sur la roche qui porte les montagnes.** Les plaines
+ne bougent pas d'un dixieme de degre. C'est ce qui rend l'operation sure.
+
+**LE VRAI GAIN DE L'IDEE ETAIT AILLEURS : LA PRECISION DE L'EAU.** Le plugin
+Water encode la hauteur de toute l'eau du niveau dans UNE texture, dont la plage
+va du point le plus bas au plus haut -- c'est deja documente plus haut, avec les
+rideaux verticaux au bord des lacs pour symptome. Un fond a -1250 m au lieu de
+-300 divise donc par quatre la precision de chaque texel.
+
+**LA REGLE D'ECHELLE NE S'APPLIQUE PLUS AU FOND QUE VERS LE BAS :**
+
+    SeabedScale = min(VerticalScale, 1.0)
+
+Elle existe pour que le relief rapporte a la largeur reste borne, sinon tout
+devient falaise. Cet argument porte sur les pentes TERRESTRES : on ne marche pas
+sur le fond de l'ocean et l'eau le cache. Mais il faut garder la reduction :
+sur une PETITE carte, un fond non reduit ferait de chaque cote une falaise
+plongeant a trois cents metres -- le meme defaut, transpose sous l'eau.
+
+Appliquee a `oceanDepthM`, `riftDepthM`, `detailAmplitudeOceanM` et au plancher
+`minElevationM`. Pas a `continentBaseM`, `mountainHeightM` ni au plafond.
+
+**MESURE, 64 x 32 km :**
+
+    fond marin      -1250 -> -351 m    (3,6 fois moins profond)
+    sommet           1698 -> 1700 m    (intact)
+    part des terres  29,2 %  inchangee
+    generation       58,2 -> 52,3 s
+
+Relief total : **2051 m sur 64 km.** Un monde de montagnes, avec une plage en Z
+d'eau trois fois et demie plus serree qu'avant.

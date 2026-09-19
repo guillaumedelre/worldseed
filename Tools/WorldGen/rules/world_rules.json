@@ -31,7 +31,7 @@
     "poleForcingRadiusDegNorth": 15.0,
     "poleForcingRadiusDegSouth": 30.0,
     "poleForcingStrength": 0.85,
-    "mountainHeightM": 325.0,
+    "mountainHeightM": 500.0,
     "mountainWidthKm": 1.5,
     "riftDepthM": 80.0,
     "oceanDepthM": -200.0,

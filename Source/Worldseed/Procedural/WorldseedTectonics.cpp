@@ -197,6 +197,28 @@ const int32 Count = NX * NY;
 		const float VerticalScale = (ReferenceHeightM > 1.0f)
 			? FMath::Clamp(Geo.HeightM / ReferenceHeightM, 0.05f, 4.0f) : 1.0f;
 
+		// LE FOND MARIN NE SUIT L'ECHELLE QUE VERS LE BAS, arbitre par le
+		// proprietaire le 19 septembre 2026.
+		//
+		// POURQUOI L'EXEMPTER. La regle d'echelle existe pour que le relief
+		// rapporte a la largeur reste borne, sinon tout devient falaise --
+		// mesure d'epoque, 92 % des sommets au-dela de l'angle de roche sur une
+		// carte de 1 km. Cet argument porte sur les pentes TERRESTRES : on ne
+		// marche pas sur le fond de l'ocean, et l'eau le cache. Continuer a le
+		// creuser sur une grande carte, c'est payer une profondeur que personne
+		// ne verra jamais -- et la payer CHER : le plugin Water encode la
+		// hauteur de toute l'eau du niveau dans UNE texture, dont la plage va
+		// du point le plus bas au plus haut. A 64 km, un fond a -1250 m au lieu
+		// de -300 divise par quatre la precision de chaque texel, et c'est elle
+		// qui produisait les rideaux verticaux au bord des lacs.
+		//
+		// MAIS SEULEMENT VERS LE HAUT. Sur une PETITE carte, un fond non reduit
+		// ferait de chaque cote une falaise plongeant a trois cents metres --
+		// exactement le defaut que la regle previent, transpose sous l'eau. Le
+		// fond suit donc l'echelle quand elle REDUIT, et cesse de la suivre
+		// quand elle agrandit.
+		const float SeabedScale = FMath::Min(VerticalScale, 1.0f);
+
 		const int32 PlateCount = FMath::Max(2, Rules.Int(TEXT("tectonics"), TEXT("plateCount"), 18));
 		const float LandRatio = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("landRatio"), 0.292));
@@ -384,17 +406,17 @@ const int32 Count = NX * NY;
 
 		// --- assemblage du relief ------------------------------------------
 		const float OceanDepth = static_cast<float>(
-			Rules.Num(TEXT("tectonics"), TEXT("oceanDepthM"), -200.0)) * VerticalScale;
+			Rules.Num(TEXT("tectonics"), TEXT("oceanDepthM"), -200.0)) * SeabedScale;
 		const float ContinentBase = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("continentBaseM"), 30.0)) * VerticalScale;
 		const float MountainHeight = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("mountainHeightM"), 325.0)) * VerticalScale;
 		const float RiftDepth = static_cast<float>(
-			Rules.Num(TEXT("tectonics"), TEXT("riftDepthM"), 80.0)) * VerticalScale;
+			Rules.Num(TEXT("tectonics"), TEXT("riftDepthM"), 80.0)) * SeabedScale;
 		const float DetailContinent = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("detailAmplitudeContinentM"), 85.0)) * VerticalScale;
 		const float DetailOcean = static_cast<float>(
-			Rules.Num(TEXT("tectonics"), TEXT("detailAmplitudeOceanM"), 32.5)) * VerticalScale;
+			Rules.Num(TEXT("tectonics"), TEXT("detailAmplitudeOceanM"), 32.5)) * SeabedScale;
 
 		const int32 Octaves = Rules.Int(TEXT("tectonics"), TEXT("octaves"), 8);
 		const float BaseFreq = static_cast<float>(
@@ -472,7 +494,7 @@ const int32 Count = NX * NY;
 		ApplyShelf(Out.ElevationM, Rules, Geo);
 
 		const float MinElev = static_cast<float>(
-			Rules.Num(TEXT("world"), TEXT("minElevationM"), -300.0)) * VerticalScale;
+			Rules.Num(TEXT("world"), TEXT("minElevationM"), -300.0)) * SeabedScale;
 		const float MaxElev = static_cast<float>(
 			Rules.Num(TEXT("world"), TEXT("maxElevationM"), 400.0)) * VerticalScale;
 
