@@ -67,6 +67,28 @@ namespace
 	 * `probe_biomes(graine, 1000.0, 500)`. Cette capacite ne dependait pas du
 	 * menu, et elle lui survit.
 	 *
+	 * ET LES DEUX BORNES SE REJOIGNENT EXACTEMENT SUR CETTE TAILLE, ce qui
+	 * n'etait pas prevu. Le critere statistique donne un PLANCHER : au-dessous
+	 * de 64 x 32 il y a moins de cent vingt mailles, et la couverture des
+	 * formes saute du simple au triple d'une graine a l'autre. `VerticalScale`,
+	 * lui, donne un PLAFOND -- il vaut `hauteur / (sizeKm x 1000)` borne a 4,0,
+	 * atteint PILE a 32 km de hauteur. Au-dela, le facteur cesse de suivre et
+	 * le relief redevient plat en proportion : 2051 m sur 128 km au lieu de
+	 * 2051 sur 64.
+	 *
+	 *     taille       mailles de 4 km   VerticalScale   maille de simulation
+	 *     16 x  8 km            8            1,0              3,9 m
+	 *     32 x 16 km           32            2,0              7,8 m
+	 *     64 x 32 km          128            4,0             15,6 m
+	 *     96 x 48 km          288      4,0 (plafonne)        23,4 m
+	 *    128 x 64 km          512      4,0 (plafonne)        31,2 m
+	 *
+	 * Offrir plus grand demanderait donc de LEVER ce plafond, et ce n'est pas
+	 * un reglage : le depot a deja mesure ce que coute une amplitude qui ne
+	 * suit pas la largeur -- « 92 % des sommets au-dela de l'angle de roche,
+	 * un terrain integralement gris ». Arbitrage du proprietaire, 20 septembre
+	 * 2026, apres ce tableau : on garde cette seule taille.
+	 *
 	 * `world.sizeKm` RESTE A 8 : ce n'est pas la taille du monde mais la
 	 * HAUTEUR DE REFERENCE du calage metrique, dont VerticalScale tire son
 	 * rapport. Les deux se sont longtemps trouvees egales, ce qui masquait la
