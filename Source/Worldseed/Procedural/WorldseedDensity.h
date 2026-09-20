@@ -47,6 +47,7 @@ struct WORLDSEED_API FWorldseedDensityRules
 	int32 NiveauMax = 0;
 	float RayonAnneau0M = 300.0f;
 	float LoadRadiusM = 0.0f;
+	float RugositeMin = 0.0f;
 	float LargeurTransition = 0.5f;
 
 	/**

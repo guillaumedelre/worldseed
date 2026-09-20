@@ -225,6 +225,30 @@ public:
 	float RayonAnneau0M = 250.0f;
 
 	/**
+	 * Relief minimal, EN PENTE, pour qu'un noeud merite d etre subdivise.
+	 *
+	 * Les anneaux repartissent la finesse par la DISTANCE ; celle-ci la
+	 * repartit par le TERRAIN. Un marching cubes depense environ deux
+	 * triangles par metre carre de surface, que cette surface soit plate ou
+	 * non : sur une plaine, doubler la resolution quadruple les triangles pour
+	 * decrire la meme nappe.
+	 *
+	 * LA GRANDEUR EST SANS DIMENSION -- etendue d'altitude divisee par le cote
+	 * du noeud -- donc comparable d'un niveau a l'autre. C'est une pente
+	 * moyenne a l'echelle du noeud, et elle se lit contre la distribution du
+	 * monde : la pente MEDIANE des terres de Worldseed vaut 30,6 degres, soit
+	 * une tangente de 0,59. Un seuil de 0,15 garde donc la finesse sur la
+	 * grande majorite des terres et ne l'economise que sur ce qui est
+	 * franchement plat -- plaines, plateaux, fond marin.
+	 *
+	 * A ZERO, le critere est inerte et la diffusion est celle des anneaux
+	 * seuls, au chunk pres : une donnee absente doit rester sans effet.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
+		meta = (ClampMin = "0.0"))
+	float RugositeMin = 0.0f;
+
+	/**
 	 * Epaisseur de la dalle de transition, en FRACTION d'une cellule du chunk.
 	 *
 	 * Jamais en metres : elle doit suivre le niveau de detail. Une epaisseur
@@ -414,6 +438,21 @@ private:
 	/** Bornes d-altitude d-une colonne de chunks, par le cache. */
 	void PlageSurface(int32 CX, int32 CY, int32 Niveau,
 		float& OutMinM, float& OutMaxM) const;
+
+	/**
+	 * LE PREDICAT UNIQUE : ce noeud se subdivise-t-il ?
+	 *
+	 * IL N'EXISTE QU'UNE FOIS, ET C'EST PORTANT. La diffusion s'en sert pour
+	 * decider quels chunks emettre, `NiveauEn` pour savoir quel niveau un
+	 * voisin porte, donc quelles faces de transition armer. Les ecrire deux
+	 * fois ferait armer des cellules de transition la ou il n'y a pas de
+	 * changement de resolution, et en oublierait ailleurs -- c'est-a-dire une
+	 * fissure, qu'aucune mesure de couture ne saurait attribuer.
+	 */
+	bool DoitSubdiviser(const FWorldseedChunkKey& Key, const FVector& OrigineM) const;
+
+	/** Le relief de ce noeud justifie-t-il un voxel plus fin ? */
+	bool NoeudAccidente(const FWorldseedChunkKey& Key) const;
 
 	void UpdateChunksInterne();
 	void LaunchJob(const FWorldseedChunkKey& Key);
@@ -623,7 +662,17 @@ private:
 	 */
 	mutable TMap<FIntVector, FVector2D> CacheSurface;
 
+	/**
+	 * Verdict de relief par colonne et par niveau : ce noeud merite-t-il
+	 * d etre subdivise ? Mis en cache parce que `NiveauEn` le redemande pour
+	 * chaque voisin de chaque feuille a chaque passe de masque.
+	 */
+	mutable TMap<FIntVector, uint8> CacheRugosite;
+
 	int32 CurseurMasque = 0;
+
+	/** Une seule alerte par partie : l ecart 2:1 est une propriete, pas un compteur. */
+	mutable bool bEcart2a1Signale = false;
 
 	TMap<FWorldseedChunkKey, FWorldseedVoxelChunkState> Chunks;
 
