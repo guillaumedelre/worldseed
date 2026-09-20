@@ -84,6 +84,37 @@ struct WORLDSEED_API FWorldseedCaveArch
 	float PontM = 0.0f;
 };
 
+/**
+ * Un puits pose : doline d'effondrement ou aven de dissolution.
+ *
+ * CONSERVE POUR LA MEME RAISON QUE L'ARCHE, ET CE MANQUE A ETE TROUVE A
+ * L'AUDIT. Les deux formes n'existaient que sous forme de SEGMENTS anonymes :
+ * rien ne disait lequel etait un puits, ni de quelle espece. On ne pouvait donc
+ * ni verifier qu'un aven a bien le profil d'un aven, ni y envoyer le joueur, ni
+ * y accrocher quoi que ce soit. L'argument avait ete pose pour les arches et
+ * n'avait ete applique qu'a elles.
+ *
+ * CE QUI DISTINGUE LES DEUX EST LE SENS DU PROFIL, et rien d'autre : la doline
+ * s'evase vers le HAUT -- entonnoir d'effondrement, les parois s'eboulent
+ * jusqu'a leur angle de repos -- l'aven vers le BAS -- cloche de dissolution,
+ * l'eau a stagne en bas. C'est donc cela que la verification doit mesurer.
+ */
+struct WORLDSEED_API FWorldseedCavePuits
+{
+	FVector CentreM = FVector::ZeroVector;
+
+	/** Altitude du terrain a l'aplomb, en metres. */
+	float SolM = 0.0f;
+
+	float HautM = 0.0f;
+	float BasM = 0.0f;
+	float RayonHautM = 0.0f;
+	float RayonBasM = 0.0f;
+
+	/** Vrai pour une doline, faux pour un aven. */
+	bool bDoline = false;
+};
+
 struct WORLDSEED_API FWorldseedCaveNetwork
 {
 	TArray<FWorldseedCaveChamber> Chambers;
@@ -91,6 +122,9 @@ struct WORLDSEED_API FWorldseedCaveNetwork
 
 	/** Les arches, pour qu'on puisse les retrouver et les verifier. */
 	TArray<FWorldseedCaveArch> Arches;
+
+	/** Les puits -- dolines et avens -- pour la meme raison. */
+	TArray<FWorldseedCavePuits> Puits;
 
 	/** Index spatial : une grille reguliere en XY, la bande etant mince. */
 	float CellM = 64.0f;

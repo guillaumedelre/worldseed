@@ -208,6 +208,23 @@ public:
 		int32 ResolutionY = 1024, int32 Sites = 400, float SousLeSommetM = 20.0f,
 		float LargeurMaxM = 80.0f);
 
+	/**
+	 * Doline et aven ont-ils le profil qu-on leur prete ?
+	 *
+	 * DEUX FORMES QUI NE SE DISTINGUENT QUE PAR LE SENS DE LEUR PROFIL : la
+	 * doline s-evase vers le HAUT -- entonnoir d-effondrement, les parois
+	 * s-eboulent jusqu-a leur angle de repos -- l-aven vers le BAS -- cloche de
+	 * dissolution, l-eau a stagne en bas. Les compter ne prouve donc rien ; il
+	 * faut MESURER ce sens, et sur le champ reel, parce que l-union lisse et
+	 * tout ce qui passe la modifient le rayon demande.
+	 *
+	 * Et verifier qu-ils PERCENT : un puits qui n-atteint pas la surface n-est
+	 * pas un puits, c-est une poche.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbePuits(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 2048);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeCaves(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024, float AreaM = 512.0f, float StepM = 4.0f,

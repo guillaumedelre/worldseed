@@ -180,6 +180,7 @@ void FWorldseedCaveNetwork::Reset()
 	Chambers.Reset();
 	Segments.Reset();
 	Arches.Reset();
+	Puits.Reset();
 	ChamberBuckets.Reset();
 	SegmentBuckets.Reset();
 	Size = FIntPoint::ZeroValue;
@@ -1271,6 +1272,18 @@ void FChantierGrottes::Effondrer()
 			CreuserPuits(Out, Ch.CentreM, Haut, Bas, RayonHaut, Ch.RadiusM,
 				Rules.DolineRimNoiseM, 3.0, Seed + 5101);
 
+			{
+				FWorldseedCavePuits P;
+				P.CentreM = Ch.CentreM;
+				P.SolM = static_cast<float>(Sol);
+				P.HautM = static_cast<float>(Haut);
+				P.BasM = static_cast<float>(Bas);
+				P.RayonHautM = static_cast<float>(RayonHaut);
+				P.RayonBasM = Ch.RadiusM;
+				P.bDoline = true;
+				Out.Puits.Add(P);
+			}
+
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] grottes : DOLINE a (%.0f, %.0f) m, altitude %.0f m, ")
 				TEXT("plafond %.0f m, ouverture %.0f m de large, %.0f m de creux"),
@@ -1339,6 +1352,18 @@ void FChantierGrottes::Dissoudre()
 			CreuserPuits(Out, Ch.CentreM, Haut, Bas,
 				Rules.ShaftTopRadiusM, Rules.ShaftBottomRadiusM,
 				Rules.ShaftWanderM, 4.0, Seed + 3313);
+
+			{
+				FWorldseedCavePuits P;
+				P.CentreM = Ch.CentreM;
+				P.SolM = static_cast<float>(Sol);
+				P.HautM = static_cast<float>(Haut);
+				P.BasM = static_cast<float>(Bas);
+				P.RayonHautM = Rules.ShaftTopRadiusM;
+				P.RayonBasM = Rules.ShaftBottomRadiusM;
+				P.bDoline = false;
+				Out.Puits.Add(P);
+			}
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] grottes : GOUFFRE a (%.0f, %.0f) m, altitude %.0f m, ")
