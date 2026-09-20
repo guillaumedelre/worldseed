@@ -154,8 +154,38 @@ namespace WorldseedClimate
 				TArray<float> DistPixels;
 				WorldseedGrid::DistanceTransform(NotWater, NX, NY, DistPixels);
 				const float KmPerPixel = Geo.MetersPerPixel() / 1000.0f;
-				const float RangeKm = FMath::Max(static_cast<float>(
+
+				// --- LA PORTEE MARITIME EST UNE FRACTION DU MONDE ------------
+				//
+				// UNE LONGUEUR EN KILOMETRES NE PEUT PAS SUIVRE LA CARTE, et
+				// c'est la meme faute que le gradient adiabatique fige sur la
+				// reference de 8 km. 0,3 km est juste sur une carte de 16 km de
+				// large ; sur 64 elle est quatre fois trop courte, sur 2 elle
+				// est sept fois trop longue. La continentalite sature alors
+				// trop tot ou jamais, et les biomes d'interieur suivent.
+				//
+				// LA FRACTION, ELLE, EST UNE GRANDEUR TERRESTRE DIRECTE. Sur
+				// Terre le passage maritime -> continental se fait sur 300 a
+				// 800 km pour une circonference de 40 000 : entre 0,75 et 2 %
+				// de la largeur du monde. La valeur retenue, 1,9 %, est le haut
+				// de cette bande -- et c'est exactement ce que 0,3 km valait
+				// sur la carte de reference de 16 km. Le comportement a la
+				// reference est donc inchange, au chiffre pres, et il suit
+				// desormais la carte partout ailleurs.
+				//
+				// A zero, on retombe sur la longueur en kilometres : une donnee
+				// absente doit rester sans effet.
+				float RangeKm = FMath::Max(static_cast<float>(
 					Rules.Num(TEMP, TEXT("oceanModerationRangeKm"), 0.30)), 1e-3f);
+
+				const float PartLargeur = static_cast<float>(
+					Rules.Num(TEMP, TEXT("oceanModerationPartLargeur"), 0.019));
+				if (PartLargeur > 0.0f)
+				{
+					RangeKm = FMath::Max(
+						PartLargeur * static_cast<float>(Geo.WidthM()) / 1000.0f, 1e-3f);
+				}
+
 				for (int32 I = 0; I < Count; ++I)
 				{
 					Out.Continentality[I] = 1.0f - FMath::Exp(-DistPixels[I] * KmPerPixel / RangeKm);

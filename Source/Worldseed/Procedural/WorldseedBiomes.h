@@ -80,6 +80,33 @@ enum class EWorldseedBiome : uint8
 	Count = 21
 };
 
+/**
+ * COMBIEN DE BIOMES LE CLASSIFICATEUR PEUT-IL REELLEMENT RENDRE ?
+ *
+ * LE REGISTRE N.EST PAS LA REPONSE, et l.ecran de configuration l.a annonce
+ * faux : il disait « les 19 biomes » -- un compte juste avant deux retraits,
+ * et fige en dur dans une chaine de caractere. Le registre porte VINGT-ET-UNE
+ * entrees, mais six ne sortent jamais de `Classify` :
+ *
+ *  - Ocean, Lake, River, les trois COUVERTURES, plus attribuees depuis que
+ *    l.hydrologie a ete retiree du generateur ;
+ *  - Marsh, inatteignable pour la meme raison -- il naissait de l.eau douce
+ *    dilatee, et il pesait 0,01 %% des terres ;
+ *  - BareRock et Beach, qui ont quitte l.axe des biomes : ce sont desormais
+ *    des `Cover`, pas des valeurs d.`Index`, et c.est AppearanceBiome qui les
+ *    recompose a l.affichage.
+ *
+ * Restent quinze biomes CLIMATIQUES, et c.est bien ce que la mesure rend :
+ * ProbeInfractuosites en a liste exactement quinze sur la graine 20260909,
+ * aux trois tailles de carte.
+ *
+ * ELLE SE DERIVE, ELLE NE SE RECOPIE PAS. Un compte fige dans une chaine
+ * pourrit au premier biome ajoute ou retire, et personne ne le voit -- c.est
+ * precisement ce qui vient d.arriver.
+ */
+inline constexpr int32 WorldseedBiomesClimatiques =
+	static_cast<int32>(EWorldseedBiome::Count) - 6;
+
 /** Un seuil du diagramme de Whittaker : jusqu'a tant de pluie, ce biome. */
 struct WORLDSEED_API FWorldseedWhittakerCut
 {

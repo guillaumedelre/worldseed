@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedTexturePack.h"
 
+#include "Procedural/WorldseedBiomes.h"
+
 #define LOCTEXT_NAMESPACE "Worldseed"
 
 namespace WorldseedTexturePack
@@ -24,7 +26,16 @@ namespace WorldseedTexturePack
 		switch (Pack)
 		{
 		case EWorldseedTexturePack::BiomeColour:
-			return LOCTEXT("PackNoneDesc", "Les 19 biomes a plat. Aucune texture, lisible partout.");
+			// LE COMPTE SE DERIVE DU REGISTRE, il ne se recopie pas. Cette
+			// chaine annoncait « les 19 biomes » -- juste avant que
+			// l.hydrologie ne parte avec trois couvertures et le marais, et
+			// que la roche a nu et l.estran ne quittent l.axe des biomes pour
+			// devenir des Cover. Un nombre fige dans un texte pourrit sans
+			// que personne ne le voie, et c.est le proprietaire qui l.a vu.
+			return FText::Format(
+				LOCTEXT("PackNoneDesc",
+					"Les {0} biomes climatiques a plat, plus la roche a nu et l'estran. Aucune texture, lisible partout."),
+				FText::AsNumber(WorldseedBiomesClimatiques));
 		case EWorldseedTexturePack::Dreamscape:
 			return LOCTEXT("PackDreamDesc", "Herbe, terre, sable, roche. Pas de mousse.");
 		case EWorldseedTexturePack::Village:
