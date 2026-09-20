@@ -568,14 +568,50 @@ est une piste qu'on ne retente pas. Mais il faut savoir ce qui est mort.
 `WorldseedRules.cpp:99`, et `rules/climats_reels.json`, les vingt-trois releves
 de stations reelles que le bulletin terrestre confronte.
 
-**COMMENT ON MESURE AUJOURD'HUI.** Les sondes sont des `UFUNCTION` appelables
-depuis Python d'editeur ou en commandlet : `ProbeTerre` (bulletin de conformite
-terrestre), `ProbeLithology`, `ProbeBiomes`, `ProbeWhittaker`, `ProbeGlobe`,
-`ProbeGroundFields`, `ProbeVoxel`, `ProbeCaves`, `ProbeArches`. Et l'on REGARDE
-avec la tournee photo, qui n'exige aucun outillage externe :
+**COMMENT ON MESURE AUJOURD'HUI.** Les sondes sont des `UFUNCTION` de
+`UWorldseedProbeLibrary`, appelables depuis Python d'editeur ou en commandlet.
+Elles prennent toutes une GRAINE et une TAILLE en parametres -- c'est ce qui a
+permis de supprimer le menu des tailles sans perdre la capacite d'iterer vite :
+`probe_biomes(20260909, 1000.0, 500)` tourne en une douzaine de secondes la ou
+le monde de 64 x 32 km en demande deux cent soixante-dix.
+
+| sonde | a quelle question elle repond |
+|---|---|
+| `ProbeTerre` | le bulletin de conformite terrestre : 23 releves de stations reelles confrontes au classificateur |
+| `ProbeBiomes` | parts de biomes sur les terres |
+| `ProbeWhittaker` | la case du diagramme, cellule par cellule |
+| `ProbeGroundFields` | temperature, pluie, continentalite, saisonnalite |
+| `ProbeLithology` | attribution des roches et socle, PLUS l'entonnoir des diaclases (tirage, masque, pente) -- elle pose donc deux questions, et gagnerait a etre eclatee  |
+| `ProbeTables` | l'entonnoir des mesas et canyons, avec l'histogramme par roche |
+| `ProbeInfractuosites` | **le tableau formes x biome** -- karst, salles, avens, dolines, arches, diaclases, lames, tables, canyons |
+| `ProbeParois` | transect de paroi (sa limite est dite dans son en-tete : les deux pourcentages melangent deux populations, seule la COMPARAISON macro/reel tient) |
+| `ProbeCaves` | chambres, liaisons, reseaux, ouvertures, percement |
+| `ProbePuits` | avens et dolines, profil en coupe |
+| `ProbeArches` | cretes minces, couverture des lames, arches traversantes et leur pont |
+| `ProbeGlobe` | le globe de l'ecran de configuration |
+| `ProbeVoxel` | cout et geometrie d'un chunk |
+| `ProbeTransvoxel` | cellules regulieres : aire, densite aux sommets, aretes ouvertes, enroulement |
+| `ProbeTransition` | la couture entre deux niveaux : sommets partages, aretes ouvertes |
+| `ProbeVoisins` | **l'arbitre TIERS** : les deux mailleurs confrontes au GRADIENT DU CHAMP, qui n'appartient a aucun des deux. C'est elle qui a trouve l'enroulement inverse, apres qu'une sonde auto-referentielle eut pose la mauvaise valeur |
+| `ProbeTrous` | colonnes sans aucun sol, et la cause enregistree pour chaque chunk |
+| `ProbeNappe` | le sol de fond : sous un plafond ou a l'air libre |
+
+Et l'on REGARDE avec la tournee photo, qui n'exige aucun outillage externe :
 
     UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc
       -game -WorldseedPhotos -WorldseedQuitter -windowed -resx=1600 -resy=900
+
+**L'ECRAN DE CONFIGURATION SE REGARDE SANS MCP**, ce qui compte parce que le
+lien MCP tombe des qu'on relance l'editeur plusieurs fois de suite -- donc a
+chaque compilation. Le jeu autonome s'ouvre sur `L_Menu`, et une capture de la
+fenetre par `System.Drawing` depuis PowerShell suffit :
+
+    UnrealEditor.exe Worldseed.uproject -game -windowed -resx=1600 -resy=900
+
+C'est par cette voie que les trois defauts de l'ecran ont ete vus le
+20 septembre 2026 -- une note de 24 points, un separateur de milliers dans la
+graine, et des barres dont la piste vide masquait la comparaison. **Aucun des
+trois n'etait visible autrement qu'a l'image.**
 
 ---
 
@@ -5767,3 +5803,72 @@ Si une edition en place est vraiment inevitable : copier le fichier a cote
 AVANT, restaurer depuis la copie, et ne jamais faire dependre la restauration
 d'un processus qui peut etre tue. Le filet de secours reste `git checkout --`,
 a condition que la valeur en cours soit commitee.
+
+### L'ecran de configuration : une seule taille, et le globe au centre (20 septembre 2026)
+
+Quatre demandes du proprietaire dans la meme session, et chacune a decouvert un
+defaut que personne ne cherchait.
+
+**LE MENU DES TAILLES EST SUPPRIME. Sept tailles etaient offertes, et elles ne
+se valaient pas.** Les regles de FORMES sont metriques et grandes -- maille de
+tirage des diaclases 4 km, longueur d'onde des regions de tables 3,6 km,
+espacement des arches 2,5 km -- tandis que ce depot avait deja chiffre le seuil
+ou l'intersection de criteres rares cesse d'etre une **loterie sur la graine**
+pour redevenir une proportion : environ cent vingt taches.
+
+    64 x 32 km  ->  128 mailles de tirage
+    32 x 16 km  ->   32
+    16 x  8 km  ->    8
+     2 x  1 km  ->  moins d'une : le monde entier tient dans UNE maille
+
+C'est donc la seule taille ou les diaclases, les tables et les canyons sont
+statistiques et non tires au sort, la seule ou tout le calage est fait, et la
+seule ou le relief est credible -- 1713 m de sommet contre 531 a 16 km.
+**Et les petites tailles ne sont pas perdues** : leur usage reel etait d'iterer
+vite, et les sondes comme le banc prennent deja une taille en parametre. Cette
+capacite ne dependait pas du menu, et elle lui survit.
+
+**`world.sizeKm` RESTE A 8**, et il ne faut pas le confondre avec la taille du
+monde : c'est la HAUTEUR DE REFERENCE du calage metrique, dont `VerticalScale`
+tire son rapport. Les deux se sont longtemps trouvees egales, ce qui masquait
+la distinction.
+
+**TROIS DEFAUTS DE L'ECRAN, TOUS VUS A L'IMAGE ET SEULEMENT A L'IMAGE :**
+
+- **`PackHint` n'avait AUCUNE taille de police**, donc vingt-quatre points par
+  defaut. Cette note discrete faisait six lignes de titre sous la liste. Le
+  defaut etait ANCIEN ; il ne se voyait pas tant que la colonne etait large, et
+  il est devenu le plus gros bloc de l'ecran des qu'elle est passee a 300.
+  **Un `UTextBlock` construit directement, sans passer par le fabricant commun,
+  echappe a tous les reglages de l'ecran.**
+- **La graine s'affichait « 1,337 » pour 1337.** `FText::AsNumber` y mettait le
+  separateur de milliers de la locale, et la relecture le refuse :
+  `Raw.IsNumeric()` rend faux sur la virgule, donc le champ etait **IGNORE en
+  silence**. Le monde partait juste parce que `Params.Seed` portait deja la
+  bonne valeur -- mais taper une graine avec un separateur ne prenait pas. Une
+  graine est un IDENTIFIANT, pas une quantite.
+- **La piste vide des barres de biomes etait peinte en clair** : 0,2 % et
+  16,9 % avaient la meme longueur APPARENTE, une piste pleine largeur avec un
+  lisere colore dedans. Ce qu'on compare est la LONGUEUR de la couleur.
+
+**LA BARRE EST RAPPORTEE AU PLUS GRAND BIOME, PAS A CENT.** Rapportee a cent,
+la premiere barre ferait un cinquieme de la largeur et les dernieres seraient
+invisibles. Le chiffre reste absolu -- il porte la valeur ; la barre ne porte
+que la comparaison. Et **elle prend la couleur du biome, celle-la meme que le
+globe peint a cote** : on lit un pourcentage, on leve les yeux, et on voit ou
+il se trouve.
+
+**REVENIR AU MENU : UN SOUS-SYSTEME, PAS UNE ACTION D'ENTREE.** Le chemin
+normal d'Unreal -- un asset Enhanced Input, ou une fonction Exec sur le
+PlayerController -- exige de toucher a `Content/*`, qui est exclu du depot par
+`.gitignore`. Un binding pose la ne partirait pas sur GitHub, et ce depot a
+deja perdu des reglages pour cette raison exacte (le PlayerStart qui revenait a
+sa position, les acteurs d'eclairage disparus entre deux sessions).
+`UWorldseedRetourMenu` est un `UTickableWorldSubsystem`, il ne s'arme que dans
+`L_Worldseed_Proc`, et il se desarme AVANT d'ouvrir -- sans quoi deux tics de
+plus empilent deux `OpenLevel` sur la meme pression.
+
+**LES ETAPES AFFICHEES PENDANT LA GENERATION DISAIENT FAUX.** Cinq passes
+n'avaient aucun libelle et retombaient sur celui de la passe precedente, et les
+deux passes de climat portaient le meme. Un libelle d'avancement qui ment est
+pire que pas de libelle : on croit savoir ou en est la chaine.
