@@ -72,14 +72,46 @@ namespace
 	};
 
 	/**
-	 * L'ENROULEMENT DES TRIANGLES, ET POURQUOI IL EST MESURE ET NON DEVINE.
+	 * L'ENROULEMENT DES TRIANGLES, ET L'ARBITRE QUI LE TRANCHE.
 	 *
-	 * MESURE, sonde ProbeTransvoxel du 19 septembre 2026 : a `true`, 0,1 % des
-	 * faces seulement s'accordaient avec la normale sortante. La reponse d'une
-	 * telle mesure est binaire, et elle l'a ete -- ce n'est donc pas un reglage a
-	 * affiner mais une convention a poser, et la voici posee.
+	 * A `false`, le terrain est INVISIBLE : chaque triangle est une face
+	 * arriere, donc eliminee, et le joueur voit au travers de la surface proche
+	 * jusqu'au DESSOUS de la surface lointaine -- des nappes qui s'arquent
+	 * au-dessus de la tete et des lambeaux dans le ciel. Photographie le
+	 * 20 septembre 2026 (`falaise02`), sur un monde entierement bati.
+	 *
+	 * CE N'EST PAS LA PREMIERE VALEUR QU'ON A POSEE, ET LA PREMIERE MESURE
+	 * ETAIT AUTO-REFERENTIELLE. `ProbeTransvoxel` compare la normale geometrique
+	 * d'un triangle aux normales de SES PROPRES sommets. Or celles-ci sont
+	 * recalees sur le gradient : la mesure ne peut donc que confirmer « mes
+	 * triangles s'accordent avec mes normales », et elle ne dit RIEN de la
+	 * convention du rastériseur d'Unreal. Elle a rendu 0,1 %, on a conclu a une
+	 * inversion, et la correction qui l'a portee a 99,9 % EST la regression.
+	 *
+	 * L'ARBITRE JUSTE EST UN TIERS : le gradient du champ, evalue au centre de
+	 * gravite du triangle, confronte aux DEUX mailleurs par la meme sonde.
+	 * `ProbeVoisins`, bloc de 4 x 4 x 4 chunks, au sommet du monde ET au
+	 * littoral :
+	 *
+	 *     mailleur du moteur   0,3 % et 0,2 % de faces accordees au gradient
+	 *     mailleur maison     99,8 % et 99,8 %
+	 *
+	 * Et c'est le mailleur du MOTEUR qui s'affiche correctement. La convention
+	 * de face avant d'Unreal est donc celle-la, et non celle que le raisonnement
+	 * annoncait -- j'avais DEDUIT le sens depuis la convention supposee de
+	 * GeometryCore, et la deduction etait a l'envers.
+	 *
+	 * REGLE : un enroulement ne se deduit jamais, et il ne se mesure pas contre
+	 * soi-meme. Il se mesure contre une grandeur EXTERIEURE aux deux mailleurs,
+	 * et l'on verifie qu'elle classe correctement celui dont on sait deja qu'il
+	 * s'affiche bien.
+	 *
+	 * Elle gouverne LES DEUX FAMILLES : `Triangle` compose
+	 * `bEchanger = bInverserEnroulement != bInverse`, donc basculer cette
+	 * constante retourne aussi les cellules de transition, en preservant l'ecart
+	 * relatif que la mesure separee avait etabli.
 	 */
-	constexpr bool bInverserEnroulement = false;
+	constexpr bool bInverserEnroulement = true;
 
 	/**
 	 * ET LES CELLULES DE TRANSITION ONT LEUR PROPRE CONVENTION DE BASE.
@@ -759,19 +791,29 @@ bool Mailler(const FWorldseedDensity& Density,
 		OutStats.FieldSamples += NbSommets * 6;
 	}
 
-	// --- L'ENROULEMENT, MESURE ET NON SUPPOSE -------------------------------
+	// --- L'ENROULEMENT : CE QUE CE CHIFFRE PEUT DIRE, ET CE QU'IL NE PEUT PAS -
 	//
-	// Les normales ci-dessus sortent du GRADIENT : elles pointent vers l'air, et
-	// ne doivent rien a une convention d'enroulement. Comparer la normale
-	// GEOMETRIQUE d'un triangle -- celle que son ordre de sommets impose -- a ces
-	// normales-la dit donc si l'enroulement est le bon, et ne coute pas une
-	// evaluation de champ de plus.
-	// ET LES DEUX FAMILLES SE COMPTENT A PART. Les cellules regulieres et les
-	// cellules de transition sont deux triangulations avec deux conventions
-	// possibles ; melangees dans un seul pourcentage, une convention fausse sur
-	// la petite des deux se lit comme une degradation vague qu'aucune correction
-	// ne deplace franchement. « Un agregat sur des choses de natures
-	// differentes ne se corrige pas, il se decompose. »
+	// IL EST AUTO-REFERENTIEL, ET IL A DEJA FAIT POSER LA MAUVAISE VALEUR. On
+	// compare ici la normale GEOMETRIQUE d'un triangle -- celle que son ordre de
+	// sommets impose -- aux normales de SES PROPRES sommets. Or celles-ci
+	// viennent d'etre recalees sur le gradient quelques lignes plus haut : le
+	// chiffre ne peut donc que confirmer « mes triangles s'accordent avec mes
+	// normales ». Il ne dit RIEN de la convention de face avant du rastériseur
+	// d'Unreal, et le lire comme s'il la donnait a rendu, le 19 septembre 2026,
+	// un terrain entierement invisible -- toutes faces arriere, donc eliminees.
+	//
+	// CE QU'IL SERT ENCORE A VOIR, et c'est pour cela qu'il reste : la COHERENCE
+	// entre les deux familles. Melangees, elles donnaient 94,7 % ; separees,
+	// regulieres 99,6 % et transition 0,0 % -- une convention de depart
+	// entierement fausse sur la petite des deux populations, qu'un agregat
+	// masquait. « Un agregat sur des choses de natures differentes ne se corrige
+	// pas, il se decompose. » Les deux familles doivent rendre le MEME chiffre ;
+	// sa valeur absolue, elle, ne prouve rien.
+	//
+	// L'ARBITRE DE LA CONVENTION D'AFFICHAGE EST AILLEURS : `ProbeVoisins`
+	// confronte les deux mailleurs au GRADIENT DU CHAMP, qui n'appartient a
+	// aucun des deux, et verifie qu'il classe bien celui dont on sait deja qu'il
+	// s'affiche correctement. Voir `bInverserEnroulement`.
 	{
 		int32 Endroit[2] = { 0, 0 };
 		int32 Total[2] = { 0, 0 };
