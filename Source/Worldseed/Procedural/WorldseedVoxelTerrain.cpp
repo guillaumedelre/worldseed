@@ -250,6 +250,24 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
+	// ET LA TEINTE DE ROCHE, pour separer ce qui colore de ce qui eclaire.
+	//
+	// UN A/B NE SE FAIT JAMAIS EN EDITANT LE FICHIER DE REGLES : une
+	// restauration posee a la fin d.une commande longue n.est pas une
+	// restauration, et ce depot a vide world_rules.json de ses 1322 lignes le
+	// jour meme en s.y risquant. Quand un A/B demande un reglage sans
+	// surcharge, on AJOUTE la surcharge.
+	{
+		float Cr = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedCouleurRoche="), Cr) && Cr >= 0.0f)
+		{
+			DensityRules.RockColourFadeM = Cr;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : teinte de roche forcee -- fondu %.1f m%s"),
+				Cr, (Cr <= 0.0f) ? TEXT(" (COUPEE)") : TEXT(""));
+		}
+	}
+
 	if (NiveauMax > 0)
 	{
 		UE_LOG(LogTemp, Log,
@@ -1002,8 +1020,39 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 				}
 				if (CouleurParRoche.IsValidIndex(Id))
 				{
+					// --- LA PROFONDEUR SE COMPTE SOUS LE BRUIT, PAS SOUS LE
+					//     RELIEF MACRO ---------------------------------------
+					//
+					// LE COTELE DU MONDE VENAIT D'ICI, et il a fallu trois
+					// mesures pour y arriver : la geometrie est lisse -- le
+					// profil d'un versant est une courbe en S sans une marche --
+					// et le cotele SURVIT a `ShowFlag.Lighting 0`, donc ce
+					// n'est ni la forme ni les normales, c'est la COULEUR. Le
+					// temoin qui l'a nomme est cette teinte coupee : le monde
+					// redevient d'un coup en aplats de biome.
+					//
+					// LE MECANISME. `Profondeur` se mesure contre la surface
+					// MACRO, alors que le champ deplace la vraie surface de
+					// plus ou moins dix metres -- surplombs et detail. Sur
+					// chaque BOSSE la profondeur est donc negative et l'on
+					// peint le biome ; dans chaque CREUX elle est positive et
+					// l'on peint la roche. Le fondu valait douze metres et le
+					// detail a la meme echelle : la couleur se mettait a suivre
+					// le micro-relief, d'ou des rubans qui epousent les courbes
+					// de niveau sur tout le monde.
+					//
+					// LA MARGE N'EST PAS UN REGLAGE, ELLE EST L'AMPLITUDE DU
+					// DEPLACEMENT. Sous elle, on ne peut pas savoir si l'on est
+					// dessus ou dessous ; au-dela, on est vraiment sous terre --
+					// ce que cette teinte a toujours voulu dire : « une paroi
+					// de grotte a quarante metres sous une prairie ne doit pas
+					// rendre VERTE ».
+					const double Marge = static_cast<double>(Rules.OverhangAmplitudeM)
+						+ static_cast<double>(Rules.DetailAmplitudeM);
+
 					const float T = FMath::Clamp(
-						static_cast<float>(Profondeur) / Rules.RockColourFadeM, 0.0f, 1.0f);
+						static_cast<float>(Profondeur - Marge) / Rules.RockColourFadeM,
+						0.0f, 1.0f);
 					Teinte = FMath::Lerp(Teinte, CouleurParRoche[Id], T);
 				}
 			}
