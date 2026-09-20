@@ -482,6 +482,27 @@ public:
 
 	/** Chunks suivis, et travaux en vol. Le banc s en sert pour savoir
 	 *  quand le streaming est STABILISE -- un compte fige et aucun travail. */
+	/**
+	 * Vrai quand la diffusion ne bouge plus : compte FIGE et aucun travail en vol.
+	 *
+	 * UNE SEULE DEFINITION POUR DEUX CONSOMMATEURS. Le banc a appris cette
+	 * lecon a ses depens -- sa premiere version chauffait un nombre FIXE de
+	 * secondes et rendait EXACTEMENT 552 chunks a 250 m comme a 400, donc un
+	 * transitoire identique des deux cotes et un A/B qui ne comparait rien. La
+	 * tournee photo est restee au delai fixe et prenait des paysages a moitie
+	 * batis. La regle du depot interdit de recopier une formule dans deux
+	 * fichiers : elle vit donc ici, et les deux l-appellent.
+	 *
+	 * `DernierCompte` est la memoire de l-appelant, mise a jour au passage.
+	 */
+	bool DiffusionStable(int32& DernierCompte) const
+	{
+		const int32 N = Chunks.Num();
+		const bool bFige = (N == DernierCompte) && (TravauxEnVol() == 0);
+		DernierCompte = N;
+		return bFige;
+	}
+
 	int32 NombreDeChunks() const { return Chunks.Num(); }
 	int32 TravauxEnVol() const;
 	const FWorldseedDensity& MondeChamp() const { return Density; }

@@ -21,8 +21,22 @@
 
 namespace
 {
-	/** Laisser le monde se batir avant de tirer, puis souffler apres. */
-	constexpr float AvantPhotoS = 6.0f;
+	/**
+	 * ON ATTEND QUE LE MONDE SOIT BATI, ON NE COMPTE PLUS LES SECONDES.
+	 *
+	 * Un delai fixe de six secondes suffisait a 250 m de rayon ; a 1200 m, avec
+	 * deux mille chunks a batir, il ne suffit plus et la vue sort a moitie
+	 * faite. C'est la faute que le banc avait deja commise -- sa premiere
+	 * version rendait EXACTEMENT 552 chunks a 250 m comme a 400, donc un
+	 * transitoire identique des deux cotes.
+	 */
+	/** Duree pendant laquelle la diffusion doit rester FIGEE avant de tirer. */
+	constexpr float StableRequiseS = 2.0f;
+
+	/** Au-dela, on tire quand meme et l'on DIT que la vue est partielle. */
+	constexpr float PlafondAttenteS = 180.0f;
+
+	/** Souffler apres la prise, le temps que la capture soit ecrite. */
 	constexpr float ApresPhotoS = 7.2f;
 }
 
@@ -406,6 +420,8 @@ void UWorldseedPhotographe::Demarrer()
 	Etape = 0;
 	Attente = 0;
 	Horloge = 0.0f;
+	DernierCompte = -1;
+	StableS = 0.0f;
 
 	AWorldseedVoxelTerrain* const T = Terrain();
 	if (!T) { return; }
@@ -451,10 +467,10 @@ void UWorldseedPhotographe::Tick(float DeltaTime)
 
 	if (!EnCours()) { return; }
 	Horloge += DeltaTime;
-	Avancer();
+	Avancer(DeltaTime);
 }
 
-void UWorldseedPhotographe::Avancer()
+void UWorldseedPhotographe::Avancer(float DeltaTime)
 {
 	AWorldseedVoxelTerrain* const T = Terrain();
 	UWorld* const W = GetWorld();
@@ -527,12 +543,47 @@ void UWorldseedPhotographe::Avancer()
 	// LAISSER LE MONDE SE BATIR AVANT DE TIRER. Les chunks arrivent par travaux
 	// asynchrones ; une photo prise des l'arrivee montre un paysage troue, et
 	// l'on croit a un defaut de generation.
-	if (Attente == 0 && Horloge >= AvantPhotoS)
+	//
+	// ON ATTEND LA STABILISATION, PLUS UN DELAI FIXE -- signale par le
+	// proprietaire : « tu prends tes photos toutes les six secondes, pourquoi
+	// ne pas attendre que le monde soit genere completement ». C'est la meme
+	// faute que le banc avait commise, et qu'on lui avait corrigee : sa
+	// premiere version chauffait un nombre FIXE de secondes et rendait
+	// EXACTEMENT 552 chunks a 250 m comme a 400 -- un transitoire identique des
+	// deux cotes. Six secondes suffisaient a 250 m de rayon ; a 1200 m, avec
+	// deux mille chunks a batir, elles ne suffisent plus du tout.
+	//
+	// Le critere est celui du banc, et il vient du MEME endroit : compte de
+	// chunks fige et aucun travail en vol.
+	const bool bFige = T->DiffusionStable(DernierCompte);
+	StableS = bFige ? (StableS + DeltaTime) : 0.0f;
+
+	const bool bPret = (StableS >= StableRequiseS);
+	const bool bTropLong = (Horloge >= PlafondAttenteS);
+
+	if (Attente == 0 && bTropLong && !bPret)
+	{
+		// ON DIT QU'ON TIRE SUR UN TRANSITOIRE PLUTOT QUE DE LE TAIRE. Une
+		// photo partielle qu'on croit complete envoie chercher un defaut de
+		// generation la ou il n'y en a pas.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] photo : %s -- diffusion NON stabilisee apres %.0f s ")
+			TEXT("(%d chunks, %d en vol), la vue sera partielle"),
+			*E.Nom, PlafondAttenteS, T->NombreDeChunks(), T->TravauxEnVol());
+	}
+
+	if (Attente == 0 && (bPret || bTropLong))
 	{
 		const FString Fichier = FPaths::Combine(
 			FPaths::ProjectSavedDir(), TEXT("Photos"), E.Nom + TEXT(".png"));
 		FScreenshotRequest::RequestScreenshot(Fichier, false, false);
 		Attente = 1;
+
+		// L'HORLOGE REPART AU TIR, PAS A L'ARRIVEE. Elle a servi jusqu'ici de
+		// plafond d'attente ; si la stabilisation a pris trente secondes, elle
+		// depasse deja ApresPhotoS et l'on avancerait AVANT que la capture --
+		// qui est asynchrone -- soit ecrite sur le disque.
+		Horloge = 0.0f;
 
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] photo : %s -- cible (%.0f, %.0f, %.0f) m, ")
@@ -540,11 +591,27 @@ void UWorldseedPhotographe::Avancer()
 			*E.Nom, E.CibleM.X, E.CibleM.Y, E.CibleM.Z, E.DistanceM);
 	}
 
+	// ON N'AVANCE PAS TANT QU'ON N'A PAS TIRE, ET C'EST LA MOITIE QUI MANQUAIT.
+	//
+	// Premiere version de cette correction : le TIR attendait la stabilisation,
+	// mais l'AVANCEMENT restait sur l'horloge. Un arret dont le monde n'etait
+	// pas bati en sept secondes passait donc au suivant SANS PHOTO -- et le
+	// releve le dit sans ambiguite : tournee de dix vues, DEUX fichiers ecrits,
+	// les huit premiers arrets traverses en quatre-vingts secondes. Le
+	// proprietaire voyait la camera sauter toutes les sept secondes et a
+	// signale « toujours 6 s » : ce n'etait pas le delai d'avant qui avait
+	// survecu, c'etait celui d'APRES qui gouvernait tout.
+	//
+	// Conditionner une moitie d'une boucle et pas l'autre ne corrige rien : ca
+	// deplace le symptome.
+	if (Attente == 0) { return; }
 	if (Horloge < ApresPhotoS) { return; }
 
 	++Etape;
 	Attente = 0;
 	Horloge = 0.0f;
+	DernierCompte = -1;
+	StableS = 0.0f;
 
 	if (EnCours())
 	{

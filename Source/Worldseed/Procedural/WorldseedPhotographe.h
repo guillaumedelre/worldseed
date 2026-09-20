@@ -104,11 +104,15 @@ private:
 	AWorldseedVoxelTerrain* Terrain() const;
 
 	void Demarrer();
-	void Avancer();
+	void Avancer(float DeltaTime);
 
 	TArray<FWorldseedPhotoStop> Tournee;
 	int32 Etape = INDEX_NONE;
 	int32 Attente = 0;
+
+	/** Memoire du test de stabilisation : voir AWorldseedVoxelTerrain. */
+	int32 DernierCompte = -1;
+	float StableS = 0.0f;
 	bool bQuitterEnsuite = false;
 
 	/**

@@ -221,6 +221,20 @@ public:
 	 * Et verifier qu-ils PERCENT : un puits qui n-atteint pas la surface n-est
 	 * pas un puits, c-est une poche.
 	 */
+	/**
+	 * De combien le sol de fond flotte-t-il au-dessus du sol reel ?
+	 *
+	 * DEUX SURFACES QUI NE PEUVENT PAS COINCIDER. La nappe est batie sur le
+	 * relief MACRO ; le terrain voxel maille l-isovaleur zero du CHAMP, qui
+	 * ajoute a ce relief un deplacement vertical 3D. La question n-est donc pas
+	 * de savoir si elles divergent, mais DE COMBIEN -- et ce nombre dit quelle
+	 * marge corrigerait le defaut signale : un joueur qui marche sur le voxel et
+	 * parait enfonce dans la nappe, qui est dessinee et sans collision.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeNappe(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 2048, int32 Colonnes = 192);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbePuits(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 2048);

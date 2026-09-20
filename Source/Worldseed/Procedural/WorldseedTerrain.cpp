@@ -985,7 +985,45 @@ void AWorldseedTerrain::BuildGroundProxy()
 	const float CellCm = Geometry.MetersPerPixel() * WorldseedMetersToCm;
 	const float OriginX = -Geometry.WidthM() * WorldseedMetersToCm * 0.5f;
 	const float OriginY = -Geometry.HeightM * WorldseedMetersToCm * 0.5f;
-	const float DropCm = GroundProxyDropM * WorldseedMetersToCm * HeightExaggeration;
+	// --- LE RETRAIT SUIT LE CHAMP, PAS UN NOMBRE EN DUR --------------------
+	//
+	// LA PREMISSE DU REGLAGE ETAIT FAUSSE. Il valait UN METRE, avec ce motif :
+	// « les deux maillages decrivent le meme relief, sans ce retrait ils se
+	// disputeraient le meme plan et scintilleraient ». Or ils ne decrivent PAS
+	// le meme relief : la nappe est batie sur la grille macro, le terrain voxel
+	// maille l'isovaleur zero du CHAMP, qui ajoute a cette grille un
+	// deplacement vertical 3D -- jusqu'a overhangAmplitudeM plus
+	// detailAmplitudeM vers le bas.
+	//
+	// MESURE, graine 20260909, 10 637 colonnes de terre : la nappe flotte
+	// AU-DESSUS du sol reel sur 38,8 % d'entre elles. Ecart moyen 0,44 m,
+	// mediane 0,50, p90 2,50, p99 7,00. Un metre couvrait donc la mediane et
+	// rien de plus, et le joueur -- qui marche sur le voxel et traverse la
+	// nappe, laquelle est dessinee mais sans collision -- paraissait enfonce
+	// dedans jusqu'a la taille. Signale sur capture par le proprietaire.
+	//
+	// C'est exactement l'angle mort que `archeMargeSommetM` corrige deja
+	// ailleurs : « le champ de densite deplace la surface et la passe des
+	// cavites ne le sait pas ». La nappe avait la meme cecite.
+	//
+	// On lit donc les deux amplitudes plutot que d'ecrire douze : un reglage
+	// qui change ne doit pas laisser ce retrait en arriere.
+	double RetraitM = GroundProxyDropM;
+	{
+		FString RulesError;
+		if (const UWorldseedRules* R = WorldseedPipeline::GetRules(RulesError))
+		{
+			const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*R);
+			RetraitM = FMath::Max<double>(RetraitM,
+				DR.OverhangAmplitudeM + DR.DetailAmplitudeM);
+		}
+	}
+	const float DropCm = RetraitM * WorldseedMetersToCm * HeightExaggeration;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] sol de fond : retrait %.1f m (plancher du reglage %.1f, ")
+		TEXT("deplacement du champ compris)"),
+		RetraitM, GroundProxyDropM);
 
 	const int32 Verts = CountX * CountY;
 
