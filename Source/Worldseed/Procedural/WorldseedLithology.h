@@ -106,6 +106,43 @@ struct WORLDSEED_API FWorldseedLithologyRules
 	float SoclePartHaute = 0.15f;
 
 	/**
+	 * Relief LOCAL minimal pour qu.un orogene expose reellement son socle, en m.
+	 *
+	 * SOURCE, ET C.EST LA REGLE D.ATTRIBUTION QUI LE DEMANDAIT DEJA : « un
+	 * OROGENE expose son socle -- soulevement et DECAPAGE emportent la
+	 * couverture sedimentaire ». Le decapage est une erosion, et ce qui decape
+	 * est le RELIEF, pas la convergence. Le code ne testait que la seconde,
+	 * donc il declarait socle toute la bande convergente, y compris le bassin
+	 * PLAT qui borde la chaine.
+	 *
+	 * OR UN BASSIN D.AVANT-PAYS EST L.INVERSE D.UN SOCLE : il est PLEIN des
+	 * sediments arraches a la chaine voisine. C.est litteralement le decor des
+	 * mesas reelles -- le plateau du Colorado est un bassin borde d.uplifts.
+	 * Mesure du defaut, 20 septembre 2026 : sur le terrain chaud, aride et peu
+	 * accidente que les tables demandent, 70,80 % de granite et 29,13 % de
+	 * basalte, pour 0,00 % de gres. Aucune couverture sedimentaire, donc aucune
+	 * table dans tout le monde.
+	 *
+	 * ET C.EST UN QUANTILE, PAS UN SEUIL METRIQUE. Premiere version : 200 m de
+	 * relief local exiges sur 3 km. Elle n.a rien rendu au bassin -- 1 552 563
+	 * cellules orogeniques, 1 552 563 gardees socle, ZERO. Sur un monde qui va
+	 * de -1250 a +1700 m, tout depasse 200 m a cette fenetre. C.est exactement
+	 * la faute que lithologieSoclePartHaute avait deja corrigee pour le seuil
+	 * d.altitude : « un quantile ne connait pas l.echelle, il tient la
+	 * proportion demandee quelle que soit l.amplitude du relief ».
+	 *
+	 * C.est donc la PART des cellules orogeniques, les plus accidentees
+	 * d.abord, qui garde son socle. Le reste est rendu au bassin -- avant-pays
+	 * souleve mais non decape.
+	 *
+	 * A UN, le comportement est celui d.avant, a l.identique.
+	 */
+	float SoclePartAccidentee = 0.5f;
+
+	/** Rayon sur lequel ce relief local se mesure, en metres. */
+	float SocleReliefRayonM = 3000.0f;
+
+	/**
 	 * Les domaines de depot, dans l'ordre d'evaluation.
 	 *
 	 * L'ORDRE COMPTE : un cap de craie au pied d'un arc volcanique est de la

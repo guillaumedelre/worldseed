@@ -27,8 +27,17 @@ namespace
 {
 	constexpr int32 NbBiomes = static_cast<int32>(EWorldseedBiome::Count);
 
-	/** Ce qu'on compte pour un biome. */
-	struct FReleve
+	/**
+	 * Ce qu.on compte pour un biome.
+	 *
+	 * NOM DISTINCTIF A DESSEIN. UBT concatene les .cpp en une seule unite de
+	 * traduction, ou deux structures de meme nom dans des namespaces ANONYMES
+	 * entrent en collision -- et le regroupement change tout seul d.un build a
+	 * l.autre. Un simple `FReleve` heurtait celui de ProbeTransvoxel. Quand les
+	 * deux definitions sont VRAIMENT differentes, le remede est le nom ; quand
+	 * elles disent la meme chose, c.est de n.en garder qu.une.
+	 */
+	struct FReleveInfra
 	{
 		// --- le terrain ---
 		int32 Cellules = 0;
@@ -91,7 +100,7 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 	const FWorldseedFinRules FinRules = FWorldseedFinRules::FromRules(*Regles);
 	const FWorldseedPlateauRules PlatRules = FWorldseedPlateauRules::FromRules(*Regles);
 
-	TArray<FReleve> Par;
+	TArray<FReleveInfra> Par;
 	Par.SetNum(NbBiomes);
 
 	// --- LE TERRAIN, ET LES DEUX FORMES ETENDUES ----------------------------
@@ -112,7 +121,7 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 			const int32 B = W.Biomes.Index[Idx];
 			if (B < 0 || B >= NbBiomes) { continue; }
 
-			FReleve& R = Par[B];
+			FReleveInfra& R = Par[B];
 			++R.Cellules;
 			++TerresEchantillonnees;
 
@@ -215,7 +224,7 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 
 	for (int32 B = 0; B < NbBiomes; ++B)
 	{
-		const FReleve& R = Par[B];
+		const FReleveInfra& R = Par[B];
 		if (R.Cellules == 0) { continue; }
 
 		const double N = R.Cellules;
@@ -245,7 +254,7 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 	int32 Dolines = 0;
 	for (const FWorldseedCavePuits& P : W.Caves.Puits) { if (P.bDoline) { ++Dolines; } }
 	int32 BiomesPeuples = 0;
-	for (const FReleve& R : Par) { if (R.Cellules > 0) { ++BiomesPeuples; } }
+	for (const FReleveInfra& R : Par) { if (R.Cellules > 0) { ++BiomesPeuples; } }
 
 	const FString Resume = FString::Printf(
 		TEXT("%d chambres, %d avens, %d dolines, %d arches reparties sur %d biomes"),

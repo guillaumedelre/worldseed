@@ -117,6 +117,10 @@ FWorldseedLithologyRules FWorldseedLithologyRules::FromRules(const UWorldseedRul
 
 	Out.SoclePartHaute = static_cast<float>(Rules.Num(
 		WorldseedSection::Substrat, TEXT("lithologieSoclePartHaute"), 0.15));
+	Out.SoclePartAccidentee = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologieSoclePartAccidentee"), 0.5));
+	Out.SocleReliefRayonM = static_cast<float>(Rules.Num(
+		WorldseedSection::Substrat, TEXT("lithologieSocleReliefRayonM"), 3000.0));
 
 	// --- LES DOMAINES DE DEPOT ------------------------------------------------
 	Out.PlateformeAltitudeMaxM = static_cast<float>(Rules.Num(
@@ -261,6 +265,160 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 		}
 	}
 
+	// --- LE SOCLE SE DECIDE UNE FOIS, ET IL DEMANDE UN DECAPAGE --------------
+	//
+	// LA REGLE D'ATTRIBUTION LE DEMANDAIT DEJA, et le code ne l'ecoutait qu'a
+	// moitie : « un OROGENE expose son socle -- soulevement et DECAPAGE
+	// emportent la couverture sedimentaire ». Le decapage est une EROSION, et
+	// ce qui decape est le RELIEF ; la convergence ne fait que soulever. En ne
+	// testant que la convergence, on declarait socle toute la bande
+	// convergente -- y compris le BASSIN PLAT qui borde la chaine.
+	//
+	// OR UN BASSIN D'AVANT-PAYS EST L'INVERSE D'UN SOCLE : il est PLEIN des
+	// sediments arraches a la chaine voisine. C'est litteralement le decor des
+	// mesas reelles. Mesure du defaut : sur le terrain chaud, aride et peu
+	// accidente que les tables demandent, 70,80 % de granite et 29,13 % de
+	// basalte pour 0,00 % de gres -- donc aucune table dans tout le monde.
+	//
+	// ET LE TEST ETAIT EN TROIS COPIES dans ce fichier. Ajouter le relief a
+	// l'une aurait fait diverger les trois, sans qu'aucun compilateur ne le
+	// dise. On le calcule donc UNE fois, ici, et les trois le lisent.
+	TArray<uint8> EstSocle;
+	EstSocle.Init(0, Count);
+	{
+		// LE RELIEF LOCAL SE MESURE SUR UNE GRILLE GROSSIE, et c'est un choix
+		// de cout : la fenetre fait trois kilometres, soit pres de cent
+		// cellules de rayon, et un balayage naif y coute deux milliards
+		// d'operations. Un huitieme de resolution suffit largement a dire si
+		// l'on est dans une chaine ou dans une plaine -- on ne cherche pas un
+		// contour, on cherche une CLASSE de terrain.
+		constexpr int32 Grossier = 8;
+		const int32 PX = FMath::Max(Geometry.NX / Grossier, 1);
+		const int32 PY = FMath::Max(Geometry.NY / Grossier, 1);
+
+		TArray<float> Bas;  Bas.Init(TNumericLimits<float>::Max(), PX * PY);
+		TArray<float> Haut; Haut.Init(TNumericLimits<float>::Lowest(), PX * PY);
+
+		for (int32 J = 0; J < Geometry.NY; ++J)
+		{
+			const int32 PJ = FMath::Min(J / Grossier, PY - 1);
+			for (int32 I = 0; I < Geometry.NX; ++I)
+			{
+				const int32 P = PJ * PX + FMath::Min(I / Grossier, PX - 1);
+				const float H = ElevationM[J * Geometry.NX + I];
+				Bas[P] = FMath::Min(Bas[P], H);
+				Haut[P] = FMath::Max(Haut[P], H);
+			}
+		}
+
+		const float MailleM = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
+		const int32 Rayon = FMath::Max(
+			FMath::RoundToInt(Rules.SocleReliefRayonM / (MailleM * Grossier)), 1);
+
+		// Separable : min et max se propagent par axe, donc deux passes au lieu
+		// d'une fenetre carree.
+		auto Etaler = [PX, PY, Rayon](TArray<float>& V, bool bMax)
+		{
+			TArray<float> Tmp = V;
+			for (int32 J = 0; J < PY; ++J)
+			{
+				for (int32 I = 0; I < PX; ++I)
+				{
+					float A = V[J * PX + I];
+					for (int32 D = -Rayon; D <= Rayon; ++D)
+					{
+						const int32 K = FMath::Clamp(I + D, 0, PX - 1);
+						A = bMax ? FMath::Max(A, V[J * PX + K])
+								 : FMath::Min(A, V[J * PX + K]);
+					}
+					Tmp[J * PX + I] = A;
+				}
+			}
+			V = Tmp;
+			for (int32 J = 0; J < PY; ++J)
+			{
+				for (int32 I = 0; I < PX; ++I)
+				{
+					float A = V[J * PX + I];
+					for (int32 D = -Rayon; D <= Rayon; ++D)
+					{
+						const int32 K = FMath::Clamp(J + D, 0, PY - 1);
+						A = bMax ? FMath::Max(A, V[K * PX + I])
+								 : FMath::Min(A, V[K * PX + I]);
+					}
+					Tmp[J * PX + I] = A;
+				}
+			}
+			V = Tmp;
+		};
+
+		Etaler(Bas, false);
+		Etaler(Haut, true);
+
+		auto EstOrogene = [&](int32 C)
+		{
+			return (bHasConv && Convergence[C] > Rules.SocleConvergence)
+				|| (ElevationM[C] > SeuilSocleM);
+		};
+
+		// LE SEUIL SE LIT CONTRE LA DISTRIBUTION DU MONDE, jamais contre
+		// l.intuition -- et l.on echantillonne SUR LE DOMAINE QUI SERA TRIE,
+		// pas sur l.ensemble. Lecon deja payee deux fois dans ce fichier : le
+		// premier calage du socle demandait 45 / 35 / 20 et rendait
+		// 40,8 / 38,1 / 21,1 pour avoir echantillonne trop large.
+		TArray<float> ReliefsOrogenes;
+		ReliefsOrogenes.Reserve(Count / 4);
+		for (int32 J = 0; J < Geometry.NY; ++J)
+		{
+			const int32 PJ = FMath::Min(J / Grossier, PY - 1);
+			for (int32 I = 0; I < Geometry.NX; ++I)
+			{
+				const int32 C = J * Geometry.NX + I;
+				if (ElevationM[C] <= 0.0f || !EstOrogene(C)) { continue; }
+				ReliefsOrogenes.Add(
+					Haut[PJ * PX + FMath::Min(I / Grossier, PX - 1)]
+					- Bas[PJ * PX + FMath::Min(I / Grossier, PX - 1)]);
+			}
+		}
+
+		const bool bTrier = (Rules.SoclePartAccidentee > 0.0f)
+			&& (Rules.SoclePartAccidentee < 1.0f) && (ReliefsOrogenes.Num() > 0);
+		const float SeuilRelief = bTrier
+			? WorldseedGrid::Quantile(ReliefsOrogenes, 1.0f - Rules.SoclePartAccidentee)
+			: 0.0f;
+
+		for (int32 J = 0; J < Geometry.NY; ++J)
+		{
+			const int32 PJ = FMath::Min(J / Grossier, PY - 1);
+			for (int32 I = 0; I < Geometry.NX; ++I)
+			{
+				const int32 C = J * Geometry.NX + I;
+				const int32 P = PJ * PX + FMath::Min(I / Grossier, PX - 1);
+				if (!EstOrogene(C)) { continue; }
+				if (bTrier && (Haut[P] - Bas[P]) < SeuilRelief) { continue; }
+				EstSocle[C] = 1;
+			}
+		}
+
+		// COMBIEN LE DECAPAGE SAUVE-T-IL ? Un chiffre identique apres une
+		// correction reelle est le signe que ce depot a rencontre cinq fois :
+		// soit le monde vient du cache, soit la garde ne mord pas. On le dit.
+		int32 Orogenes = 0, Socles = 0;
+		for (int32 C = 0; C < Count; ++C)
+		{
+			if (ElevationM[C] <= 0.0f) { continue; }
+			if (EstOrogene(C)) { ++Orogenes; }
+			if (EstSocle[C] != 0) { ++Socles; }
+		}
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] substrat : %d cellules orogeniques, %d gardees SOCLE ")
+			TEXT("(%.1f %%) -- le decapage en rend %d au bassin, relief exige %.0f m ")
+			TEXT("sur %.0f m"),
+			Orogenes, Socles,
+			(Orogenes > 0) ? 100.0 * Socles / Orogenes : 0.0,
+			Orogenes - Socles, SeuilRelief, Rules.SocleReliefRayonM);
+	}
+
 	// --- le motif sedimentaire -----------------------------------------------
 	//
 	// UN BRUIT COHERENT, PAS UN TIRAGE PAR CELLULE. Les bassins sont des
@@ -328,9 +486,7 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 			DomaineDe[I] = INDEX_NONE;
 
 			const bool bOceanique = bHasCont && IsContinental[I] == 0;
-			const bool bSocle =
-				(bHasConv && Convergence[I] > Rules.SocleConvergence)
-				|| (ElevationM[I] > SeuilSocleM);
+			const bool bSocle = (EstSocle[I] != 0);
 			if (bOceanique || bSocle || ElevationM[I] <= 0.0f) { continue; }
 
 			const float Conv = bHasConv ? Convergence[I] : 0.0f;
@@ -412,9 +568,7 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 		for (int32 I = 0; I < Count; ++I)
 		{
 			const bool bOceanique = bHasCont && IsContinental[I] == 0;
-			const bool bSocle =
-				(bHasConv && Convergence[I] > Rules.SocleConvergence)
-				|| (ElevationM[I] > SeuilSocleM);
+			const bool bSocle = (EstSocle[I] != 0);
 
 			if (!bOceanique && !bSocle && ElevationM[I] > 0.0f)
 			{
@@ -452,9 +606,7 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 		// 2. Un orogene expose son SOCLE : soulevement et decapage emportent la
 		//    couverture sedimentaire. La convergence dit la chaine en formation,
 		//    l'altitude les reliefs anciens deja decapes.
-		const bool bSocle =
-			(bHasConv && Convergence[I] > Rules.SocleConvergence)
-			|| (ElevationM[I] > SeuilSocleM);
+		const bool bSocle = (EstSocle[I] != 0);
 		if (bSocle)
 		{
 			Out.Id[I] = IdSocle;
