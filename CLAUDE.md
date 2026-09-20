@@ -2642,8 +2642,13 @@ Toute écriture de paramètre se fait **PIE arrêté**, et se relit pour vérifi
 
 `Config/DefaultEngine.ini` pointait encore `GameDefaultMap` et `EditorStartupMap`
 sur `/Game/ThirdPerson/Lvl_ThirdPerson`, la scène du modèle Epic : l'éditeur et
-le PIE s'ouvraient donc sur une démo vide. Les deux pointent désormais
-`/Game/Worldseed/Maps/L_Worldseed`.
+le PIE s'ouvraient donc sur une démo vide.
+
+**ELLES POINTENT AUJOURD'HUI `/Game/Worldseed/Maps/L_Menu`**, et non
+`L_Worldseed` comme cette note l'a longtemps dit : le menu est devenu le point
+d'entrée du jeu quand la graine y est choisie, et c'est lui qui transporte le
+monde jusqu'à `L_Worldseed_Proc`. Corrigé le 20 septembre 2026, après
+vérification dans le fichier.
 
 `Lvl_ThirdPerson` a été supprimée, avec ses acteurs externes — vérifié sans
 aucun référenceur hors de ses propres `__ExternalActors__`. **`GlobalDefaultGameMode`
@@ -5643,3 +5648,68 @@ j'aurais impute a ce chantier un defaut qui lui est anterieur.**
    `world_rules.json`, ou vivent les seuils, une fois les valeurs arretees ;
 3. le rayon de dechargement suit le rayon de chargement par une hysteresis
    fixe : a trois anneaux il monte a 3360 m, ce qui n'a pas ete mesure a part.
+
+### Le terrain n'etait pas dechiquete, il etait INVISIBLE (20 septembre 2026)
+
+Signale comme « des trous dans le terrain ». C'etait un vrai defaut, et ni le
+diagnostic ni la mesure qui l'avaient produit n'etaient bons.
+
+**LA CAUSE : L'ENROULEMENT DU MAILLEUR TRANSVOXEL.** Chaque triangle etait une
+face arriere, donc eliminee. Le joueur voyait au travers de la surface proche
+jusqu'au **dessous** de la surface lointaine -- des nappes qui s'arquent
+au-dessus de la tete, des lambeaux dans le ciel, des cones a la ligne d'eau. Ce
+n'etaient pas des trous : c'etait du terrain complet, rendu a l'envers.
+
+**LA MESURE QUI AVAIT POSE LA MAUVAISE VALEUR ETAIT AUTO-REFERENTIELLE, ET
+C'EST LA LECON.** `ProbeTransvoxel` comparait la normale geometrique d'un
+triangle aux normales de **ses propres sommets** -- lesquelles sont recalees sur
+le gradient quelques lignes plus haut. Elle ne pouvait donc que confirmer « mes
+triangles s'accordent avec mes normales », et ne disait **rien** de la
+convention de face avant d'Unreal. Elle a rendu 0,1 %, on a conclu a une
+inversion, et la correction qui l'a portee a 99,9 % ETAIT la regression.
+
+**L'ARBITRE JUSTE EST UN TIERS, ET IL DOIT SAVOIR CLASSER LE CAS CONNU.**
+`ProbeVoisins` confronte les DEUX mailleurs au gradient du champ, qui
+n'appartient a aucun des deux :
+
+    mailleur du moteur    0,3 % et 0,2 % de faces accordees au gradient
+    mailleur maison      99,8 % et 99,8 %      (avant correction)
+
+Et c'est le mailleur du MOTEUR qui s'affiche correctement. **Une mesure qui ne
+sait pas classer le cas dont on connait deja la reponse ne peut pas trancher les
+autres.** C'est le meme piege que le comptage de composants d'herbe de Landscape
+(11 septembre), ou la demo du pack -- qui a pourtant un tapis visible -- donnait
+le meme zero : on avait valide la metrique nulle part.
+
+**ET J'AI RE-ELIMINE L'ENROULEMENT PAR RAISONNEMENT AVANT DE LE MESURER.** Le
+commentaire du chemin moteur dit qu'il inverse ses indices « parce que
+GeometryCore oriente pour un interieur POSITIF » ; j'en ai deduit le sens
+attendu, conclu que ma valeur etait la bonne, et je suis reparti chercher
+ailleurs pendant une heure. La deduction etait a l'envers. **Un enroulement ne
+se deduit jamais, meme quand la chaine de raisonnement parait complete.**
+
+**CE QUE LE DEFAUT N'ETAIT PAS**, et qu'il est inutile de resoupconner : le
+champ (66 049 colonnes, 0 sans surface), le nombre de chunks (808 contre 809
+pour le moteur, stabilises en 9 s), les anneaux (defaut identique a
+`-WorldseedNiveaux=0`), les tables (0 citation hors bornes), la couture entre
+chunks voisins (4 aretes ouvertes interieures sur 120 000), la longueur des
+aretes (0 au-dela de trois voxels), ni l'aire (0,005 % d'ecart a emprise egale).
+Le mailleur n'a jamais produit une mauvaise surface.
+
+**TROIS CRITERES DE MAILLAGE, ET CE QUE CHACUN VOIT.** Ils ne se remplacent pas :
+- *l'arete ouverte* voit une FISSURE, et rien d'autre. Un maillage reste
+  combinatoirement clos quand ses triangles pointent vers le mauvais sommet ;
+- *la longueur d'arete* voit cela. Un triangle de marching cubes a ses trois
+  sommets sur les aretes d'UNE cellule, donc aucune arete ne peut depasser sa
+  diagonale -- borne de CONSTRUCTION, qui ne suppose ni l'autre mailleur, ni le
+  champ, ni l'enroulement ;
+- *l'enroulement contre le champ* voit l'invisibilite, que les deux autres
+  laissent passer sans un chiffre de travers.
+
+**PIEGE DE PROTOCOLE, PAYE UNE FOIS DE PLUS.** La premiere tournee photo
+tournait a `-WorldseedNiveaux=0` avec le rayon des anneaux, **1200 m a
+resolution uniforme** : le monde n'etait pas bati, et l'on photographiait une
+file d'attente. Le depot a la meme note pour le banc, deux fois. Toute vue
+destinee a juger le terrain se prend a un rayon ou la diffusion **se stabilise
+reellement** -- 250 m ici, 9 secondes -- ou dans la configuration reelle du jeu,
+anneaux armes.
