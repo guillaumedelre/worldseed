@@ -219,11 +219,28 @@ namespace WorldseedGlobe
 					}
 				}
 
+				// --- L'ESPACE EST TRANSPARENT, PAS SOMBRE -----------------
+				//
+				// L'alpha etait fige a 255 : la texture portait donc un CARRE
+				// opaque autour du disque. Cela ne se voyait pas tant que le
+				// globe tenait dans 420 pixels au milieu d'un panneau de meme
+				// teinte ; des qu'il a pris tout le corps de l'ecran, le carre
+				// est devenu une boite posee sur le fond.
+				//
+				// LE BORD EST FONDU SUR UN PIXEL. Un disque de sept cents
+				// pixels coupe net montre son escalier, et c'est la premiere
+				// chose qu'on voit sur une forme ronde. `InvHalf` vaut deux
+				// sur la resolution, donc un pixel vaut `InvHalf / R` dans les
+				// coordonnees normalisees ou le rayon vaut 1.
+				const float Rayon = FMath::Sqrt(R2);
+				const float Pixel = InvHalf / R;
+				const float Opacite = FMath::Clamp((1.0f - Rayon) / Pixel, 0.0f, 1.0f);
+
 				const int32 Index = (PY * Res + PX) * 4;
 				Pixels[Index + 0] = static_cast<uint8>(FMath::Clamp(Color.B, 0.0f, 1.0f) * 255.0f);
 				Pixels[Index + 1] = static_cast<uint8>(FMath::Clamp(Color.G, 0.0f, 1.0f) * 255.0f);
 				Pixels[Index + 2] = static_cast<uint8>(FMath::Clamp(Color.R, 0.0f, 1.0f) * 255.0f);
-				Pixels[Index + 3] = 255;
+				Pixels[Index + 3] = static_cast<uint8>(Opacite * 255.0f);
 			}
 		});
 

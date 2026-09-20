@@ -22,12 +22,12 @@
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/Image.h"
 #include "Components/Border.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScaleBox.h"
-#include "Components/ScrollBox.h"
-#include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -119,24 +119,42 @@ namespace
 {
 	/** Palette. Une seule source pour toutes les couleurs de l ecran. */
 	const FLinearColor ColBackground(0.030f, 0.035f, 0.048f, 1.0f);
-	const FLinearColor ColPanel(0.072f, 0.082f, 0.104f, 0.94f);
 	const FLinearColor ColTextPrimary(0.92f, 0.93f, 0.96f, 1.0f);
 	const FLinearColor ColTextMuted(0.52f, 0.56f, 0.64f, 1.0f);
 	const FLinearColor ColAccent(0.34f, 0.62f, 0.88f, 1.0f);
 	const FLinearColor ColSeparator(1.0f, 1.0f, 1.0f, 0.08f);
 
 	/**
-	 * Largeur du panneau, et largeur des deux colonnes qui encadrent le globe.
+	 * Le fond du volet de statistiques, POSE SUR LE GLOBE.
 	 *
-	 * ELLES SE DEDUISENT L'UNE DE L'AUTRE : 300 + 420 + 300, plus deux
-	 * gouttieres de 24 et les 30 de marge interieure de chaque cote, font
-	 * 1128. Le panneau est donc a 1140, et le globe garde une dizaine de
-	 * pixels de jeu de part et d'autre. Rogner la largeur du panneau sans
-	 * rogner les colonnes ne comprimerait que le globe -- c'est-a-dire
-	 * exactement ce qu'on vient de mettre au centre.
+	 * Opaque, il ferait une colonne collee sur l'image et on perdrait le
+	 * benefice de la surimpression ; absent, le texte clair disparaitrait sur
+	 * la calotte glaciaire et sur les deserts, qui sont clairs eux aussi.
+	 * Quatre-vingt-cinq pour cent laisse deviner le monde dessous tout en
+	 * gardant un contraste de lecture sur n'importe quel biome.
 	 */
-	constexpr float PanelWidth = 1140.0f;
-	constexpr float ColonneLaterale = 300.0f;
+	const FLinearColor ColVolet(0.030f, 0.035f, 0.048f, 0.85f);
+
+	/**
+	 * Les largeurs de l'ecran. AUCUNE NE BORNE LE GLOBE -- il prend ce qui
+	 * reste, et c'est tout le propos de la disposition.
+	 *
+	 * `MargeEcran` est le seul retrait entre le bord de la fenetre et le
+	 * contenu : l'ecran n'a plus de panneau centre, il OCCUPE la fenetre.
+	 */
+	constexpr float MargeEcran = 34.0f;
+	constexpr float LargeurGraine = 150.0f;
+	constexpr float LargeurHabillage = 230.0f;
+	constexpr float LargeurVolet = 270.0f;
+	constexpr float LargeurAction = 300.0f;
+
+	/**
+	 * La taille NATURELLE du globe, celle que le `UScaleBox` met ensuite a
+	 * l'echelle du cadre. Elle ne fixe donc plus une dimension a l'ecran --
+	 * elle fixe le RAPPORT, qui doit rester carre pour que le globe soit rond,
+	 * et la resolution a laquelle le lance-de-rayon processeur travaille quand
+	 * le materiau manque.
+	 */
 	constexpr float GlobeSize = 420.0f;
 }
 
@@ -145,13 +163,31 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 	if (WidgetTree && !WidgetTree->RootWidget)
 	{
 		// ------------------------------------------------------------------
-		// Mise en page en TROIS COLONNES : ce qu'on regle, le monde, ce qu'il
-		// est. L'action principale barre le bas sur toute la largeur.
+		// EN-TETE / CORPS / PIED, et le globe occupe TOUT le corps.
 		//
-		// L'empilement vertical d'origine avait un defaut structurel : chaque
-		// nouvelle rangee poussait le bouton d'entree vers le bas jusqu'a le
-		// faire sortir de l'ecran. En colonnes, l'ecran reste court quoi qu'on
-		// ajoute, et la hierarchie visuelle est immediate.
+		// Les trois colonnes precedentes partageaient la largeur a parts
+		// egales entre ce qu'on regle, ce qu'on regarde et ce qu'on lit. Or
+		// ces trois choses n'ont pas le meme poids : deux reglages tiennent
+		// dans une barre, la lecture est une MARGE, et le monde est le sujet.
+		// La disposition le dit desormais --
+		//
+		//     [ en-tete : le titre, et les deux reglages, en une barre ]
+		//     [                                                       ]
+		//     [        LE GLOBE, plein cadre        [ statistiques ]  ]
+		//     [                                                       ]
+		//     [ pied : le cache a gauche, l'action a droite           ]
+		//
+		// -- et les statistiques passent EN SURIMPRESSION plutot qu'a cote :
+		// elles decrivent le monde qu'elles recouvrent, et les poser dans une
+		// colonne propre aurait repris au globe la largeur qu'on vient de lui
+		// donner.
+		//
+		// PLUS DE DEFILEMENT. L'ecran tient desormais dans la fenetre par
+		// construction : le corps est le seul element qui s'etire, et il
+		// s'etire a ce qui reste. Une barre de defilement n'aurait plus rien
+		// a faire defiler, et elle aurait surtout empeche le globe de
+		// connaitre sa propre hauteur -- un enfant de `UScrollBox` recoit une
+		// hauteur INFINIE et se dimensionne sur son contenu.
 		// ------------------------------------------------------------------
 
 		auto MakeText = [this](const TCHAR* Name, const FString& Content,
@@ -203,7 +239,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			}
 
-			UTextBlock* V = MakeText(ValueName, TEXT("—"), 11, ColTextPrimary);
+			UTextBlock* V = MakeText(ValueName, TEXT("--"), 11, ColTextPrimary);
 			V->SetJustification(ETextJustify::Right);
 			Row->AddChildToHorizontalBox(V);
 
@@ -223,106 +259,141 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			S->SetOffsets(FMargin(0.0f));
 		}
 
-		// Le defilement reste la seule reponse honnete a une fenetre trop
-		// courte : aucun ancrage ne peut afficher un contenu plus grand que la
-		// place disponible sans en masquer une partie.
-		UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(
-			UScrollBox::StaticClass(), TEXT("Scroll"));
-		Scroll->SetOrientation(Orient_Vertical);
-		if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Root->AddChild(Scroll)))
+		// La colonne maitresse occupe la fenetre entiere, moins une marge.
+		// C'est elle qui distribue la hauteur : en-tete et pied prennent ce
+		// qu'il leur faut, le corps prend le reste.
+		UVerticalBox* Shell = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(), TEXT("Shell"));
+		if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Root->AddChild(Shell)))
 		{
 			S->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-			S->SetOffsets(FMargin(0.0f, 20.0f, 0.0f, 20.0f));
+			S->SetOffsets(FMargin(MargeEcran));
 		}
 
-		USizeBox* PanelSize = WidgetTree->ConstructWidget<USizeBox>(
-			USizeBox::StaticClass(), TEXT("PanelSize"));
-		PanelSize->SetWidthOverride(PanelWidth);
-		if (UScrollBoxSlot* S = Cast<UScrollBoxSlot>(Scroll->AddChild(PanelSize)))
+		// =========================================================== EN-TETE
 		{
-			S->SetHorizontalAlignment(HAlign_Center);
-			S->SetPadding(FMargin(16.0f, 0.0f));
-		}
+			UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>(
+				UHorizontalBox::StaticClass(), TEXT("Header"));
+			Shell->AddChildToVerticalBox(Header);
 
-		UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(
-			UBorder::StaticClass(), TEXT("Panel"));
-		Panel->SetBrushColor(ColPanel);
-		Panel->SetPadding(FMargin(30.0f, 26.0f));
-		PanelSize->AddChild(Panel);
-
-		UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(
-			UVerticalBox::StaticClass(), TEXT("Column"));
-		Panel->AddChild(Column);
-
-		// ------------------------------------------------------ en-tete ----
-		{
-			UTextBlock* Title = MakeText(TEXT("Title"), TEXT("WORLDSEED"), 38, ColTextPrimary);
-			Column->AddChildToVerticalBox(Title);
-
-			UTextBlock* Sub = MakeText(TEXT("Subtitle"),
-				TEXT("tectonique  ·  climat  ·  erosion"), 11, ColTextMuted);
-			if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Sub))
+			// --- le titre, a gauche ---------------------------------------
 			{
-				S->SetPadding(FMargin(2.0f, 2.0f, 0.0f, 16.0f));
+				UVerticalBox* Marque = WidgetTree->ConstructWidget<UVerticalBox>(
+					UVerticalBox::StaticClass(), TEXT("Marque"));
+				if (UHorizontalBoxSlot* S = Header->AddChildToHorizontalBox(Marque))
+				{
+					S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+
+				Marque->AddChildToVerticalBox(
+					MakeText(TEXT("Title"), TEXT("WORLDSEED"), 32, ColTextPrimary));
+
+				UTextBlock* Sub = MakeText(TEXT("Subtitle"),
+					TEXT("tectonique  -  climat  -  erosion"), 11, ColTextMuted);
+				if (UVerticalBoxSlot* S = Marque->AddChildToVerticalBox(Sub))
+				{
+					S->SetPadding(FMargin(2.0f, 2.0f, 0.0f, 0.0f));
+				}
 			}
 
-			if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(MakeRule(TEXT("RuleTop"))))
+			// --- la graine, a droite --------------------------------------
+			//
+			// Intitule AU-DESSUS du champ et non a cote : les deux reglages de
+			// l'en-tete gardent ainsi la meme silhouette, et un intitule pose
+			// a gauche obligerait a reserver la largeur du plus long des deux.
 			{
-				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 20.0f));
+				UVerticalBox* Graine = WidgetTree->ConstructWidget<UVerticalBox>(
+					UVerticalBox::StaticClass(), TEXT("GraineGroupe"));
+				if (UHorizontalBoxSlot* S = Header->AddChildToHorizontalBox(Graine))
+				{
+					S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+
+				Graine->AddChildToVerticalBox(
+					MakeSectionLabel(TEXT("SeedLabel"), TEXT("GRAINE")));
+
+				UHorizontalBox* SeedRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+					UHorizontalBox::StaticClass(), TEXT("SeedRow"));
+				if (UVerticalBoxSlot* S = Graine->AddChildToVerticalBox(SeedRow))
+				{
+					S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+				}
+
+				USizeBox* SeedBoxSize = WidgetTree->ConstructWidget<USizeBox>(
+					USizeBox::StaticClass(), TEXT("SeedBoxSize"));
+				SeedBoxSize->SetWidthOverride(LargeurGraine);
+
+				SeedBox = WidgetTree->ConstructWidget<UEditableTextBox>(
+					UEditableTextBox::StaticClass(), TEXT("SeedBox"));
+				SeedBoxSize->AddChild(SeedBox);
+				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(SeedBoxSize))
+				{
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+
+				RandomButton = MakeButton(TEXT("RandomButton"), TEXT("RandomLabel"),
+					TEXT("Aleatoire"), 11, FLinearColor(0.18f, 0.20f, 0.26f, 1.0f));
+				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(RandomButton))
+				{
+					S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+			}
+
+			// --- l'habillage du sol, a droite -----------------------------
+			{
+				UVerticalBox* Habillage = WidgetTree->ConstructWidget<UVerticalBox>(
+					UVerticalBox::StaticClass(), TEXT("HabillageGroupe"));
+				if (UHorizontalBoxSlot* S = Header->AddChildToHorizontalBox(Habillage))
+				{
+					S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+
+				Habillage->AddChildToVerticalBox(
+					MakeSectionLabel(TEXT("PackLabel"), TEXT("HABILLAGE DU SOL")));
+
+				USizeBox* PackSize = WidgetTree->ConstructWidget<USizeBox>(
+					USizeBox::StaticClass(), TEXT("PackSize"));
+				PackSize->SetWidthOverride(LargeurHabillage);
+				if (UVerticalBoxSlot* S = Habillage->AddChildToVerticalBox(PackSize))
+				{
+					S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+				}
+
+				PackCombo = WidgetTree->ConstructWidget<UComboBoxString>(
+					UComboBoxString::StaticClass(), TEXT("PackCombo"));
+				PackSize->AddChild(PackCombo);
+			}
+
+			if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(MakeRule(TEXT("RuleTop"))))
+			{
+				S->SetPadding(FMargin(0.0f, 18.0f, 0.0f, 0.0f));
 			}
 		}
 
-		// --------------------------------------------- corps, 3 colonnes ---
+		// ============================================================= CORPS
 		//
-		// LE GLOBE EST AU CENTRE, ET C'EST UNE DECISION DE HIERARCHIE. Il
-		// etait a gauche, avec tout le reste empile a sa droite : l'oeil
-		// entrait par le bord, et la seule chose que cet ecran a a montrer --
-		// le monde -- se lisait comme une vignette d'accompagnement. Au centre
-		// il redevient le sujet, et les deux colonnes l'encadrent :
-		//
-		//     [ ce qu'on REGLE ]   [ LE MONDE ]   [ ce qu'il EST ]
-		//
-		// Les deux colonnes ont une largeur FIXE et le globe prend le reste.
-		// L'inverse -- des colonnes qui s'etirent -- ferait sauter le centre
-		// du globe d'une fenetre a l'autre, et un globe qu'on fait tourner a
-		// la souris doit rester ou la main l'a laisse.
-		UHorizontalBox* Body = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(), TEXT("Body"));
-		Column->AddChildToVerticalBox(Body);
-
-		// --- colonne gauche : ce qu'on REGLE --------------------------------
-		//
-		// Declaree ici, hors du bloc, parce que la graine et le pack sont
-		// construits plus bas avec le reste : l'ordre d'AJOUT a la boite
-		// decide de l'ordre a l'ecran, l'ordre du code n'y est pour rien.
-		UVerticalBox* Reglages = nullptr;
+		// Un OVERLAY et non une boite : ses enfants se SUPERPOSENT, chacun
+		// avec son propre alignement. Le globe prend tout le cadre, les
+		// statistiques se posent dessus, calees a droite.
+		UOverlay* Body = WidgetTree->ConstructWidget<UOverlay>(
+			UOverlay::StaticClass(), TEXT("Body"));
+		Body->SetClipping(EWidgetClipping::ClipToBounds);
+		if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(Body))
 		{
-			USizeBox* ReglagesBox = WidgetTree->ConstructWidget<USizeBox>(
-				USizeBox::StaticClass(), TEXT("ReglagesBox"));
-			ReglagesBox->SetWidthOverride(ColonneLaterale);
-
-			Reglages = WidgetTree->ConstructWidget<UVerticalBox>(
-				UVerticalBox::StaticClass(), TEXT("Reglages"));
-			ReglagesBox->AddChild(Reglages);
-
-			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(ReglagesBox))
-			{
-				S->SetPadding(FMargin(0.0f, 0.0f, 24.0f, 0.0f));
-				S->SetVerticalAlignment(VAlign_Top);
-			}
+			S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			S->SetPadding(FMargin(0.0f, 14.0f, 0.0f, 14.0f));
 		}
 
-		// --- colonne centrale : LE MONDE -----------------------------------
+		// --- le monde, plein cadre -----------------------------------------
 		{
-			// Le SizeBox est a l'EXTERIEUR : un ScaleBox place dans un slot
-			// auto-dimensionne ne sait pas annoncer sa taille desiree et se
-			// reduit a zero. Le globe disparaissait purement.
-			USizeBox* GlobeBox = WidgetTree->ConstructWidget<USizeBox>(
-				USizeBox::StaticClass(), TEXT("GlobeBox"));
-			GlobeBox->SetWidthOverride(GlobeSize);
-			GlobeBox->SetHeightOverride(GlobeSize);
-			GlobeBox->SetClipping(EWidgetClipping::ClipToBounds);
-
+			// `ScaleToFit` garde le globe ROND quoi qu'il arrive : il met a
+			// l'echelle sur la plus petite des deux dimensions. Une fenetre
+			// large donne donc un globe haut comme le corps, une fenetre
+			// haute un globe large comme lui -- et jamais un ovale.
 			UScaleBox* GlobeScale = WidgetTree->ConstructWidget<UScaleBox>(
 				UScaleBox::StaticClass(), TEXT("GlobeScale"));
 			GlobeScale->SetStretch(EStretch::ScaleToFit);
@@ -332,98 +403,37 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			PreviewImage->SetDesiredSizeOverride(FVector2D(GlobeSize, GlobeSize));
 
 			GlobeScale->AddChild(PreviewImage);
-			GlobeBox->AddChild(GlobeScale);
 
-			// Le slot PREND LE RESTE et centre le globe dedans. Le SizeBox
-			// garde sa taille propre : c'est lui qui borne le zoom, et l'y
-			// laisser est ce qui empeche un globe agrandi de pousser les
-			// colonnes.
-			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(GlobeBox))
+			if (UOverlaySlot* S = Body->AddChildToOverlay(GlobeScale))
 			{
-				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-				S->SetHorizontalAlignment(HAlign_Center);
-				S->SetVerticalAlignment(VAlign_Top);
+				S->SetHorizontalAlignment(HAlign_Fill);
+				S->SetVerticalAlignment(VAlign_Fill);
 			}
 		}
 
-		// --- colonne droite : ce que le monde EST --------------------------
-		//
-		// Les mesures et les parts de biomes ne sont pas des reglages : on ne
-		// les touche pas, on les LIT, et elles ne veulent rien dire avant
-		// qu'un monde existe. Les melanger a la graine et au pack, comme
-		// c'etait le cas, revenait a poser une reponse au milieu des
-		// questions.
+		// --- les statistiques, en surimpression a droite --------------------
 		{
-			USizeBox* SideBox = WidgetTree->ConstructWidget<USizeBox>(
-				USizeBox::StaticClass(), TEXT("SideBox"));
-			SideBox->SetWidthOverride(ColonneLaterale);
+			UBorder* Volet = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("Volet"));
+			// LE FOND EST SEMI-TRANSPARENT A DESSEIN : opaque, il ferait une
+			// colonne posee sur l'image ; absent, le texte clair disparaitrait
+			// sur la calotte glaciaire et sur les deserts.
+			Volet->SetBrushColor(ColVolet);
+			Volet->SetPadding(FMargin(18.0f, 16.0f));
+			if (UOverlaySlot* S = Body->AddChildToOverlay(Volet))
+			{
+				S->SetHorizontalAlignment(HAlign_Right);
+				S->SetVerticalAlignment(VAlign_Fill);
+			}
+
+			USizeBox* VoletSize = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("VoletSize"));
+			VoletSize->SetWidthOverride(LargeurVolet);
+			Volet->AddChild(VoletSize);
 
 			UVerticalBox* Side = WidgetTree->ConstructWidget<UVerticalBox>(
 				UVerticalBox::StaticClass(), TEXT("Side"));
-			SideBox->AddChild(Side);
-
-			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(SideBox))
-			{
-				S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
-				S->SetVerticalAlignment(VAlign_Top);
-			}
-
-			// --- graine ---------------------------------------------------
-			Reglages->AddChildToVerticalBox(MakeSectionLabel(TEXT("SeedLabel"), TEXT("GRAINE")));
-
-			UHorizontalBox* SeedRow = WidgetTree->ConstructWidget<UHorizontalBox>(
-				UHorizontalBox::StaticClass(), TEXT("SeedRow"));
-			if (UVerticalBoxSlot* S = Reglages->AddChildToVerticalBox(SeedRow))
-			{
-				S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 18.0f));
-			}
-
-			SeedBox = WidgetTree->ConstructWidget<UEditableTextBox>(
-				UEditableTextBox::StaticClass(), TEXT("SeedBox"));
-			if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(SeedBox))
-			{
-				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-				S->SetVerticalAlignment(VAlign_Center);
-			}
-
-			RandomButton = MakeButton(TEXT("RandomButton"), TEXT("RandomLabel"),
-				TEXT("Aleatoire"), 12, FLinearColor(0.18f, 0.20f, 0.26f, 1.0f));
-			if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(RandomButton))
-			{
-				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
-			}
-
-			// --- habillage du sol ------------------------------------------
-			Reglages->AddChildToVerticalBox(
-				MakeSectionLabel(TEXT("PackLabel"), TEXT("HABILLAGE DU SOL")));
-
-			PackCombo = WidgetTree->ConstructWidget<UComboBoxString>(
-				UComboBoxString::StaticClass(), TEXT("PackCombo"));
-			if (UVerticalBoxSlot* S = Reglages->AddChildToVerticalBox(PackCombo))
-			{
-				S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 4.0f));
-			}
-
-			// Ce que le pack couvre, sous la liste : trois packs sur quatre ont
-			// un trou, et le savoir avant de lancer evite de chercher pourquoi
-			// un desert est reste en aplat.
-			PackHint = WidgetTree->ConstructWidget<UTextBlock>(
-				UTextBlock::StaticClass(), TEXT("PackHint"));
-			// LA TAILLE N'AVAIT JAMAIS ETE POSEE, donc 24 points par defaut :
-			// cette note discrete faisait six lignes de titre sous la liste.
-			// Elle ne se voyait pas tant que la colonne etait large ; en
-			// colonne de 300 elle devenait le plus gros bloc de l'ecran.
-			{
-				FSlateFontInfo Police = PackHint->GetFont();
-				Police.Size = 10;
-				PackHint->SetFont(Police);
-			}
-			PackHint->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.58f, 0.64f, 1.0f)));
-			PackHint->SetAutoWrapText(true);
-			if (UVerticalBoxSlot* S = Reglages->AddChildToVerticalBox(PackHint))
-			{
-				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 20.0f));
-			}
+			VoletSize->AddChild(Side);
 
 			// --- mesures --------------------------------------------------
 			// Un tableau intitule/valeur plutot qu'une phrase : on compare d'un
@@ -463,10 +473,10 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			// --- statistiques du monde ------------------------------------
 			//
 			// LA BARRE PORTE LA COULEUR DU BIOME, celle-la meme que le globe
-			// peint juste a cote. C'est ce qui rend la colonne lisible : on lit
-			// un pourcentage, on leve les yeux, et on voit OU il se trouve. Une
-			// barre d'accent uniforme aurait oblige a relire le nom a chaque
-			// ligne, et la couleur n'aurait rien dit.
+			// peint dessous. C'est ce qui rend la colonne lisible : on lit un
+			// pourcentage, on glisse le regard a gauche, et on voit OU il se
+			// trouve. Une barre d'accent uniforme aurait oblige a relire le
+			// nom a chaque ligne, et la couleur n'aurait rien dit.
 			//
 			// AUTANT DE LIGNES QUE LE REGISTRE COMPTE DE BIOMES, construites
 			// une fois pour toutes ici, et REMPLIES PAR RANG au lieu d'etre
@@ -531,7 +541,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				Val->SetJustification(ETextJustify::Right);
 				Head->AddChildToHorizontalBox(Val);
 
-				// TROIS PIXELS, et c'est deliberé : la barre est un REPERE DE
+				// TROIS PIXELS, et c'est delibere : la barre est un REPERE DE
 				// COMPARAISON, le chiffre est la donnee. Une barre epaisse
 				// prendrait le regard a la valeur qu'elle illustre.
 				USizeBox* BarBox = WidgetTree->ConstructWidget<USizeBox>(
@@ -551,11 +561,19 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				// LA PISTE VIDE DOIT S'EFFACER. Le style par defaut la peint
 				// en clair : a l'image, la barre de 0,2 % et celle de 16,9
 				// avaient la meme longueur APPARENTE -- une piste pleine
-				// largeur avec un liseré colore dedans. Ce qu'on compare, ce
+				// largeur avec un lisere colore dedans. Ce qu'on compare, ce
 				// n'est pas le remplissage, c'est la LONGUEUR de la couleur,
 				// donc le reste doit disparaitre dans le fond.
-				Bar->WidgetStyle.BackgroundImage.TintColor =
-					FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.06f));
+				//
+				// Par le GETTER et le SETTER : l'acces direct a `WidgetStyle`
+				// est deprecie en 5.8, et ce projet compile en avertissements
+				// fatals.
+				{
+					FProgressBarStyle Style = Bar->GetWidgetStyle();
+					Style.BackgroundImage.TintColor =
+						FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.06f));
+					Bar->SetWidgetStyle(Style);
+				}
 
 				BarBox->AddChild(Bar);
 
@@ -570,9 +588,9 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 		{
 			ProgressGroup = WidgetTree->ConstructWidget<UVerticalBox>(
 				UVerticalBox::StaticClass(), TEXT("ProgressGroup"));
-			if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(ProgressGroup))
+			if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(ProgressGroup))
 			{
-				S->SetPadding(FMargin(0.0f, 20.0f, 0.0f, 0.0f));
+				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
 			}
 
 			USizeBox* BarBox = WidgetTree->ConstructWidget<USizeBox>(
@@ -605,35 +623,21 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			StatusRow->AddChildToHorizontalBox(CancelButton);
 		}
 
-		// ------------------------------------------- action principale -----
+		// ============================================================== PIED
+		//
+		// Le cache est de la MAINTENANCE et l'entree dans le monde est
+		// l'ACTION ; les mettre sur la meme ligne n'en fait pas des egaux --
+		// c'est la taille et la couleur qui les departagent, et le bord droit
+		// qui porte l'action, la ou le regard finit sa course.
 		{
-			USizeBox* PlayBox = WidgetTree->ConstructWidget<USizeBox>(
-				USizeBox::StaticClass(), TEXT("PlayBox"));
-			PlayBox->SetHeightOverride(56.0f);
-
-			PlayButton = MakeButton(TEXT("PlayButton"), TEXT("PlayLabel"),
-				TEXT("ENTRER DANS LE MONDE"), 18, ColAccent * 0.55f);
-			PlayBox->AddChild(PlayButton);
-
-			if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(PlayBox))
+			if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(MakeRule(TEXT("RuleFooter"))))
 			{
-				S->SetPadding(FMargin(0.0f, 22.0f, 0.0f, 0.0f));
-			}
-		}
-
-		// ------------------------------------------------- pied de page ----
-		// La gestion du cache est de la MAINTENANCE : elle ne doit jamais
-		// concurrencer l'action principale du regard. Bande discrete, texte
-		// attenue, boutons compacts.
-		{
-			if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(MakeRule(TEXT("RuleFooter"))))
-			{
-				S->SetPadding(FMargin(0.0f, 20.0f, 0.0f, 10.0f));
+				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 			}
 
 			UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(
 				UHorizontalBox::StaticClass(), TEXT("Footer"));
-			Column->AddChildToVerticalBox(Footer);
+			Shell->AddChildToVerticalBox(Footer);
 
 			CacheText = MakeText(TEXT("CacheText"), TEXT(""), 10, ColTextMuted);
 			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(CacheText))
@@ -648,6 +652,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(ClearObsoleteButton))
 			{
 				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
 			}
 
 			ClearAllButton = MakeButton(TEXT("ClearAllButton"), TEXT("ClearAllLabel"),
@@ -655,6 +660,22 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(ClearAllButton))
 			{
 				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+
+			USizeBox* PlayBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("PlayBox"));
+			PlayBox->SetHeightOverride(52.0f);
+			PlayBox->SetWidthOverride(LargeurAction);
+
+			PlayButton = MakeButton(TEXT("PlayButton"), TEXT("PlayLabel"),
+				TEXT("ENTRER DANS LE MONDE"), 16, ColAccent * 0.55f);
+			PlayBox->AddChild(PlayButton);
+
+			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(PlayBox))
+			{
+				S->SetPadding(FMargin(28.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
 			}
 		}
 	}
@@ -880,11 +901,33 @@ void UWorldseedMenuWidget::PollGeneration()
 		CachedContinentality = MoveTemp(PendingResult->Climate.Continentality);
 		CachedBiomes = MoveTemp(PendingResult->Biomes);
 		CachedLithologyId = MoveTemp(PendingResult->Lithology.Id);
+		// LA GEOMETRIE D'ABORD, ET C'EST PORTANT.
+		//
+		// `BakeGlobe` et `BuildPreviewField` commencent tous deux par
+		// comparer `CachedHeights.Num()` a `WorldGeometry.CellCount()`.
+		// Poser la geometrie APRES eux -- ce que faisait ce code -- leur
+		// donnait la geometrie du monde PRECEDENT face aux altitudes du
+		// NOUVEAU : la garde ne pouvait que sortir, et elle sort SANS UN MOT.
+		//
+		// Consequence mesuree, et elle est lourde : le globe n'a jamais ete
+		// cuit en textures, donc il est reste sur le lance-de-rayon
+		// PROCESSEUR -- quatre cent vingt sur quatre cent vingt pixels, avec
+		// un echantillonnage bilineaire du relief par pixel, SOIXANTE FOIS
+		// PAR SECONDE sur le fil de jeu. Releve des intervalles du timer dans
+		// cet etat : 7,40 ms au plus court, 303,35 au plus long pour une
+		// periode demandee de 16,67. C'est ce qui faisait saccader la
+		// rotation, bien avant le pas fixe corrige par ailleurs.
+		//
+		// Le defaut etait invisible parce que la voie de secours REND une
+		// image correcte : on voyait un globe juste, et rien ne disait qu'il
+		// coutait mille fois son prix.
+		WorldGeometry = PendingResult->Geometry;
+
 		BuildPreviewField();
 
-		// La voie graphique d'abord ; BuildPreviewField n'aura servi qu'au repli.
+		// La voie graphique ensuite ; BuildPreviewField n'aura servi qu'au repli.
 		BakeGlobe();
-		WorldGeometry = PendingResult->Geometry;
+
 		Params.Resolution = PendingResult->Geometry.NY;
 		LastLandRatio = PendingResult->LandRatio;
 		LastMinElevationM = PendingResult->MinElevationM;
@@ -1105,14 +1148,56 @@ bool UWorldseedMenuWidget::BakeGlobe()
 	GlobeMaterial = nullptr;
 	GlobeTextures = FWorldseedGlobeTextures();
 
+	// --- LE PROCESSEUR EST LA VOIE PAR DEFAUT, ET C'EST UNE MESURE QUI L'A
+	// --- DECIDE, PAS UN GOUT ---------------------------------------------
+	//
+	// Cette fonction cuit le monde en textures pour que la carte graphique
+	// fasse tourner le globe a partir de deux scalaires. C'etait presente
+	// comme la « voie par defaut » et le lance-de-rayon processeur comme un
+	// repli degrade. L'A/B dit l'inverse.
+	//
+	//     voie          redessin        aspect
+	//     materiau      0,001 ms        ocean presque noir, bandes de
+	//                                   latitude opaques et larges, relief
+	//                                   sans ombrage
+	//     processeur    0,228 ms        bathymetrie, relief ombre, cercles
+	//                                   fins -- le globe qu'on veut montrer
+	//
+	// 0,228 ms, c'est UN VIRGULE QUATRE POUR CENT d'un budget de 16,67. Le
+	// processeur ne coute donc rien de perceptible, et il rend nettement
+	// mieux : il devient le defaut.
+	//
+	// CE QUE J'AVAIS SUPPOSE ET QUI ETAIT FAUX. La rotation saccadait, le
+	// releve disait « rendu par le processeur », et j'en ai conclu que le
+	// cout par image en etait la cause. Il ne l'etait pas : la saccade venait
+	// entierement du pas de rotation FIXE sur un timer irregulier (voir
+	// `HandleGlobeTimer`). Chronometrer la voie soupconnee AVANT de la
+	// remplacer aurait evite le detour -- le depot a deja la regle, « mesurer
+	// avant de corriger, meme quand l'hypothese est seduisante ».
+	//
+	// LE DEFAUT D'ORDRE TROUVE EN CHEMIN RESTE CORRIGE, lui, et il etait
+	// reel : `WorldGeometry` etait posee APRES cet appel, donc la garde
+	// ci-dessous sortait toujours, sans un mot. Le materiau n'etait pas un
+	// choix, il etait inatteignable.
+	//
+	// `-WorldseedGlobeGPU` rearme la voie graphique. Un A/B entre les deux
+	// rendus ne doit RIEN demander d'autre qu'un argument : editer un fichier
+	// de reglages changerait son empreinte, donc regenererait le monde entre
+	// les deux moities, et l'on ne comparerait plus la meme chose. Ce depot a
+	// paye cette lecon deux fois, dont une en vidant `world_rules.json`.
+	if (!FParse::Param(FCommandLine::Get(), TEXT("WorldseedGlobeGPU")))
+	{
+		return false;
+	}
+
 	if (WorldGeometry.NX < 2 || CachedHeights.Num() != WorldGeometry.CellCount())
 	{
 		return false;
 	}
 
 	// Le materiau est un ASSET : il peut manquer d'un depot a l'autre. On le
-	// charge sans y croire, et le lance-de-rayon processeur reste la voie de
-	// secours — le globe s'affiche toujours, simplement moins bien.
+	// charge sans y croire, et le lance-de-rayon processeur reprend la main
+	// sans que rien ne se voie -- c'est lui le defaut, voir plus haut.
 	UMaterialInterface* Base = LoadObject<UMaterialInterface>(
 		nullptr, TEXT("/Game/Worldseed/Materials/M_WorldseedGlobe.M_WorldseedGlobe"));
 	if (!Base)
@@ -1327,17 +1412,85 @@ void UWorldseedMenuWidget::BuildPreviewField()
 
 void UWorldseedMenuWidget::HandleGlobeTimer()
 {
-	// La rotation automatique s'efface devant le geste du joueur : reprendre a
-	// tourner sous ses doigts pendant qu'il oriente le globe serait desagreable.
 	PollGeneration();
 
+	// --- le pas de rotation suit le TEMPS REEL, pas la periode demandee ----
+	//
+	// Un timer d'Unreal est servi PAR LE TICK DU MONDE : il ne peut pas se
+	// declencher plus souvent que la trame, et quand la trame est plus courte
+	// que la periode il se declenche un tick sur deux ou sur trois, selon
+	// l'alignement. Avancer d'un pas FIXE a chaque declenchement -- ce que
+	// faisait ce code -- donne donc une vitesse angulaire qui suit le
+	// battement du timer et non l'horloge : c'est exactement une SACCADE, et
+	// elle se voit d'autant mieux que la trame est rapide.
+	//
+	// LE REMEDE NE CHANGE PAS LA VITESSE MOYENNE, il la rend constante : on
+	// multiplie par le temps ECOULE. Le premier declenchement n'a pas de
+	// predecesseur, d'ou le repli sur la periode nominale.
+	const double Maintenant = FPlatformTime::Seconds();
+	const bool bPremier = (DernierTicGlobe <= 0.0);
+	const double Ecoule = bPremier
+		? static_cast<double>(GlobeRedrawPeriod) : (Maintenant - DernierTicGlobe);
+	DernierTicGlobe = Maintenant;
+
+	// Un arret du jeu, un changement de carte ou un point d'arret rendent un
+	// ecart enorme : on le borne, sinon le globe ferait un tour complet d'un
+	// coup au retour.
+	const float Delta = FMath::Clamp(static_cast<float>(Ecoule), 0.0f, 0.25f);
+
+	// --- releve, une seule fois par ouverture de l'ecran ------------------
+	//
+	// Il dit ce que la periode demandee ne dit pas : a quel rythme le timer
+	// est REELLEMENT servi. Sans lui, « le globe saccade » reste une
+	// impression et la correction ci-dessus une hypothese -- et ce depot a
+	// une regle contre les hypotheses enchainees a l'aveugle. Il rapporte au
+	// passage par quelle voie le globe est rendu : le lance-de-rayon
+	// processeur coute mille fois le parametre scalaire du materiau, et ce
+	// serait une TOUT AUTRE cause pour le meme symptome.
+	//
+	// IL NE DEMARRE QU'UNE FOIS LE MONDE PRET, et c'est la lecon du premier
+	// releve : pris des l'ouverture, il a mesure les trois premieres secondes
+	// -- pendant lesquelles `RedrawGlobe` sort a sa premiere garde et le
+	// materiau n'est pas encore cuit. Il annoncait donc « rendu par le
+	// processeur » pour un globe qui ne tournait pas encore. On mesure le
+	// traitement quand il a lieu, jamais avant.
+	if (!bPremier && CachedHeights.Num() > 0 && IntervallesGlobe.Num() < NbReleveGlobe)
+	{
+		IntervallesGlobe.Add(Ecoule * 1000.0);
+
+		if (IntervallesGlobe.Num() == NbReleveGlobe)
+		{
+			TArray<double> Tri = IntervallesGlobe;
+			Tri.Sort();
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] globe : periode demandee %.2f ms, reelle min %.2f ")
+				TEXT("mediane %.2f p95 %.2f max %.2f sur %d declenchements (rendu %s)"),
+				GlobeRedrawPeriod * 1000.0f, Tri[0], Tri[Tri.Num() / 2],
+				Tri[FMath::Min(Tri.Num() - 1, (Tri.Num() * 95) / 100)], Tri.Last(),
+				Tri.Num(), GlobeMaterial ? TEXT("par le materiau") : TEXT("par le processeur"));
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] globe : redessin %.3f ms en moyenne sur %d appels"),
+				NbRedraw > 0 ? CumulRedrawMs / NbRedraw : 0.0, NbRedraw);
+		}
+	}
+
+	// La rotation automatique s'efface devant le geste du joueur : reprendre a
+	// tourner sous ses doigts pendant qu'il oriente le globe serait desagreable.
 	if (!bDraggingGlobe && AutoSpinDegPerSecond != 0.0f)
 	{
 		GlobeLongitudeDeg = FMath::Fmod(
-			GlobeLongitudeDeg + AutoSpinDegPerSecond * GlobeRedrawPeriod, 360.0f);
+			GlobeLongitudeDeg + AutoSpinDegPerSecond * Delta, 360.0f);
 	}
 
+	// CE QUE COUTE UN REDESSIN, et c'est la grandeur qui tranche entre les
+	// deux voies : le materiau ne pose que deux scalaires, le lance-de-rayon
+	// processeur calcule 420 x 420 pixels avec un echantillonnage bilineaire
+	// du relief. Sans ce chiffre, « le processeur coute cher » reste une
+	// affirmation.
+	const double AvantRedraw = FPlatformTime::Seconds();
 	RedrawGlobe();
+	CumulRedrawMs += (FPlatformTime::Seconds() - AvantRedraw) * 1000.0;
+	++NbRedraw;
 }
 
 void UWorldseedMenuWidget::NativeDestruct()

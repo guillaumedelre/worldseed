@@ -334,6 +334,21 @@ private:
 
 	FTimerHandle GlobeTimerHandle;
 
+	/** Horloge du dernier declenchement, pour un pas de rotation en temps reel. */
+	double DernierTicGlobe = 0.0;
+
+	/**
+	 * Releve des intervalles REELS du timer, en millisecondes, une fois par
+	 * ouverture de l ecran. Trois secondes suffisent a voir si le timer bat
+	 * regulierement ; au-dela on mesurerait la meme chose plus longtemps.
+	 */
+	static constexpr int32 NbReleveGlobe = 180;
+	TArray<double> IntervallesGlobe;
+
+	/** Cout cumule du redessin du globe, pour departager les deux voies. */
+	double CumulRedrawMs = 0.0;
+	int32 NbRedraw = 0;
+
 	/** Mesures du dernier monde genere, affichees sous le globe. */
 	float LastLandRatio = 0.0f;
 	float LastMinElevationM = 0.0f;
