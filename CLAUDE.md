@@ -5713,3 +5713,19 @@ file d'attente. Le depot a la meme note pour le banc, deux fois. Toute vue
 destinee a juger le terrain se prend a un rayon ou la diffusion **se stabilise
 reellement** -- 250 m ici, 9 secondes -- ou dans la configuration reelle du jeu,
 anneaux armes.
+
+**CORRECTION DU REGISTRE, meme jour.** Le corps du commit
+`fix(voxel): retourner l'enroulement` annonce « dix vues sur dix ». C'est
+FAUX : la tournee a bien ecrit dix fichiers, mais cinq seulement ont ete
+REGARDEES dans la configuration reelle -- `canyon01`, `canyon02`,
+`falaise01`, `table02`, `arche02_dedans` -- plus trois au rayon de 250 m.
+Toutes montrent un terrain plein et des parois qui occultent. Un fichier
+ecrit n'est pas une vue jugee, et confondre les deux est exactement ce que
+la regle « une forme qui n'a pas ete vue n'est pas validee » interdit.
+
+**CE QUE CES VUES MONTRENT ET QUI RESTE A TRANCHER** : les parois de canyon
+portent un reseau de fentes sombres, longues et ramifiees. Leur allure
+correspond aux DIACLASES que la chaine produit a dessein -- faces de Voronoi
+aplaties, ouverture minimale de deux metres -- mais cela n'a PAS ete verifie
+separement. Ce sont soit la forme voulue, soit des trous residuels, et
+seule une mesure le dira.
