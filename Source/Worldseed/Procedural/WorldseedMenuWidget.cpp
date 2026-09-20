@@ -5,6 +5,7 @@
 
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
@@ -124,9 +125,18 @@ namespace
 	const FLinearColor ColAccent(0.34f, 0.62f, 0.88f, 1.0f);
 	const FLinearColor ColSeparator(1.0f, 1.0f, 1.0f, 0.08f);
 
-	/** Largeur maximale du panneau. Au-dela, on centre au lieu d etirer. */
-	// Deux colonnes demandent plus large qu un empilement vertical.
-	constexpr float PanelWidth = 980.0f;
+	/**
+	 * Largeur du panneau, et largeur des deux colonnes qui encadrent le globe.
+	 *
+	 * ELLES SE DEDUISENT L'UNE DE L'AUTRE : 300 + 420 + 300, plus deux
+	 * gouttieres de 24 et les 30 de marge interieure de chaque cote, font
+	 * 1128. Le panneau est donc a 1140, et le globe garde une dizaine de
+	 * pixels de jeu de part et d'autre. Rogner la largeur du panneau sans
+	 * rogner les colonnes ne comprimerait que le globe -- c'est-a-dire
+	 * exactement ce qu'on vient de mettre au centre.
+	 */
+	constexpr float PanelWidth = 1140.0f;
+	constexpr float ColonneLaterale = 300.0f;
 	constexpr float GlobeSize = 420.0f;
 }
 
@@ -135,11 +145,10 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 	if (WidgetTree && !WidgetTree->RootWidget)
 	{
 		// ------------------------------------------------------------------
-		// Mise en page en DEUX COLONNES, comme les ecrans de creation de monde
-		// des jeux : l'apercu occupe la gauche, les reglages la droite, et
-		// l'action principale barre le bas sur toute la largeur.
+		// Mise en page en TROIS COLONNES : ce qu'on regle, le monde, ce qu'il
+		// est. L'action principale barre le bas sur toute la largeur.
 		//
-		// L'empilement vertical precedent avait un defaut structurel : chaque
+		// L'empilement vertical d'origine avait un defaut structurel : chaque
 		// nouvelle rangee poussait le bouton d'entree vers le bas jusqu'a le
 		// faire sortir de l'ecran. En colonnes, l'ecran reste court quoi qu'on
 		// ajoute, et la hierarchie visuelle est immediate.
@@ -263,12 +272,47 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			}
 		}
 
-		// ------------------------------------------------- corps, 2 colonnes
+		// --------------------------------------------- corps, 3 colonnes ---
+		//
+		// LE GLOBE EST AU CENTRE, ET C'EST UNE DECISION DE HIERARCHIE. Il
+		// etait a gauche, avec tout le reste empile a sa droite : l'oeil
+		// entrait par le bord, et la seule chose que cet ecran a a montrer --
+		// le monde -- se lisait comme une vignette d'accompagnement. Au centre
+		// il redevient le sujet, et les deux colonnes l'encadrent :
+		//
+		//     [ ce qu'on REGLE ]   [ LE MONDE ]   [ ce qu'il EST ]
+		//
+		// Les deux colonnes ont une largeur FIXE et le globe prend le reste.
+		// L'inverse -- des colonnes qui s'etirent -- ferait sauter le centre
+		// du globe d'une fenetre a l'autre, et un globe qu'on fait tourner a
+		// la souris doit rester ou la main l'a laisse.
 		UHorizontalBox* Body = WidgetTree->ConstructWidget<UHorizontalBox>(
 			UHorizontalBox::StaticClass(), TEXT("Body"));
 		Column->AddChildToVerticalBox(Body);
 
-		// --- colonne gauche : le globe -------------------------------------
+		// --- colonne gauche : ce qu'on REGLE --------------------------------
+		//
+		// Declaree ici, hors du bloc, parce que la graine et le pack sont
+		// construits plus bas avec le reste : l'ordre d'AJOUT a la boite
+		// decide de l'ordre a l'ecran, l'ordre du code n'y est pour rien.
+		UVerticalBox* Reglages = nullptr;
+		{
+			USizeBox* ReglagesBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("ReglagesBox"));
+			ReglagesBox->SetWidthOverride(ColonneLaterale);
+
+			Reglages = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("Reglages"));
+			ReglagesBox->AddChild(Reglages);
+
+			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(ReglagesBox))
+			{
+				S->SetPadding(FMargin(0.0f, 0.0f, 24.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Top);
+			}
+		}
+
+		// --- colonne centrale : LE MONDE -----------------------------------
 		{
 			// Le SizeBox est a l'EXTERIEUR : un ScaleBox place dans un slot
 			// auto-dimensionne ne sait pas annoncer sa taille desiree et se
@@ -290,28 +334,46 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			GlobeScale->AddChild(PreviewImage);
 			GlobeBox->AddChild(GlobeScale);
 
+			// Le slot PREND LE RESTE et centre le globe dedans. Le SizeBox
+			// garde sa taille propre : c'est lui qui borne le zoom, et l'y
+			// laisser est ce qui empeche un globe agrandi de pousser les
+			// colonnes.
 			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(GlobeBox))
 			{
-				S->SetPadding(FMargin(0.0f, 0.0f, 28.0f, 0.0f));
+				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				S->SetHorizontalAlignment(HAlign_Center);
 				S->SetVerticalAlignment(VAlign_Top);
 			}
 		}
 
-		// --- colonne droite : reglages et mesures --------------------------
+		// --- colonne droite : ce que le monde EST --------------------------
+		//
+		// Les mesures et les parts de biomes ne sont pas des reglages : on ne
+		// les touche pas, on les LIT, et elles ne veulent rien dire avant
+		// qu'un monde existe. Les melanger a la graine et au pack, comme
+		// c'etait le cas, revenait a poser une reponse au milieu des
+		// questions.
 		{
+			USizeBox* SideBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("SideBox"));
+			SideBox->SetWidthOverride(ColonneLaterale);
+
 			UVerticalBox* Side = WidgetTree->ConstructWidget<UVerticalBox>(
 				UVerticalBox::StaticClass(), TEXT("Side"));
-			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(Side))
+			SideBox->AddChild(Side);
+
+			if (UHorizontalBoxSlot* S = Body->AddChildToHorizontalBox(SideBox))
 			{
-				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Top);
 			}
 
 			// --- graine ---------------------------------------------------
-			Side->AddChildToVerticalBox(MakeSectionLabel(TEXT("SeedLabel"), TEXT("GRAINE")));
+			Reglages->AddChildToVerticalBox(MakeSectionLabel(TEXT("SeedLabel"), TEXT("GRAINE")));
 
 			UHorizontalBox* SeedRow = WidgetTree->ConstructWidget<UHorizontalBox>(
 				UHorizontalBox::StaticClass(), TEXT("SeedRow"));
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(SeedRow))
+			if (UVerticalBoxSlot* S = Reglages->AddChildToVerticalBox(SeedRow))
 			{
 				S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 18.0f));
 			}
@@ -331,13 +393,13 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
 			}
 
-			// --- taille ---------------------------------------------------
-			Side->AddChildToVerticalBox(
+			// --- habillage du sol ------------------------------------------
+			Reglages->AddChildToVerticalBox(
 				MakeSectionLabel(TEXT("PackLabel"), TEXT("HABILLAGE DU SOL")));
 
 			PackCombo = WidgetTree->ConstructWidget<UComboBoxString>(
 				UComboBoxString::StaticClass(), TEXT("PackCombo"));
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(PackCombo))
+			if (UVerticalBoxSlot* S = Reglages->AddChildToVerticalBox(PackCombo))
 			{
 				S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 4.0f));
 			}
@@ -347,16 +409,20 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			// un desert est reste en aplat.
 			PackHint = WidgetTree->ConstructWidget<UTextBlock>(
 				UTextBlock::StaticClass(), TEXT("PackHint"));
+			// LA TAILLE N'AVAIT JAMAIS ETE POSEE, donc 24 points par defaut :
+			// cette note discrete faisait six lignes de titre sous la liste.
+			// Elle ne se voyait pas tant que la colonne etait large ; en
+			// colonne de 300 elle devenait le plus gros bloc de l'ecran.
+			{
+				FSlateFontInfo Police = PackHint->GetFont();
+				Police.Size = 10;
+				PackHint->SetFont(Police);
+			}
 			PackHint->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.58f, 0.64f, 1.0f)));
 			PackHint->SetAutoWrapText(true);
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(PackHint))
+			if (UVerticalBoxSlot* S = Reglages->AddChildToVerticalBox(PackHint))
 			{
 				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 20.0f));
-			}
-
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(MakeRule(TEXT("RuleStats"))))
-			{
-				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
 			}
 
 			// --- mesures --------------------------------------------------
@@ -392,6 +458,111 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(InfoText))
 			{
 				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
+			}
+
+			// --- statistiques du monde ------------------------------------
+			//
+			// LA BARRE PORTE LA COULEUR DU BIOME, celle-la meme que le globe
+			// peint juste a cote. C'est ce qui rend la colonne lisible : on lit
+			// un pourcentage, on leve les yeux, et on voit OU il se trouve. Une
+			// barre d'accent uniforme aurait oblige a relire le nom a chaque
+			// ligne, et la couleur n'aurait rien dit.
+			//
+			// AUTANT DE LIGNES QUE LE REGISTRE COMPTE DE BIOMES, construites
+			// une fois pour toutes ici, et REMPLIES PAR RANG au lieu d'etre
+			// reordonnees : la ligne 0 recoit le biome le plus etendu du monde
+			// en cours. Deplacer des enfants dans leur boite a chaque
+			// generation serait la seule alternative, et elle est plus chere
+			// pour un resultat identique.
+			//
+			// Les lignes en trop sont REPLIEES -- `Collapsed` et non `Hidden` :
+			// le second garde la place reservee et laisserait des trous dans la
+			// liste.
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(MakeRule(TEXT("RuleBiomes"))))
+			{
+				S->SetPadding(FMargin(0.0f, 18.0f, 0.0f, 14.0f));
+			}
+
+			Side->AddChildToVerticalBox(MakeSectionLabel(
+				TEXT("BiomesLabel"), TEXT("BIOMES, PART DES TERRES")));
+
+			// Ce qui tient la place tant qu'aucun monde n'existe. Sans lui,
+			// l'intitule surplomberait le vide, ce qui se lit comme un ecran
+			// casse plutot que comme un ecran en attente.
+			BiomesHint = MakeText(TEXT("BiomesHint"),
+				TEXT("choisissez une graine, puis generez"), 10, ColTextMuted);
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(BiomesHint))
+			{
+				S->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+			}
+
+			constexpr int32 NbBiomes = static_cast<int32>(EWorldseedBiome::Count);
+			BiomeRows.Reserve(NbBiomes);
+			BiomeNames.Reserve(NbBiomes);
+			BiomeValues.Reserve(NbBiomes);
+			BiomeBars.Reserve(NbBiomes);
+
+			for (int32 I = 0; I < NbBiomes; ++I)
+			{
+				UVerticalBox* Row = WidgetTree->ConstructWidget<UVerticalBox>(
+					UVerticalBox::StaticClass(),
+					*FString::Printf(TEXT("BiomeRow%02d"), I));
+				Row->SetVisibility(ESlateVisibility::Collapsed);
+				if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(Row))
+				{
+					S->SetPadding(FMargin(0.0f, 7.0f, 0.0f, 0.0f));
+				}
+
+				UHorizontalBox* Head = WidgetTree->ConstructWidget<UHorizontalBox>(
+					UHorizontalBox::StaticClass(),
+					*FString::Printf(TEXT("BiomeHead%02d"), I));
+				Row->AddChildToVerticalBox(Head);
+
+				UTextBlock* Nom = MakeText(*FString::Printf(TEXT("BiomeNom%02d"), I),
+					TEXT(""), 10, ColTextPrimary);
+				if (UHorizontalBoxSlot* S = Head->AddChildToHorizontalBox(Nom))
+				{
+					S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+
+				UTextBlock* Val = MakeText(*FString::Printf(TEXT("BiomeVal%02d"), I),
+					TEXT(""), 10, ColTextMuted);
+				Val->SetJustification(ETextJustify::Right);
+				Head->AddChildToHorizontalBox(Val);
+
+				// TROIS PIXELS, et c'est deliberé : la barre est un REPERE DE
+				// COMPARAISON, le chiffre est la donnee. Une barre epaisse
+				// prendrait le regard a la valeur qu'elle illustre.
+				USizeBox* BarBox = WidgetTree->ConstructWidget<USizeBox>(
+					USizeBox::StaticClass(),
+					*FString::Printf(TEXT("BiomeBarBox%02d"), I));
+				BarBox->SetHeightOverride(3.0f);
+				if (UVerticalBoxSlot* S = Row->AddChildToVerticalBox(BarBox))
+				{
+					S->SetPadding(FMargin(0.0f, 4.0f, 0.0f, 0.0f));
+				}
+
+				UProgressBar* Bar = WidgetTree->ConstructWidget<UProgressBar>(
+					UProgressBar::StaticClass(),
+					*FString::Printf(TEXT("BiomeBar%02d"), I));
+				Bar->SetPercent(0.0f);
+
+				// LA PISTE VIDE DOIT S'EFFACER. Le style par defaut la peint
+				// en clair : a l'image, la barre de 0,2 % et celle de 16,9
+				// avaient la meme longueur APPARENTE -- une piste pleine
+				// largeur avec un liseré colore dedans. Ce qu'on compare, ce
+				// n'est pas le remplissage, c'est la LONGUEUR de la couleur,
+				// donc le reste doit disparaitre dans le fond.
+				Bar->WidgetStyle.BackgroundImage.TintColor =
+					FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.06f));
+
+				BarBox->AddChild(Bar);
+
+				BiomeRows.Add(Row);
+				BiomeNames.Add(Nom);
+				BiomeValues.Add(Val);
+				BiomeBars.Add(Bar);
 			}
 		}
 
@@ -528,7 +699,13 @@ void UWorldseedMenuWidget::NativeConstruct()
 
 	if (SeedBox)
 	{
-		SeedBox->SetText(FText::AsNumber(Params.Seed));
+		// UNE GRAINE EST UN IDENTIFIANT, PAS UNE QUANTITE. `FText::AsNumber`
+		// y mettait le separateur de milliers de la locale -- « 1,337 » pour
+		// 1337 -- et la relecture le refuse : `Raw.IsNumeric()` rend faux sur
+		// la virgule, donc le champ etait IGNORE en silence. Le monde partait
+		// juste parce que `Params.Seed` portait deja la bonne valeur ; taper
+		// une graine avec un separateur, elle, ne prenait pas.
+		SeedBox->SetText(FText::FromString(FString::FromInt(Params.Seed)));
 		SeedBox->OnTextCommitted.AddDynamic(this, &UWorldseedMenuWidget::HandleSeedCommitted);
 	}
 
@@ -832,6 +1009,95 @@ void UWorldseedMenuWidget::UpdateInfoText()
 
 	InfoText->SetText(FText::FromString(FString::Printf(
 		TEXT("%lld triangles a pleine resolution"), Triangles)));
+
+	UpdateBiomeStats();
+}
+
+void UWorldseedMenuWidget::UpdateBiomeStats()
+{
+	if (BiomeRows.Num() == 0)
+	{
+		return;
+	}
+
+	// --- ce qu'on affiche, et ce qu'on laisse de cote ----------------------
+	//
+	// `LandSharePct` est indexe par biome sur TOUT le registre, couvertures
+	// comprises -- ocean, lac, riviere. Ces trois-la ne sont pas attribues
+	// depuis le retrait de l'hydrologie, donc ils sortiraient a zero ; mais
+	// c'est le zero qui les elimine, pas leur nature, et le jour ou l'un d'eux
+	// revient il apparaitra ici tout seul.
+	//
+	// LE SEUIL EST A UN DIXIEME DE POINT, c'est-a-dire la precision de ce
+	// qu'on ecrit. Afficher « 0,0 % » sous une barre vide occuperait une ligne
+	// pour dire qu'il n'y a rien a dire.
+	struct FPart
+	{
+		int32 Id = 0;
+		float Pct = 0.0f;
+	};
+
+	TArray<FPart> Parts;
+	Parts.Reserve(BiomeRows.Num());
+
+	float Max = 0.0f;
+	for (int32 I = 0; I < static_cast<int32>(EWorldseedBiome::Count); ++I)
+	{
+		const float Pct = CachedBiomes.LandSharePct[I];
+		if (Pct >= 0.05f)
+		{
+			Parts.Add({ I, Pct });
+			Max = FMath::Max(Max, Pct);
+		}
+	}
+
+	Parts.Sort([](const FPart& A, const FPart& B) { return A.Pct > B.Pct; });
+
+	if (BiomesHint)
+	{
+		BiomesHint->SetVisibility(Parts.Num() > 0
+			? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	}
+
+	// LA BARRE EST RAPPORTEE AU PLUS GRAND BIOME, PAS A CENT. Rapportee a
+	// cent, la premiere barre ferait un cinquieme de la largeur et les
+	// dernieres seraient invisibles : on ne distinguerait plus 0,3 % de 2,8.
+	// Le chiffre, lui, reste absolu -- c'est lui qui porte la valeur, la barre
+	// ne porte que la comparaison.
+	const float Echelle = Max > 0.0f ? Max : 1.0f;
+
+	for (int32 Rang = 0; Rang < BiomeRows.Num(); ++Rang)
+	{
+		const bool bUtilise = Rang < Parts.Num();
+
+		if (BiomeRows[Rang])
+		{
+			BiomeRows[Rang]->SetVisibility(bUtilise
+				? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+		if (!bUtilise)
+		{
+			continue;
+		}
+
+		const EWorldseedBiome Biome = static_cast<EWorldseedBiome>(Parts[Rang].Id);
+		const FLinearColor Teinte = WorldseedBiomes::Colour(Biome);
+
+		if (BiomeNames[Rang])
+		{
+			BiomeNames[Rang]->SetText(FText::FromString(WorldseedBiomes::Name(Biome)));
+		}
+		if (BiomeValues[Rang])
+		{
+			BiomeValues[Rang]->SetText(FText::FromString(
+				FString::Printf(TEXT("%.1f %%"), Parts[Rang].Pct)));
+		}
+		if (BiomeBars[Rang])
+		{
+			BiomeBars[Rang]->SetPercent(Parts[Rang].Pct / Echelle);
+			BiomeBars[Rang]->SetFillColorAndOpacity(Teinte);
+		}
+	}
 }
 
 bool UWorldseedMenuWidget::BakeGlobe()
@@ -1235,7 +1501,7 @@ void UWorldseedMenuWidget::HandleRandomSeedClicked()
 	Params.Seed = FMath::Rand();
 	if (SeedBox)
 	{
-		SeedBox->SetText(FText::AsNumber(Params.Seed));
+		SeedBox->SetText(FText::FromString(FString::FromInt(Params.Seed)));
 	}
 	StartGeneration();
 }

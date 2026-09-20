@@ -102,8 +102,19 @@ protected:
 	/** Lit l'avancement et recupere le resultat quand il est pret. */
 	void PollGeneration();
 
-	/** Met a jour la ligne de mesures sous le globe. */
+	/** Met a jour le tableau de mesures de la colonne de droite. */
 	void UpdateInfoText();
+
+	/**
+	 * Remplit les barres de biomes depuis `CachedBiomes.LandSharePct`.
+	 *
+	 * Rien n'est recalcule ici : la part de chaque biome sur les terres est
+	 * deja produite par `WorldseedBiomes::Classify`, qui la compte sur la
+	 * grille pleine. La relire autrement -- par exemple en rebalayant l'image
+	 * du globe -- donnerait un SECOND chiffre pour la meme grandeur, et le
+	 * depot a deja paye ce qu'une formule recopiee coute.
+	 */
+	void UpdateBiomeStats();
 
 	/** Affiche ou retire le bloc progression. */
 	void SetProgressVisible(bool bVisible);
@@ -172,6 +183,28 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatScaleValue;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatLandValue;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatElevationValue;
+
+	/**
+	 * STATISTIQUES DU MONDE : une ligne par biome, part des terres emergees.
+	 *
+	 * L'INDICE EST LE RANG A L'ECRAN, PAS L'IDENTIFIANT DU BIOME. La ligne 0
+	 * porte le biome le plus etendu de CE monde, la ligne 1 le suivant. C'est
+	 * ce qui permet de trier sans toucher a l'arbre de widgets : on ecrit un
+	 * nom, une couleur et une valeur dans des lignes deja construites, au lieu
+	 * de deplacer des enfants dans leur boite. Les lignes en trop sont repliees
+	 * au remplissage.
+	 *
+	 * Quatre tableaux PARALLELES plutot qu'un tableau de structures : ce sont
+	 * des `UPROPERTY`, elles retiennent les widgets pour le ramasse-miettes, et
+	 * une structure imbriquee demanderait un `USTRUCT` juste pour cela.
+	 */
+	UPROPERTY(Transient) TArray<TObjectPtr<UVerticalBox>> BiomeRows;
+	UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> BiomeNames;
+	UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> BiomeValues;
+	UPROPERTY(Transient) TArray<TObjectPtr<UProgressBar>> BiomeBars;
+
+	/** Tient la place sous l intitule tant qu aucun monde n existe. */
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> BiomesHint;
 	UPROPERTY(Transient) TObjectPtr<UProgressBar> ProgressBar;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatusText;
 
