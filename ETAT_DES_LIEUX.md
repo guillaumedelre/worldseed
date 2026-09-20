@@ -1,13 +1,14 @@
 # Worldseed — état des lieux et suite
 
-Document de reprise, **réécrit le 12 septembre 2026**, mis à jour le 13. Il remplace la version du
+Document de reprise, **réécrit le 12 septembre 2026**, mis à jour le 13, puis le 18 et le 20
+septembre pour dire ce qui, depuis, n'y est plus décrit. Il remplace la version du
 9 septembre, dont plusieurs affirmations étaient devenues *fausses* et non
 seulement incomplètes — elles sont listées au §8 pour que personne ne reparte
 dessus.
 
 > ## ⚠ Ce document décrit l'ANCIENNE architecture
 >
-> **Deux changements de fond, postérieurs à sa rédaction, en invalident une
+> **Trois changements de fond, postérieurs à sa rédaction, en invalident une
 > bonne part. Les lire AVANT le reste.**
 >
 > **1. Le monde se calcule maintenant dans le jeu (14-15 septembre 2026).** La
@@ -25,6 +26,15 @@ dessus.
 > plugin Water. La section « Eau » ci-dessous décrit donc un état révolu. Les
 > mesures qui ont motivé ce retrait, et les impasses à ne pas refaire, sont dans
 > `CLAUDE.md`.
+>
+> **3. Et tout le terrain a changé depuis (18-20 septembre 2026).** Le relief
+> est un **champ de densité maillé en voxels** — marching cubes puis
+> Transvoxel, anneaux de résolution, grottes, gouffres, diaclases, arches,
+> mesas et canyons, lithologie en colonnes stratigraphiques. Le monde fait
+> **64 × 32 km** et c'est la seule taille offerte. L'écran de configuration a
+> été refondu. Rien de tout cela n'est décrit ci-dessous : `CLAUDE.md` en porte
+> le détail et les mesures, section par section, et c'est LUI qui fait foi sur
+> l'état du terrain.
 >
 > Ce qui reste VRAI et utile ici : tout le calage climatique (§3), les
 > références terrestres, les décisions à ne pas défaire (§7) et les pièges de
@@ -380,13 +390,45 @@ le 12 ont été traités ou tranchés en deux jours. Ce qui suit est court à de
 
 ### 6.1 Ouvert
 
-- **La carte du monde / minimap.** Mise de côté par le propriétaire le
-  12 septembre ; tout ce qui avait été monté a été retiré. Le seul verrou
-  technique était un **clic dans le menu `Build`** — la construction de la
-  texture World Partition n'est pas exposée à Python (vérifié trois fois :
-  pas d'API, pas de commande console, pas de binding sur le builder).
-  Le reste — recopie de la texture en asset autonome, widget, câblage de la
-  touche — est du travail ordinaire.
+- **La carte du monde / minimap in-game.** Redemandée par le propriétaire le
+  **20 septembre 2026**. Mise de côté le 12 septembre ; tout ce qui avait été
+  monté avait alors été retiré.
+
+  **LE VERROU QUI L'AVAIT ARRÊTÉE N'EXISTE PLUS.** La note de septembre disait
+  que le seul obstacle était un **clic dans le menu `Build`** — la construction
+  de la texture World Partition n'étant exposée ni à Python, ni à une commande
+  console, ni par un binding sur le builder (vérifié trois fois à l'époque).
+  Ce verrou portait sur le **Landscape**, qui n'est plus le terrain depuis le
+  passage au voxel : il n'y a plus de texture World Partition à construire, et
+  donc plus rien à cliquer.
+
+  **ET LES BRIQUES SONT DÉJÀ ÉCRITES**, ce qui change la nature du chantier :
+
+  - **la donnée est en mémoire**, pas dans un asset à cuire :
+    `AWorldseedVoxelTerrain::MondeAltitudes()` rend la grille 4096 × 2048 des
+    altitudes et `MondeGeometrie()` sa géométrie. `TrouverTerreEmergee` la
+    balaie déjà, et `WorldseedDensity` y lit en permanence ;
+  - **le monde sait déjà se cuire en textures** : `WorldseedGlobeBake::Build`
+    produit 2048 × 1024 depuis la grille en **20 ms**, relief et biomes
+    compris, et `M_WorldseedGlobe` les projette. Une minimap est la même
+    donnée en projection plate au lieu d'une sphère ;
+  - **le rendu processeur sait déjà peindre la carte** : `WorldseedGlobe`
+    compose bathymétrie, relief ombré et cercles de référence pour **0,224 ms**
+    par image — soit 1,4 % d'un budget de trame, mesuré le 20 septembre ;
+  - **la touche se branche sans toucher à `Content/*`** : `WorldseedRetourMenu`
+    est le patron exact, un `UTickableWorldSubsystem` qui lit le
+    PlayerController. C'est ce qui permet au réglage d'être **versionné**,
+    alors qu'un binding Enhanced Input vivrait dans `Content/*`, exclu du dépôt.
+
+  **UN PIÈGE À NE PAS REFAIRE, ET IL A DÉJÀ COÛTÉ 19 DEGRÉS.** La latitude
+  n'est **pas** proportionnelle à Y depuis le passage à la carte
+  équivalente-aire : `lat = degrés(asin(Y / demi-étendue))`. Une minimap qui
+  placerait le curseur du joueur linéairement en Y serait fausse — au point
+  d'apparition, la bonne valeur est +46,95° là où un produit linéaire donne
+  +65,77. La conversion existe, il faut l'appeler et non la refaire.
+
+  Reste donc du travail **ordinaire** : une projection, un widget, un curseur
+  et une touche.
 - **La végétation des nouveaux packs Fab n'est ni teintée ni agitée par le
   vent.** Les greffes de Runtime Virtual Texture et de `Foliage_Wind_Movement`
   ont été posées sur les 11 maîtres d'Orasot ; les ~10 maîtres venus de
