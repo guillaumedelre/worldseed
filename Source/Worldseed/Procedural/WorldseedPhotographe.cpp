@@ -158,6 +158,26 @@ int32 UWorldseedPhotographe::AjouterLesArches(int32 Combien)
 		// la voute plutot que le passage.
 		E.HauteurM = 0.0f;
 		Tournee.Add(E);
+
+		// ET UNE SECONDE VUE, DEPUIS L'INTERIEUR DU TUNNEL.
+		//
+		// C'est la seule qui puisse etablir la TRAVERSEE par l'image. De
+		// l'exterieur, une ouverture de trente metres au bout de quatre-vingts
+		// metres de roche reste sombre meme quand elle debouche : le jour
+		// arrive par une sortie qu'on ne voit pas sous cet angle. Le
+		// proprietaire a signale exactement cela -- « j'ai l'impression que
+		// l'arche n'est plus traversante » -- alors que la mesure dit 22 posees,
+		// 22 TRAVERSANTES.
+		//
+		// Place a quinze metres du centre et visant le centre, on regarde dans
+		// l'axe depuis le milieu du passage : la sortie opposee est alors droit
+		// devant, et soit on voit le jour, soit il n'y en a pas.
+		FWorldseedPhotoStop D = E;
+		D.Nom = FString::Printf(TEXT("arche%02d_dedans"), I + 1);
+		D.DepuisM = -E.DepuisM;
+		D.DistanceM = 15.0f;
+		Tournee.Add(D);
+
 		++Ajoutees;
 	}
 
