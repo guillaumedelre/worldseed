@@ -5872,3 +5872,116 @@ plus empilent deux `OpenLevel` sur la meme pression.
 n'avaient aucun libelle et retombaient sur celui de la passe precedente, et les
 deux passes de climat portaient le meme. Un libelle d'avancement qui ment est
 pire que pas de libelle : on croit savoir ou en est la chaine.
+
+### Le globe saccadait : deux causes, et une seule etait la bonne (20 septembre 2026)
+
+Signale : « attention le globe saccade dans sa rotation !! ». C'etait un vrai
+defaut, et le diagnostic a trouve DEUX choses -- dont une seule expliquait le
+symptome.
+
+**LA CAUSE REELLE : UN PAS DE ROTATION FIXE SUR UN TIMER IRREGULIER.** Le code
+avancait de `vitesse x periode` a chaque declenchement. Or **un timer d'Unreal
+est servi PAR LE TICK DU MONDE** : il ne peut pas battre plus vite que la
+trame, et il RATTRAPE quand il a pris du retard -- deux declenchements dans le
+meme tick. Releve des intervalles REELS pour une periode demandee de 16,67 ms :
+
+    min 1,58 ms   mediane 16,66   p95 18,15   max 302,32
+
+Le globe avancait donc du MEME angle sur 1,6 ms que sur 302. Le remede ne
+change pas la vitesse moyenne, il la rend constante : multiplier par le temps
+ECOULE (`FPlatformTime::Seconds()`), avec un plafond pour qu'un arret du jeu ne
+fasse pas faire un tour complet au retour.
+
+**LE SECOND DEFAUT ETAIT REEL MAIS SANS RAPPORT, et c'est la lecon.** Le releve
+disait « rendu par le processeur » alors que `M_WorldseedGlobe` existe. Cause :
+`BakeGlobe()` etait appele UNE LIGNE AVANT que `WorldGeometry` soit posee, et il
+commence par comparer `CachedHeights.Num()` a `WorldGeometry.CellCount()` -- il
+confrontait donc les altitudes du NOUVEAU monde a la geometrie du PRECEDENT,
+sortait a sa premiere garde, et **cette garde sort sans un mot**. Le materiau
+n'etait pas un choix, il etait inatteignable depuis toujours.
+
+**J'EN AI CONCLU QUE LE PROCESSEUR COUTAIT LA SACCADE. C'ETAIT FAUX**, et le
+chronometre l'a dit :
+
+    voie          redessin     aspect
+    materiau      0,001 ms     ocean presque noir, bandes de latitude opaques
+                               et larges, relief sans ombrage
+    processeur    0,224 ms     bathymetrie, relief ombre, cercles fins
+
+0,224 ms, c'est **1,4 % d'un budget de 16,67**. Le lance-de-rayon ne coutait
+rien de perceptible et rendait nettement mieux : il reste le DEFAUT, et
+`-WorldseedGlobeGPU` rearme la voie graphique. **Chronometrer la voie soupconnee
+AVANT de la remplacer aurait evite le detour** -- la regle existait deja,
+« mesurer avant de corriger, meme quand l'hypothese est seduisante ».
+
+**PIEGE DE MESURE PAYE AU PASSAGE : le premier releve a mesure les trois
+premieres secondes**, pendant lesquelles le monde n'existe pas encore et
+`RedrawGlobe` sort a sa premiere garde. Il annoncait « rendu par le processeur »
+pour un globe qui ne tournait pas. **On mesure le traitement quand il a lieu,
+jamais avant** -- le releve ne demarre plus qu'une fois `CachedHeights` rempli.
+
+**ET L'ESPACE AUTOUR DU GLOBE ETAIT OPAQUE.** L'alpha de la texture etait fige a
+255 : le disque portait un CARRE de fond. Invisible a 420 pixels dans un panneau
+de meme teinte, c'est devenu une boite posee sur l'ecran des que le globe a pris
+tout le corps. Fondu sur un pixel au bord, sans quoi un disque de sept cents
+pixels montre son escalier.
+
+### La densite de maillage suit le relief, et elle est LIVREE ETEINTE (20 septembre 2026)
+
+Demande ancienne : « dans une plaine nous n'avons pas besoin d'un maillage aussi
+dense que sur une montagne rocheuse ». Le critere est ecrit, mesure, et **il
+casse la contrainte 2:1** -- donc il arrive a zero.
+
+**LE PREDICAT A DU DEVENIR UNIQUE D'ABORD.** `Enumerer` decidait des niveaux et
+`NiveauEn` les rededuisait pour les masques, avec la MEME formule ecrite deux
+fois. Tant que c'etait une distance, la copie tenait. Des que le relief entre en
+jeu, deux copies divergent a la premiere retouche, et le resultat est une face
+de transition armee la ou il n'y a pas de changement de resolution.
+
+**MESURE AU BANC**, meme binaire, meme graine, rayon 1200 m, trois anneaux :
+
+| rugosite | chunks | par niveau | triangles | 2:1 |
+|---|---|---|---|---|
+| 0,00 | 2165 | 1162/615/388/0 | 2 809 559 | tenu |
+| 0,10 | 2157 | 1162/605/390/0 | 2 797 089 | tenu |
+| **0,20** | **255** | 0/38/119/98 | **416 251** | **VIOLE** |
+| 0,35 | 140 | 0/0/15/125 | 219 210 | VIOLE |
+
+**LE GAIN EST ENORME -- moins d'un septieme des triangles -- ET INUTILISABLE EN
+L'ETAT.** Transvoxel ne sait coudre QU'UN niveau d'ecart ; a 0,20 le banc trouve
+un chunk de niveau 3 colle a un niveau 1.
+
+**MA GARANTIE ETAIT FAUSSE, ET JE LA CROYAIS PROUVEE.** Prendre le relief sur
+l'emprise ELARGIE d'une cellule assure bien que « si A descend, ses voisins
+descendent » -- mais cela ne dit RIEN d'un cran plus bas : un enfant de B, au
+niveau L-1, mesure une emprise trois fois plus petite, y trouve un relief local
+fort, et descend encore pendant que A reste en haut. La recurrence saute d'un
+niveau.
+
+**C'EST LE CONTROLE POSE AVEC LE CRITERE QUI L'A DIT**, et c'est tout son objet :
+une fissure ne se signale pas -- le masque s'arme quand meme, la geometrie reste
+combinatoirement close, et le trou ne se voit qu'a l'oeil sur une jointure
+precise. Le controle ne journalise rien quand tout va bien et crie une fois
+quand la propriete tombe. **Une propriete de surete se verifie, elle ne se
+suppose pas.**
+
+**UN SIGNE DEJA VU SIX FOIS.** La premiere version rapportait l'etendue au cote
+du NOEUD alors qu'elle etait relevee sur les NEUF : a 0,15 comme a 0, le banc
+rendait 2165 chunks et 2 809 559 triangles AU CHIFFRE PRES. **Deux mesures
+identiques pour deux reglages differents ne sont jamais un hasard.**
+
+**LA SURFACE NE DIT PAS TOUT, et le critere le sait deja** : un aven s'ouvre sur
+un PLATEAU, par definition. Juger la finesse sur le seul relief de surface
+degraderait precisement les endroits ou le sous-sol est interessant. Le critere
+interroge donc l'index spatial du reseau de cavites et ne degrade jamais un
+noeud qui en contient.
+
+**CE QUI RESTE A FAIRE** : un vrai equilibrage 2:1, sous la forme d'un niveau
+exprime comme fonction PONCTUELLE et 1-lipschitzienne en unites de chunk. Un
+equilibrage fait apres coup sur l'ensemble des feuilles ne conviendrait PAS :
+`NiveauEn` est une descente ponctuelle, et elle cesserait d'accorder les masques
+avec la diffusion.
+
+`rugositeMin` n'est volontairement PAS dans `world_rules.json` : elle y
+changerait l'empreinte, donc invaliderait les mondes en cache pour un reglage
+inerte. Meme choix que `LargeurTransition`. `-WorldseedRugosite=` la pilote.
