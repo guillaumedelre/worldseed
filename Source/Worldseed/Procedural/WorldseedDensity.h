@@ -34,6 +34,22 @@ struct WORLDSEED_API FWorldseedDensityRules
 	bool bTransvoxel = false;
 
 	/**
+	 * Les anneaux de resolution, arbitres par le proprietaire le 20 septembre.
+	 *
+	 * ILS VIVENT DANS LES REGLES PARCE QUE CE SONT DES SEUILS, et la regle du
+	 * depot est nette la-dessus. Le prix a payer est qu-en changer force une
+	 * regeneration du monde, l-empreinte du fichier portant sur son contenu
+	 * entier : c-est acceptable pour des valeurs qu-on arrete une fois.
+	 *
+	 * La ligne de commande reste prioritaire, pour que le banc puisse comparer
+	 * deux configurations sans recompiler.
+	 */
+	int32 NiveauMax = 0;
+	float RayonAnneau0M = 300.0f;
+	float LoadRadiusM = 0.0f;
+	float LargeurTransition = 0.5f;
+
+	/**
 	 * Epaisseur de la bande creusable sous la surface, en metres.
 	 *
 	 * Sous elle, la densite est forcee au plein : le socle n'est JAMAIS maille.

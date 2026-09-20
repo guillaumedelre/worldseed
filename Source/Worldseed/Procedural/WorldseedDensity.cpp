@@ -28,6 +28,10 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 
 	Out.VoxelSizeM = Num(TEXT("voxelSizeM"), 1.0);
 	Out.bTransvoxel = Rules.Num(VOX, TEXT("transvoxel"), 0.0) > 0.5;
+	Out.NiveauMax = Int(TEXT("anneaux"), 0);
+	Out.RayonAnneau0M = Num(TEXT("anneauRayon0M"), 300.0);
+	Out.LoadRadiusM = Num(TEXT("rayonChargementM"), 0.0);
+	Out.LargeurTransition = Num(TEXT("transitionLargeur"), 0.5);
 	Out.BandDepthM = Num(TEXT("bandDepthM"), 100.0);
 
 	Out.OverhangAmplitudeM = Num(TEXT("overhangAmplitudeM"), 8.0);

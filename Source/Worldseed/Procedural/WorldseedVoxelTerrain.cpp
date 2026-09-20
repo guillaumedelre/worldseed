@@ -108,6 +108,11 @@ void AWorldseedVoxelTerrain::BeginPlay()
 
 	StartSeconds = FPlatformTime::Seconds();
 
+	// Ce que la ligne de commande a impose : les regles ne le recouvriront pas.
+	bool bRayonForce = false;
+	bool bNiveauxForce = false;
+	bool bAnneau0Force = false;
+
 	// LE RAYON SE PILOTE DEPUIS LA LIGNE DE COMMANDE, pour le banc.
 	// Sans ce levier, comparer deux rayons demanderait de recompiler entre
 	// les deux mesures -- et le depot a une regle contre les A/B dont les
@@ -141,6 +146,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 				Rayon, Rayon * Hysteresis, LoadRadiusM, UnloadRadiusM);
 			LoadRadiusM = Rayon;
 			UnloadRadiusM = Rayon * Hysteresis;
+			bRayonForce = true;
 		}
 	}
 
@@ -154,20 +160,14 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			&& Niveaux >= 0)
 		{
 			NiveauMax = FMath::Clamp(Niveaux, 0, 4);
+			bNiveauxForce = true;
 		}
 		float Anneau0 = 0.0f;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedAnneau0="), Anneau0)
 			&& Anneau0 > 32.0f)
 		{
 			RayonAnneau0M = Anneau0;
-		}
-		if (NiveauMax > 0)
-		{
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : %d anneaux, le premier a %.0f m, ")
-				TEXT("puis %.0f, %.0f -- dalle de transition %.2f cellule"),
-				NiveauMax + 1, RayonAnneauM(0), RayonAnneauM(1), RayonAnneauM(2),
-				LargeurTransition);
+			bAnneau0Force = true;
 		}
 	}
 
@@ -185,6 +185,41 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[Worldseed] voxel : regles illisibles (%s), valeurs par defaut"), *Error);
+	}
+
+	// --- LES REGLES FIXENT LES ANNEAUX, LA LIGNE DE COMMANDE GARDE LA MAIN ---
+	//
+	// Les seuils vivent dans world_rules.json, c'est la regle du depot. Mais le
+	// banc doit pouvoir comparer deux configurations sur le MEME binaire, sans
+	// quoi les deux moities d'un A/B ne sont pas montees a l'identique -- et ce
+	// depot a deja bati une journee de conclusions sur un harnais fausse. Les
+	// surcharges de ligne de commande sont donc appliquees APRES les regles et
+	// l'emportent ; c'est pour cela qu'elles sont relues ici plutot que plus
+	// haut, avant que les regles n'existent.
+	if (!bRayonForce && DensityRules.LoadRadiusM > 32.0f)
+	{
+		const float Hysteresis = (LoadRadiusM > 0.0f)
+			? (UnloadRadiusM / LoadRadiusM) : 1.4f;
+		LoadRadiusM = DensityRules.LoadRadiusM;
+		UnloadRadiusM = LoadRadiusM * Hysteresis;
+	}
+	if (!bNiveauxForce)
+	{
+		NiveauMax = FMath::Clamp(DensityRules.NiveauMax, 0, 4);
+	}
+	if (!bAnneau0Force)
+	{
+		RayonAnneau0M = DensityRules.RayonAnneau0M;
+	}
+	LargeurTransition = DensityRules.LargeurTransition;
+
+	if (NiveauMax > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : %d anneaux -- %.0f / %.0f / %.0f m, vue %.0f m, ")
+			TEXT("dalle de transition %.2f cellule"),
+			NiveauMax + 1, RayonAnneauM(0), RayonAnneauM(1), RayonAnneauM(2),
+			LoadRadiusM, LargeurTransition);
 	}
 
 	Density.Init(Geometry, HeightsM, HeightExaggeration, WorldSeed, DensityRules);
