@@ -213,6 +213,22 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	}
 	LargeurTransition = DensityRules.LargeurTransition;
 
+	// ET LE MAILLEUR AUSSI SE DEBRANCHE EN LIGNE DE COMMANDE. Un A/B qui
+	// demande de rouvrir le fichier de regles change son empreinte, donc
+	// regenere le monde entre les deux moities : ce ne serait plus le meme
+	// monde, et le depot a une regle contre les A/B mal montes.
+	{
+		int32 Tv = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedTransvoxel="), Tv)
+			&& Tv >= 0)
+		{
+			DensityRules.bTransvoxel = (Tv > 0);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : mailleur force -- %s"),
+				DensityRules.bTransvoxel ? TEXT("Transvoxel") : TEXT("FMarchingCubes"));
+		}
+	}
+
 	if (NiveauMax > 0)
 	{
 		UE_LOG(LogTemp, Log,

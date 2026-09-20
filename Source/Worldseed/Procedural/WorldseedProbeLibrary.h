@@ -231,6 +231,34 @@ public:
 	 * marge corrigerait le defaut signale : un joueur qui marche sur le voxel et
 	 * parait enfonce dans la nappe, qui est dessinee et sans collision.
 	 */
+	/**
+	 * Les trous du terrain : dans le CHAMP ou dans le MAILLEUR ?
+	 *
+	 * « TROU » RECOUVRE TROIS CHOSES QUI SE RESSEMBLENT VUES DE L-EXTERIEUR --
+	 * un chunk jamais considere, un chunk declare vide, de la geometrie dechiree
+	 * -- et elles appellent trois corrections opposees. Mais avant de les
+	 * departager il faut une bifurcation plus grossiere et bien moins chere : si
+	 * le CHAMP n-a pas de surface a cet endroit, aucun mailleur n-en produira de
+	 * sol, et c-est la generation qu-il faut regarder.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeTrous(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 2048, float CoteM = 512.0f, float PasM = 2.0f);
+
+	/**
+	 * DEUX CHUNKS DE MEME NIVEAU SE REJOIGNENT-ILS ?
+	 *
+	 * Ni ProbeTransvoxel -- qui juge un chunk ISOLE -- ni ProbeTransition -- qui
+	 * juge une couture GROSSIER/FIN -- ne regardent la configuration que le jeu
+	 * emploie en permanence : des chunks tous de meme taille, masque de
+	 * transition NUL, poses cote a cote. C'est le seul cas qu'aucun temoin ne
+	 * couvre.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeVoisins(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 2048, int32 Cotes = 4, float CoteM = 32.0f,
+		float CibleXM = 0.0f, float CibleYM = 0.0f);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeNappe(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 2048, int32 Colonnes = 192);

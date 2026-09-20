@@ -8,6 +8,9 @@
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPipeline.h"
 
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -962,8 +965,21 @@ UMaterialInterface* AWorldseedTerrain::ChooseTerrainMaterial(
 	return TerrainMaterial ? TerrainMaterial.Get() : BiomeMaterial.Get();
 }
 
+// LE CONTROLE QUI TRANCHE EST DE MASQUER LA NAPPE ET DE RECAPTURER, et le
+// depot le dit deja en toutes lettres : elle n-a pas de collision, donc les
+// sondages la traversent et ne peuvent pas la voir. On mesure du sol la ou
+// l-on voit un trou, et inversement. `-WorldseedSansNappe` la supprime pour
+// une session, le temps d-un A/B a l-image.
 void AWorldseedTerrain::BuildGroundProxy()
 {
+	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedSansNappe")))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] sol de fond : SUPPRIME par -WorldseedSansNappe ")
+			TEXT("-- l-horizon sera vide, et l-ocean risque de ne plus se dessiner"));
+		return;
+	}
+
 	if (!bBuildGroundProxy || Geometry.NX < 2 || HeightsM.Num() != Geometry.CellCount())
 	{
 		return;
