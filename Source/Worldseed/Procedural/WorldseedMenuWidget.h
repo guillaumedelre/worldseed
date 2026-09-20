@@ -85,6 +85,11 @@ protected:
 		const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry,
+		const FPointerEvent& InMouseEvent) override;
+
+	void ApplyGlobeZoom();
+
 	/**
 	 * Lance une generation EN TACHE DE FOND. Toute generation deja en cours est
 	 * annulee : c'est ce qui permet de rechanger les parametres sans attendre.
@@ -122,9 +127,6 @@ protected:
 	void HandleSeedCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
 	UFUNCTION()
-	void HandleSizeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-
-	UFUNCTION()
 	void HandlePackChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 
 	UFUNCTION()
@@ -141,7 +143,6 @@ protected:
 
 private:
 	UPROPERTY(Transient) TObjectPtr<UEditableTextBox> SeedBox;
-	UPROPERTY(Transient) TObjectPtr<UComboBoxString> SizeCombo;
 
 	/** Choix du pack de textures. */
 	UPROPERTY(Transient) TObjectPtr<UComboBoxString> PackCombo;
@@ -272,6 +273,18 @@ private:
 
 	/** Vrai pendant un glisser : la rotation automatique est suspendue. */
 	bool bDraggingGlobe = false;
+
+	/**
+	 * Grossissement du globe a la molette.
+	 *
+	 * IL EST POSE SUR LE WIDGET, PAS DANS LE MATERIAU, et c.est une contrainte
+	 * assumee : le globe est pilote par un materiau dont les parametres vivent
+	 * dans un .uasset, et en ajouter un exigerait de la chirurgie d.asset par
+	 * MCP -- un lien que ce depot sait tomber des que l.editeur est relance.
+	 * Une echelle de rendu marche tout de suite, et elle marche AUSSI sur le
+	 * chemin de repli CPU, qui n.utilise pas le materiau du tout.
+	 */
+	float GlobeZoom = 1.0f;
 
 	/** Derniere position souris connue, en pixels ecran. */
 	FVector2D LastDragPosition = FVector2D::ZeroVector;

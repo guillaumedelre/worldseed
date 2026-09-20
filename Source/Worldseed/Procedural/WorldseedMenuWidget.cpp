@@ -41,18 +41,37 @@
 namespace
 {
 	/**
-	 * Tailles proposees, en metres.
+	 * LA SEULE TAILLE OFFERTE, en metres de HAUTEUR : 64 x 32 km.
 	 *
-	 * 8000 est la taille de REFERENCE : world_rules.json est calibre pour elle.
-	 * Trois regles y sont metriques — shelfWidthKm 0,35, oceanBorderKm 0,375,
-	 * mountainWidthKm 1,5 — et ne retrecissent pas avec la carte. Sur 500 m, le
-	 * plateau continental couvre 70 % du monde et sa rampe n'aboutit jamais :
-	 * les fonds remontent et l'ocean plafonne vers -98 m au lieu de -300. Les
-	 * tailles inferieures restent utiles pour iterer vite, mais seules les
-	 * valeurs relevees a 8 km sont conformes a la Terre.
+	 * Sept tailles etaient proposees, de 1 x 0,5 a 64 x 32 km, et elles ne se
+	 * valaient pas. Les regles de FORMES sont metriques et grandes -- maille de
+	 * tirage des diaclases 4 km, longueur d'onde des regions de tables 3,6 km,
+	 * espacement des arches 2,5 km -- tandis que ce depot a deja chiffre le
+	 * seuil ou l'intersection de criteres rares cesse d'etre une LOTERIE SUR LA
+	 * GRAINE pour redevenir une proportion : environ cent vingt taches.
+	 *
+	 *     64 x 32 km  ->  128 mailles de tirage
+	 *     32 x 16 km  ->   32
+	 *     16 x  8 km  ->    8
+	 *      2 x  1 km  ->  moins d'une : le monde entier tient dans une maille
+	 *
+	 * C'est donc la seule taille ou les diaclases, les tables et les canyons
+	 * sont STATISTIQUES et non tires au sort. C'est aussi celle ou tout le
+	 * calage est fait, et celle ou le relief est credible -- 1713 m de sommet
+	 * contre 531 a 16 km.
+	 *
+	 * ET LES PETITES TAILLES NE SONT PAS PERDUES. Leur usage reel etait
+	 * d'iterer vite -- douze secondes de generation contre deux cent soixante-
+	 * dix -- et les sondes comme le banc prennent deja une taille en parametre :
+	 * `probe_biomes(graine, 1000.0, 500)`. Cette capacite ne dependait pas du
+	 * menu, et elle lui survit.
+	 *
+	 * `world.sizeKm` RESTE A 8 : ce n'est pas la taille du monde mais la
+	 * HAUTEUR DE REFERENCE du calage metrique, dont VerticalScale tire son
+	 * rapport. Les deux se sont longtemps trouvees egales, ce qui masquait la
+	 * distinction.
 	 */
-	static const TArray<float> MapSizeChoices = {
-		500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f, 16000.0f, 32000.0f };
+	constexpr float WorldseedTailleDuMondeM = 32000.0f;
 
 	/**
 	 * Plafond de la grille de SIMULATION.
@@ -92,26 +111,6 @@ namespace
 	int32 ResolutionForSize(float SizeMeters)
 	{
 		return FMath::Clamp(FMath::RoundToInt(SizeMeters * 0.5f), 128, MaxResolution);
-	}
-
-	FString LabelForSize(float SizeMeters)
-	{
-		if (FMath::IsNearlyEqual(SizeMeters, 8000.0f))
-		{
-			// LA TAILLE DE REFERENCE N'EST PLUS LA PLUS GRANDE. Huit kilometres
-			// reste la hauteur sur laquelle le calage metrique est fait --
-			// `world.sizeKm`, dont `VerticalScale` tire son rapport -- mais la
-			// carte peut desormais etre quatre fois plus grande, et le relief
-			// suit alors automatiquement : -1244 a 1205 m mesures a 64 x 32 km,
-			// contre -331 a 405 a 16 x 8.
-			return FString::Printf(TEXT("%.0f x %.0f km  (reference)"),
-				SizeMeters / 500.0f, SizeMeters / 1000.0f);
-		}
-		if (SizeMeters >= 1000.0f)
-		{
-			return FString::Printf(TEXT("%.0f x %.0f km"), SizeMeters / 500.0f, SizeMeters / 1000.0f);
-		}
-		return FString::Printf(TEXT("%.0f x %.0f m"), SizeMeters * 2.0f, SizeMeters);
 	}
 }
 
@@ -278,6 +277,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				USizeBox::StaticClass(), TEXT("GlobeBox"));
 			GlobeBox->SetWidthOverride(GlobeSize);
 			GlobeBox->SetHeightOverride(GlobeSize);
+			GlobeBox->SetClipping(EWidgetClipping::ClipToBounds);
 
 			UScaleBox* GlobeScale = WidgetTree->ConstructWidget<UScaleBox>(
 				UScaleBox::StaticClass(), TEXT("GlobeScale"));
@@ -332,17 +332,6 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			}
 
 			// --- taille ---------------------------------------------------
-			Side->AddChildToVerticalBox(
-				MakeSectionLabel(TEXT("SizeLabel"), TEXT("TAILLE DU MONDE")));
-
-			SizeCombo = WidgetTree->ConstructWidget<UComboBoxString>(
-				UComboBoxString::StaticClass(), TEXT("SizeCombo"));
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(SizeCombo))
-			{
-				S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 20.0f));
-			}
-
-			// --- pack de textures -----------------------------------------
 			Side->AddChildToVerticalBox(
 				MakeSectionLabel(TEXT("PackLabel"), TEXT("HABILLAGE DU SOL")));
 
@@ -520,17 +509,6 @@ void UWorldseedMenuWidget::NativeConstruct()
 		StartGeneration();
 	}
 
-	if (SizeCombo)
-	{
-		SizeCombo->ClearOptions();
-		for (const float Size : MapSizeChoices)
-		{
-			SizeCombo->AddOption(LabelForSize(Size));
-		}
-		SizeCombo->SetSelectedOption(LabelForSize(Params.MapSizeMeters));
-		SizeCombo->OnSelectionChanged.AddDynamic(this, &UWorldseedMenuWidget::HandleSizeChanged);
-	}
-
 	if (PackCombo)
 	{
 		PackCombo->ClearOptions();
@@ -608,19 +586,8 @@ void UWorldseedMenuWidget::PullFormIntoParams()
 		}
 	}
 
-	if (SizeCombo)
-	{
-		const FString Selected = SizeCombo->GetSelectedOption();
-		for (const float Size : MapSizeChoices)
-		{
-			if (LabelForSize(Size) == Selected)
-			{
-				Params.MapSizeMeters = Size;
-				break;
-			}
-		}
-	}
-
+	// LA TAILLE N'EST PLUS UN CHOIX : voir WorldseedTailleDuMondeM.
+	Params.MapSizeMeters = WorldseedTailleDuMondeM;
 	Params.Resolution = ResolutionForSize(Params.MapSizeMeters);
 }
 
@@ -1154,10 +1121,16 @@ FReply UWorldseedMenuWidget::NativeOnMouseMove(const FGeometry& InGeometry,
 	GlobeLongitudeDeg = FMath::Fmod(
 		GlobeLongitudeDeg - static_cast<float>(Delta.X) * 0.35f + 360.0f, 360.0f);
 
-	// L'inclinaison est bornee : au-dela on regarde le pole par-dessus et la
+	// L.inclinaison est bornee : au-dela on regarde le pole par-dessus et la
 	// reprojection devient illisible.
+	//
+	// LE SIGNE EST CELUI D.UNE BOULE QU.ON ROULE, pas celui d.une camera.
+	// Tirer vers le BAS fait basculer le pole nord vers soi, comme si l.on
+	// posait le doigt sur le globe pour le faire tourner. C.est la convention
+	// de tout globe manipulable, et l.inverse se ressent immediatement comme
+	// une inversion -- signale par le proprietaire.
 	GlobeTiltDeg = FMath::Clamp(
-		GlobeTiltDeg + static_cast<float>(Delta.Y) * 0.35f, -80.0f, 80.0f);
+		GlobeTiltDeg - static_cast<float>(Delta.Y) * 0.35f, -80.0f, 80.0f);
 
 	return FReply::Handled();
 }
@@ -1180,12 +1153,41 @@ void UWorldseedMenuWidget::NativeOnMouseCaptureLost(const FCaptureLostEvent& Cap
 	Super::NativeOnMouseCaptureLost(CaptureLostEvent);
 }
 
-void UWorldseedMenuWidget::HandleSeedCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+FReply UWorldseedMenuWidget::NativeOnMouseWheel(const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
 {
-	StartGeneration();
+	// LE PAS EST MULTIPLICATIF, PAS ADDITIF. Un pas constant donne un zoom
+	// nerveux de pres et mou de loin ; un facteur donne le meme ressenti a
+	// toutes les echelles, ce qui est la convention de tout zoom.
+	const float Delta = InMouseEvent.GetWheelDelta();
+	if (FMath::IsNearlyZero(Delta))
+	{
+		return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+	}
+
+	// Les bornes ne sont pas un gout : en dessous de 1 le globe flotte dans un
+	// cadre vide, et au-dela de 6 on depasse la resolution de la texture cuite
+	// et l'on ne grossit plus que des texels.
+	GlobeZoom = FMath::Clamp(GlobeZoom * FMath::Pow(1.15f, Delta), 1.0f, 6.0f);
+	ApplyGlobeZoom();
+	return FReply::Handled();
 }
 
-void UWorldseedMenuWidget::HandleSizeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+void UWorldseedMenuWidget::ApplyGlobeZoom()
+{
+	if (!PreviewImage)
+	{
+		return;
+	}
+
+	// L'ECHELLE EST UNE TRANSFORMATION DE RENDU, donc elle ne touche pas a la
+	// mise en page : le cadre du globe garde sa taille et sa place, et la
+	// colonne des reglages ne bouge pas quand on zoome. C'est le SizeBox qui
+	// decoupe, ce qui donne un vrai hublot plutot qu'un globe qui deborde.
+	PreviewImage->SetRenderScale(FVector2D(GlobeZoom, GlobeZoom));
+}
+
+void UWorldseedMenuWidget::HandleSeedCommitted(const FText& Text, ETextCommit::Type CommitMethod)
 {
 	StartGeneration();
 }
