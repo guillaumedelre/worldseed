@@ -33,6 +33,7 @@ namespace
 		// --- le terrain ---
 		int32 Cellules = 0;
 		double SommePluie = 0.0;
+		double SommeTemp = 0.0;
 		double SommeKarst = 0.0;
 
 		// --- les formes PONCTUELLES, comptees a l'unite ---
@@ -119,6 +120,10 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 			{
 				R.SommePluie += W.Climate.PrecipMm[Idx];
 			}
+			if (W.Climate.TempMeanC.IsValidIndex(Idx))
+			{
+				R.SommeTemp += W.Climate.TempMeanC[Idx];
+			}
 
 			const double X = (static_cast<double>(I) / G.NX - 0.5) * G.WidthM();
 			const double Y = (static_cast<double>(J) / G.NY - 0.5) * G.HeightM;
@@ -182,7 +187,7 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 	TArray<FWorldseedPlateauSite> Tables;
 	TArray<FWorldseedPlateauSite> Canyons;
 	WorldseedPlateau::Sites(G, W.ElevationM, PlatRules, W.Lithology, S.Litho,
-		W.Climate.PrecipMm, Seed, Tables, &Canyons);
+		W.Climate.PrecipMm, W.Climate.TempMeanC, Seed, Tables, &Canyons);
 
 	for (const FWorldseedPlateauSite& T : Tables)
 	{
@@ -203,8 +208,8 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 		TEXT("(un point sur %d par axe)"),
 		Seed, G.NX, G.NY, TerresEchantillonnees, Pas);
 	UE_LOG(LogTemp, Log,
-		TEXT("[Sonde]   %-26s %8s %6s %6s | %6s %5s %6s %5s | %7s %6s %6s %7s"),
-		TEXT("biome"), TEXT("% terres"), TEXT("pluie"), TEXT("karst"),
+		TEXT("[Sonde]   %-26s %8s %6s %6s %6s | %6s %5s %6s %5s | %7s %6s %6s %7s"),
+		TEXT("biome"), TEXT("% terres"), TEXT("temp"), TEXT("pluie"), TEXT("karst"),
 		TEXT("salles"), TEXT("avens"), TEXT("dolin."), TEXT("arch."),
 		TEXT("%diacl."), TEXT("%lames"), TEXT("tables"), TEXT("canyons"));
 
@@ -215,9 +220,10 @@ FString UWorldseedProbeLibrary::ProbeInfractuosites(int32 Seed, float HeightMete
 
 		const double N = R.Cellules;
 		UE_LOG(LogTemp, Log,
-			TEXT("[Sonde]   %-26s %6.2f %% %6.0f %6.2f | %6d %5d %6d %5d | %6.2f %% %5.2f %% %6d %7d"),
+			TEXT("[Sonde]   %-26s %6.2f %% %5.1f %6.0f %6.2f | %6d %5d %6d %5d | %6.2f %% %5.2f %% %6d %7d"),
 			WorldseedBiomes::Name(static_cast<EWorldseedBiome>(B)),
 			100.0 * N / FMath::Max(TerresEchantillonnees, 1),
+			R.SommeTemp / N,
 			R.SommePluie / N,
 			R.SommeKarst / N,
 			R.Chambres, R.Avens, R.Dolines, R.Arches,

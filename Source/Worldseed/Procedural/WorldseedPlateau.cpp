@@ -24,6 +24,7 @@ FWorldseedPlateauRules FWorldseedPlateauRules::FromRules(const UWorldseedRules& 
 	Out.ReachM = Num(TEXT("porteeM"), 900.0);
 	Out.LocalReliefMaxM = Num(TEXT("reliefLocalMaxM"), 320.0);
 	Out.PrecipMaxMm = Num(TEXT("pluieMaxMm"), 520.0);
+	Out.TempMinC = Num(TEXT("temperatureMinC"), 0.0);
 	Out.HardnessMin = Num(TEXT("dureteMin"), 0.25);
 	Out.HardnessMax = Num(TEXT("dureteMax"), 0.70);
 	Out.MinElevationM = Num(TEXT("altitudeMinM"), 60.0);
@@ -140,10 +141,50 @@ float WorldseedPlateau::ZoneAt(double X, double Y,
 	return FMath::Min(1.0f, (B - Rules.ZoneThreshold) / 0.2f);
 }
 
+bool WorldseedPlateau::Eligible(int32 Cell, const FWorldseedPlateauRules& Rules,
+	const FWorldseedLithology& Lithology,
+	const FWorldseedLithologyRules& LithoRules,
+	const TArray<float>& PrecipMm, const TArray<float>& TempMeanC,
+	int32 Count)
+{
+	// UNE DONNEE ABSENTE RESTE SANS EFFET, jamais un effet arbitraire : sans
+	// carte de pluie, de roche ou de temperature, la garde correspondante ne
+	// mord pas et le comportement est celui d'avant, a l'identique.
+	if (PrecipMm.Num() == Count && PrecipMm[Cell] > Rules.PrecipMaxMm)
+	{
+		return false;
+	}
+
+	// LE FROID FERME LA FORME, ET C'EST LE MECANISME QUI LE DIT. Une corniche
+	// ne tient que parce que le talus tendre sous elle est EMPORTE par le
+	// ruissellement ; sous zero en moyenne annuelle l'eau est prise, et les
+	// processus qui dominent -- gelifraction, solifluxion -- arrondissent au
+	// lieu de trancher. Sans cette garde, l'aridite polaire passait pour de
+	// l'aridite desertique : 14 tables sur 14 et 9 canyons sur 12 se
+	// retrouvaient sous la CALOTTE GLACIAIRE, invisibles et injouables.
+	if (TempMeanC.Num() == Count && TempMeanC[Cell] < Rules.TempMinC)
+	{
+		return false;
+	}
+
+	if (Lithology.IsValid(Count))
+	{
+		const uint8 Id = Lithology.Id[Cell];
+		const float Durete = LithoRules.Catalogue.IsValidIndex(Id)
+			? LithoRules.Catalogue[Id].Hardness : 1.0f;
+		if (Durete < Rules.HardnessMin || Durete > Rules.HardnessMax)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 	const TArray<float>& ElevationM, const FWorldseedPlateauRules& Rules,
 	const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& Litho,
-	const TArray<float>& PrecipMm,
+	const TArray<float>& PrecipMm, const TArray<float>& TempMeanC,
 	int32 Seed, TArray<FWorldseedPlateauSite>& OutSites,
 	TArray<FWorldseedPlateauSite>* OutCanyons)
 {
@@ -172,19 +213,10 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 	// sedimentaire ou hors du climat aride pointe un endroit que la passe
 	// n a jamais touche -- et l image l a dit deux fois : montagnes
 	// enneigees, versants cotiers verts.
-	const bool bPluie = (PrecipMm.Num() == Count);
-	const bool bRoche = Lithology.IsValid(Count);
-	auto Eligible = [&](int32 C)
+	// LA MEME GARDE QUE CELLE QUI CREUSE, appelee et non recopiee.
+	auto EstEligible = [&](int32 C)
 	{
-		if (bPluie && PrecipMm[C] > Rules.PrecipMaxMm) { return false; }
-		if (bRoche)
-		{
-			const uint8 Id = Lithology.Id[C];
-			const float D = Litho.Catalogue.IsValidIndex(Id)
-				? Litho.Catalogue[Id].Hardness : 1.0f;
-			if (D < Rules.HardnessMin || D > Rules.HardnessMax) { return false; }
-		}
-		return true;
+		return Eligible(C, Rules, Lithology, Litho, PrecipMm, TempMeanC, Count);
 	};
 
 	struct FCandidat { int32 C; float Relief; };
@@ -196,7 +228,7 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 		{
 			const int32 C = J * NX + I;
 			if (ElevationM[C] <= Rules.MinElevationM) { continue; }
-			if (!Eligible(C)) { continue; }
+			if (!EstEligible(C)) { continue; }
 			if (ElevationM[C] < Plateau[C] - 12.0f) { continue; }
 
 			// --- TROIS GARDES, ET LES DEUX DERNIERES ONT ETE PAYEES A L'IMAGE
@@ -311,7 +343,7 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 			{
 				const int32 C = J * NX + I;
 				if (ElevationM[C] <= Rules.MinElevationM) { continue; }
-				if (!Eligible(C)) { continue; }
+				if (!EstEligible(C)) { continue; }
 
 				const double X = (static_cast<double>(I) / NX - 0.5) * LargeurM;
 				const double Y = (static_cast<double>(J) / NY - 0.5) * HauteurM;
@@ -396,7 +428,7 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 	const FWorldseedLithology& Lithology,
 	const FWorldseedLithologyRules& LithoRules,
-	const TArray<float>& PrecipMm,
+	const TArray<float>& PrecipMm, const TArray<float>& TempMeanC,
 	const FWorldseedPlateauRules& Rules,
 	const FWorldseedFinRules& FinRules,
 	const FWorldseedStratRules& StratRules, int32 Seed,
@@ -485,7 +517,6 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 	}
 	const bool bChenal = (DistanceChenal.Num() == Count);
 
-	const bool bRoche = Lithology.IsValid(Count);
 	const double LargeurM = Geometry.WidthM();
 	const double HauteurM = Geometry.HeightM;
 	const float InvLn10 = 0.4342944819f;
@@ -514,18 +545,14 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 			// une table demande une roche sedimentaire, une pluie faible et
 			// une plaine.
 			if (H < Rules.MinElevationM) { continue; }
-			if (bPluie && PrecipMm[C] > Rules.PrecipMaxMm) { continue; }
 			if (ReliefLocal[C] > Rules.LocalReliefMaxM) { continue; }
 
-			if (bRoche)
+			// LA MEME GARDE QUE CELLE QUI LISTE. Elle etait recopiee ici, et
+			// la copie aurait laisse creuser des tables que Sites ne listait
+			// plus -- un ecart qu'aucun compilateur ne signale.
+			if (!Eligible(C, Rules, Lithology, LithoRules, PrecipMm, TempMeanC, Count))
 			{
-				const uint8 R = Lithology.Id[C];
-				const float Durete = LithoRules.Catalogue.IsValidIndex(R)
-					? LithoRules.Catalogue[R].Hardness : 1.0f;
-				if (Durete < Rules.HardnessMin || Durete > Rules.HardnessMax)
-				{
-					continue;
-				}
+				continue;
 			}
 
 			const double X = (static_cast<double>(I) / NX - 0.5) * LargeurM;
@@ -634,7 +661,7 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 	if (OutSites)
 	{
 		Sites(Geometry, ElevationM, Rules, Lithology, LithoRules, PrecipMm,
-			Seed, *OutSites);
+			TempMeanC, Seed, *OutSites);
 	}
 
 	// LE RELEVE PORTE LA PART EN ZONE, ET PAS SEULEMENT LES CELLULES TOUCHEES.

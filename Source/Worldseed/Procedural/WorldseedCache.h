@@ -48,7 +48,7 @@
  *       la marche est portee par la corniche D'EN DESSOUS. Correction du
  *       relief partout ou une corniche recule.
  */
-#define WORLDSEED_PIPELINE_VERSION 16
+#define WORLDSEED_PIPELINE_VERSION 17
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

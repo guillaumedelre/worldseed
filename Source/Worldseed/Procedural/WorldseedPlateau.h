@@ -80,6 +80,28 @@ struct WORLDSEED_API FWorldseedPlateauRules
 	float PrecipMaxMm = 520.0f;
 
 	/**
+	 * Temperature moyenne annuelle MINIMALE, en degres.
+	 *
+	 * SOURCE, ET C.EST UN DEFAUT TROUVE PAR LA MESURE. Le croisement des formes
+	 * avec les biomes a montre que les 14 tables et 9 des 12 canyons du monde
+	 * etaient sous la CALOTTE GLACIAIRE. La garde d.aridite ne regarde que le
+	 * cumul de pluie -- 203 mm sous la calotte -- et un desert POLAIRE la passe
+	 * aussi bien qu.un desert chaud.
+	 *
+	 * OR LE MECANISME D.UNE TABLE EXIGE DE L.EAU LIQUIDE. Une corniche ne tient
+	 * que parce que le talus tendre sous elle est EMPORTE : c.est le ruissellement
+	 * qui decape, et c.est lui qui fait reculer l.escarpement en restant vertical.
+	 * Sous zero en moyenne annuelle, l.eau est prise ; les processus qui dominent
+	 * sont glaciaires et periglaciaires -- gelifraction, solifluxion -- et ils
+	 * arrondissent au lieu de trancher. Le seuil est donc a ZERO, la limite
+	 * classique du pergelisol continu, et non une valeur de gout.
+	 *
+	 * Elle ne ferme pas le desert FROID, qui reste au-dessus de zero : c.est bien
+	 * la le paysage de badlands qu.on veut garder.
+	 */
+	float TempMinC = 0.0f;
+
+	/**
 	 * Fenetre de durete de la roche, dans [0..1].
 	 *
 	 * LA ROCHE SEDIMENTAIRE TENDRE, ET C'EST MECANIQUE. Une table-montagne est
@@ -254,6 +276,25 @@ namespace WorldseedPlateau
 		const FWorldseedPlateauRules& Rules, int32 Seed);
 
 	/**
+	 * LA GARDE PHYSIQUE D.UN SITE : roche, pluie, froid.
+	 *
+	 * UNE SEULE IMPLEMENTATION, TROIS CONSOMMATEURS. Ce test existait en DEUX
+	 * copies dans le meme fichier -- une dans Sites, qui LISTE, et une dans
+	 * Build, qui CREUSE. Ajouter un critere a l.une aurait fait diverger les
+	 * deux : on aurait cesse de lister des tables qu.on continuait a tailler.
+	 * C.est la regle du depot, « ne jamais recopier une formule », et le
+	 * compilateur ne l.aurait pas signalee.
+	 *
+	 * ELLE NE LIT QUE DES CHAMPS CONTINUS, jamais l.etiquette de biome : un
+	 * biome ne sert qu.a lier des assets, il ne decide d.aucune geometrie.
+	 */
+	WORLDSEED_API bool Eligible(int32 Cell, const FWorldseedPlateauRules& Rules,
+		const FWorldseedLithology& Lithology,
+		const FWorldseedLithologyRules& LithoRules,
+		const TArray<float>& PrecipMm, const TArray<float>& TempMeanC,
+		int32 Count);
+
+	/**
 	 * Les sites de tables d'un relief FINI.
 	 *
 	 * FONCTION PURE, ET C'EST CE QUI COMPTE : elle se rejoue a l'identique
@@ -277,7 +318,7 @@ namespace WorldseedPlateau
 	WORLDSEED_API void Sites(const FWorldseedGeometry& Geometry,
 		const TArray<float>& ElevationM, const FWorldseedPlateauRules& Rules,
 		const FWorldseedLithology& Lithology, const FWorldseedLithologyRules& Litho,
-		const TArray<float>& PrecipMm,
+		const TArray<float>& PrecipMm, const TArray<float>& TempMeanC,
 		int32 Seed, TArray<FWorldseedPlateauSite>& OutTables,
 		TArray<FWorldseedPlateauSite>* OutCanyons = nullptr);
 
@@ -292,7 +333,7 @@ namespace WorldseedPlateau
 	WORLDSEED_API void Build(const FWorldseedGeometry& Geometry,
 		const FWorldseedLithology& Lithology,
 		const FWorldseedLithologyRules& LithoRules,
-		const TArray<float>& PrecipMm,
+		const TArray<float>& PrecipMm, const TArray<float>& TempMeanC,
 		const FWorldseedPlateauRules& Rules,
 		const FWorldseedFinRules& FinRules,
 		const FWorldseedStratRules& StratRules, int32 Seed,

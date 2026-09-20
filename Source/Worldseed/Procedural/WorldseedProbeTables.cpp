@@ -94,6 +94,7 @@ FString UWorldseedProbeLibrary::ProbeTables(int32 Seed, float HeightMeters,
 	const FWorldseedGeometry& G = S.World.Geometry;
 	const TArray<float>& H = S.World.ElevationM;
 	const TArray<float>& Pluie = S.World.Climate.PrecipMm;
+	const TArray<float>& Temp = S.World.Climate.TempMeanC;
 
 	const int32 NX = G.NX;
 	const int32 NY = G.NY;
@@ -140,7 +141,9 @@ FString UWorldseedProbeLibrary::ProbeTables(int32 Seed, float HeightMeters,
 	// deplacer la mauvaise valeur, ce que le depot a deja paye quatre fois de
 	// suite sur le routage des galeries.
 	int32 Terres = 0, PasseAltitude = 0, PasseePluie = 0, PasseRelief = 0;
-	int32 PasseRoche = 0, PasseZone = 0;
+	int32 PasseRoche = 0, PasseZone = 0, PasseFroid = 0;
+	TArray<int32> ParRoche;
+	ParRoche.Init(0, FMath::Max(S.Litho.Catalogue.Num(), 1));
 
 	FPopulation EnZone, HorsZone;
 	TArray<uint8> Sommet; Sommet.Init(0, Count);
@@ -159,8 +162,25 @@ FString UWorldseedProbeLibrary::ProbeTables(int32 Seed, float HeightMeters,
 			++PasseAltitude;
 			if (bPluie && Pluie[C] > R.PrecipMaxMm) { continue; }
 			++PasseePluie;
+
+			// LA GARDE DE FROID, ajoutee le 20 septembre. Sans elle l.aridite
+			// POLAIRE passait pour de l.aridite desertique, et les 14 tables du
+			// monde se retrouvaient sous la calotte glaciaire.
+			if (Temp.Num() == Count && Temp[C] < R.TempMinC) { continue; }
+			++PasseFroid;
 			if (ReliefLocal[C] > R.LocalReliefMaxM) { continue; }
 			++PasseRelief;
+
+			// QUELLE ROCHE PORTE CE TERRAIN ? La garde de durete fait tomber
+			// 225 153 cellules a 162, et un pourcentage ne dit pas POURQUOI.
+			// On compte donc la roche de chaque cellule qui arrive ici : c.est
+			// la seule facon de savoir s.il faut elargir la fenetre de durete
+			// ou deplacer la roche elle-meme.
+			if (S.World.Lithology.Id.IsValidIndex(C))
+			{
+				const uint8 Rid = S.World.Lithology.Id[C];
+				if (ParRoche.IsValidIndex(Rid)) { ++ParRoche[Rid]; }
+			}
 			if (bRoche)
 			{
 				const uint8 Id = S.World.Lithology.Id[C];
@@ -360,12 +380,25 @@ FString UWorldseedProbeLibrary::ProbeTables(int32 Seed, float HeightMeters,
 		R.MinElevationM, PasseAltitude, Pct(PasseAltitude));
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]     pluie <= %6.0f mm            %8d  %6.2f %%"),
 		R.PrecipMaxMm, PasseePluie, Pct(PasseePluie));
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed]     temperature >= %5.1f C        %8d  %6.2f %%"),
+		R.TempMinC, PasseFroid, Pct(PasseFroid));
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]     relief local <= %5.0f m       %8d  %6.2f %%"),
 		R.LocalReliefMaxM, PasseRelief, Pct(PasseRelief));
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]     durete %.2f a %.2f            %8d  %6.2f %%"),
 		R.HardnessMin, R.HardnessMax, PasseRoche, Pct(PasseRoche));
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed]     masque de region > %.2f       %8d  %6.2f %%  <- la zone"),
 		R.ZoneThreshold, PasseZone, Pct(PasseZone));
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   LA ROCHE DU TERRAIN ELIGIBLE (avant la garde de durete) :"));
+	for (int32 Ri = 0; Ri < ParRoche.Num(); ++Ri)
+	{
+		if (ParRoche[Ri] == 0) { continue; }
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]     %-12s durete %.2f   %8d  %6.2f %%"),
+			*S.Litho.Catalogue[Ri].Key, S.Litho.Catalogue[Ri].Hardness,
+			ParRoche[Ri], 100.0 * ParRoche[Ri] / FMath::Max(PasseRelief, 1));
+	}
 
 	// LE SEUIL DE DRAINAGE SE LIT CONTRE LA DISTRIBUTION DU MONDE, jamais
 	// contre l'intuition. Le depot a paye cette lecon sur la pente : un

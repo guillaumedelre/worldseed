@@ -358,7 +358,7 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 	if (VoxelTerrain)
 	{
 		VoxelTerrain->AdoptWorld(WorldSeed, Geometry, HeightsM, Biomes,
-			HeightExaggeration, Caves, Lithology, PrecipMm);
+			HeightExaggeration, Caves, Lithology, PrecipMm, TempC);
 
 		// LE MATERIAU AUSSI SE TRANSMET. Sans lui les chunks voxel prennent le
 		// gris par defaut, qui ne lit pas la couleur de sommet : le relief

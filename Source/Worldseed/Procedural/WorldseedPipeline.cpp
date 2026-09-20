@@ -420,7 +420,7 @@ namespace WorldseedPipeline
 		{
 			WorldseedPlateau::Build(Geometry, Out.Lithology,
 				FWorldseedLithologyRules::FromRules(*Rules),
-				Out.Climate.PrecipMm,
+				Out.Climate.PrecipMm, Out.Climate.TempMeanC,
 				FWorldseedPlateauRules::FromRules(*Rules),
 				FWorldseedFinRules::FromRules(*Rules),
 				FWorldseedStratRules::FromRules(*Rules,

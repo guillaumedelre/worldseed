@@ -352,7 +352,7 @@ public:
 		const TArray<float>& InHeightsM, const FWorldseedBiomeMap& InBiomes,
 		float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves,
 		const FWorldseedLithology& InLithology,
-		const TArray<float>& InPrecipMm);
+		const TArray<float>& InPrecipMm, const TArray<float>& InTempMeanC);
 
 private:
 
@@ -562,6 +562,9 @@ private:
 
 	/** Pluie annuelle, pour appliquer aux sites les gardes de la passe. */
 	TArray<float> PrecipMm;
+
+	/** La temperature moyenne annuelle, pour la garde de froid des plateaux. */
+	TArray<float> TempMeanC;
 
 	/** La serie stratigraphique, lue une fois au chargement. */
 	FWorldseedStratRules StratRules;
