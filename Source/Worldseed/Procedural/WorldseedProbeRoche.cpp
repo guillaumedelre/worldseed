@@ -194,9 +194,11 @@ FString UWorldseedProbeLibrary::ProbeLithology(int32 Seed, float HeightMeters,
 				const double Y = (static_cast<double>(J) / World.Geometry.NY - 0.5)
 					* World.Geometry.HeightM;
 
-				const float Masque = WorldseedPerlin::Perlin(
-					static_cast<float>(X) * DR.JointZoneFrequency,
-					static_cast<float>(Y) * DR.JointZoneFrequency, Seed + 4451);
+				// LE CRITERE DU CHAMP, PAS UNE COPIE : on cherche l.endroit ou
+				// les fentes s.ouvrent LE PLUS, donc la garde complete -- tirage,
+				// masque et pente -- et non le seul bruit. Viser le maximum du
+				// bruit enverrait regarder une region que le tirage a ecartee.
+				const float Masque = Champ.DiaclaseZoneAt(X, Y);
 
 				if (Masque > MeilleurMasque)
 				{
@@ -207,21 +209,23 @@ FString UWorldseedProbeLibrary::ProbeLithology(int32 Seed, float HeightMeters,
 			}
 		}
 
-		// COMBIEN DE MONDE CETTE FORME TOUCHE-T-ELLE ? La question n'est pas
-		// decorative : si le masque de zone ne restreignait rien, tout le
-		// granite emerge serait tranche de fentes, ce qui ne ressemblerait a
-		// aucun paysage. On balaie donc la grille entiere.
+		// COMBIEN DE MONDE CETTE FORME TOUCHE-T-ELLE, ET QUELLE GARDE RETIENT ?
+		//
+		// UN ENTONNOIR, ET NON UNE COURBE DE SEUIL. Tant qu'il n'y avait qu'un
+		// masque de bruit, relever sa courbe suffisait. Depuis qu'un tirage de
+		// region et un seuil de pente s'y composent, une couverture trop faible
+		// peut venir de TROIS gardes, et sans le compte de chacune on regle au
+		// hasard la mauvaise -- ce que ce depot a paye quatre fois de suite sur
+		// le routage des galeries, puis evite sur les plateaux grace a
+		// exactement ce releve-ci.
+		//
+		// Chaque ligne est CUMULATIVE : elle compte ce qui a passe toutes les
+		// gardes precedentes ET la sienne. La derniere est la couverture reelle.
 		{
 			int32 TerresInsolubles = 0;
+			int32 ApresTirage = 0;
+			int32 ApresMasque = 0;
 			int32 Ouvertes = 0;
-
-			// UN PERLIN N'EST PAS UNIFORME : il se masse autour de zero et
-			// n'atteint presque jamais ses bornes. Un seuil pose comme si la
-			// loi etait uniforme ne coupe donc pas la part qu'on croit -- 0,68
-			// devait garder 16 %, il en garde 1,59. On releve la courbe au lieu
-			// de la supposer.
-			const float Seuils[] = { 0.15f, 0.25f, 0.35f, 0.45f, 0.55f, 0.68f };
-			int32 Comptes[UE_ARRAY_COUNT(Seuils)] = {};
 
 			for (int32 I = 0; I < World.Geometry.CellCount(); ++I)
 			{
@@ -238,32 +242,45 @@ FString UWorldseedProbeLibrary::ProbeLithology(int32 Seed, float HeightMeters,
 				const double Y = (static_cast<double>(Jy) / World.Geometry.NY - 0.5)
 					* World.Geometry.HeightM;
 
-				// Meme masque que le champ, a la lettre : le reproduire
-				// approximativement ne mesurerait pas ce qui est rendu.
-				const float B = WorldseedPerlin::Perlin(
-					static_cast<float>(X) * DR.JointZoneFrequency,
-					static_cast<float>(Y) * DR.JointZoneFrequency, Seed + 4451);
-				if (B > DR.JointZoneThreshold) { ++Ouvertes; }
-				for (int32 K = 0; K < UE_ARRAY_COUNT(Seuils); ++K)
-				{
-					if (B > Seuils[K]) { ++Comptes[K]; }
-				}
+				// LES GARDES DU CHAMP, UNE A UNE, ET AUCUNE REECRITE ICI. La
+				// version precedente recopiait le Perlin « a la lettre » : elle
+				// validait donc une COPIE du mecanisme, et elle aurait rendu
+				// l'ancien chiffre sans broncher des la premiere garde ajoutee
+				// au champ. C'est le « temoin non branche » du depot, et il ne
+				// se signale jamais.
+				if (Champ.DiaclaseTirageAt(X, Y) <= 0.0f) { continue; }
+				++ApresTirage;
+
+				if (Champ.DiaclaseMasqueAt(X, Y) <= 0.0f) { continue; }
+				++ApresMasque;
+
+				if (Champ.DiaclasePenteAt(X, Y) <= 0.0f) { continue; }
+				++Ouvertes;
 			}
 
-			FString Courbe;
-			for (int32 K = 0; K < UE_ARRAY_COUNT(Seuils); ++K)
-			{
-				Courbe += FString::Printf(TEXT("  %.2f -> %.2f %%"), Seuils[K],
-					100.0 * Comptes[K] / FMath::Max(TerresInsolubles, 1));
-			}
+			const double Base = FMath::Max(TerresInsolubles, 1);
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed]   diaclases, part de la roche insoluble selon le seuil :%s"),
-				*Courbe);
+				TEXT("[Worldseed]   diaclases, entonnoir sur la roche insoluble emergee :"));
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]     roche insoluble emergee   %8d   100,00 %%"),
+				TerresInsolubles);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]     + tirage de region        %8d   %6.2f %%   ")
+				TEXT("(maille %.0f m, part demandee %.2f)"),
+				ApresTirage, 100.0 * ApresTirage / Base,
+				DR.JointRegionM, DR.JointRegionPart);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]     + masque de bruit         %8d   %6.2f %%   (seuil %.2f)"),
+				ApresMasque, 100.0 * ApresMasque / Base, DR.JointZoneThreshold);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]     + pente                   %8d   %6.2f %%   ")
+				TEXT("(au-dela de %.0f deg)"),
+				Ouvertes, 100.0 * Ouvertes / Base, DR.JointPenteMinDeg);
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed]   diaclases : %.2f %% de la roche insoluble emergee ")
-				TEXT("porte un reseau ouvert, soit %.2f %% des terres"),
-				100.0 * Ouvertes / FMath::Max(TerresInsolubles, 1),
+				TEXT("porte un reseau ouvert, soit %.2f %% DES TERRES"),
+				100.0 * Ouvertes / Base,
 				100.0 * Ouvertes / FMath::Max(Terre, 1));
 		}
 

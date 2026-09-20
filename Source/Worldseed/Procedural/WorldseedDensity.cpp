@@ -59,6 +59,10 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.JointDepthM = Num(TEXT("diaclaseProfondeurM"), 45.0);
 	Out.JointZoneFrequency = Num(TEXT("diaclaseZoneFrequence"), 0.0016);
 	Out.JointZoneThreshold = Num(TEXT("diaclaseZoneSeuil"), 0.45);
+	Out.JointRegionM = Num(TEXT("diaclaseRegionM"), 4000.0);
+	Out.JointRegionPart = Num(TEXT("diaclaseRegionPart"), 0.33);
+	Out.JointPenteMinDeg = Num(TEXT("diaclasePenteMinDeg"), 22.0);
+	Out.JointPenteFonduDeg = Num(TEXT("diaclasePenteFonduDeg"), 8.0);
 
 	Out.RockColourFadeM = Num(TEXT("couleurRocheFonduM"), 12.0);
 
@@ -260,6 +264,130 @@ double FWorldseedDensity::ArchAt(const FVector& PosM, double DepthM) const
 	return Rules.ArchAmplitudeM * Force * Fondu;
 }
 
+/**
+ * Hachage entier d'une maille de region.
+ *
+ * NOM DISTINCTIF A DESSEIN. UBT concatene les .cpp en une seule unite de
+ * traduction, ou deux fonctions de meme nom a liaison interne entrent en
+ * collision -- et le regroupement change tout seul d'un build a l'autre. Ce
+ * depot l'a paye trois fois, la derniere fois le jour meme sur un helper de
+ * sonde nomme `Grain`.
+ */
+static uint32 HachageRegionDiaclase(int32 CX, int32 CY, int32 Graine)
+{
+	uint32 H = static_cast<uint32>(CX) * 0x9E3779B1u;
+	H ^= static_cast<uint32>(CY) * 0x85EBCA77u;
+	H ^= static_cast<uint32>(Graine) * 0xC2B2AE3Du;
+	H ^= H >> 15;
+	H *= 0x2545F491u;
+	H ^= H >> 13;
+	return H;
+}
+
+float FWorldseedDensity::DiaclaseTirageAt(double X, double Y) const
+{
+	// A zero ou en dessous, le tirage est desarme et tout passe : une donnee
+	// absente doit rester sans effet, jamais produire un effet arbitraire.
+	if (Rules.JointRegionM <= 0.0f || Rules.JointRegionPart >= 1.0f)
+	{
+		return 1.0f;
+	}
+	if (Rules.JointRegionPart <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const int32 CX = FMath::FloorToInt(X / Rules.JointRegionM);
+	const int32 CY = FMath::FloorToInt(Y / Rules.JointRegionM);
+
+	// LE HACHAGE EST UNIFORME, CONTRAIREMENT AU PERLIN DU MASQUE. C'est ce qui
+	// permet a JointRegionPart d'etre une VRAIE part et non un seuil -- la
+	// distinction que ce depot a payee comptant sur diaclaseZonePct, rebaptise
+	// diaclaseZoneSeuil apres qu'un « 16 % » se fut revele en valoir 1,59.
+	const uint32 H = HachageRegionDiaclase(CX, CY, Seed + 4463);
+	const float Tirage = static_cast<float>(H & 0x00FFFFFFu)
+		/ static_cast<float>(0x01000000u);
+
+	return (Tirage < Rules.JointRegionPart) ? 1.0f : 0.0f;
+}
+
+float FWorldseedDensity::DiaclaseMasqueAt(double X, double Y) const
+{
+	// UN PERLIN 2D A UNE OCTAVE, ET C'EST UN CHOIX DE COUT AUTANT QUE DE FORME.
+	// Cette garde s'evalue sur tout le granite de la bande ; en fBm 3D a deux
+	// octaves elle demandait seize evaluations de gradient contre quatre ici,
+	// pour des taches larges aux bords flous dont on n'attend aucun detail.
+	const float Bruit = WorldseedPerlin::Perlin(
+		static_cast<float>(X) * Rules.JointZoneFrequency,
+		static_cast<float>(Y) * Rules.JointZoneFrequency,
+		Seed + 4451);
+
+	if (Bruit <= Rules.JointZoneThreshold)
+	{
+		return 0.0f;
+	}
+	return FMath::Min(1.0f, (Bruit - Rules.JointZoneThreshold) / 0.25f);
+}
+
+float FWorldseedDensity::DiaclasePenteAt(double X, double Y) const
+{
+	if (Rules.JointPenteMinDeg <= 0.0f)
+	{
+		return 1.0f;
+	}
+
+	// LA PENTE SE LIT SUR LE RELIEF MACRO, EN DIFFERENCES FINIES, exactement
+	// comme la modulation du detail quelques dizaines de lignes plus bas --
+	// meme pas, meme echantillonneur bilineaire, meme convention. Le resultat
+	// est une TANGENTE, pas un angle : le seuil se convertit, il ne se compare
+	// pas tel quel. Se tromper la donnerait un seuil de 22 radians.
+	const double Pas = 6.0;
+	const double DX = SurfacePenteM(X + Pas, Y) - SurfacePenteM(X - Pas, Y);
+	const double DY = SurfacePenteM(X, Y + Pas) - SurfacePenteM(X, Y - Pas);
+	const double Pente = FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas);
+
+	const double Min = FMath::Tan(FMath::DegreesToRadians(
+		static_cast<double>(Rules.JointPenteMinDeg)));
+	const double Plein = FMath::Tan(FMath::DegreesToRadians(
+		static_cast<double>(Rules.JointPenteMinDeg + FMath::Max(Rules.JointPenteFonduDeg, 0.1f))));
+
+	if (Pente <= Min)
+	{
+		return 0.0f;
+	}
+	return static_cast<float>(FMath::Min(1.0, (Pente - Min) / FMath::Max(Plein - Min, 1e-6)));
+}
+
+float FWorldseedDensity::DiaclaseZoneAt(double X, double Y) const
+{
+	// L'ORDRE EST CELUI DU COUT CROISSANT, et il compte : cette garde tourne
+	// sur tout le granite de la bande creusable, donc des millions de fois par
+	// chunk. Le tirage est un hachage entier -- la chose la moins chere du
+	// fichier -- et c'est aussi la plus selective, puisqu'il elimine des
+	// REGIONS entieres. Le masque vient ensuite, quatre evaluations de
+	// gradient. La pente en dernier, quatre lectures de grille, et elle ne
+	// tourne donc que la ou tout le reste est deja passe.
+	const float Tirage = DiaclaseTirageAt(X, Y);
+	if (Tirage <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float Masque = DiaclaseMasqueAt(X, Y);
+	if (Masque <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float Pente = DiaclasePenteAt(X, Y);
+	if (Pente <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	return Tirage * Masque * Pente;
+}
+
 double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM) const
 {
 	if (Rules.JointApertureM <= 0.0f || Rules.JointCellM <= 0.0f)
@@ -290,29 +418,17 @@ double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM) const
 	}
 	const double FonduProfondeur = 1.0 - FMath::Max(0.0, DepthM) / Rules.JointDepthM;
 
-	// 3. LA ZONE. Un bruit basse frequence decide ou le reseau s'ouvre. Il est
-	//    en DEUX dimensions a dessein : un chaos de blocs est une zone du
-	//    paysage, pas une poche isolee dans la masse.
+	// 3. LA ZONE -- TIRAGE DE REGION, MASQUE DE BRUIT, PENTE.
 	//
-	//    UN PERLIN 2D A UNE OCTAVE, ET C'EST UN CHOIX DE COUT AUTANT QUE DE
-	//    FORME. Cette garde s'evalue sur TOUT le granite de la bande, donc des
-	//    millions de fois par chunk ; en fBm 3D a deux octaves elle demandait
-	//    seize evaluations de gradient, contre quatre ici. Et une octave suffit
-	//    a ce qu'on lui demande : des taches larges aux bords flous, pas du
-	//    detail. Mesure : 3,65 ms/chunk avec le fBm, contre 2,62 sans diaclases
-	//    du tout.
-	const float Bruit = WorldseedPerlin::Perlin(
-		static_cast<float>(PosM.X) * Rules.JointZoneFrequency,
-		static_cast<float>(PosM.Y) * Rules.JointZoneFrequency,
-		Seed + 4451);
-
-	// Le bruit sort dans [-1..1] a peu pres uniformement autour de zero ; le
-	// seuil place la part voulue au-dessus de lui.
-	if (Bruit <= Rules.JointZoneThreshold)
+	// UNE SEULE IMPLEMENTATION, DEUX CONSOMMATEURS : le champ creuse avec, la
+	// sonde mesure avec. La sonde reimplementait ce masque « a la lettre »,
+	// donc elle validait une COPIE -- et elle aurait continue a rendre
+	// l.ancien chiffre, sans le dire, des la premiere garde ajoutee ici.
+	const double Zone = DiaclaseZoneAt(PosM.X, PosM.Y);
+	if (Zone <= 0.0)
 	{
 		return -1.0;
 	}
-	const double Zone = FMath::Min(1.0, (Bruit - Rules.JointZoneThreshold) / 0.25);
 
 	// --- LE RESEAU LUI-MEME ---------------------------------------------------
 	//

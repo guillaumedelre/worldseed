@@ -294,6 +294,59 @@ struct WORLDSEED_API FWorldseedDensityRules
 	float JointZoneThreshold = 0.45f;
 
 	/**
+	 * LE TIRAGE : cote de la maille de region, en metres.
+	 *
+	 * UNE DIACLASE OUVERTE EST UNE PROVINCE, PAS UNE TEXTURE. Le masque de
+	 * bruit seul repartit les fentes sur tout le granite du monde, en plus ou
+	 * moins dense : il n'a aucune facon de dire « ici oui, la non ». Le tirage
+	 * le fait -- une region porte un reseau ou n'en porte aucun, et la reponse
+	 * est un HACHAGE de la maille et de la graine, donc deterministe et
+	 * reproductible sans rien stocker.
+	 *
+	 * LA TAILLE EST CONTRAINTE PAR UN PIEGE QUE LE DEPOT A DEJA PAYE sur les
+	 * mesas : « l'intersection de deux ensembles peu nombreux est une LOTERIE
+	 * sur la graine, pas une proportion ». A 4 km, ce monde de 64 x 32 porte
+	 * 128 mailles -- assez pour que la part tiree soit une proportion et non un
+	 * coup de des. Une maille de 16 km en donnerait huit, et la couverture
+	 * sauterait du simple au triple d'une graine a l'autre.
+	 */
+	float JointRegionM = 4000.0f;
+
+	/**
+	 * LE TIRAGE : part des regions qui portent un reseau, dans [0..1].
+	 *
+	 * C'est la seule grandeur de cette section qui soit VRAIMENT une part : le
+	 * hachage est uniforme par construction, contrairement au Perlin du masque.
+	 * Une region sur trois a 0,33.
+	 */
+	float JointRegionPart = 0.33f;
+
+	/**
+	 * LA PENTE MINIMALE pour qu'un joint s'ouvre, en degres.
+	 *
+	 * SOURCE. Un joint de decompression s'ouvre la ou la roche est DECHARGEE et
+	 * exposee : un escarpement, une crete, une paroi que l'erosion vient de
+	 * degager. Sous une plaine, la meme roche porte la charge de sa couverture
+	 * et ses joints restent serres -- et le peu qui s'ouvre se comble de sol et
+	 * de vegetation. C'est le meme argument qui fait des mesas une forme ARIDE
+	 * et des parois verticales une affaire de terrain nu.
+	 *
+	 * Le critere se lit sur le relief macro, jamais sur l'etiquette de biome --
+	 * meme regle que le karst et que les plateaux.
+	 */
+	float JointPenteMinDeg = 22.0f;
+
+	/**
+	 * Largeur du fondu de pente, en degres.
+	 *
+	 * SANS LUI LE RESEAU S'ARRETE SUR UNE COURBE DE NIVEAU, ce qui se voit : un
+	 * champ de fentes qui se termine net a mi-versant ne ressemble a rien. Le
+	 * fondu etale l'extinction sur quelques degres, et comme il multiplie
+	 * l'OUVERTURE, les dernieres fentes se referment au lieu de disparaitre.
+	 */
+	float JointPenteFonduDeg = 8.0f;
+
+	/**
 	 * Profondeur a laquelle la couleur devient celle de la ROCHE, en metres.
 	 *
 	 * SOUS TERRE, CE N'EST PLUS LE BIOME QUI HABILLE. La couleur des sommets
@@ -422,6 +475,34 @@ public:
 		float& OutMinM, float& OutMaxM) const;
 
 	const FWorldseedDensityRules& GetRules() const { return Rules; }
+
+	/**
+	 * LA GARDE DE ZONE DES DIACLASES : 0 = fermee, 1 = pleinement ouverte.
+	 *
+	 * ELLE EST PUBLIQUE A DESSEIN, ET C'EST UNE REGLE DU DEPOT. La sonde
+	 * reimplementait ce masque -- « meme masque que le champ, a la lettre » --
+	 * donc elle validait une COPIE du mecanisme et non le mecanisme. Tant qu'il
+	 * n'y avait qu'un appel a Perlin la copie tenait ; a la premiere garde
+	 * ajoutee au champ, la sonde aurait continue a rendre l'ancien chiffre sans
+	 * le dire. C'est exactement le « temoin non branche » que ce depot a deja
+	 * paye sur probe_voxel et sur la verification des arches.
+	 *
+	 * ELLE NE PORTE PAS LA ROCHE : l'appelant l'a deja, et c'est la garde la
+	 * moins chere -- une lecture de tableau -- donc elle reste en tete.
+	 *
+	 * Le produit des trois facteurs module l'OUVERTURE et non un booleen : une
+	 * fente qui s'eteint se referme au lieu de disparaitre.
+	 */
+	float DiaclaseZoneAt(double X, double Y) const;
+
+	/** Le TIRAGE seul : 1 si la region est tiree, 0 sinon. Discret par nature. */
+	float DiaclaseTirageAt(double X, double Y) const;
+
+	/** Le MASQUE de bruit seul, deja fondu sur ses bords. */
+	float DiaclaseMasqueAt(double X, double Y) const;
+
+	/** La PENTE seule, deja fondue. Quatre lectures de grille : la plus chere. */
+	float DiaclasePenteAt(double X, double Y) const;
 
 private:
 	/** Creusement des galeries en un point : positif dans le vide. */
