@@ -77,7 +77,7 @@ namespace WorldseedPipeline
 		const FWorldseedProgressScope TectonicScope{ Job, 0.02f, 0.23f, EWorldseedStage::Tectonics };
 		const FWorldseedProgressScope Climate1Scope{ Job, 0.25f, 0.25f, EWorldseedStage::Climate };
 		const FWorldseedProgressScope ErosionScope{ Job, 0.50f, 0.22f, EWorldseedStage::Erosion };
-		const FWorldseedProgressScope Climate2Scope{ Job, 0.72f, 0.26f, EWorldseedStage::Climate };
+		const FWorldseedProgressScope Climate2Scope{ Job, 0.72f, 0.20f, EWorldseedStage::ClimateFinal };
 
 		const double StartTime = FPlatformTime::Seconds();
 
@@ -202,6 +202,7 @@ namespace WorldseedPipeline
 		// la croute et de la convergence, que seule cette etape connait ; et le
 		// faire AVANT l'erosion est correct, l'erosion ne transformant pas du
 		// granite en calcaire.
+		if (Job) { Job->Report(0.24f, EWorldseedStage::Lithology); }
 		WorldseedLithology::Compute(Geometry, Tectonic.ElevationM,
 			Tectonic.IsContinental, Tectonic.Convergence,
 			FWorldseedLithologyRules::FromRules(*Rules), Seed, Out.Lithology);
@@ -401,6 +402,7 @@ namespace WorldseedPipeline
 		{
 			const FWorldseedCoastRules CoastRules =
 				FWorldseedCoastRules::FromRules(*Rules);
+			if (Job) { Job->Report(0.71f, EWorldseedStage::Relief); }
 			WorldseedCoast::Build(Geometry, Out.Lithology,
 				FWorldseedLithologyRules::FromRules(*Rules), CoastRules, Seed,
 				Out.ElevationM);
@@ -516,6 +518,7 @@ namespace WorldseedPipeline
 			FString BioError;
 			if (const UWorldseedRules* BioRules = GetRules(BioError))
 			{
+				if (Job) { Job->Report(0.93f, EWorldseedStage::Biomes); }
 				WorldseedBiomes::Classify(Geometry, Out.ElevationM,
 					Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 					NoWaterMask, NoWaterMask,
@@ -525,6 +528,7 @@ namespace WorldseedPipeline
 					Out.Climate.PrecipMm,
 					FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
 
+				if (Job) { Job->Report(0.96f, EWorldseedStage::Caves); }
 				WorldseedCaves::Build(Geometry, Out.ElevationM, Out.Climate.PrecipMm,
 					Out.Lithology, FWorldseedLithologyRules::FromRules(*BioRules),
 					FWorldseedCaveRules::FromRules(*BioRules), 1.0f, Seed, Out.Caves);
