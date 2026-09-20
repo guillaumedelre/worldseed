@@ -1398,6 +1398,121 @@ FWorldseedChunkKey AWorldseedVoxelTerrain::KeyForPoint(double X, double Y, doubl
 		Niveau };
 }
 
+bool AWorldseedVoxelTerrain::TrouverTerreEmergee(const FVector2D& AutourM,
+	double& OutX, double& OutY) const
+{
+	const int32 NX = Geometry.NX;
+	const int32 NY = Geometry.NY;
+	if (NX < 2 || NY < 2 || HeightsM.Num() != NX * NY)
+	{
+		return false;
+	}
+
+	// --- POURQUOI LA GRILLE 2D, ET PAS UNE SPIRALE DANS LE CHAMP ----------
+	//
+	// `FindFlatGround` fouille un voisinage en evaluant le champ de densite :
+	// vingt-quatre anneaux au pas de seize metres, soit 384 m de portee et
+	// deja 2401 evaluations. C'est le bon outil pour choisir OU se poser une
+	// fois qu'on est sur la bonne terre -- et c'est le mauvais pour TROUVER
+	// cette terre : ce monde est de l'ocean a 70,8 %, le point de depart tombe
+	// au large, et il n'y a aucune terre a 384 m. Couvrir trente kilometres au
+	// meme pas demanderait des millions d'evaluations.
+	//
+	// La grille des altitudes, elle, est DEJA EN MEMOIRE et elle est petite :
+	// 4096 x 2048 valeurs que l'on balaie une fois, au demarrage, apres une
+	// generation qui a dure une minute. C'est la meme doctrine que le reste du
+	// diffuseur -- « la grille 2D decide, le champ affine ».
+	//
+	// ON PREND LA PLUS PROCHE, PAS LA MEILLEURE. Le joueur doit demarrer sur
+	// la terre ; rien ne dit qu'il doive demarrer sur LA plus belle plaine du
+	// monde, et viser un optimum global le ferait naitre chaque fois au meme
+	// endroit quelle que soit la graine.
+	//
+	// ET ON EXIGE UNE CELLULE INTERIEURE, pas un liseré cotier : une cellule
+	// emergee dont les quatre voisines le sont aussi. Sans cela on choisirait
+	// volontiers un recif ou une pointe de sable ou `FindFlatGround` ne
+	// trouverait ensuite ni pente douce ni roche pleine, et l'on serait revenu
+	// au point de depart avec une etape de plus.
+	//
+	// LE PLANCHER SE DEDUIT DU BRUIT, IL N'EST PAS CHOISI. La grille de
+	// simulation dit une altitude ; le champ de densite y ajoute ensuite son
+	// grain -- jusqu'a `OverhangAmplitudeM` de deplacement vertical et
+	// `DetailAmplitudeM` de detail. Une cellule a cinq metres peut donc se
+	// retrouver SOUS la ligne d'eau une fois maillee, et c'est exactement ce
+	// que le premier essai a donne : « altitude 4,9 m », c'est-a-dire les
+	// pieds dans l'eau au premier remous du bruit. On exige donc deux fois
+	// l'amplitude que le voxel peut retirer.
+	//
+	// Le depot a deja la meme regle ailleurs, pour la meme raison : la marge
+	// de sommet des arches existe parce que « le champ de densite deplace la
+	// surface et la passe des cavites ne le sait pas ». Une constante en dur
+	// aurait cesse d'etre juste au premier reglage du bruit.
+	const float PlancherM = 2.0f
+		* (DensityRules.OverhangAmplitudeM + DensityRules.DetailAmplitudeM);
+
+	auto Emergee = [this, NX, NY](int32 I, int32 J, float Seuil) -> bool
+	{
+		const int32 IW = ((I % NX) + NX) % NX;
+		const int32 JC = FMath::Clamp(J, 0, NY - 1);
+		return HeightsM[JC * NX + IW] > Seuil;
+	};
+
+	const double LargeurM = Geometry.WidthM();
+	const double HauteurM = Geometry.HeightM;
+
+	// Cellule du point demande, meme convention que `SampleUV` : X enroule,
+	// Y est borne.
+	const int32 I0 = FMath::Clamp(
+		FMath::FloorToInt((AutourM.X / LargeurM + 0.5) * NX), 0, NX - 1);
+	const int32 J0 = FMath::Clamp(
+		FMath::FloorToInt((AutourM.Y / HauteurM + 0.5) * NY), 0, NY - 1);
+
+	int32 MeilleurI = -1;
+	int32 MeilleurJ = -1;
+	int64 MeilleureDistance = TNumericLimits<int64>::Max();
+
+	for (int32 J = 0; J < NY; ++J)
+	{
+		for (int32 I = 0; I < NX; ++I)
+		{
+			if (HeightsM[J * NX + I] <= PlancherM)
+			{
+				continue;
+			}
+			if (!Emergee(I + 1, J, 0.0f) || !Emergee(I - 1, J, 0.0f)
+				|| !Emergee(I, J + 1, 0.0f) || !Emergee(I, J - 1, 0.0f))
+			{
+				continue;
+			}
+
+			// X ENROULE, DONC LA DISTANCE AUSSI. Mesurer l'ecart en colonnes
+			// sans tenir compte du bouclage ferait croire qu'une terre situee
+			// juste de l'autre cote de la couture est a un monde de distance.
+			int64 DI = FMath::Abs(static_cast<int64>(I) - I0);
+			DI = FMath::Min(DI, static_cast<int64>(NX) - DI);
+			const int64 DJ = static_cast<int64>(J) - J0;
+
+			const int64 D2 = DI * DI + DJ * DJ;
+			if (D2 < MeilleureDistance)
+			{
+				MeilleureDistance = D2;
+				MeilleurI = I;
+				MeilleurJ = J;
+			}
+		}
+	}
+
+	if (MeilleurI < 0)
+	{
+		return false;
+	}
+
+	// Centre de la cellule : le coin serait sur la frontiere avec une cellule
+	// qui peut etre marine.
+	OutX = (static_cast<double>(MeilleurI) + 0.5) / NX * LargeurM - LargeurM * 0.5;
+	OutY = (static_cast<double>(MeilleurJ) + 0.5) / NY * HauteurM - HauteurM * 0.5;
+	return true;
+}
 bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
 	double& OutX, double& OutY, float& OutSurfaceM, float& OutSlopeDeg) const
 {
@@ -1540,6 +1655,38 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		// ON CHOISIT L'ENDROIT, ON NE SE CONTENTE PAS DE CELUI DU PlayerStart.
 		// Il faut du plat, de l'emerge, et du plein dessous : une colonne sur
 		// huit porte une galerie, et naitre au-dessus revient a tomber dedans.
+		//
+		// LA TERRE D'ABORD, LE SOL PLAT ENSUITE, et l'ordre est tout le
+		// correctif. `FindFlatGround` refusait deja ce qui est sous la mer,
+		// mais il ne cherche que dans 384 metres : sur un monde couvert
+		// d'ocean a 70,8 %, le point de depart tombe au large et il n'y a
+		// simplement aucune terre a cette distance. Mesure avant correction,
+		// le journal etait sans appel -- « aucun sol plat autour du depart,
+		// pose sur place », puis « joueur tenu a (0, 0) m, surface -153,8 m ».
+		// Cent cinquante metres sous le niveau de la mer.
+		//
+		// La grille 2D donne la terre la plus proche en un balayage, et la
+		// fouille fine repart de la. Chacune fait ce qu'elle sait faire.
+		double TerreX = X;
+		double TerreY = Y;
+		if (TrouverTerreEmergee(FVector2D(X, Y), TerreX, TerreY))
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : terre emergee la plus proche a ")
+				TEXT("(%.0f, %.0f) m, soit %.1f km du point demande"),
+				TerreX, TerreY,
+				FVector2D::Distance(FVector2D(X, Y), FVector2D(TerreX, TerreY)) / 1000.0);
+			X = TerreX;
+			Y = TerreY;
+			SurfaceM = Density.SurfaceHeightM(X, Y);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] voxel : AUCUNE terre emergee dans la grille -- ")
+				TEXT("le monde est-il entierement sous l'eau ?"));
+		}
+
 		float PenteDeg = 0.0f;
 		double FX = X;
 		double FY = Y;

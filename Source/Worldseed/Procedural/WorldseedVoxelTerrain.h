@@ -579,6 +579,17 @@ private:
 	 *
 	 * Faux si rien ne convient dans le rayon fouille.
 	 */
+	/**
+	 * La terre emergee la plus proche, CHERCHEE DANS LA GRILLE 2D.
+	 *
+	 * `FindFlatGround` choisit ou se poser une fois qu-on est sur la bonne
+	 * terre ; celle-ci trouve la terre. Les deux portees n-ont rien a voir --
+	 * 384 metres contre des dizaines de kilometres -- et ce monde est de
+	 * l-ocean a 70,8 %.
+	 */
+	bool TrouverTerreEmergee(const FVector2D& AutourM,
+		double& OutX, double& OutY) const;
+
 	bool FindFlatGround(const FVector2D& AroundM, double& OutX, double& OutY,
 		float& OutSurfaceM, float& OutSlopeDeg) const;
 
