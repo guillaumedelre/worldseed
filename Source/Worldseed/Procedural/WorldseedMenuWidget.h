@@ -35,6 +35,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed")
 	FName GameLevelName = TEXT("L_Worldseed_Proc");
 
+	/**
+	 * Le menu joue tout seul, pour que le parcours COMPLET soit testable.
+	 *
+	 * UN PARCOURS QU-ON NE PEUT PAS LANCER N-EST PAS TESTABLE, et celui-ci ne
+	 * l-etait pas : tous les bancs et toutes les tournees photo ouvrent
+	 * L_Worldseed_Proc DIRECTEMENT, ce qui prend le chemin de SECOURS. Le
+	 * chemin du menu -- generer, deposer le monde dans la GameInstance,
+	 * changer de niveau, le reprendre -- n-avait jamais ete parcouru en
+	 * entier, alors que c-est le seul que le joueur emprunte.
+	 *
+	 * Arme par `-WorldseedMenuAuto`, avec une graine facultative par
+	 * `-WorldseedGraine=N`. Inerte sans cela.
+	 */
+	/**
+	 * La lithologie du monde genere, pour qu-elle voyage avec lui.
+	 *
+	 * ELLE ETAIT PERDUE AU CHANGEMENT DE NIVEAU, et le champ existait pourtant
+	 * deja dans FWorldseedWorldData -- le CACHE l-ecrit et le relit. Seul le
+	 * passage menu vers niveau le laissait tomber, des deux cotes.
+	 */
+	TArray<uint8> CachedLithologyId;
+
+	bool bAutoJouer = false;
+
 	/** Etat courant du formulaire. */
 	UPROPERTY(BlueprintReadWrite, Category = "Worldseed")
 	FWorldseedTerrainParams Params;

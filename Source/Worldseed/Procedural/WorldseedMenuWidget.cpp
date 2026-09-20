@@ -2,6 +2,9 @@
 
 #include "Procedural/WorldseedMenuWidget.h"
 #include "Procedural/WorldseedGameInstance.h"
+
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
@@ -503,6 +506,20 @@ void UWorldseedMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// --- le parcours complet, en une ligne de commande ---------------------
+	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedMenuAuto")))
+	{
+		int32 Graine = 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedGraine="), Graine))
+		{
+			Params.Seed = Graine;
+		}
+		bAutoJouer = true;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] menu : parcours automatique, graine %d"), Params.Seed);
+		StartGeneration();
+	}
+
 	if (SizeCombo)
 	{
 		SizeCombo->ClearOptions();
@@ -718,6 +735,7 @@ void UWorldseedMenuWidget::PollGeneration()
 		CachedSeasonalAmpC = MoveTemp(PendingResult->Climate.SeasonalAmpC);
 		CachedContinentality = MoveTemp(PendingResult->Climate.Continentality);
 		CachedBiomes = MoveTemp(PendingResult->Biomes);
+		CachedLithologyId = MoveTemp(PendingResult->Lithology.Id);
 		BuildPreviewField();
 
 		// La voie graphique d'abord ; BuildPreviewField n'aura servi qu'au repli.
@@ -742,6 +760,15 @@ void UWorldseedMenuWidget::PollGeneration()
 	PendingResult.Reset();
 	SetProgressVisible(false);
 	if (PlayButton) { PlayButton->SetIsEnabled(CachedHeights.Num() > 0); }
+
+	// ON APPUIE SUR LE MEME BOUTON QUE LE JOUEUR, et c-est la condition pour
+	// que le test vaille : une voie de traverse ne prouverait rien du parcours
+	// reel. HandlePlayClicked depose le monde et change de niveau.
+	if (bAutoJouer && CachedHeights.Num() > 0)
+	{
+		bAutoJouer = false;
+		HandlePlayClicked();
+	}
 }
 
 void UWorldseedMenuWidget::UpdateCacheInfo()
@@ -1227,6 +1254,7 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 		ToPlay.SeasonalAmpC = CachedSeasonalAmpC;
 		ToPlay.Continentality = CachedContinentality;
 		ToPlay.Biomes = CachedBiomes;
+		ToPlay.LithologyId = CachedLithologyId;
 		ToPlay.TexturePack = SelectedPack;
 		GI->StoreWorld(ToPlay);
 

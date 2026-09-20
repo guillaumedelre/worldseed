@@ -191,6 +191,7 @@ bool AWorldseedTerrain::AcquireWorld()
 			SeasonalAmpC = MoveTemp(Loaded.SeasonalAmpC);
 			ContinentalityGrid = MoveTemp(Loaded.Continentality);
 			Biomes = MoveTemp(Loaded.Biomes);
+			Lithology.Id = MoveTemp(Loaded.LithologyId);
 			TexturePack = Loaded.TexturePack;
 			Colouring = (TexturePack == EWorldseedTexturePack::BiomeColour)
 				? EWorldseedTerrainColouring::BiomeColour
@@ -246,11 +247,30 @@ void AWorldseedTerrain::RebuildCaveNetwork()
 		return;
 	}
 
-	// La lithologie n'est pas transportee non plus sur ce chemin : elle se
-	// recalcule depuis la tectonique, qu'on n'a pas ici. On se rabat donc sur
-	// un reseau sans contrainte de roche, plutot que sur pas de reseau du tout.
-	FWorldseedLithology Vide;
-	WorldseedCaves::Build(Geometry, HeightsM, PrecipMm, Vide,
+	// LA LITHOLOGIE EST DESORMAIS TRANSPORTEE, ET CE COMMENTAIRE DISAIT
+	// L'INVERSE. Il affirmait qu'elle « se recalcule depuis la tectonique,
+	// qu'on n'a pas ici », et concluait a un reseau sans contrainte de roche --
+	// « plutot que pas de reseau du tout ». La conclusion etait raisonnable, la
+	// premisse fausse : le champ `LithologyId` existait deja dans les donnees
+	// transportees, le CACHE l'ecrivait et le relisait, et seul le passage du
+	// menu au niveau le laissait tomber.
+	//
+	// CE QUE CELA COUTAIT, MESURE SUR LE PARCOURS COMPLET (graine 20260909,
+	// monde de 2 x 1 km) : le pipeline calculait UN reseau sous contrainte de
+	// roche -- 1 chambre -- et le terrain en rebatissait un AUTRE sans elle --
+	// 9 chambres. Le joueur ne jouait donc pas le monde que le menu lui avait
+	// montre, et rien ne le signalait. S'y ajoutait « PAS de lithologie » cote
+	// voxel, donc des parois a la couleur du biome de surface au lieu de celle
+	// de la roche.
+	if (!Lithology.IsValid(Geometry.CellCount()))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] grottes : lithologie absente (%d identifiants pour ")
+			TEXT("%d cellules) -- reseau rebati SANS contrainte de roche"),
+			Lithology.Id.Num(), Geometry.CellCount());
+	}
+
+	WorldseedCaves::Build(Geometry, HeightsM, PrecipMm, Lithology,
 		FWorldseedLithologyRules::FromRules(*Rules),
 		FWorldseedCaveRules::FromRules(*Rules), HeightExaggeration, WorldSeed, Caves);
 }
