@@ -217,3 +217,21 @@ private:
 
 	const TSharedPtr<FJsonObject>* FindSection(const FString& Section) const;
 };
+
+/**
+ * LE FACTEUR D'ECHELLE VERTICALE, ET IL NE SE RECOPIE PAS.
+ *
+ * `world.sizeKm` N'EST PAS LA TAILLE DU MONDE, c'est la HAUTEUR DE REFERENCE
+ * du calage metrique -- les deux se sont longtemps trouvees egales a 8 km, ce
+ * qui masquait completement la distinction. Tout ce qui est metrique dans la
+ * tectonique suit ce rapport : profondeur oceanique, base continentale,
+ * hauteur de montagne. C'est la regle d'echelle du projet, « maquette » :
+ * le relatif ne bouge pas, le metrique suit la reduction.
+ *
+ * ELLE VIT ICI PARCE QUE DEUX PASSES EN DEPENDENT. La tectonique l'applique au
+ * relief ; le climat doit l'appliquer au GRADIENT ADIABATIQUE, sans quoi un
+ * monde plus grand -- donc plus montagneux -- se refroidit sans compensation.
+ * La recopier dans les deux ferait diverger la moitie qui sculpte et celle qui
+ * rechauffe, et aucun compilateur ne le dirait.
+ */
+WORLDSEED_API float WorldseedVerticalScale(const UWorldseedRules& Rules, float MapHeightM);

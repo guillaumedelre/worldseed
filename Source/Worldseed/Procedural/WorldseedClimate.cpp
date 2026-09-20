@@ -164,7 +164,58 @@ namespace WorldseedClimate
 		}
 
 		// --- temperature moyenne ---------------------------------------------
-		const float Lapse = static_cast<float>(Rules.Num(TEMP, TEXT("lapseRateCPerKm"), 26.0));
+		// --- LE GRADIENT SE CALE SUR LE RELIEF REEL -------------------------
+		//
+		// 26 degres par kilometre est QUATRE FOIS le gradient terrestre reel
+		// (6,5), et ce n'est pas une erreur : c'est la compensation de la
+		// « maquette » du projet. Un monde dont les montagnes sont quatre fois
+		// trop basses doit refroidir quatre fois plus vite pour avoir le meme
+		// climat.
+		//
+		// MAIS LA VALEUR ETAIT FIGEE SUR LA REFERENCE DE 8 km, alors que le
+		// relief, lui, suit la carte. Une carte quatre fois plus grande a donc
+		// des montagnes quatre fois plus hautes ET le meme gradient. MESURE,
+		// graine 20260909 : la calotte glaciaire passait de 13,18 % des terres
+		// a 16 x 8 km a 23,08 % a 64 x 32, le desert chaud de 15,51 a 6,84, la
+		// pelouse alpine de 3,98 a 9,70 -- trois biomes qui n'ont AUCUNE raison
+		// de dependre de la taille de la carte. Le proprietaire l'a vu avant la
+		// mesure, aux couleurs du globe de l'ecran de configuration.
+		//
+		// ET DIVISER PAR VerticalScale NE SUFFIT PAS, essaye et mesure : le
+		// relief ne suit PAS lineairement ce facteur. Altitudes maximales
+		// relevees 258 / 531 / 1716 m, soit 0,49 : 1 : 3,2, quand VerticalScale
+		// vaut 0,125 : 1 : 4 -- les ecretages et la boucle soulevement/erosion
+		// cassent la proportion. La correction surcorrigeait donc les petites
+		// cartes : calotte 10,48 -> 27,62 % a 2 x 1 km.
+		//
+		// ON CALE DONC SUR CE QU'ON VEUT TENIR CONSTANT, ET NON SUR UN FACTEUR
+		// NOMINAL : le refroidissement du SOMMET. `lapseSommetC` est le nombre
+		// de degres qui separent le niveau de la mer des plus hautes terres, et
+		// le gradient s'en deduit. C'est la meme doctrine que les quantiles du
+		// socle -- « un quantile ne connait pas l'echelle » -- appliquee a la
+		// temperature.
+		//
+		// LE SOMMET SE LIT AU CENTILE 99, JAMAIS AU MAXIMUM. Un seul pixel
+		// aberrant fixerait sinon le climat de tout le monde.
+		float Lapse = static_cast<float>(Rules.Num(TEMP, TEXT("lapseRateCPerKm"), 26.0));
+		const float SommetC = static_cast<float>(Rules.Num(TEMP, TEXT("lapseSommetC"), 13.8));
+		if (SommetC > 0.0f)
+		{
+			TArray<float> Terres;
+			Terres.Reserve(Count / 4);
+			for (int32 I = 0; I < Count; ++I)
+			{
+				if (ElevationM[I] > 0.0f) { Terres.Add(ElevationM[I]); }
+			}
+			if (Terres.Num() > 0)
+			{
+				const float P99M = WorldseedGrid::Quantile(Terres, 0.99f);
+				if (P99M > 1.0f)
+				{
+					Lapse = SommetC / (P99M / 1000.0f);
+				}
+			}
+		}
 		const float Cooling = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingC"), 0.0));
 		const float CoolL0 = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingLat0Deg"), 25.0));
 		const float CoolL1 = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingLat1Deg"), 60.0));

@@ -196,10 +196,7 @@ const int32 Count = NX * NY;
 		//
 		// C est la regle d echelle enoncee par la documentation du projet : ce
 		// qui est metrique suit le facteur de reduction.
-		const float ReferenceHeightM = static_cast<float>(
-			Rules.Num(TEXT("world"), TEXT("sizeKm"), 8.0) * 1000.0);
-		const float VerticalScale = (ReferenceHeightM > 1.0f)
-			? FMath::Clamp(Geo.HeightM / ReferenceHeightM, 0.05f, 4.0f) : 1.0f;
+		const float VerticalScale = WorldseedVerticalScale(Rules, Geo.HeightM);
 
 		// LE FOND MARIN NE SUIT L'ECHELLE QUE VERS LE BAS, arbitre par le
 		// proprietaire le 19 septembre 2026.

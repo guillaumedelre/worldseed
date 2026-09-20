@@ -277,3 +277,11 @@ FString UWorldseedRules::Str(const FString& Section, const FString& Key,
 	NoteMissing(Section, Key);
 	return Fallback;
 }
+
+float WorldseedVerticalScale(const UWorldseedRules& Rules, float MapHeightM)
+{
+	const float ReferenceHeightM = static_cast<float>(
+		Rules.Num(TEXT("world"), TEXT("sizeKm"), 8.0) * 1000.0);
+	return (ReferenceHeightM > 1.0f)
+		? FMath::Clamp(MapHeightM / ReferenceHeightM, 0.05f, 4.0f) : 1.0f;
+}
