@@ -272,6 +272,22 @@ public:
 	static FString ProbeParois(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 2048, int32 Transects = 24, float LongueurM = 120.0f);
 
+	/**
+	 * QUE TROUVE-T-ON, ET DANS QUEL BIOME ?
+	 *
+	 * ATTENTION A LA PREMISSE : il n.existe AUCUNE table qui dirait « ce biome
+	 * porte ces cavites ». Arbitrage B7 -- les cavites dependent de la
+	 * LITHOLOGIE, jamais du biome, et le climat n.entre que par la pluie qui
+	 * dissout. Ce que cette sonde rend est une COINCIDENCE mesuree : ce qu.un
+	 * joueur rencontre reellement dans chaque biome, parce que roche, pluie et
+	 * pente varient ensemble. Elle se rejoue apres chaque reglage -- un tableau
+	 * fige serait faux des le suivant.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeInfractuosites(int32 Seed = 20260909,
+		float HeightMeters = 32000.0f, int32 ResolutionY = 2048,
+		int32 PasCellules = 2);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeNappe(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 2048, int32 Colonnes = 192);
