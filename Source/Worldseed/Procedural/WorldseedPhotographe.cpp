@@ -293,6 +293,35 @@ int32 UWorldseedPhotographe::AjouterLesCanyons(int32 Combien)
 		E.DistanceM = FMath::Clamp(S.EscarpementM * 2.2f, 90.0f, 170.0f);
 		E.HauteurM = 10.0f;
 		Tournee.Add(E);
+
+		// --- ET UNE VUE LARGE, QUI N'ETAIT PAS POSSIBLE JUSQU'ICI -----------
+		//
+		// LE DEPOT PORTE CE MANQUE EN TOUTES LETTRES : « la silhouette entiere
+		// n'a pas ete vue [...] a 250 m de rayon de chargement, une table de
+		// plus d'un kilometre ne tient pas dans une vue ». Ce qui etait
+		// verifie est la PAROI ; ce qui ne l'etait pas est la forme -- une
+		// gorge se reconnait a ses DEUX rebords et a ce qu'il y a entre eux,
+		// pas a un morceau de mur vu de pres.
+		//
+		// Les anneaux de resolution ont leve la contrainte : 1200 m de vue
+		// pour un quart des chunks d'un rayon uniforme de 600. On se place
+		// donc assez loin pour que les deux levres tiennent dans le cadre, et
+		// assez HAUT pour plonger dedans -- une gorge vue de plain-pied se lit
+		// comme une simple falaise.
+		//
+		// La cible est le REBORD et non la mi-paroi : c'est le niveau du
+		// plateau qui donne l'echelle de l'entaille.
+		FWorldseedPhotoStop L;
+		L.Nom = FString::Printf(TEXT("canyon%02d_large"), I + 1);
+		L.CibleM = FVector(S.CentreM.X, S.CentreM.Y, S.AltitudeM);
+		L.DepuisM = E.DepuisM;
+		L.DistanceM = FMath::Clamp(S.EscarpementM * 5.0f, 400.0f, 800.0f);
+
+		// Environ vingt-cinq degres de plongee. Assez pour voir le fond, pas
+		// assez pour que la vue devienne une carte -- le depot a deja paye la
+		// vue zenithale, ou un quad pose a plat est indiscernable du sol.
+		L.HauteurM = 0.45f * L.DistanceM;
+		Tournee.Add(L);
 		++Ajoutees;
 	}
 

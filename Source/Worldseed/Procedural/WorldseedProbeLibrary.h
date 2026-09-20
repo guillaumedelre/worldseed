@@ -259,6 +259,19 @@ public:
 		int32 ResolutionY = 2048, int32 Cotes = 4, float CoteM = 32.0f,
 		float CibleXM = 0.0f, float CibleYM = 0.0f);
 
+	/**
+	 * D.OU VIENT LE TERRASSEMENT DU RELIEF ?
+	 *
+	 * Le monde est couvert de gradins reguliers, visibles sur toute la surface
+	 * et pas seulement sur les parois. Cette sonde pose la bifurcation la moins
+	 * chere : le relief 2D est-il DEJA en escalier, ou est-ce le champ de
+	 * densite qui en fabrique un ? Les deux causes appellent des corrections
+	 * opposees, et un seul releve les separe.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeParois(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 2048, int32 Transects = 24, float LongueurM = 120.0f);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeNappe(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 2048, int32 Colonnes = 192);

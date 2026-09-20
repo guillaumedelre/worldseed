@@ -5729,3 +5729,41 @@ correspond aux DIACLASES que la chaine produit a dessein -- faces de Voronoi
 aplaties, ouverture minimale de deux metres -- mais cela n'a PAS ete verifie
 separement. Ce sont soit la forme voulue, soit des trous residuels, et
 seule une mesure le dira.
+
+### Un A/B ne se fait JAMAIS en editant le fichier de regles en place (20 septembre 2026)
+
+**J'ai vide `world_rules.json`**, et le proprietaire l'a vu avant moi : « le
+personnage tombe depuis un moment ». Le fichier faisait 1322 lignes, il en
+faisait zero.
+
+**LE MECANISME, ET IL EST BANAL.** Pour comparer deux reglages j'ai ecrit une
+boucle qui MODIFIE le fichier, lance une mesure, puis le RESTAURE a la fin.
+Une restauration posee a la fin d'une commande longue n'est pas une
+restauration : il suffit d'un depassement de delai ou d'une interruption pour
+que la commande meure entre la modification et la remise en etat. `Set-Content`
+tronque avant d'ecrire -- tue au mauvais instant, il laisse un fichier VIDE.
+
+**LE SYMPTOME NE RESSEMBLE PAS A LA CAUSE, ET C'EST CE QUI COUTE.** Sans
+regles lisibles, la generation de secours echoue ; le monde n'existe pas ; le
+pion n'a aucun terrain sous lui et **tombe indefiniment**. Cela se lit trait
+pour trait comme un defaut du terrain ou du filet de rattrapage -- j'ai
+commence a relire `HoldOrReleasePlayer` avant de penser au fichier. **Devant un
+pion qui tombe sans fin, lire d'abord le journal : la ligne
+`[Worldseed] JSON invalide` ou `generation de secours impossible` tranche en
+une seconde.**
+
+**LA REGLE, ET LE DEPOT LA PORTAIT DEJA.** Le commentaire de
+`-WorldseedTransvoxel=` le dit en toutes lettres : « un A/B qui demande de
+rouvrir le fichier de regles change son empreinte, donc regenere le monde
+entre les deux moities : ce ne serait plus le meme monde, et le depot a une
+regle contre les A/B mal montes ». D'ou les surcharges en ligne de commande --
+`-WorldseedNiveaux=`, `-WorldseedRayon=`, `-WorldseedTransvoxel=`,
+`-WorldseedVoxel=`. **Quand un A/B demande un reglage qui n'a pas de
+surcharge, on AJOUTE la surcharge ; on ne touche pas au fichier.** C'est
+quelques lignes, c'est reutilisable, et cela ne peut pas laisser le depot
+casse.
+
+Si une edition en place est vraiment inevitable : copier le fichier a cote
+AVANT, restaurer depuis la copie, et ne jamais faire dependre la restauration
+d'un processus qui peut etre tue. Le filet de secours reste `git checkout --`,
+a condition que la valeur en cours soit commitee.
