@@ -1384,9 +1384,28 @@ void FChantierGrottes::Ouvrir()
 	const int32 EntreesVoulues = (Souhaitees > 0)
 		? FMath::Max(Souhaitees, SansOuverture) : 0;
 
+	// SANS CE RELEVE ON NE SAIT PAS POURQUOI UN RESEAU RESTE MURE, et les trois
+	// causes appellent trois corrections OPPOSEES : aucun escarpement dans le
+	// voisinage est un fait du relief, une bouche qui tomberait sous la mer est
+	// une borne qu-on a posee, un routage sans issue est un manque de roche
+	// entre la bouche et la chambre. Corriger au hasard, c-est le « quatre
+	// corrections qui ne bougent pas la mesure » du routage des galeries.
+	int32 RejetPente = 0;
+	int32 RejetMer = 0;
+	int32 RejetChemin = 0;
+	bool bBudgetEpuise = false;
+
 	if (EntreesVoulues > 0)
 	{
 		const float PenteMin = FMath::Tan(FMath::DegreesToRadians(Rules.EntranceSlopeDeg));
+
+		// SANS CE RELEVE ON NE SAIT PAS POURQUOI UN RESEAU RESTE MURE, et les
+		// trois causes appellent trois corrections OPPOSEES : aucun escarpement
+		// dans le voisinage est un fait du relief, une bouche qui tomberait sous
+		// la mer est une borne qu-on a posee, un routage sans issue est un
+		// manque de roche entre la bouche et la chambre. Corriger au hasard,
+		// c-est le « quatre corrections qui ne bougent pas la mesure » du
+		// routage des galeries.
 
 		// Une bouche par chambre au plus, et on commence par les chambres les
 		// moins profondes : ce sont elles qui ont une chance d'atteindre un
@@ -1427,12 +1446,19 @@ void FChantierGrottes::Ouvrir()
 			if (!bEncore) { break; }
 		}
 
-		for (const int32 Ic : Ordre)
+		// LA POSE D'UNE BOUCHE EST EXTRAITE, POUR POUVOIR ETRE REJOUEE.
+		//
+		// Elle sert deux fois et dans deux regimes opposes : la passe normale,
+		// bornee par un budget de DENSITE, et la passe de dernier recours, qui
+		// est une GARANTIE et n'a donc ni budget ni seuil partage. Les ecrire
+		// deux fois ferait diverger deux moities qui doivent rester identiques
+		// -- c'est l'argument qui avait deja impose une seule fonction pour la
+		// doline et l'aven.
+		auto PoserBouche = [&](int32 Ic, float SeuilPente) -> bool
 		{
-			if (Entrees >= EntreesVoulues) { break; }
 			// Une chambre deja percee par une doline ou un aven n'a pas besoin
 			// d'une bouche en plus.
-			if (ChambreOuverte[Ic]) { continue; }
+			if (ChambreOuverte[Ic]) { return false; }
 			const FWorldseedCaveChamber& C = Out.Chambers[Ic];
 
 			// On cherche, autour de la chambre, la cellule la plus RAIDE.
@@ -1443,7 +1469,7 @@ void FChantierGrottes::Ouvrir()
 
 			const int32 Rayon = FMath::Max(2, FMath::CeilToInt(Espacement / MetresParPixel));
 
-			float MeilleurePente = PenteMin;
+			float MeilleurePente = SeuilPente;
 			int32 MeilleureCellule = INDEX_NONE;
 			for (int32 dj = -Rayon; dj <= Rayon; ++dj)
 			{
@@ -1481,7 +1507,7 @@ void FChantierGrottes::Ouvrir()
 			// Aucun escarpement dans le voisinage : cette chambre n'aura pas de
 			// bouche propre. Elle reste reliee au reseau, qui a son acces
 			// ailleurs -- c'est tout l'objet de l'arbre couvrant.
-			if (MeilleureCellule == INDEX_NONE) { continue; }
+			if (MeilleureCellule == INDEX_NONE) { ++RejetPente; return false; }
 
 			const int32 Ce = MeilleureCellule % NX;
 			const int32 Re = MeilleureCellule / NX;
@@ -1503,14 +1529,15 @@ void FChantierGrottes::Ouvrir()
 			Fond.Z = FMath::Min(Fond.Z,
 				Ctx.SurfaceA(Fond.X, Fond.Y) - RayonBouche - Rules.RouteSurfaceM * 0.5);
 
-			if (Fond.Z - RayonBouche < Rules.SeaMarginM) { continue; }
+			if (Fond.Z - RayonBouche < Rules.SeaMarginM) { ++RejetMer; return false; }
 
 			Ctx.RayonCourant = RayonBouche;
 			EEchec EchecEntree = EEchec::Aucun;
 			TArray<FVector> Acces = Router(Ctx, Fond, C.CentreM, Rules.RouteNodeCap, EchecEntree);
 			if (Acces.Num() < 2)
 			{
-				continue;
+				++RejetChemin;
+				return false;
 			}
 			Acces[0] = Fond;
 			Acces.Last() = C.CentreM;
@@ -1546,6 +1573,64 @@ void FChantierGrottes::Ouvrir()
 			ChambreOuverte[Ic] = true;
 			ComposantesOuvertes.Add(Trouver(Ic));
 			++Entrees;
+			return true;
+		};
+
+		// --- la passe normale, bornee par un budget de DENSITE ---------------
+		for (const int32 Ic : Ordre)
+		{
+			if (Entrees >= EntreesVoulues) { bBudgetEpuise = true; break; }
+			PoserBouche(Ic, PenteMin);
+		}
+
+		// --- LE DERNIER RECOURS : UNE GARANTIE N'A PAS DE BUDGET -------------
+		//
+		// Mesure qui a impose cette passe : un reseau sur quatorze restait MURE,
+		// et l'entonnoir dit pourquoi -- 49 chambres sans escarpement assez
+		// raide, contre 11 sous la mer et une seule sans chemin. Le budget,
+		// lui, n'avait PAS mordu (108 bouches posees sur 227 autorisees) : ma
+		// premiere intuition l'accusait, et elle etait fausse.
+		//
+		// La cause est donc un SEUIL, pas une quantite. Or le seuil de pente
+		// sert a choisir de BEAUX escarpements quand on a le choix ; il n'a
+		// aucune raison d'interdire la seule entree d'un reseau qui n'en a pas
+		// d'autre. Le depot a deja tranche deux fois dans ce sens -- l'aven
+		// plafonne par le budget des entrees, puis le plancher de densite
+		// commun aux trois formes : UNE GARANTIE NE PARTAGE NI BUDGET NI SEUIL
+		// AVEC UNE CIBLE DE DENSITE.
+		//
+		// On relache donc la pente par crans, pour les seules composantes
+		// encore murees, et l'on DIT de combien il a fallu relacher. Une
+		// entree obtenue a vingt degres reste une entree ou l'on marche ; une
+		// obtenue en silence serait une regle perdue.
+		{
+			static const float Crans[3] = { 0.70f, 0.45f, 0.25f };
+
+			for (const TArray<int32>& F : Files)
+			{
+				if (F.Num() == 0) { continue; }
+				if (ComposantesOuvertes.Contains(Trouver(F[0]))) { continue; }
+
+				bool bOuverte = false;
+				for (int32 Cran = 0; Cran < 3 && !bOuverte; ++Cran)
+				{
+					for (const int32 Ic : F)
+					{
+						if (PoserBouche(Ic, PenteMin * Crans[Cran]))
+						{
+							UE_LOG(LogTemp, Warning,
+								TEXT("[Worldseed] grottes : reseau ouvert EN DERNIER ")
+								TEXT("RECOURS, pente relachee a %.0f %% du seuil ")
+								TEXT("(%.0f deg au lieu de %.0f)"),
+								Crans[Cran] * 100.0f,
+								FMath::RadiansToDegrees(FMath::Atan(PenteMin * Crans[Cran])),
+								Rules.EntranceSlopeDeg);
+							bOuverte = true;
+							break;
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -1569,6 +1654,12 @@ void FChantierGrottes::Ouvrir()
 
 		if (Murees > 0)
 		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] grottes : bouches -- %d chambres sans escarpement, ")
+				TEXT("%d sous la mer, %d sans chemin, budget %d/%d%s"),
+				RejetPente, RejetMer, RejetChemin, Entrees, EntreesVoulues,
+				bBudgetEpuise ? TEXT(" EPUISE") : TEXT(""));
+
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Worldseed] grottes : %d reseau(x) sur %d restent MURES -- ")
 				TEXT("aucun escarpement ni plateau exploitable"),
