@@ -127,8 +127,31 @@ namespace WorldseedTectonics
 		void ApplyShelf(TArray<float>& Elevation, const UWorldseedRules& Rules,
 			const FWorldseedGeometry& Geo)
 		{
-			const float WidthKm = static_cast<float>(
+			// --- LA LARGEUR DU PLATEAU EST UNE FRACTION DU MONDE ----------
+			//
+			// UNE LONGUEUR EN KILOMETRES NE PEUT PAS SUIVRE LA CARTE, et le
+			// commentaire des tailles du menu le disait deja : « sur 500 m le
+			// plateau continental couvre 70 %% du monde et sa rampe n.aboutit
+			// jamais ; les fonds remontent et l.ocean plafonne vers -98 m au
+			// lieu de -300 ». C.est la meme faute que le gradient adiabatique
+			// et que la portee maritime, tous deux corriges le meme jour.
+			//
+			// LA FRACTION EST CALIBRE, PAS SOURCE, et il faut le dire : 2,19 %%
+			// de la largeur du monde, c.est douze fois le plateau terrestre
+			// (70 km pour 40 000 de circonference, soit 0,175 %%). C.est une
+			// exageration ASSUMEE de la maquette -- un plateau a l.echelle
+			// serait invisible. La valeur reproduit exactement les 0,35 km de
+			// la carte de reference de 16 km de large.
+			float WidthKm = static_cast<float>(
 				Rules.Num(TEXT("tectonics"), TEXT("shelfWidthKm"), 0.0));
+
+			const float PartLargeur = static_cast<float>(
+				Rules.Num(TEXT("tectonics"), TEXT("shelfPartLargeur"), 0.021875));
+			if (PartLargeur > 0.0f)
+			{
+				WidthKm = PartLargeur * static_cast<float>(Geo.WidthM()) / 1000.0f;
+			}
+
 			if (WidthKm <= 0.0f)
 			{
 				return;
@@ -310,9 +333,27 @@ const int32 Count = NX * NY;
 		// Largeur de suture en unites de CORDE sur la sphere unite. Une unite
 		// de carte en Y vaut un arc de PI ; aux largeurs en jeu, corde et arc
 		// se confondent a moins de 2 %.
-		const float Width = FMath::Max(
-			static_cast<float>(Rules.Num(TEXT("tectonics"), TEXT("mountainWidthKm"), 1.5))
-			* 1000.0f / Geo.HeightM * PI, 1e-4f);
+		// --- LA CEINTURE DE SUTURE EST UNE FRACTION DU MONDE ---------------
+		//
+		// mountainWidthKm etait une largeur ABSOLUE : 1,5 km de ceinture quelle
+		// que soit la carte, donc 75 %% d.une carte de 2 km de haut et 4,7 %% d.une
+		// de 32. Un monde ne peut pas etre le meme a toutes les tailles si ses
+		// chaines occupent une part du domaine qui varie d.un facteur seize.
+		//
+		// CALIBRE ET NON SOURCE : 18,75 %% de la hauteur du monde, c.est bien plus
+		// qu.un orogene terrestre (100 a 300 km pour 20 000 de demi-circonference,
+		// soit 0,5 a 1,5 %%). L.exageration est assumee -- une chaine a l.echelle
+		// ne se verrait pas. La valeur reproduit exactement les 1,5 km de la carte
+		// de reference de 8 km de haut.
+		float PartHauteur = static_cast<float>(
+			Rules.Num(TEXT("tectonics"), TEXT("mountainPartHauteur"), 0.1875));
+		if (PartHauteur <= 0.0f)
+		{
+			PartHauteur = static_cast<float>(
+				Rules.Num(TEXT("tectonics"), TEXT("mountainWidthKm"), 1.5))
+				* 1000.0f / Geo.HeightM;
+		}
+		const float Width = FMath::Max(PartHauteur * PI, 1e-4f);
 
 		ParallelFor(NY, [&](int32 J)
 		{
