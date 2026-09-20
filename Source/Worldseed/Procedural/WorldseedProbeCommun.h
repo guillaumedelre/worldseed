@@ -41,3 +41,31 @@ struct FWorldseedSonde
 	 */
 	WORLDSEED_API bool Preparer(int32 Seed, float HeightMeters, int32 ResolutionY);
 };
+
+/**
+ * QUANTIFICATION D'UNE POSITION, POUR SOUDER DES MAILLAGES INDEPENDANTS.
+ *
+ * Deux chunks sont mailles separement et ne partagent aucune numerotation :
+ * on ne peut donc les coudre que par la POSITION. C'est d'ailleurs exactement
+ * la situation du jeu -- deux composants distincts -- et une fissure y est une
+ * discontinuite de position, jamais d'indice.
+ *
+ * Un seizieme de centimetre. Les deux cotes calculent la MEME interpolation
+ * depuis les MEMES valeurs aux MEMES points, donc les doubles devraient
+ * coincider au bit pres ; le grain n'est la que pour que la mesure ne depende
+ * pas de cette esperance.
+ *
+ * ELLE VIT ICI PARCE QU'ELLE SERVAIT DEJA DEUX SONDES, et le depot a une regle
+ * pour cela -- « ne jamais recopier une formule dans deux fichiers ». Le
+ * compilateur l'a rappelee a sa facon : deux copies dans des namespaces
+ * ANONYMES, qu'UBT a fait tomber dans la meme unite de traduction, ou deux
+ * namespaces anonymes n'en font qu'un. La collision ne dependait pas du code
+ * ecrit mais du REGROUPEMENT choisi par UBT -- troisieme fois dans ce depot.
+ */
+FORCEINLINE FIntVector WorldseedGrainSonde(const FVector& PosCm)
+{
+	return FIntVector(
+		FMath::RoundToInt(PosCm.X * 16.0),
+		FMath::RoundToInt(PosCm.Y * 16.0),
+		FMath::RoundToInt(PosCm.Z * 16.0));
+}

@@ -57,14 +57,6 @@ namespace
 		double Ms = 0.0;
 	};
 
-	/** Quantification d'une position, pour souder des maillages independants. */
-	FIntVector Grain(const FVector& PosCm)
-	{
-		return FIntVector(
-			FMath::RoundToInt(PosCm.X * 16.0),
-			FMath::RoundToInt(PosCm.Y * 16.0),
-			FMath::RoundToInt(PosCm.Z * 16.0));
-	}
 }
 
 FString UWorldseedProbeLibrary::ProbeVoisins(int32 Seed, float HeightMeters,
@@ -162,7 +154,7 @@ FString UWorldseedProbeLibrary::ProbeVoisins(int32 Seed, float HeightMeters,
 					Remap.SetNumUninitialized(Maillage.Positions.Num());
 					for (int32 I = 0; I < Maillage.Positions.Num(); ++I)
 					{
-						const FIntVector G = Grain(Maillage.Positions[I]);
+						const FIntVector G = WorldseedGrainSonde(Maillage.Positions[I]);
 						if (const int32* Deja = Index.Find(G))
 						{
 							Remap[I] = *Deja;

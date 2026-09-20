@@ -41,19 +41,6 @@ namespace
 		int32 SommetsPartages = 0;
 	};
 
-	/** Quantification d'une position, pour souder deux maillages independants. */
-	FIntVector Grain(const FVector& PosCm)
-	{
-		// Un seizieme de centimetre. Les deux cotes calculent la MEME
-		// interpolation depuis les MEMES valeurs aux MEMES points, donc les
-		// doubles devraient coincider au bit pres ; le grain n'est la que pour
-		// que la mesure ne depende pas de cette esperance.
-		return FIntVector(
-			FMath::RoundToInt(PosCm.X * 16.0),
-			FMath::RoundToInt(PosCm.Y * 16.0),
-			FMath::RoundToInt(PosCm.Z * 16.0));
-	}
-
 	/**
 	 * Coud deux maillages par la POSITION et compte ce qui se passe sur le plan.
 	 *
@@ -76,7 +63,7 @@ namespace
 			Remap.SetNumUninitialized(M.Positions.Num());
 			for (int32 I = 0; I < M.Positions.Num(); ++I)
 			{
-				const FIntVector G = Grain(M.Positions[I]);
+				const FIntVector G = WorldseedGrainSonde(M.Positions[I]);
 				if (int32* Deja = Index.Find(G))
 				{
 					Remap[I] = *Deja;

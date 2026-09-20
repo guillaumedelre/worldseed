@@ -229,6 +229,26 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
+	// ET LA TAILLE DU VOXEL, QUI EST LA DENSITE DE MAILLAGE ELLE-MEME.
+	//
+	// C.EST LE SEUL LEVIER QUI CHANGE LE NOMBRE DE TRIANGLES SANS TOUCHER A
+	// RIEN D.AUTRE : le decoupage en chunks suit ChunkSideM, donc doubler le
+	// voxel divise par quatre les triangles a nombre de chunks, de composants
+	// et d.emprise RIGOUREUSEMENT identiques. C.est ce qui permet de repondre
+	// a « le cout du voxel, est-ce les triangles ? » par une mesure et non par
+	// une intuition -- le depot a deja cru que le cout etait la ou il n.etait
+	// pas, sur le debit de streaming comme sur le bridage de l.editeur.
+	{
+		float Vx = 0.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVoxel="), Vx) && Vx > 0.0f)
+		{
+			DensityRules.VoxelSizeM = Vx;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : taille forcee -- %.2f m, soit %d cellules par chunk"),
+				Vx, FMath::RoundToInt(ChunkSideM / Vx));
+		}
+	}
+
 	if (NiveauMax > 0)
 	{
 		UE_LOG(LogTemp, Log,
