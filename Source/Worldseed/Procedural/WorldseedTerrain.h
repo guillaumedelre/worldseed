@@ -111,6 +111,9 @@ public:
 		meta = (ClampMin = "0.1"))
 	float HeightExaggeration = 1.0f;
 
+	/** Sommets du sol de fond, pour rapporter le cout de sa bascule. */
+	int32 ProxySommets = 0;
+
 	/**
 	 * Le point de depart choisi dans le menu, en metres sur la carte.
 	 *

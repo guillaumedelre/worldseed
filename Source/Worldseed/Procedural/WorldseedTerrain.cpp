@@ -144,13 +144,55 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	// retire donc la nappe de l'image SANS la retirer de l'eau. La masquer
 	// entierement -- SetActorHiddenInGame -- l'aurait sortie des deux, et
 	// l'ocean cesse de se dessiner sans le moindre avertissement.
-	Nappe->SetRenderInDepthPass(true);
+	// --- LA BASCULE PASSE PAR LA SECTION, PAS PAR LE DRAPEAU DE RENDU --------
+	//
+	// MESURE QUI A TRANCHE, et elle est sans appel. Sur toute une partie il y a
+	// eu EXACTEMENT quatre trames au-dessus de 300 ms, et EXACTEMENT quatre
+	// bascules : trames 390, 396, 804 et 94, les numeros memes des bascules.
+	// Rien d'autre n'a jamais depasse 300 ms.
+	//
+	//     cout de l'appel SetRenderInMainPass  ...   0,02 ms
+	//     cout de la trame qui suit            ...   508 a 528 ms
+	//     budget                               ...   16,67 ms
+	//
+	// L'ECART ENTRE CES DEUX CHIFFRES EST TOUTE L'EXPLICATION.
+	// `SetRenderInMainPass` ne fait que MARQUER l'etat de rendu sale ; la
+	// recreation du proxy de scene -- 8 388 608 sommets pour cette nappe -- a
+	// lieu en fin de trame. Chronometrer l'appel seul concluait « la bascule
+	// est gratuite », ce qui est vrai et sans le moindre interet.
+	//
+	// `SetMeshSectionVisible` n'appelle PAS MarkRenderStateDirty : il pousse
+	// une commande de rendu qui bascule un booleen dans le proxy existant
+	// (ProceduralMeshComponent.cpp:789), et il fait effectivement tomber la
+	// bascule de 520 ms a 0,00.
+	//
+	// IL A POURTANT ETE ESSAYE PUIS RENDU, ET IL NE FAUT PAS LE RETENTER TEL
+	// QUEL. La visibilite de section retire la geometrie de TOUTES les passes,
+	// celle de PROFONDEUR comprise -- donc le decor cesse de nourrir le plugin
+	// Water, et l'ocean se coupe. Signale en jeu des la premiere traversee :
+	// « avant j'avais de l'eau dans l'arche et maintenant elle est coupee ».
+	// C'est exactement la nuance que le drapeau de rendu principal permet et
+	// que la visibilite ne permet pas :
+	//
+	//     ShouldRenderInDepthPass() = bRenderInMainPass || bRenderInDepthPass
+	//     (PrimitiveSceneProxy.h:804)
+	//
+	// ECHANGER UN A-COUP DE 520 MS CONTRE UN OCEAN COUPE EST UN MAUVAIS
+	// MARCHE. On reprend donc le drapeau, son cout connu et mesure, jusqu'a ce
+	// que la nappe soit separee en deux -- une pour l'eau, une pour l'image --
+	// qui est le seul montage ou les deux besoins cessent de se contredire.
+	const double Depart = FPlatformTime::Seconds();
+
 	Nappe->SetRenderInMainPass(!bSousPlafond);
 
+	const double BasculeMs = (FPlatformTime::Seconds() - Depart) * 1000.0;
+
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] sol de fond : %s (plafond %s au-dessus de l'oeil)"),
+		TEXT("[Worldseed] sol de fond : %s (plafond %s au-dessus de l'oeil) ")
+		TEXT("-- bascule %.2f ms sur %d sommets"),
 		bSousPlafond ? TEXT("retire") : TEXT("rendu"),
-		bSousPlafond ? TEXT("trouve") : TEXT("absent"));
+		bSousPlafond ? TEXT("trouve") : TEXT("absent"),
+		BasculeMs, ProxySommets);
 }
 
 void AWorldseedTerrain::EndPlay(const EEndPlayReason::Type Reason)
@@ -1268,6 +1310,24 @@ void AWorldseedTerrain::BuildGroundProxy()
 		Mesh->SetMaterial(0, Material);
 	}
 
+	// LE DRAPEAU DE PROFONDEUR SE POSE ICI, UNE FOIS. Il vivait dans la
+	// bascule, qui le reecrivait a l'identique a chaque passage -- et une
+	// ecriture de drapeau de rendu, meme sans changement de valeur, est
+	// exactement ce qu'on cherche a ne plus faire.
+	//
+	// LE PRINCIPAL SORT, LA PROFONDEUR RESTE, et la nuance est vitale : cette
+	// nappe nourrit le plugin Water, qui la lit dans la passe de PROFONDEUR --
+	// `ShouldRenderInDepthPass() = bRenderInMainPass || bRenderInDepthPass`
+	// (PrimitiveSceneProxy.h:804). La masquer entierement la sortirait des
+	// deux, et l'ocean cesserait de se dessiner sans le moindre avertissement.
+	Mesh->SetRenderInDepthPass(true);
+
+	// LA SECTION EST RENDUE VISIBLE EXPLICITEMENT. Un essai de bascule par
+	// visibilite de section a ete fait puis annule (voir le commentaire de
+	// UpdateGroundProxyVisibility) ; si l'etat etait reste a « cachee », une
+	// nappe reconstruite plus tard le reprendrait sans que rien le dise.
+	Mesh->SetMeshSectionVisible(0, true);
+
 	// --- LE DECOR D'HORIZON SORT DU RAY TRACING -----------------------------
 	//
 	// SIGNALE EN JEU DES LE PASSAGE A 4096 : « RAY TRACING GEOMETRY REQUESTED
@@ -1298,6 +1358,10 @@ void AWorldseedTerrain::BuildGroundProxy()
 	const float SpanKmY = (CountY > 1)
 		? FMath::Min(FMath::RoundToInt((CountY - 1) * StepY), Geometry.NY - 1)
 			* Geometry.MetersPerPixel() / 1000.0f : 0.0f;
+
+	// Retenu pour que le chronometre de la bascule sache sur COMBIEN il porte :
+	// « 180 ms » ne dit rien, « 180 ms sur 8,4 millions de sommets » dit tout.
+	ProxySommets = CountX * CountY;
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] sol de fond : %dx%d sommets couvrant %.1f x %.1f km ")
