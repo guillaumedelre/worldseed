@@ -128,6 +128,54 @@ void AWorldseedVoxelTerrain::BeginPlay()
 
 	StartSeconds = FPlatformTime::Seconds();
 
+	// --- OU NAITRE, DEPUIS LA LIGNE DE COMMANDE ----------------------------
+	//
+	// POURQUOI CETTE SURCHARGE EXISTE, et elle a ete payee. Pour aller voir un
+	// endroit precis il y avait deux chemins, et aucun ne tenait : le menu, qui
+	// ne sait pas viser une coordonnee ; et `Worldseed.Aller` dans la console,
+	// qu'il faut ouvrir au clavier. Or la touche console d'Unreal s'appelle
+	// `Tilde` et vaut VK_OEM_3, ce qui est la touche a gauche du 1 sur QWERTY
+	// mais la touche `u accent grave` sur AZERTY : elle ouvre la console ET
+	// laisse son caractere dans la ligne, si bien que la commande devient
+	// « uWorldseed.Aller ... » et ne s'execute jamais. Mesure : lu tel quel a
+	// l'ecran par le proprietaire.
+	//
+	// Une surcharge de lancement ne depend ni du clavier ni du focus, et elle
+	// rend le BALAYAGE possible : une serie de rivages, un lancement chacun,
+	// une capture chacun.
+	// DEUX PARAMETRES PLUTOT QU'UN COUPLE, ET CE N'EST PAS UN GOUT.
+	// `FParse::Value` s'arrete a la VIRGULE, qu'il traite en delimiteur : un
+	// « -WorldseedDepart=14875,9369 » ne rend que « 14875 », et le reste part
+	// en silence. Mesure : les sept lancements d'un balayage sont tous partis
+	// au point par defaut, (24, 24) m, sans que rien ne le signale -- sauf la
+	// branche de refus ci-dessous, qui a fini par le dire. Deux cles nommees
+	// n'ont aucun separateur a negocier.
+	{
+		float DepartX = 0.0f;
+		float DepartY = 0.0f;
+		const bool bX = FParse::Value(FCommandLine::Get(), TEXT("WorldseedDepartX="), DepartX);
+		const bool bY = FParse::Value(FCommandLine::Get(), TEXT("WorldseedDepartY="), DepartY);
+
+		if (bX && bY)
+		{
+			DepartXYM = FVector2D(DepartX, DepartY);
+			bDepartDemande = true;
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : depart impose par la ligne de ")
+				TEXT("commande a (%.0f, %.0f) m"), DepartXYM.X, DepartXYM.Y);
+		}
+		else if (bX || bY)
+		{
+			// UN SEUL DES DEUX EST UNE ERREUR QUI DOIT SE VOIR. Le prendre pour
+			// un depart a moitie demande poserait le joueur sur un axe, et l'on
+			// chercherait pourquoi il n'est jamais ou on l'attend.
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] depart ignore : il faut -WorldseedDepartX= ET ")
+				TEXT("-WorldseedDepartY=, en metres"));
+		}
+	}
+
 	// Ce que la ligne de commande a impose : les regles ne le recouvriront pas.
 	bool bRayonForce = false;
 	bool bNiveauxForce = false;
@@ -2184,11 +2232,43 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	const float LatitudeDeg = Geometry.LatitudeDegForV(static_cast<float>(V));
 	const float LongitudeDeg = static_cast<float>(U * 360.0) - 180.0f;
 
+	// --- LA BOUSSOLE --------------------------------------------------------
+	//
+	// SANS ELLE ON NE PEUT PAS EXPLORER, et le proprietaire l'a dit en ces
+	// termes : « je ne suis pas en capacite de me reperer pour marcher dans une
+	// direction precise ». Des coordonnees disent OU l'on est, pas vers ou l'on
+	// va -- et un monde qu'on ne sait pas parcourir reste un monde qu'on ne
+	// peut pas eprouver.
+	//
+	// LES DEUX CONVENTIONS SE DEDUISENT DE LA CARTE, elles ne se choisissent
+	// pas. V croit vers le NORD -- `LatitudeDegForV` rend +90 en V = 1 -- et
+	// V croit avec Y, donc +Y est le nord. De meme U croit avec X et la
+	// longitude croit avec U, donc +X est l'est.
+	//
+	// Unreal compte son lacet depuis +X et vers +Y ; l'azimut se compte depuis
+	// le NORD et vers l'EST. D'ou azimut = 90 - lacet, verifie sur les quatre
+	// quarts : lacet 0 (+X) donne 90, l'est ; lacet 90 (+Y) donne 0, le nord.
+	//
+	// C'EST LA CAMERA QUI DONNE LE CAP, PAS LE PION. On s'oriente sur ce qu'on
+	// REGARDE, et le depot a deja fait ce choix pour le sol de fond -- en vue a
+	// la troisieme personne, le bras place l'oeil jusqu'a quatre metres
+	// derriere le personnage.
+	float CapDeg = 0.0f;
+	if (const APlayerCameraManager* const Cam = UGameplayStatics::GetPlayerCameraManager(W, 0))
+	{
+		CapDeg = FMath::Fmod(90.0f - static_cast<float>(Cam->GetCameraRotation().Yaw) + 720.0f, 360.0f);
+	}
+
+	static const TCHAR* const Roses[] = {
+		TEXT("N"), TEXT("NE"), TEXT("E"), TEXT("SE"),
+		TEXT("S"), TEXT("SO"), TEXT("O"), TEXT("NO") };
+	const int32 Quart = FMath::RoundToInt(CapDeg / 45.0f) % 8;
+
 	Lignes.Add(FString::Printf(
-		TEXT("lon %6.1f %s   lat %5.1f %s   alt %6.0f m   (%.0f, %.0f) m"),
+		TEXT("lon %6.1f %s   lat %5.1f %s   alt %6.0f m   cap %3.0f %-2s   (%.0f, %.0f) m"),
 		FMath::Abs(LongitudeDeg), LongitudeDeg >= 0.0f ? TEXT("E") : TEXT("O"),
 		FMath::Abs(LatitudeDeg), LatitudeDeg >= 0.0f ? TEXT("N") : TEXT("S"),
-		Z, X, Y));
+		Z, CapDeg, Roses[Quart], X, Y));
 
 	// --- 2. CLIMAT, BIOME, ROCHE --------------------------------------------
 	FString Biome = TEXT("--");
