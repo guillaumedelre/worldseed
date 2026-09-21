@@ -1935,6 +1935,38 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	}
 	bPlayerReleased = true;
 
+	// --- LE CAP DE DEPART, TROISIEME PIECE DE LA FAMILLE -----------------
+	//
+	// `-WorldseedDepartX/Y` posent le joueur ; elles ne disent rien de ce
+	// qu'il REGARDE. Un A/B monte sur elles seules peut etre rigoureux --
+	// meme position, meme monde -- et parfaitement vide : celui de la mer
+	// opaque a rendu deux captures identiques au pixel pres, tournees vers
+	// les collines, sans une goutte d'eau dans le cadre. Une capture ne vaut
+	// que par son SUJET.
+	//
+	// LA CONVENTION EST CELLE DE LA BOUSSOLE, et elle se deduit de la carte :
+	// `azimut = 90 - lacet`, deja etablie et verifiee sur les quatre quarts.
+	// On l'inverse ici. Poser le lacet directement ferait diverger l'affichage
+	// du reglage a la premiere relecture.
+	//
+	// C'EST LE CONTROLEUR QUI PORTE LA VISEE, pas le pion : en vue a la
+	// troisieme personne le pion suit, et ecrire sa rotation serait ecrase au
+	// tick suivant.
+	float CapDeg = 0.0f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedCap="), CapDeg))
+	{
+		if (APlayerController* const PC =
+			UGameplayStatics::GetPlayerController(this, 0))
+		{
+			const float Lacet = FRotator::ClampAxis(90.0f - CapDeg);
+			PC->SetControlRotation(FRotator(0.0f, Lacet, 0.0f));
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : cap de depart impose a %.0f deg (lacet %.0f)"),
+				CapDeg, Lacet);
+		}
+	}
+
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] voxel : joueur rendu a la gravite, chunk %d,%d,%d ")
 		TEXT("de niveau %d solide"),
