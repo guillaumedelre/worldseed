@@ -497,6 +497,9 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 	// Valeurs zonales classiques, TOUTES SURFACES confondues : c'est la
 	// grandeur que notre TempMeanC decrit. On ne compare donc pas des terres
 	// a des terres, et la ligne de comparaison le dit.
+	// Symetriques faute de mieux : la Terre ne l'est pas tout a fait -- son
+	// hemisphere nord est plus chaud, parce qu'il porte plus de terres. On ne
+	// compare donc que des ordres de grandeur.
 	static const float TerreMoyenneC[9] = {
 		26.0f, 25.0f, 21.0f, 16.0f, 9.0f, 2.0f, -6.0f, -14.0f, -22.0f
 	};
@@ -514,7 +517,19 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 		int32 Alpin = 0;
 		int32 SousZeroEte = 0;   // TempMax < 0 : eligible a la calotte
 	};
-	FBande Bandes[9];
+	// --- LES HEMISPHERES NE SE MELANGENT PAS -------------------------------
+	//
+	// La premiere version agregeait |latitude|. Elle melangeait donc le pole
+	// NORD, force en OCEAN a dessein -- northPole vaut "ocean", comme
+	// l''Arctique -- et le pole SUD, force en CONTINENT comme l''Antarctique.
+	// La ligne 80-90 annoncait « 0,0 % emerge » pour les deux, et l''on pouvait
+	// en conclure que le forcage continental ne marchait pas alors que la
+	// moitie de la mesure ne le concernait pas.
+	//
+	// C''est la faute que ce depot a deja payee sur le routage des galeries :
+	// une mesure qui melange deux populations ne se corrige pas, elle se
+	// DECOMPOSE. Dix-huit bandes signees, du nord au sud.
+	FBande Bandes[18];
 
 	const TArray<float>& T = World.Climate.TempMeanC;
 
@@ -551,7 +566,7 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 	{
 		const float Lat = Geo.LatitudeDegForRow(J);
 		const int32 B = FMath::Clamp(
-			static_cast<int32>(FMath::Abs(Lat) / 10.0f), 0, 8);
+			static_cast<int32>((Lat + 90.0f) / 10.0f), 0, 17);
 
 		for (int32 I = 0; I < NX; ++I)
 		{
@@ -591,13 +606,13 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] === PROFIL ZONAL ==="));
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed]   |lat|     surface   emerge   part des    alt     T an    T ete   Terre    calotte  toundra   taiga   alpin"));
+		TEXT("[Worldseed]   lat       surface   emerge   part des    alt     T an    T ete   Terre    calotte  toundra   taiga   alpin"));
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]            du monde   local     terres      m        C        C      C an     %%       %%       %%      %%"));
 
 	int32 EligibleCalotte = 0;
 
-	for (int32 B = 0; B < 9; ++B)
+	for (int32 B = 17; B >= 0; --B)
 	{
 		const FBande& Ba = Bandes[B];
 		if (Ba.Cellules == 0) { continue; }
@@ -609,11 +624,16 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 
 		EligibleCalotte += Ba.SousZeroEte;
 
+		// Bornes SIGNEES de la bande, et l''index de la reference terrestre,
+		// qui est donnee en valeur absolue de latitude.
+		const int32 LatBas = B * 10 - 90;
+		const int32 IdxTerre = (B <= 8) ? (8 - B) : (B - 9);
+
 		if (Ba.Terres == 0)
 		{
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed]   %2d-%2d  %8.2f  %6.1f      --        --       --       --  %6.1f       --       --      --      --"),
-				B * 10, B * 10 + 10, PartSurface, Emerge, TerreMoyenneC[B]);
+				LatBas, LatBas + 10, PartSurface, Emerge, TerreMoyenneC[IdxTerre]);
 			continue;
 		}
 
@@ -623,8 +643,8 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed]   %2d-%2d  %8.2f  %6.1f  %8.2f  %6.0f  %7.1f  %7.1f  %6.1f  %7.1f  %7.1f %7.1f %7.1f"),
-			B * 10, B * 10 + 10, PartSurface, Emerge, PartTerres, MoyAlt,
-			MoyT, MoyTMax, TerreMoyenneC[B],
+			LatBas, LatBas + 10, PartSurface, Emerge, PartTerres, MoyAlt,
+			MoyT, MoyTMax, TerreMoyenneC[IdxTerre],
 			100.0f * Ba.Calotte / Ba.Terres,
 			100.0f * Ba.Toundra / Ba.Terres,
 			100.0f * Ba.Taiga / Ba.Terres,
