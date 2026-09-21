@@ -533,6 +533,18 @@ protected:
 	UPROPERTY()
 	TObjectPtr<class AWorldseedGroundProxy> GroundProxy;
 
+	/**
+	 * L'horizon, sur son PROPRE acteur.
+	 *
+	 * Il ne peut etre ni un composant du sol de fond -- le plugin Water prend
+	 * la boite de TOUS les composants de l'acteur porteur pour borner sa zone,
+	 * et une nappe enfoncee y abaisse le plancher -- ni un composant du terrain,
+	 * dont `GetTerrainPrimitives` enumere toutes les primitives. Un acteur a
+	 * lui seul est le seul endroit ou il ne ment a personne.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<class AWorldseedHorizonProxy> HorizonProxy;
+
 	/** Heightfield en metres, 0 au niveau de la mer. Indexe J * NX + I. */
 	TArray<float> HeightsM;
 

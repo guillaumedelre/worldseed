@@ -95,40 +95,12 @@ public:
 	 */
 	UProceduralMeshComponent* GetMesh() const { return Mesh; }
 
-	/**
-	 * Le sol qu'on VOIT : l'horizon au-dela du terrain detaille.
-	 *
-	 * POURQUOI DEUX MAILLAGES, ET LA MESURE QUI L'A IMPOSE. Un seul servait
-	 * les deux, et les deux besoins se contredisent :
-	 *
-	 *   - l'EAU veut la nappe dans la passe de PROFONDEUR, toujours ;
-	 *   - l'IMAGE veut pouvoir la retirer quand on passe sous un plafond.
-	 *
-	 * Le seul levier qui distingue les deux est `bRenderInMainPass`
-	 * (PrimitiveSceneProxy.h:804), et le poser MARQUE l'etat de rendu sale :
-	 * le proxy de scene est recree, soit 8 388 608 sommets. Mesure en jeu,
-	 * quatre bascules, quatre trames -- 508 a 528 ms chacune, pour un budget
-	 * de 16,67. Le remede evident, `SetMeshSectionVisible`, tombe a 0,00 ms
-	 * mais retire la geometrie de TOUTES les passes : l'ocean se coupe, et
-	 * cela aussi a ete essaye puis rendu.
-	 *
-	 * Separes, chacun fait une seule chose. Celui de l'eau ne bascule plus ;
-	 * celui de l'image bascule pour rien, par visibilite de section.
-	 *
-	 * ET IL GAGNE UNE LIBERTE QUE L'AUTRE NE POUVAIT PAS LUI DONNER : ne
-	 * nourrissant plus l'eau, il peut etre ENFONCE bien plus bas. C'est ce qui
-	 * lui permet de cesser de boucher les ouvertures d'arches et de grottes --
-	 * l'autre, lui, doit rester colle au relief sous peine de faire deborder
-	 * l'ocean, defaut deja paye et deja consigne.
-	 */
-	UProceduralMeshComponent* GetHorizon() const { return Horizon; }
+	/** Le sol qu'on VOIT vit ailleurs : voir AWorldseedHorizonProxy. */
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed")
 	TObjectPtr<UProceduralMeshComponent> Mesh;
 
-	UPROPERTY(VisibleAnywhere, Category = "Worldseed")
-	TObjectPtr<UProceduralMeshComponent> Horizon;
 
 	/**
 	 * Declare le maillage exact au systeme d'eau comme etant LE sol.
@@ -140,4 +112,62 @@ private:
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed")
 	TObjectPtr<UWorldseedWaterTerrainComponent> WaterTerrain;
+};
+
+/**
+ * Le sol qu'on VOIT : l'horizon au-dela du terrain detaille.
+ *
+ * POURQUOI DEUX MAILLAGES, ET LA MESURE QUI L'A IMPOSE. Un seul servait les
+ * deux, et les deux besoins se contredisent :
+ *
+ *   - l'EAU veut la nappe dans la passe de PROFONDEUR, toujours ;
+ *   - l'IMAGE veut pouvoir la retirer quand on passe sous un plafond.
+ *
+ * Le seul levier qui distingue les deux est `bRenderInMainPass`
+ * (PrimitiveSceneProxy.h:804), et le poser MARQUE l'etat de rendu sale : le
+ * proxy de scene est recree, soit 8 388 608 sommets. Mesure en jeu, quatre
+ * bascules, quatre trames -- 508 a 528 ms chacune, pour un budget de 16,67. Le
+ * remede evident, `SetMeshSectionVisible`, tombe a 0,00 ms mais retire la
+ * geometrie de TOUTES les passes : l'ocean se coupe, et cela aussi a ete
+ * essaye puis rendu.
+ *
+ * Separes, chacun fait une seule chose. Celui de l'eau ne bascule plus ; celui
+ * de l'image bascule pour rien. Et l'image gagne une liberte que l'autre ne
+ * pouvait pas lui donner : ne nourrissant plus l'eau, elle peut etre ENFONCEE
+ * sous toute la bande creusable, donc cesser de boucher arches et grottes.
+ *
+ * ET IL LUI FAUT SON PROPRE ACTEUR, ce qui n'etait pas evident et a ete paye.
+ * Pose comme composant du sol de fond, il empoisonnait l'eau par un chemin que
+ * `GetTerrainPrimitives` ne couvre PAS :
+ *
+ *     UWaterTerrainComponent::GetTerrainBounds()
+ *       -> Owner->GetComponentsBoundingBox(true)
+ *
+ * Le moteur prend la boite de TOUS les composants de l'acteur porteur, sans
+ * demander lesquels sont du terrain. Une nappe enfoncee de 125 m abaissait
+ * donc le plancher de la WaterZone d'autant -- releve au journal, « sol a
+ * partir de » passe de -349 a -474 m -- et c'est dans cette plage que la
+ * texture d'information NORMALISE chaque hauteur. On perdait la precision de
+ * l'eau pour un maillage qui ne la concerne en rien.
+ *
+ * IL NE PEUT PAS DAVANTAGE ALLER SUR LE TERRAIN : `GetTerrainPrimitives`
+ * enumere TOUS les composants primitifs du terrain detaille, donc il s'y
+ * retrouverait dans la texture d'information -- 125 m trop bas, ce qui est
+ * exactement le defaut qui noyait des flancs de colline entiers.
+ *
+ * Un acteur a lui seul est donc le seul endroit ou il ne ment a personne.
+ */
+UCLASS()
+class WORLDSEED_API AWorldseedHorizonProxy : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	AWorldseedHorizonProxy();
+
+	UProceduralMeshComponent* GetMesh() const { return Mesh; }
+
+private:
+	UPROPERTY(VisibleAnywhere, Category = "Worldseed")
+	TObjectPtr<UProceduralMeshComponent> Mesh;
 };

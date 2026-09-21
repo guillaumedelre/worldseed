@@ -59,19 +59,6 @@ AWorldseedGroundProxy::AWorldseedGroundProxy()
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Mesh->SetCastShadow(false);
 
-	// --- LE SOL QU'ON VOIT, A COTE DE CELUI QUE L'EAU LIT -------------------
-	//
-	// Meme famille de composant, meme reglages de base, et une seule
-	// difference qui change tout : celui-ci n'est PAS declare au plugin Water.
-	// Il peut donc etre retire de l'image sans que l'ocean s'en apercoive, et
-	// enfonce aussi bas qu'il le faut sans le faire deborder.
-	Horizon = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GroundProxyHorizon"));
-	Horizon->SetupAttachment(Mesh);
-	Horizon->SetMobility(EComponentMobility::Movable);
-	Horizon->bUseAsyncCooking = false;
-	Horizon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Horizon->SetCastShadow(false);
-
 	WaterTerrain = CreateDefaultSubobject<UWorldseedWaterTerrainComponent>(TEXT("WaterTerrain"));
 
 	// SEUL `Mesh` EST DONNE A L'EAU, et c'est tout l'interet de la separation.
@@ -79,6 +66,28 @@ AWorldseedGroundProxy::AWorldseedGroundProxy()
 	// « toutes les primitives de l'acteur » -- ne ramasse pas l'horizon, qui
 	// est un objet d'AFFICHAGE et decrirait un sol trop bas.
 	WaterTerrain->Ground = Mesh;
+}
+
+AWorldseedHorizonProxy::AWorldseedHorizonProxy()
+{
+	PrimaryActorTick.bCanEverTick = false;
+
+	Mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("HorizonMesh"));
+	SetRootComponent(Mesh);
+
+	// Memes reglages que le sol de fond, et pour les memes raisons : mobile
+	// parce qu'il nait au runtime, sans collision parce qu'on ne marche jamais
+	// dessus, sans ombre parce qu'elle jurerait avec celle des chunks.
+	Mesh->SetMobility(EComponentMobility::Movable);
+	Mesh->bUseAsyncCooking = false;
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh->SetCastShadow(false);
+
+	// AUCUN COMPOSANT D'EAU ICI, ET C'EST TOUT L'INTERET DE CET ACTEUR. Ni le
+	// plugin Water ni `GetTerrainPrimitives` ne le verront : il peut donc
+	// s'enfoncer sous la bande creusable sans abaisser le plancher de la
+	// WaterZone, qui est la plage ou la texture d'information normalise ses
+	// hauteurs.
 }
 
 void AWorldseedGroundProxy::SetDetailedTerrain(AActor* Terrain)

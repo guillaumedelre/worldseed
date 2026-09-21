@@ -75,7 +75,8 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 		return;
 	}
 	// C'EST LA NAPPE QU'ON VOIT QU'ON BASCULE, PAS CELLE QUE L'EAU LIT.
-	UProceduralMeshComponent* const Vue = GroundProxy->GetHorizon();
+	UProceduralMeshComponent* const Vue =
+		HorizonProxy ? HorizonProxy->GetMesh() : nullptr;
 	UWorld* const World = GetWorld();
 	if (!Vue || !World)
 	{
@@ -406,6 +407,12 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 	{
 		VoxelTerrain->AdoptWorld(WorldSeed, Geometry, HeightsM, Biomes,
 			HeightExaggeration, Caves, Lithology, PrecipMm, TempC);
+
+		// LES DEUX CHAMPS QUI N'EXPLIQUENT, ET NE GENERENT RIEN. Ils passent a
+		// part parce qu'AdoptWorld transmet le MONDE -- ce qui sert a mailler
+		// -- alors que ceux-ci ne servent qu'au releve de jeu. Les melanger
+		// inviterait a croire que le champ de densite les lit.
+		VoxelTerrain->AdoptChampsClimat(ContinentalityGrid, SeasonalAmpC);
 
 		// LE DEPART CHOISI DANS LE MENU PASSE PAR ICI, ET C'EST LE SEUL
 		// CHEMIN. Le voxel lit bien lui-meme l'instance de jeu, mais seulement
@@ -1366,7 +1373,27 @@ void AWorldseedTerrain::BuildGroundProxy()
 	// ON NE PEUT PAS LE DUPLIQUER A L'IDENTIQUE : un FProcMeshVertex pese de
 	// l'ordre de cent cinquante octets, donc une nappe pleine depasse le
 	// gigaoctet en copie processeur.
-	if (UProceduralMeshComponent* const Vue = GroundProxy->GetHorizon())
+	// L'HORIZON NAIT SUR SON PROPRE ACTEUR, et il ne peut pas en etre
+	// autrement : le plugin Water borne sa zone sur la boite de TOUS les
+	// composants du sol de fond, et `GetTerrainPrimitives` enumere toutes les
+	// primitives du terrain. Partout ailleurs, cette nappe enfoncee mentirait
+	// a l'eau.
+	if (!HorizonProxy)
+	{
+		if (UWorld* const World = GetWorld())
+		{
+			FActorSpawnParameters Params;
+			Params.Owner = this;
+			Params.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			HorizonProxy = World->SpawnActor<AWorldseedHorizonProxy>(
+				AWorldseedHorizonProxy::StaticClass(), GetActorTransform(), Params);
+		}
+	}
+
+	if (UProceduralMeshComponent* const Vue =
+		HorizonProxy ? HorizonProxy->GetMesh() : nullptr)
 	{
 		const int32 Pas = FMath::Clamp(GroundProxyHorizonStride, 1, 8);
 		const int32 HX = (CountX - 1) / Pas + 1;
