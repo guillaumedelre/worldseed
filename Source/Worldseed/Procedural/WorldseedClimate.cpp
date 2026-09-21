@@ -9,6 +9,8 @@
 #include "Procedural/WorldseedPerlin.h"
 
 #include "Async/ParallelFor.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace WorldseedClimate
 {
@@ -246,7 +248,21 @@ namespace WorldseedClimate
 				}
 			}
 		}
-		const float Cooling = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingC"), 0.0));
+		float Cooling = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingC"), 0.0));
+
+		// SURCHARGE POUR L'A/B, et elle existe pour ne PAS toucher au fichier
+		// de regles. Le depot a une regle contre les A/B qui l'editent en
+		// place : une boucle qui modifie puis restaure a deja vide
+		// world_rules.json, et un A/B qui rouvre le fichier change son
+		// empreinte, donc regenere le monde entre les deux moities -- ce ne
+		// serait plus le meme monde.
+		float CoolingForce = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedContinental="), CoolingForce)
+			&& CoolingForce >= 0.0f)
+		{
+			Cooling = CoolingForce;
+		}
+
 		const float CoolL0 = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingLat0Deg"), 25.0));
 		const float CoolL1 = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingLat1Deg"), 60.0));
 

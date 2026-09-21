@@ -503,6 +503,13 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 	static const float TerreMoyenneC[9] = {
 		26.0f, 25.0f, 21.0f, 16.0f, 9.0f, 2.0f, -6.0f, -14.0f, -22.0f
 	};
+	// Pluie zonale terrestre sur les TERRES, en millimetres par an. Ordres de
+	// grandeur : le creux subtropical vers 20-30 degres, le maximum equatorial,
+	// et le desert polaire. C'est la colonne qui manquait pour comprendre
+	// pourquoi la bande temperee se remplit de steppe plutot que de foret.
+	static const float TerrePluieMm[9] = {
+		2000.0f, 1200.0f, 500.0f, 600.0f, 700.0f, 600.0f, 450.0f, 250.0f, 150.0f
+	};
 
 	struct FBande
 	{
@@ -511,6 +518,7 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 		double SommeT = 0.0;
 		double SommeTMax = 0.0;
 		double SommeAlt = 0.0;
+		double SommePluie = 0.0;
 		int32 Calotte = 0;
 		int32 Toundra = 0;
 		int32 Taiga = 0;
@@ -596,6 +604,8 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 			++TerresTotal;
 			Ba.SommeT += T.IsValidIndex(Idx) ? T[Idx] : 0.0f;
 			Ba.SommeAlt += Elev;
+			Ba.SommePluie += World.Climate.PrecipMm.IsValidIndex(Idx)
+				? World.Climate.PrecipMm[Idx] : 0.0f;
 			if (bHasMax)
 			{
 				Ba.SommeTMax += TMax[Idx];
@@ -618,7 +628,7 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] === PROFIL ZONAL ==="));
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed]   lat       surface   emerge   part des    alt     T an    T ete   Terre    calotte  toundra   taiga   alpin"));
+		TEXT("[Worldseed]   lat       surface   emerge   part des    alt     T an    T ete   Terre    pluie   Terre    calotte  toundra   taiga   alpin"));
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]            du monde   local     terres      m        C        C      C an     %%       %%       %%      %%"));
 
@@ -652,11 +662,12 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 		const float MoyT = static_cast<float>(Ba.SommeT / Ba.Terres);
 		const float MoyTMax = static_cast<float>(Ba.SommeTMax / Ba.Terres);
 		const float MoyAlt = static_cast<float>(Ba.SommeAlt / Ba.Terres);
+		const float MoyPluie = static_cast<float>(Ba.SommePluie / Ba.Terres);
 
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed]   %2d-%2d  %8.2f  %6.1f  %8.2f  %6.0f  %7.1f  %7.1f  %6.1f  %7.1f  %7.1f %7.1f %7.1f"),
+			TEXT("[Worldseed]   %2d-%2d  %8.2f  %6.1f  %8.2f  %6.0f  %7.1f  %7.1f  %6.1f  %6.0f  %6.0f  %7.1f  %7.1f %7.1f %7.1f"),
 			LatBas, LatBas + 10, PartSurface, Emerge, PartTerres, MoyAlt,
-			MoyT, MoyTMax, TerreMoyenneC[IdxTerre],
+			MoyT, MoyTMax, TerreMoyenneC[IdxTerre], MoyPluie, TerrePluieMm[IdxTerre],
 			100.0f * Ba.Calotte / Ba.Terres,
 			100.0f * Ba.Toundra / Ba.Terres,
 			100.0f * Ba.Taiga / Ba.Terres,
