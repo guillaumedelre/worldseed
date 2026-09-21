@@ -337,4 +337,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeTables(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 1024);
+
+	/**
+	 * LE TRAIT DE COTE EST-IL DECOUPE, OU POLYGONAL ?
+	 *
+	 * « Anguleux », « geometrique », « pas organique » : le defaut se voit
+	 * tout de suite et ne se chiffrait pas. Il lui fallait une mesure, sinon
+	 * on regle un bruit a l'oeil sur une capture, ce que ce depot s'interdit.
+	 *
+	 * LA MESURE EST CELLE DE MANDELBROT, et elle est sourcee : la DIMENSION
+	 * FRACTALE par comptage de boites (« How Long Is the Coast of Britain ? »,
+	 * 1967). Une cote rectiligne vaut 1,00 -- doubler la finesse de la regle
+	 * double le nombre de boites. Une cote decoupee a toutes les echelles vaut
+	 * davantage, parce que la regle fine trouve des details que la grosse
+	 * ignorait. Reperes publies : Grande-Bretagne 1,25, Norvege et ses fjords
+	 * 1,52, cote sud-africaine, lisse, 1,05.
+	 *
+	 * LIMITE A DIRE : la carte est en projection equivalente-aire, qui etire
+	 * les hautes latitudes. La dimension y est donc legerement biaisee. Elle
+	 * reste bonne pour COMPARER deux reglages du meme monde, ce qui est son
+	 * emploi ici.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeCotes(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024);
 };

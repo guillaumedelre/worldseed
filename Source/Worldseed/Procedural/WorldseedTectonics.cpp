@@ -437,8 +437,32 @@ const int32 Count = NX * NY;
 		{
 			const float CoastFreq = static_cast<float>(
 				Rules.Num(TEXT("tectonics"), TEXT("coastNoiseFrequency"), 5.5));
+
+			// --- LE GAIN EST CE QUI DECIDE DE LA DIMENSION FRACTALE ---------
+			//
+			// Il etait laisse a son defaut de 0,5, et ce n'est pas un detail de
+			// dosage : pour une somme fractale, l'exposant de Hurst vaut
+			// H = -log2(gain), et la dimension d'un trait de niveau vaut
+			// D = 2 - H. A 0,5 on a donc H = 1 et D = 1,00 -- une cote
+			// RECTILIGNE, par construction, quelle que soit l'amplitude qu'on
+			// lui donne. Mesure avant : 0,971, sous la cote sud-africaine qui
+			// est la plus lisse de la Terre (1,05).
+			//
+			// Le gain concentre l'energie : a 0,5 la sixieme octave ne porte
+			// qu'un trente-deuxieme de la premiere, soit six metres de
+			// deplacement du trait -- invisible. Monter le gain rend aux
+			// petites echelles le poids qui fait les baies et les caps.
+			//
+			// Reperes publies (Mandelbrot 1967) : Grande-Bretagne 1,25,
+			// Norvege et ses fjords 1,52, Afrique du Sud 1,05.
+			const float CoastGain = static_cast<float>(
+				Rules.Num(TEXT("tectonics"), TEXT("coastNoiseGain"), 0.5));
+			const int32 CoastOctaves = Rules.Int(
+				TEXT("tectonics"), TEXT("coastNoiseOctaves"), 6);
+
 			TArray<float> CoastNoise;
-			WorldseedPerlin::FBMSphere(CoastNoise, Geo, CoastFreq, 6, Seed + 8821);
+			WorldseedPerlin::FBMSphere(CoastNoise, Geo, CoastFreq, CoastOctaves,
+				Seed + 8821, 2.0f, CoastGain);
 			if (Progress.Step(0.45f)) { return false; }
 			for (int32 I = 0; I < Count; ++I)
 			{
