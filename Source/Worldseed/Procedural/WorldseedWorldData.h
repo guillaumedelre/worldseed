@@ -74,6 +74,29 @@ struct WORLDSEED_API FWorldseedWorldData
 	 */
 	EWorldseedTexturePack TexturePack = EWorldseedTexturePack::BiomeColour;
 
+	/**
+	 * Ou le joueur a demande a naitre, en METRES sur la carte.
+	 *
+	 * Comme le pack de textures, ce n'est pas une donnee du monde mais un
+	 * CHOIX : deux parties sur la meme graine produisent le meme relief, et
+	 * seul le point d'arrivee differe. Il voyage ici parce que c'est le menu
+	 * qui le connait et le terrain qui l'applique.
+	 *
+	 * EN METRES ET NON EN CELLULE : le menu genere a la resolution qu'il veut,
+	 * et une cellule ne veut rien dire sans la grille qui va avec. Les metres
+	 * survivent a tout changement de resolution.
+	 */
+	FVector2D SpawnXYM = FVector2D::ZeroVector;
+
+	/**
+	 * Faux si le joueur n'a rien choisi, et c'est le cas par DEFAUT.
+	 *
+	 * Le terrain retombe alors sur ce qu'il a toujours fait -- terre emergee
+	 * la plus proche, puis sol plat. Un drapeau plutot qu'une position
+	 * sentinelle : (0, 0) est un point parfaitement valide de cette carte.
+	 */
+	bool bHasSpawn = false;
+
 	int32 CellCount() const { return Geometry.CellCount(); }
 
 	bool HasClimate() const

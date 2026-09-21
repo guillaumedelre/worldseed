@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedNoise.h"
 #include "Procedural/WorldseedJob.h"
 #include "Procedural/WorldseedPipeline.h"
+#include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGlobeBake.h"
 #include "Procedural/WorldseedTexturePack.h"
 #include "Procedural/WorldseedRules.h"
@@ -125,6 +126,39 @@ protected:
 	 */
 	void RedrawGlobe();
 
+	/**
+	 * La geometrie de la carte PLEINE, corrigee des latitudes de reference.
+	 *
+	 * RedrawGlobe patche une copie locale avec LatSpanDeg et le mode de
+	 * projection lus dans les regles -- sans quoi tropiques et cercles
+	 * polaires tombent a cote. Le pointage doit subir EXACTEMENT le meme
+	 * patch, sinon le point choisi et le point dessine seraient a des
+	 * latitudes differentes. D'ou cette fonction, appelee par les deux.
+	 */
+	FWorldseedGeometry GeometrieCarte() const;
+
+	/** Les trois champs de latitude que les regles imposent a une geometrie. */
+	void AppliquerLatitudes(FWorldseedGeometry& Geometry) const;
+
+	/**
+	 * Convertit une position ecran en point de la carte. Faux hors du globe.
+	 *
+	 * Elle DEFAIT l'echelle de rendu du zoom, appliquee autour du centre de
+	 * l'image : sans cela, le repere tomberait juste a zoom 1 et derivait de
+	 * plus en plus a mesure qu'on grossit.
+	 */
+	bool PointerSurLeGlobe(const FVector2D& PositionEcran,
+		float& OutLatitudeDeg, float& OutLongitudeDeg, int32& OutCellule) const;
+
+	/** La cellule de la carte sous une latitude et une longitude. */
+	int32 CelluleDe(float LatitudeDeg, float LongitudeDeg) const;
+
+	/** Retient le point, ou l'efface si l'index de cellule est negatif. */
+	void PoserDepart(float LatitudeDeg, float LongitudeDeg, int32 Cellule);
+
+	/** Remplit la liste deroulante depuis les lieux que la chaine a nommes. */
+	void RemplirLieux(const WorldseedPipeline::FResult& Resultat);
+
 	/** Lit le champ de saisie et la combo vers Params. */
 	void PullFormIntoParams();
 
@@ -152,6 +186,9 @@ protected:
 
 	UFUNCTION()
 	void HandlePackChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleLieuChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 
 	UFUNCTION()
 	void HandleCancelClicked();
@@ -191,6 +228,13 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UButton> ClearObsoleteButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> ClearAllButton;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> CacheText;
+
+	/** Bloc « depart du joueur » : la note, le tableau, et la liste des lieux. */
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> DepartHint;
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> DepartLatValue;
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> DepartBiomeValue;
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> DepartAltValue;
+	UPROPERTY(Transient) TObjectPtr<UComboBoxString> LieuxCombo;
 
 	/** Valeurs du tableau de mesures, remplies apres chaque generation. */
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatGridValue;
@@ -331,6 +375,14 @@ private:
 	bool bDraggingGlobe = false;
 
 	/**
+	 * Vrai des que le joueur a touche le globe : la rotation ne revient plus.
+	 *
+	 * Tant que le globe n'etait qu'a regarder, tourner tout seul etait une
+	 * invitation. Depuis qu'on y CHOISIT ou naitre, c'est une cible mobile.
+	 */
+	bool bGlobePrisEnMain = false;
+
+	/**
 	 * Grossissement du globe a la molette.
 	 *
 	 * IL EST POSE SUR LE WIDGET, PAS DANS LE MATERIAU, et c.est une contrainte
@@ -344,6 +396,56 @@ private:
 
 	/** Derniere position souris connue, en pixels ecran. */
 	FVector2D LastDragPosition = FVector2D::ZeroVector;
+
+	// ------------------------------------------- choisir ou naitre
+
+	/**
+	 * Deplacement CUMULE depuis l'enfoncement, en pixels.
+	 *
+	 * POURQUOI CUMULE ET NON « depart a arrivee ». Un aller-retour revient au
+	 * point de depart : mesurer l'ecart entre les deux extremites declarerait
+	 * CLIC un glisser qui a fait tout le tour du globe et l'a ramene, et le
+	 * repere sauterait sous le curseur sans qu'on l'ait demande.
+	 */
+	float CumulGlisse = 0.0f;
+
+	/**
+	 * Au-dela, c'est un glisser et non un clic.
+	 *
+	 * Trois pixels : en dessous, le tremblement de la main sur un bouton de
+	 * souris suffirait a annuler un clic volontaire ; au-dela, on commencerait
+	 * a poser un repere en voulant tourner le globe.
+	 */
+	static constexpr float SeuilClicPx = 3.0f;
+
+	/**
+	 * Le point choisi, en latitude et longitude, tel que le globe le dessine.
+	 *
+	 * Il vit EN DEGRES et non en pixels : le globe tourne et se zoome, donc un
+	 * pixel retenu serait faux des la trame suivante.
+	 */
+	WorldseedGlobe::FRepereGlobe Repere;
+
+	/** Le meme point en METRES sur la carte : ce qui voyage jusqu'au jeu. */
+	FVector2D DepartXYM = FVector2D::ZeroVector;
+
+	/** Faux tant que le joueur n'a rien choisi : le terrain decide alors seul. */
+	bool bDepartChoisi = false;
+
+	/**
+	 * Les lieux que la chaine a nommes, dans l'ordre de la liste deroulante.
+	 *
+	 * ILS SONT RETENUS ICI PARCE QUE LE MENU LES JETTE. `PendingResult` est
+	 * relache des la fin de la generation et n'en conserve que relief, climat,
+	 * biomes et roches ; arches, gouffres, dolines, bouches et tables partent
+	 * avec lui. Le terrain les REBATIT a l'identique cote jeu -- ils sont
+	 * deterministes -- mais le menu, lui, ne les aurait plus pour les offrir.
+	 *
+	 * La premiere entree est le choix VIDE, donc ce tableau commence par une
+	 * position sans objet : les index de la liste et ceux-ci se correspondent
+	 * un pour un, ce qui evite un decalage a chaque lecture.
+	 */
+	TArray<FVector2D> LieuxXYM;
 
 	/** Periode de redessin du globe, en secondes. */
 	// SOIXANTE HERTZ depuis que le globe est dessine par la carte graphique :

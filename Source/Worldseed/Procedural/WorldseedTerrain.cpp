@@ -196,6 +196,12 @@ bool AWorldseedTerrain::AcquireWorld()
 			Biomes = MoveTemp(Loaded.Biomes);
 			Lithology.Id = MoveTemp(Loaded.LithologyId);
 			TexturePack = Loaded.TexturePack;
+
+			// Le point de depart choisi dans le menu. Ce terrain ne s'en sert
+			// pas lui-meme -- c'est l'acteur voxel qui place le joueur -- il
+			// ne fait que le convoyer jusqu'a lui.
+			bDepartDemande = Loaded.bHasSpawn;
+			DepartXYM = Loaded.SpawnXYM;
 			Colouring = (TexturePack == EWorldseedTexturePack::BiomeColour)
 				? EWorldseedTerrainColouring::BiomeColour
 				: EWorldseedTerrainColouring::TexturePack;
@@ -359,6 +365,20 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 	{
 		VoxelTerrain->AdoptWorld(WorldSeed, Geometry, HeightsM, Biomes,
 			HeightExaggeration, Caves, Lithology, PrecipMm, TempC);
+
+		// LE DEPART CHOISI DANS LE MENU PASSE PAR ICI, ET C'EST LE SEUL
+		// CHEMIN. Le voxel lit bien lui-meme l'instance de jeu, mais seulement
+		// quand personne ne lui donne de monde -- un PIE lance depuis
+		// l'editeur, sans passer par le menu. Des que L_Menu a joue, c'est ce
+		// terrain-ci qui a consomme l'instance et qui transmet ; le depart
+		// pose sur l'autre chemin ne servait donc jamais. Mesure : le journal
+		// disait « monde repris du TERRAIN » puis « terre emergee la plus
+		// proche a (8, 8) m », c'est-a-dire une recherche partie de l'origine
+		// alors que le menu avait demande (-2766, 2297).
+		if (bDepartDemande)
+		{
+			VoxelTerrain->DemanderDepart(DepartXYM);
+		}
 
 		// LE MATERIAU AUSSI SE TRANSMET. Sans lui les chunks voxel prennent le
 		// gris par defaut, qui ne lit pas la couleur de sommet : le relief

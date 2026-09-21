@@ -378,6 +378,17 @@ public:
 		const FWorldseedLithology& InLithology,
 		const TArray<float>& InPrecipMm, const TArray<float>& InTempMeanC);
 
+	/**
+	 * Demande que le joueur naisse pres de ce point, en METRES sur la carte.
+	 *
+	 * A PART D'AdoptWorld, ET PAS PAR PARESSE DE SIGNATURE. Ce que transmet
+	 * AdoptWorld est le MONDE -- relief, biomes, roches, cavites -- c'est-a-dire
+	 * ce que la graine determine. Un point de depart est un CHOIX du joueur :
+	 * deux parties sur la meme graine ont le meme monde et peuvent commencer
+	 * ailleurs. Les melanger inviterait a croire que le depart se recalcule.
+	 */
+	void DemanderDepart(const FVector2D& XYMetres);
+
 private:
 
 	void UpdateChunks();
@@ -638,6 +649,24 @@ private:
 	/** Destination demandee, tant que le pion n'y est pas pose. */
 	bool bTeleportPose = false;
 	FVector2D TeleportXYM = FVector2D::ZeroVector;
+
+	/**
+	 * Le point ou le joueur a demande a naitre, choisi dans le menu.
+	 *
+	 * DISTINCT DE LA TELEPORTATION, ET LA DIFFERENCE EST VOULUE. Une
+	 * destination de `Worldseed.Lieux` ne se corrige JAMAIS : on va voir CETTE
+	 * arche, et la deplacer de trois cents metres pour trouver du plat
+	 * raterait ce qu'on venait voir. Un depart, lui, doit etre corrige : on
+	 * vise « par la », a la resolution d'un clic sur un globe, et naitre sur
+	 * une paroi a soixante degres ou au-dessus d'une galerie ne rend service a
+	 * personne. Deux intentions, donc deux drapeaux -- les confondre donnerait
+	 * tort a l'une des deux.
+	 *
+	 * Il n'est consomme QU'UNE FOIS : le filet de rattrapage rearme la mise en
+	 * place, et rejouer le depart y ramenerait le joueur a chaque chute.
+	 */
+	bool bDepartDemande = false;
+	FVector2D DepartXYM = FVector2D::ZeroVector;
 
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;

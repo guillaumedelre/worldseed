@@ -376,4 +376,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeCarte(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 1024, const FString& Etiquette = TEXT("carte"));
+
+	/**
+	 * Controle ALLER-RETOUR de la projection du globe.
+	 *
+	 * Partager une formule entre le rendu, le pointage et le repere garantit
+	 * qu'ils sont D'ACCORD, pas qu'ils ont RAISON. Seul l'aller-retour
+	 * tranche : une latitude et une longitude connues, projetees vers l'image
+	 * puis reinversees, doivent revenir sur elles-memes.
+	 *
+	 * Ne genere aucun monde -- la projection ne depend que de l'orientation --
+	 * donc elle tourne en une fraction de seconde et peut se relancer apres
+	 * chaque retouche.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbePointage();
 };

@@ -1064,3 +1064,152 @@ FString UWorldseedProbeLibrary::ProbeCarte(int32 Seed, float HeightMeters,
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Bilan);
 	return Bilan;
 }
+
+
+// --------------------------------------------- le pointage sur le globe
+
+/**
+ * Controle ALLER-RETOUR de la projection du globe.
+ *
+ * POURQUOI ELLE EXISTE. Partager une formule entre le rendu, le pointage et
+ * le repere garantit qu'ils sont D'ACCORD -- pas qu'ils ont RAISON. Une
+ * projection partagee mais fausse est partagee et fausse. Le seul controle
+ * qui tranche est l'aller-retour : une latitude et une longitude connues,
+ * projetees vers l'image puis reinversees, doivent revenir sur elles-memes.
+ *
+ * Elle ne genere AUCUN monde : la projection ne depend que de l'orientation
+ * du globe. Elle tourne donc en une fraction de seconde, ce qui est la
+ * condition pour qu'on la relance apres chaque retouche.
+ */
+FString UWorldseedProbeLibrary::ProbePointage()
+{
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] === POINTAGE DU GLOBE ==="));
+
+	// PLUSIEURS ORIENTATIONS, et les bornes en font partie. Le menu laisse
+	// l'inclinaison aller de -80 a +80 degres ; une formule juste au repos
+	// peut se tromper de signe des qu'on bascule de l'autre cote, et c'est
+	// exactement le genre de faute qu'un seul cas d'essai ne voit pas.
+	const float Inclinaisons[] = { 0.0f, 18.0f, -45.0f, 80.0f, -80.0f };
+	const float Rotations[] = { 0.0f, 37.0f, 180.0f, 355.0f };
+
+	double PireLat = 0.0;
+	double PireLon = 0.0;
+	double PireLatFranc = 0.0;
+	double PireLonFranc = 0.0;
+	double PirePixel = 0.0;
+	int32 Testes = 0;
+	int32 Caches = 0;
+	int32 Incoherents = 0;
+
+	constexpr int32 Res = 1024;
+
+	for (const float Tilt : Inclinaisons)
+	{
+		for (const float Rot : Rotations)
+		{
+			WorldseedGlobe::FGlobeSettings Reglages;
+			Reglages.TiltDeg = Tilt;
+			Reglages.LongitudeOffsetDeg = Rot;
+			const WorldseedGlobe::FCadreGlobe Cadre = WorldseedGlobe::CadreGlobe(Reglages);
+
+			for (float Lat = -85.0f; Lat <= 85.0f; Lat += 5.0f)
+			{
+				for (float Lon = 0.0f; Lon < 360.0f; Lon += 5.0f)
+				{
+					float X = 0.0f;
+					float Y = 0.0f;
+					if (!WorldseedGlobe::CadreDepuisLatLon(Lat, Lon, Cadre, X, Y))
+					{
+						++Caches;
+						continue;
+					}
+
+					const WorldseedGlobe::FPointeGlobe P =
+						WorldseedGlobe::PointerCadre(X, Y, Cadre);
+
+					// UN POINT DE LA FACE VISIBLE DOIT TOMBER DANS LE DISQUE.
+					// Si les deux sens ne s'accordent pas la-dessus, inutile
+					// de regarder les degres : c'est la geometrie qui est
+					// fausse, pas la precision.
+					if (!P.bSurLeGlobe)
+					{
+						++Incoherents;
+						continue;
+					}
+
+					++Testes;
+
+					const double DLat = FMath::Abs(P.LatitudeDeg - Lat);
+					double DLon = FMath::Abs(P.LongitudeDeg - Lon);
+					if (DLon > 180.0) { DLon = 360.0 - DLon; }
+
+					// Aux poles la longitude n'a plus de sens : tous les
+					// meridiens s'y rejoignent, et un ecart d'un pixel y vaut
+					// des dizaines de degres. On la pondere par le cosinus,
+					// c'est-a-dire par la distance reelle sur la sphere.
+					DLon *= FMath::Cos(FMath::DegreesToRadians(Lat));
+
+					PireLat = FMath::Max(PireLat, DLat);
+					PireLon = FMath::Max(PireLon, DLon);
+
+					// LE LIMBE EST MAL CONDITIONNE PAR NATURE, et le taire
+					// serait malhonnete dans les deux sens : on rend donc
+					// DEUX chiffres, celui de tout le disque et celui du
+					// disque franc. Pres du bord, la derivee de l'arc sinus
+					// diverge et un demi-pixel y vaut plusieurs degres -- ce
+					// n'est pas un defaut de la formule, c'est la projection.
+					if (P.Rayon01 < 0.98f)
+					{
+						PireLatFranc = FMath::Max(PireLatFranc, DLat);
+						PireLonFranc = FMath::Max(PireLonFranc, DLon);
+					}
+
+					// Le second aller-retour : cadre -> pixel -> coordonnees
+					// de texture -> cadre. C'est ce chemin-la que le clic
+					// emprunte, et l'inversion de l'axe vertical n'y est
+					// ecrite qu'une fois -- raison de plus pour la verifier.
+					float PX = 0.0f;
+					float PY = 0.0f;
+					WorldseedGlobe::PixelDepuisCadre(X, Y, Res, PX, PY);
+
+					float RX = 0.0f;
+					float RY = 0.0f;
+					WorldseedGlobe::CadreDepuisUV(
+						PX / static_cast<float>(Res - 1),
+						PY / static_cast<float>(Res - 1), RX, RY);
+
+					PirePixel = FMath::Max(PirePixel,
+						FMath::Max(FMath::Abs(RX - X), FMath::Abs(RY - Y)));
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   %d points sur la face visible, %d sur la face cachee ")
+		TEXT("(non testables), %d incoherents"),
+		Testes, Caches, Incoherents);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   disque entier : latitude %.6f deg, longitude %.6f deg"),
+		PireLat, PireLon);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   hors limbe    : latitude %.6f deg, longitude %.6f deg"),
+		PireLatFranc, PireLonFranc);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   cadre -> pixel -> cadre : %.8f"), PirePixel);
+
+	// LE SEUIL PORTE SUR LE DISQUE FRANC, et il est large a dessein : on
+	// cherche une faute de FORMULE -- un signe, un axe, une transposee -- qui
+	// se compte en degres, pas une derive de virgule flottante.
+	const bool bBon = (Incoherents == 0)
+		&& (PireLatFranc < 0.01) && (PireLonFranc < 0.01) && (PirePixel < 1e-4);
+
+	const FString Verdict = FString::Printf(
+		TEXT("VERDICT : %s -- %d points, pire ecart hors limbe %.6f deg"),
+		bBon ? TEXT("la projection et son inverse s'accordent")
+			: TEXT("DESACCORD, la projection est fausse"),
+		Testes, FMath::Max(PireLatFranc, PireLonFranc));
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Verdict);
+	return Verdict;
+}

@@ -33,6 +33,12 @@ AWorldseedVoxelTerrain::AWorldseedVoxelTerrain()
 
 // ---------------------------------------------------------------- chargement
 
+void AWorldseedVoxelTerrain::DemanderDepart(const FVector2D& XYMetres)
+{
+	bDepartDemande = true;
+	DepartXYM = XYMetres;
+}
+
 void AWorldseedVoxelTerrain::AdoptWorld(int32 InSeed,
 	const FWorldseedGeometry& InGeometry, const TArray<float>& InHeightsM,
 	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration,
@@ -76,9 +82,22 @@ bool AWorldseedVoxelTerrain::LoadWorld()
 			// Le reseau n'est pas transporte par le menu : il se rebatit ici.
 			CaveNetwork.Reset();
 
+			// LE DEPART CHOISI DANS LE MENU. Il ne remplace pas la mise en
+			// place, il en deplace seulement le POINT DE DEPART : la recherche
+			// de terre emergee puis de sol plat s'applique ensuite comme
+			// toujours. Un clic sur un globe vise a une quinzaine de metres
+			// pres, et sans cette recherche on pourrait naitre sur une paroi a
+			// soixante degres ou au-dessus d'une galerie.
+			bDepartDemande = Loaded.bHasSpawn;
+			DepartXYM = Loaded.SpawnXYM;
+
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : monde repris du menu, seed=%d  %dx%d"),
-				WorldSeed, Geometry.NX, Geometry.NY);
+				TEXT("[Worldseed] voxel : monde repris du menu, seed=%d  %dx%d%s"),
+				WorldSeed, Geometry.NX, Geometry.NY,
+				bDepartDemande
+					? *FString::Printf(TEXT(", depart demande a (%.0f, %.0f) m"),
+						DepartXYM.X, DepartXYM.Y)
+					: TEXT(", depart libre"));
 			return true;
 		}
 	}
@@ -1652,6 +1671,28 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	}
 	else if (!bPlayerHeld)
 	{
+		// LE DEPART CHOISI DANS LE MENU DEPLACE LE POINT DE DEPART DE LA
+		// RECHERCHE, et rien d'autre. Tout ce qui suit -- terre emergee la
+		// plus proche, puis sol plat -- s'applique ensuite a l'identique.
+		// C'est le minimum : ecrire ici un second chemin de mise en place
+		// ferait diverger deux moities qui doivent rester la meme.
+		//
+		// IL NE JOUE QU'UNE FOIS. Le filet de rattrapage rearme cette mise en
+		// place quand le joueur passe sous la bande de terrain ; le rejouer le
+		// ramenerait a son point de naissance a chaque chute, ce qui n'est pas
+		// un filet mais une laisse.
+		if (bDepartDemande)
+		{
+			bDepartDemande = false;
+			X = DepartXYM.X;
+			Y = DepartXYM.Y;
+			SurfaceM = Density.SurfaceHeightM(X, Y);
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : depart demande a (%.0f, %.0f) m, ")
+				TEXT("surface %.1f m"), X, Y, SurfaceM);
+		}
+
 		// ON CHOISIT L'ENDROIT, ON NE SE CONTENTE PAS DE CELUI DU PlayerStart.
 		// Il faut du plat, de l'emerge, et du plein dessous : une colonne sur
 		// huit porte une galerie, et naitre au-dessus revient a tomber dedans.

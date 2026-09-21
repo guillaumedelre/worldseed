@@ -51,6 +51,125 @@ namespace WorldseedGlobe
 
 	namespace
 	{
+	/**
+	 * Estampe le reticule du point choisi, APRES le remplissage.
+	 *
+	 * Apres, et non pendant : demander a chaque pixel « suis-je dans le
+	 * reticule ? » couterait la projection a un million de points pour en
+	 * toucher deux cents. On projette le point UNE fois, puis on peint son
+	 * voisinage -- c'est le meme renversement de sens de lecture qui avait
+	 * fait passer le semis PCG de 32 Go a 22.
+	 */
+	void EstamperRepere(uint8* Pixels, int32 Res, const FGlobeSettings& Settings)
+	{
+		if (!Settings.Repere.bActif)
+		{
+			return;
+		}
+
+		const FCadreGlobe Cadre = CadreGlobe(Settings);
+		float CadreX = 0.0f;
+		float CadreY = 0.0f;
+
+		// LA FACE CACHEE NE SE DESSINE PAS. Sans ce test, un point choisi de
+		// l'autre cote de la planete se peindrait par-dessus le relief qui est
+		// cense le masquer, et l'on conclurait a une projection fausse alors
+		// qu'elle serait juste.
+		if (!CadreDepuisLatLon(Settings.Repere.LatitudeDeg,
+			Settings.Repere.LongitudeDeg, Cadre, CadreX, CadreY))
+		{
+			return;
+		}
+
+		float CX = 0.0f;
+		float CY = 0.0f;
+		PixelDepuisCadre(CadreX, CadreY, Res, CX, CY);
+
+		// Le reticule DESIGNE un point, il n'en mesure pas l'etendue : sa
+		// taille suit donc la texture et non le monde.
+		const float RayonBlanc = FMath::Max(4.0f, Res * 0.014f);
+		const float RayonSombre = RayonBlanc + FMath::Max(2.0f, Res * 0.004f);
+		const int32 Portee = FMath::CeilToInt(RayonSombre) + 2;
+
+		const int32 X0 = FMath::Max(0, FMath::FloorToInt(CX) - Portee);
+		const int32 X1 = FMath::Min(Res - 1, FMath::CeilToInt(CX) + Portee);
+		const int32 Y0 = FMath::Max(0, FMath::FloorToInt(CY) - Portee);
+		const int32 Y1 = FMath::Min(Res - 1, FMath::CeilToInt(CY) + Portee);
+
+		const float InvHalf = 2.0f / static_cast<float>(Res - 1);
+
+		// Une bande vaut plein au centre et s'eteint sur un pixel de part et
+		// d'autre : un anneau coupe net montre son escalier, comme le bord du
+		// disque le montrait avant qu'on ne le fonde.
+		auto Bande = [](float D, float Cible, float DemiLargeur) -> float
+		{
+			return FMath::Clamp(1.0f - (FMath::Abs(D - Cible) - DemiLargeur), 0.0f, 1.0f);
+		};
+
+		for (int32 PY = Y0; PY <= Y1; ++PY)
+		{
+			const float ScreenY = 1.0f - static_cast<float>(PY) * InvHalf;
+
+			for (int32 PX = X0; PX <= X1; ++PX)
+			{
+				const float ScreenX = static_cast<float>(PX) * InvHalf - 1.0f;
+
+				// LE RETICULE NE DEBORDE PAS DANS L'ESPACE. Pres du limbe,
+				// l'anneau sortirait du disque et abimerait la silhouette --
+				// la seule forme ronde de l'ecran, donc celle dont un defaut
+				// se voit le plus.
+				if (PointerCadre(ScreenX, ScreenY, Cadre).Rayon01 > 1.0f)
+				{
+					continue;
+				}
+
+				const float DX = static_cast<float>(PX) - CX;
+				const float DY = static_cast<float>(PY) - CY;
+				const float D = FMath::Sqrt(DX * DX + DY * DY);
+
+				// Le halo sombre vient AVANT, pour que le blanc se detache
+				// aussi bien sur une calotte que sur un ocean profond.
+				const float Sombre = Bande(D, RayonSombre, 0.8f);
+				const float Blanc = FMath::Max(
+					Bande(D, RayonBlanc, 0.7f),
+					FMath::Clamp(2.0f - D, 0.0f, 1.0f));
+
+				if (Sombre <= 0.0f && Blanc <= 0.0f)
+				{
+					continue;
+				}
+
+				const int32 Index = (PY * Res + PX) * 4;
+				auto Melanger = [&](int32 Canal, float Valeur, float Poids)
+				{
+					const float Avant = static_cast<float>(Pixels[Index + Canal]);
+					Pixels[Index + Canal] = static_cast<uint8>(
+						FMath::Clamp(FMath::Lerp(Avant, Valeur, Poids), 0.0f, 255.0f));
+				};
+
+				if (Sombre > 0.0f)
+				{
+					Melanger(0, 12.0f, Sombre);
+					Melanger(1, 12.0f, Sombre);
+					Melanger(2, 16.0f, Sombre);
+				}
+				if (Blanc > 0.0f)
+				{
+					Melanger(0, 235.0f, Blanc);
+					Melanger(1, 245.0f, Blanc);
+					Melanger(2, 255.0f, Blanc);
+				}
+
+				// Le reticule est OPAQUE meme la ou le bord du disque est
+				// fondu : sinon il palit en approchant du limbe, precisement
+				// la ou il est deja le plus difficile a viser.
+				const float Couvre = FMath::Max(Sombre, Blanc);
+				Pixels[Index + 3] = static_cast<uint8>(FMath::Max(
+					static_cast<float>(Pixels[Index + 3]), Couvre * 255.0f));
+			}
+		}
+	}
+
 	void FillPixels(uint8* Pixels, int32 Res, const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry,
 		const FGlobeSettings& Settings, const TArray<uint8>* BiomeIndex,
@@ -77,9 +196,12 @@ namespace WorldseedGlobe
 		// terminateur sur la droite et donne du volume sans noyer de face.
 		const FVector LightDirection = FVector(-0.45f, 0.35f, 0.82f).GetSafeNormal();
 
-		const float TiltRad = FMath::DegreesToRadians(Settings.TiltDeg);
-		const float CosTilt = FMath::Cos(TiltRad);
-		const float SinTilt = FMath::Sin(TiltRad);
+		// LA BASCULE EST CALCULEE UNE FOIS ET PARTAGEE. C'est le meme objet que
+		// le pointage a la souris et le repere emploient : la formule de
+		// projection n'existe qu'a un seul endroit, dans l'en-tete.
+		const FCadreGlobe Cadre = CadreGlobe(Settings);
+		const float CosTilt = Cadre.CosTilt;
+		const float SinTilt = Cadre.SinTilt;
 
 		// Axe polaire exprime dans le repere de la camera : image de (0,1,0)
 		// par l inverse de la bascule. Sert a construire le repere tangent.
@@ -105,32 +227,17 @@ namespace WorldseedGlobe
 			{
 				const float ScreenX = static_cast<float>(PX) * InvHalf - 1.0f;
 
-				// Marge pour que le disque ne touche pas les bords.
-				const float R = 0.92f;
-				const float NX = ScreenX / R;
-				const float NY = ScreenY / R;
-				const float R2 = NX * NX + NY * NY;
+				// TOUTE LA GEOMETRIE TIENT DANS CET APPEL. Le pointage a la
+				// souris appelle la meme fonction, et le repere son inverse.
+				const FPointeGlobe Pointe = PointerCadre(ScreenX, ScreenY, Cadre);
+				const FVector& Normal = Pointe.Normale;
 
 				FLinearColor Color = SpaceColor;
 
-				if (R2 <= 1.0f)
+				if (Pointe.bSurLeGlobe)
 				{
-					// Point de la sphere unite face a l'observateur.
-					const float NZ = FMath::Sqrt(FMath::Max(0.0f, 1.0f - R2));
-					const FVector Normal(NX, NY, NZ);
-
-					// On bascule l'axe polaire de TiltDeg vers l'observateur :
-					// sans cela on ne verrait jamais un pole, donc jamais la
-					// calotte, qui est justement ce qu'on veut verifier.
-					const float AxisY = Normal.Y * CosTilt - Normal.Z * SinTilt;
-					const float AxisZ = Normal.Y * SinTilt + Normal.Z * CosTilt;
-
-					const float LatitudeDeg = FMath::RadiansToDegrees(
-						FMath::Asin(FMath::Clamp(AxisY, -1.0f, 1.0f)));
-
-					float LongitudeDeg = FMath::RadiansToDegrees(
-						FMath::Atan2(Normal.X, AxisZ)) + Settings.LongitudeOffsetDeg;
-					LongitudeDeg = FMath::Fmod(FMath::Fmod(LongitudeDeg, 360.0f) + 360.0f, 360.0f);
+					const float LatitudeDeg = Pointe.LatitudeDeg;
+					const float LongitudeDeg = Pointe.LongitudeDeg;
 
 					const float U = LongitudeDeg / 360.0f;
 					const float V = Geometry.VForLatitudeDeg(LatitudeDeg);
@@ -230,7 +337,7 @@ namespace WorldseedGlobe
 					Color = Color * (0.22f + 0.88f * Lambert);
 
 					// --- limbe : assombrit le bord, donne la rondeur -------
-					Color = Color * (0.55f + 0.45f * NZ);
+					Color = Color * (0.55f + 0.45f * static_cast<float>(Normal.Z));
 
 					// --- reperes de latitude ------------------------------
 					if (Settings.bShowLatitudeLines)
@@ -274,9 +381,8 @@ namespace WorldseedGlobe
 				// chose qu'on voit sur une forme ronde. `InvHalf` vaut deux
 				// sur la resolution, donc un pixel vaut `InvHalf / R` dans les
 				// coordonnees normalisees ou le rayon vaut 1.
-				const float Rayon = FMath::Sqrt(R2);
-				const float Pixel = InvHalf / R;
-				const float Opacite = FMath::Clamp((1.0f - Rayon) / Pixel, 0.0f, 1.0f);
+				const float Pixel = InvHalf / RayonDisque;
+				const float Opacite = FMath::Clamp((1.0f - Pointe.Rayon01) / Pixel, 0.0f, 1.0f);
 
 				const int32 Index = (PY * Res + PX) * 4;
 				Pixels[Index + 0] = static_cast<uint8>(FMath::Clamp(Color.B, 0.0f, 1.0f) * 255.0f);
@@ -286,6 +392,10 @@ namespace WorldseedGlobe
 			}
 		});
 
+		// HORS DE LA BOUCLE PARALLELE : le reticule ecrit dans des pixels que
+		// plusieurs lignes se partagent, et il est bien trop petit pour que le
+		// paralleliser rapporte quoi que ce soit.
+		EstamperRepere(Pixels, Res, Settings);
 	}
 	}
 

@@ -111,6 +111,16 @@ public:
 		meta = (ClampMin = "0.1"))
 	float HeightExaggeration = 1.0f;
 
+	/**
+	 * Le point de depart choisi dans le menu, en metres sur la carte.
+	 *
+	 * CE TERRAIN NE S'EN SERT PAS : c'est l'acteur voxel qui place le joueur.
+	 * Il ne fait que le CONVOYER, parce qu'il est le seul a lire l'instance de
+	 * jeu des que L_Menu a joue.
+	 */
+	bool bDepartDemande = false;
+	FVector2D DepartXYM = FVector2D::ZeroVector;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Monde")
 	TObjectPtr<UMaterialInterface> TerrainMaterial;
 

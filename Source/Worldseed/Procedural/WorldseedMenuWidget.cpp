@@ -641,6 +641,61 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
 			}
 
+			// --- depart du joueur -----------------------------------------
+			//
+			// IL VIENT AVANT LES BIOMES, et pas apres : la liste des biomes
+			// fait quinze lignes et pousserait ce bloc hors de l'ecran, alors
+			// que c'est une ACTION -- la derniere avant d'entrer dans le
+			// monde -- et qu'une action qu'on ne voit pas n'existe pas.
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(MakeRule(TEXT("RuleDepart"))))
+			{
+				S->SetPadding(FMargin(0.0f, 18.0f, 0.0f, 14.0f));
+			}
+
+			Side->AddChildToVerticalBox(MakeSectionLabel(
+				TEXT("DepartLabel"), TEXT("DEPART DU JOUEUR")));
+
+			// La note DIT quoi faire tant que rien n'est choisi, et POURQUOI
+			// quand un clic est refuse. Sans elle, un clic en mer ne
+			// produirait rien du tout et se lirait comme un ecran casse.
+			DepartHint = MakeText(TEXT("DepartHint"),
+				TEXT("cliquez une terre sur le globe"), TypoLegende, ColTextMuted);
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(DepartHint))
+			{
+				S->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+			}
+
+			DepartLatValue = AddStat(TEXT("RowDepLat"), TEXT("LblDepLat"),
+				TEXT("ValDepLat"), TEXT("Latitude"));
+			DepartBiomeValue = AddStat(TEXT("RowDepBio"), TEXT("LblDepBio"),
+				TEXT("ValDepBio"), TEXT("Biome"));
+			DepartAltValue = AddStat(TEXT("RowDepAlt"), TEXT("LblDepAlt"),
+				TEXT("ValDepAlt"), TEXT("Altitude"));
+
+			// La liste des lieux que la chaine a nommes : arches, avens,
+			// dolines, tables. Choisir une entree pose le repere et amene le
+			// lieu face a l'observateur.
+			LieuxCombo = WidgetTree->ConstructWidget<UComboBoxString>(
+				UComboBoxString::StaticClass(), TEXT("LieuxCombo"));
+
+			// Meme contrainte que le selecteur d'habillage : la police doit
+			// etre posee AVANT la construction du widget Slate, et le seul
+			// chemin public est la propriete depreciee.
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			LieuxCombo->Font = PoliceEcran(TypoControle);
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
+
+			LieuxCombo->AddOption(TEXT("-- au hasard --"));
+			LieuxCombo->SetSelectedIndex(0);
+			LieuxCombo->OnSelectionChanged.AddDynamic(
+				this, &UWorldseedMenuWidget::HandleLieuChanged);
+
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(
+				MakeControlBox(TEXT("LieuxSize"), LieuxCombo, 0.0f)))
+			{
+				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
+			}
+
 			// --- statistiques du monde ------------------------------------
 			//
 			// LA BARRE PORTE LA COULEUR DU BIOME, celle-la meme que le globe
@@ -1080,6 +1135,7 @@ void UWorldseedMenuWidget::PollGeneration()
 		CachedContinentality = MoveTemp(PendingResult->Climate.Continentality);
 		CachedBiomes = MoveTemp(PendingResult->Biomes);
 		CachedLithologyId = MoveTemp(PendingResult->Lithology.Id);
+
 		// LA GEOMETRIE D'ABORD, ET C'EST PORTANT.
 		//
 		// `BakeGlobe` et `BuildPreviewField` commencent tous deux par
@@ -1101,6 +1157,19 @@ void UWorldseedMenuWidget::PollGeneration()
 		// image correcte : on voyait un globe juste, et rien ne disait qu'il
 		// coutait mille fois son prix.
 		WorldGeometry = PendingResult->Geometry;
+
+		// LES LIEUX SE LISENT ICI, ET PAS AILLEURS. Plus haut, WorldGeometry
+		// serait encore celle du monde PRECEDENT et les latitudes seraient
+		// fausses ; plus bas, PendingResult est relache. Arches, puits et
+		// tables ne figurent dans aucun des caches -- c'est la derniere
+		// occasion de les voir. Le terrain, lui, les rebatit a l'identique
+		// cote jeu, puisqu'ils sont deterministes.
+		RemplirLieux(*PendingResult);
+
+		// UN NOUVEAU MONDE EFFACE L'ANCIEN DEPART. Le garder poserait le
+		// repere a une latitude qui, sur cette carte-ci, peut tomber en pleine
+		// mer -- et le joueur naitrait quelque part sans l'avoir choisi.
+		PoserDepart(0.0f, 0.0f, INDEX_NONE);
 
 		BuildPreviewField();
 
@@ -1472,6 +1541,21 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	{
 		GlobeMaterial->SetScalarParameterValue(TEXT("LongitudeOffset"), GlobeLongitudeDeg);
 		GlobeMaterial->SetScalarParameterValue(TEXT("Tilt"), GlobeTiltDeg);
+
+		// LE RETICULE NE SE DESSINE PAS SUR LA VOIE GRAPHIQUE, et il faut le
+		// dire plutot que de laisser croire a une panne. Le materiau du globe
+		// vit dans un .uasset : y ajouter un parametre demanderait de la
+		// chirurgie d'asset par MCP, un lien que ce depot sait tomber a chaque
+		// relance de l'editeur. Le POINTAGE, lui, marche dans les deux cas --
+		// il ne depend que de la rotation, pas de la voie de rendu.
+		static bool bDejaDit = false;
+		if (Repere.bActif && !bDejaDit)
+		{
+			bDejaDit = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] globe : le depart est retenu mais le reticule ")
+				TEXT("n'est pas dessine sur la voie graphique (-WorldseedGlobeGPU)"));
+		}
 		return;
 	}
 
@@ -1513,14 +1597,15 @@ void UWorldseedMenuWidget::RedrawGlobe()
 		(GlobeCover.Num() == GlobeHeights.Num()) ? &GlobeCover : nullptr;
 
 	WorldseedGlobe::FGlobeSettings GlobeSettings;
+
+	// Des regles on ne tire que les latitudes de reference et la
+	// correspondance latitude/ligne, jamais les dimensions de grille. Le
+	// POINTAGE appelle la meme fonction : les deux doivent voir la meme
+	// latitude sous le meme pixel.
+	AppliquerLatitudes(Geometry);
+
 	if (Rules)
 	{
-		// Des regles on ne tire que les latitudes de reference et la
-		// correspondance latitude/ligne, jamais les dimensions de grille.
-		Geometry.LatSpanDeg = Rules->Geometry.LatSpanDeg;
-		Geometry.LatitudeMapping = Rules->Geometry.LatitudeMapping;
-		Geometry.LatitudeEqualAreaBlend = Rules->Geometry.LatitudeEqualAreaBlend;
-
 		GlobeSettings.TropicDeg = static_cast<float>(
 			Rules->Num(TEXT("world"), TEXT("tropicDeg"), 23.44));
 		GlobeSettings.PolarCircleDeg = static_cast<float>(
@@ -1530,6 +1615,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	}
 	GlobeSettings.LongitudeOffsetDeg = GlobeLongitudeDeg;
 	GlobeSettings.TiltDeg = GlobeTiltDeg;
+	GlobeSettings.Repere = Repere;
 
 	// Premiere fois : on cree la texture. Ensuite on ne fait que reecrire ses
 	// pixels, sinon la rotation fabriquerait une UTexture2D par frame.
@@ -1677,7 +1763,14 @@ void UWorldseedMenuWidget::HandleGlobeTimer()
 
 	// La rotation automatique s'efface devant le geste du joueur : reprendre a
 	// tourner sous ses doigts pendant qu'il oriente le globe serait desagreable.
-	if (!bDraggingGlobe && AutoSpinDegPerSecond != 0.0f)
+	//
+	// ET ELLE NE REVIENT PLUS, DES LA PREMIERE PRISE EN MAIN. Tant que le
+	// globe n'etait qu'a regarder, tourner tout seul etait une invitation.
+	// Depuis qu'on y CHOISIT un point, c'est une cible mobile : a cinq degres
+	// par seconde, viser une ile demande de compenser le mouvement, et la
+	// meme terre n'est plus sous le curseur deux secondes plus tard. Une fois
+	// que le joueur a saisi le globe, il decide de son orientation.
+	if (!bDraggingGlobe && !bGlobePrisEnMain && AutoSpinDegPerSecond != 0.0f)
 	{
 		GlobeLongitudeDeg = FMath::Fmod(
 			GlobeLongitudeDeg + AutoSpinDegPerSecond * Delta, 360.0f);
@@ -1717,7 +1810,12 @@ FReply UWorldseedMenuWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 	}
 
 	bDraggingGlobe = true;
+	bGlobePrisEnMain = true;
 	LastDragPosition = InMouseEvent.GetScreenSpacePosition();
+
+	// Le compteur repart a zero : c'est lui qui, au relachement, dira si le
+	// geste etait un clic ou un glisser.
+	CumulGlisse = 0.0f;
 
 	// CaptureMouse garde les evenements meme si le curseur sort du widget :
 	// sans cela un glisser un peu ample lacherait le globe en cours de route.
@@ -1735,6 +1833,12 @@ FReply UWorldseedMenuWidget::NativeOnMouseMove(const FGeometry& InGeometry,
 	const FVector2D Current = InMouseEvent.GetScreenSpacePosition();
 	const FVector2D Delta = Current - LastDragPosition;
 	LastDragPosition = Current;
+
+	// ON CUMULE LE CHEMIN PARCOURU, PAS L'ECART ENTRE DEPART ET ARRIVEE. Un
+	// aller-retour revient au point de depart : mesurer les deux extremites
+	// declarerait CLIC un glisser qui a fait tourner le globe et l'a ramene,
+	// et le repere sauterait sous le curseur sans qu'on l'ait demande.
+	CumulGlisse += static_cast<float>(Delta.Size());
 
 	// 0,35 degre par pixel : un glisser de la largeur du globe fait environ un
 	// demi-tour, ce qui se manipule bien.
@@ -1764,6 +1868,32 @@ FReply UWorldseedMenuWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
 	}
 
 	bDraggingGlobe = false;
+
+	// UN GESTE QUI N'A PAS BOUGE EST UN CLIC, et il choisit ou naitre. Le
+	// glisser reste le geste par defaut : on ne pose un repere que si l'on
+	// n'a manifestement pas voulu tourner le globe.
+	if (CumulGlisse <= SeuilClicPx)
+	{
+		float LatitudeDeg = 0.0f;
+		float LongitudeDeg = 0.0f;
+		int32 Cellule = INDEX_NONE;
+
+		if (PointerSurLeGlobe(InMouseEvent.GetScreenSpacePosition(),
+			LatitudeDeg, LongitudeDeg, Cellule))
+		{
+			PoserDepart(LatitudeDeg, LongitudeDeg, Cellule);
+
+			// Le choix a la main l'emporte sur la liste : on la ramene a son
+			// entree vide, sans quoi elle afficherait un lieu qui n'est plus
+			// celui du repere.
+			if (LieuxCombo && LieuxCombo->GetOptionCount() > 0
+				&& LieuxCombo->GetSelectedIndex() != 0)
+			{
+				LieuxCombo->SetSelectedIndex(0);
+			}
+		}
+	}
+
 	return FReply::Handled().ReleaseMouseCapture();
 }
 
@@ -1889,7 +2019,17 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 		ToPlay.Biomes = CachedBiomes;
 		ToPlay.LithologyId = CachedLithologyId;
 		ToPlay.TexturePack = SelectedPack;
+		ToPlay.SpawnXYM = DepartXYM;
+		ToPlay.bHasSpawn = bDepartChoisi;
 		GI->StoreWorld(ToPlay);
+
+		if (bDepartChoisi)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] menu : depart demande a (%.0f, %.0f) m, ")
+				TEXT("latitude %.1f deg"),
+				DepartXYM.X, DepartXYM.Y, Repere.LatitudeDeg);
+		}
 
 		UE_LOG(LogTemp, Log, TEXT("[Worldseed] menu -> seed=%d  %.1f x %.1f km  %dx%d"),
 			Params.Seed, WorldGeometry.WidthM() / 1000.0f, WorldGeometry.HeightM / 1000.0f,
@@ -1911,4 +2051,380 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 	}
 
 	UGameplayStatics::OpenLevel(this, GameLevelName);
+}
+
+
+// ------------------------------------------------ choisir ou naitre
+
+void UWorldseedMenuWidget::AppliquerLatitudes(FWorldseedGeometry& Geometry) const
+{
+	// LA GEOMETRIE VIENT DU MONDE, LES LATITUDES VIENNENT DES REGLES. Les
+	// regles decrivent une resolution de REFERENCE, pas celle qu'on a
+	// generee : y prendre NX et NY rendrait le heightfield incoherent avec sa
+	// grille. On n'en tire donc que la correspondance latitude/ligne.
+	//
+	// Ces trois lignes vivent ICI et nulle part ailleurs : le rendu du globe
+	// et le pointage doivent subir le MEME patch, sinon le point qu'on choisit
+	// et le point qu'on voit ne sont pas a la meme latitude.
+	if (Rules)
+	{
+		Geometry.LatSpanDeg = Rules->Geometry.LatSpanDeg;
+		Geometry.LatitudeMapping = Rules->Geometry.LatitudeMapping;
+		Geometry.LatitudeEqualAreaBlend = Rules->Geometry.LatitudeEqualAreaBlend;
+	}
+}
+
+FWorldseedGeometry UWorldseedMenuWidget::GeometrieCarte() const
+{
+	FWorldseedGeometry G = WorldGeometry;
+	AppliquerLatitudes(G);
+	return G;
+}
+
+bool UWorldseedMenuWidget::PointerSurLeGlobe(const FVector2D& PositionEcran,
+	float& OutLatitudeDeg, float& OutLongitudeDeg, int32& OutCellule) const
+{
+	OutCellule = INDEX_NONE;
+
+	if (!PreviewImage || WorldGeometry.NX < 2
+		|| CachedHeights.Num() != WorldGeometry.CellCount())
+	{
+		return false;
+	}
+
+	// LA GEOMETRIE DE L'IMAGE, PAS CELLE DU WIDGET. Les gestionnaires de
+	// souris recoivent le cadre de l'ecran entier ; le globe n'en occupe
+	// qu'un carre, et rapporter le clic au mauvais cadre le decalerait de
+	// toute la largeur du panneau de gauche.
+	const FGeometry& Cadre = PreviewImage->GetCachedGeometry();
+	const FVector2D Taille = Cadre.GetLocalSize();
+	if (Taille.X <= KINDA_SMALL_NUMBER || Taille.Y <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const FVector2D Locale = Cadre.AbsoluteToLocal(PositionEcran);
+
+	// DEFAIRE LE ZOOM, ET C'EST LE POINT LE PLUS INCERTAIN DE TOUTE LA CHAINE.
+	// `SetRenderScale` est une transformation de RENDU : elle agrandit l'image
+	// autour de son pivot -- le centre par defaut -- sans toucher a la mise en
+	// page, donc sans toucher au cadre que `GetCachedGeometry` rend. Le texel
+	// T s'affiche en (T - centre) * zoom + centre ; on inverse.
+	//
+	// Le controle qui tranche est a l'image : si le reticule tombe sous le
+	// curseur a zoom 1 mais derive a zoom 4, c'est ici qu'est la faute.
+	const FVector2D Centre = Taille * 0.5;
+	const float Zoom = FMath::Max(GlobeZoom, KINDA_SMALL_NUMBER);
+	const FVector2D Texel = (Locale - Centre) / static_cast<double>(Zoom) + Centre;
+
+	float CadreX = 0.0f;
+	float CadreY = 0.0f;
+	WorldseedGlobe::CadreDepuisUV(
+		static_cast<float>(Texel.X / Taille.X),
+		static_cast<float>(Texel.Y / Taille.Y), CadreX, CadreY);
+
+	WorldseedGlobe::FGlobeSettings Reglages;
+	Reglages.LongitudeOffsetDeg = GlobeLongitudeDeg;
+	Reglages.TiltDeg = GlobeTiltDeg;
+
+	const WorldseedGlobe::FPointeGlobe Pointe = WorldseedGlobe::PointerCadre(
+		CadreX, CadreY, WorldseedGlobe::CadreGlobe(Reglages));
+
+	if (!Pointe.bSurLeGlobe)
+	{
+		return false;
+	}
+
+	OutLatitudeDeg = Pointe.LatitudeDeg;
+	OutLongitudeDeg = Pointe.LongitudeDeg;
+
+	OutCellule = CelluleDe(Pointe.LatitudeDeg, Pointe.LongitudeDeg);
+	return true;
+}
+
+int32 UWorldseedMenuWidget::CelluleDe(float LatitudeDeg, float LongitudeDeg) const
+{
+	const FWorldseedGeometry G = GeometrieCarte();
+	if (G.NX < 2 || G.NY < 2)
+	{
+		return INDEX_NONE;
+	}
+
+	const float U = LongitudeDeg / 360.0f;
+	const float V = G.VForLatitudeDeg(LatitudeDeg);
+
+	// LA LIGNE SE PREND PAR ARRONDI SUR NY - 1, et non par troncature sur NY.
+	// La ligne J porte les valeurs calculees a la latitude
+	// LatitudeDegForRow(J), c'est-a-dire a V = J / (NY - 1) : c'est le plus
+	// proche de CETTE suite qu'il faut, pas la case d'un decoupage en NY
+	// tranches. L'ecart ne vaut qu'une demi-cellule -- huit metres sur ce
+	// monde -- mais il est gratuit a eviter.
+	//
+	// LA COLONNE S'ENROULE, ELLE : un monde n'a pas de bord est-ouest, et une
+	// longitude de 359,9 degres doit tomber a cote de zero, pas hors grille.
+	const int32 I = ((FMath::FloorToInt(U * G.NX) % G.NX) + G.NX) % G.NX;
+	const int32 J = FMath::Clamp(FMath::RoundToInt(V * (G.NY - 1)), 0, G.NY - 1);
+
+	return J * G.NX + I;
+}
+
+void UWorldseedMenuWidget::PoserDepart(float LatitudeDeg, float LongitudeDeg,
+	int32 Cellule)
+{
+	// Le motif passe par une FString et non par un TCHAR* : un Printf rend un
+	// temporaire dont le tampon meurt a la fin de l'expression.
+	auto Effacer = [this](const FString& Pourquoi)
+	{
+		bDepartChoisi = false;
+		Repere.bActif = false;
+		if (DepartHint) { DepartHint->SetText(FText::FromString(Pourquoi)); }
+		if (DepartLatValue) { DepartLatValue->SetText(FText::FromString(TEXT("--"))); }
+		if (DepartBiomeValue) { DepartBiomeValue->SetText(FText::FromString(TEXT("--"))); }
+		if (DepartAltValue) { DepartAltValue->SetText(FText::FromString(TEXT("--"))); }
+	};
+
+	if (!CachedHeights.IsValidIndex(Cellule))
+	{
+		Effacer(TEXT("cliquez une terre sur le globe"));
+		return;
+	}
+
+	const float AltitudeM = CachedHeights[Cellule];
+
+	// LE CLIC EN MER EST REFUSE, et il le dit. Reporter en silence le point
+	// sur la cote la plus proche pourrait deplacer le joueur de vingt
+	// kilometres sans qu'il l'ait demande ni le sache.
+	//
+	// MAIS UN REFUS N'EFFACE PAS UN CHOIX DEJA FAIT : c'est le clic NOUVEAU
+	// qui est refuse, pas l'ancien. Perdre son depart parce qu'on a vise trois
+	// pixels a cote du trait de cote serait une punition, pas une protection
+	// -- et le globe tourne pendant qu'on vise.
+	if (AltitudeM <= 0.0f)
+	{
+		const FString Motif = FString::Printf(
+			TEXT("en mer (%.0f m de fond)"), -AltitudeM);
+
+		if (bDepartChoisi)
+		{
+			if (DepartHint)
+			{
+				DepartHint->SetText(FText::FromString(
+					Motif + TEXT(" -- le depart precedent est garde")));
+			}
+		}
+		else
+		{
+			Effacer(Motif + TEXT(" -- choisissez une terre"));
+		}
+		return;
+	}
+
+	const FWorldseedGeometry G = GeometrieCarte();
+	const float V = G.VForLatitudeDeg(LatitudeDeg);
+
+	// Le repere de la carte : U enroule sur la largeur, V borne sur la
+	// hauteur, l'origine au centre. C'est la convention que le champ de
+	// densite emploie pour lire la grille, donc celle que le terrain
+	// comprendra sans traduction.
+	DepartXYM = FVector2D(
+		(LongitudeDeg / 360.0f - 0.5f) * G.WidthM(),
+		(V - 0.5f) * G.HeightM);
+	bDepartChoisi = true;
+
+	Repere.bActif = true;
+	Repere.LatitudeDeg = LatitudeDeg;
+	Repere.LongitudeDeg = LongitudeDeg;
+
+	const TCHAR* NomBiome = TEXT("--");
+	if (CachedBiomes.Index.IsValidIndex(Cellule) && CachedBiomes.Cover.IsValidIndex(Cellule))
+	{
+		NomBiome = WorldseedBiomes::Name(WorldseedBiomes::AppearanceBiome(
+			CachedBiomes.Index[Cellule], CachedBiomes.Cover[Cellule]));
+	}
+
+	if (DepartHint)
+	{
+		DepartHint->SetText(FText::FromString(
+			TEXT("cliquez ailleurs pour deplacer le depart")));
+	}
+	if (DepartLatValue)
+	{
+		// L'HEMISPHERE PLUTOT QU'UN SIGNE : « -47 deg » se lit mal, et le
+		// globe montre justement deux calottes qu'il faut pouvoir distinguer.
+		DepartLatValue->SetText(FText::FromString(FString::Printf(
+			TEXT("%.1f %s"), FMath::Abs(LatitudeDeg),
+			LatitudeDeg >= 0.0f ? TEXT("N") : TEXT("S"))));
+	}
+	if (DepartBiomeValue)
+	{
+		DepartBiomeValue->SetText(FText::FromString(NomBiome));
+	}
+	if (DepartAltValue)
+	{
+		DepartAltValue->SetText(FText::FromString(
+			FString::Printf(TEXT("%.0f m"), AltitudeM)));
+	}
+}
+
+void UWorldseedMenuWidget::RemplirLieux(const WorldseedPipeline::FResult& Resultat)
+{
+	LieuxXYM.Reset();
+	if (!LieuxCombo)
+	{
+		return;
+	}
+
+	LieuxCombo->ClearOptions();
+
+	// L'ENTREE VIDE EST LA PREMIERE, ET ELLE PORTE LE COMPORTEMENT D'AVANT :
+	// sans choix, le terrain decide seul, comme il l'a toujours fait. Son
+	// index nourrit quand meme le tableau, pour que liste et positions se
+	// correspondent un pour un -- un decalage d'un cran se lirait comme une
+	// erreur de projection alors que ce serait une erreur de comptage.
+	LieuxCombo->AddOption(TEXT("-- au hasard --"));
+	LieuxXYM.Add(FVector2D::ZeroVector);
+
+	const FWorldseedGeometry G = GeometrieCarte();
+	if (G.NX < 2 || CachedHeights.Num() != G.CellCount())
+	{
+		LieuxCombo->SetSelectedIndex(0);
+		return;
+	}
+
+	auto Ajouter = [&](const TCHAR* Famille, int32 Rang, const FVector2D& XY,
+		float Detail, const TCHAR* Unite)
+	{
+		const float V = XY.Y / G.HeightM + 0.5f;
+		const float Lat = G.LatitudeDegForV(V);
+		const float Lon = (XY.X / G.WidthM() + 0.5f) * 360.0f;
+
+		const int32 Cellule = CelluleDe(Lat, Lon);
+
+		// UN LIEU NE VAUT D'ETRE OFFERT QUE SI L'ON PEUT Y NAITRE. Une forme
+		// dont le point le plus haut passe sous l'eau enverrait le joueur
+		// nager, et le refus du clic en mer n'aurait alors plus de sens.
+		if (!CachedHeights.IsValidIndex(Cellule) || CachedHeights[Cellule] <= 0.0f)
+		{
+			return;
+		}
+
+		LieuxCombo->AddOption(FString::Printf(TEXT("%s %d  --  %.0f %s  %s"),
+			Famille, Rang, Detail, Unite,
+			*FString::Printf(TEXT("%.0f%s"), FMath::Abs(Lat),
+				Lat >= 0.0f ? TEXT("N") : TEXT("S"))));
+		LieuxXYM.Add(XY);
+	};
+
+	// ON NE LISTE PAS TOUT, ET C'EST UN CHOIX. Un monde de 64 x 32 km a deja
+	// porte 574 gouffres et 154 dolines : une liste de sept cents entrees ne
+	// se parcourt pas, elle se subit. On garde les plus REMARQUABLES de
+	// chaque famille -- la plus grande arche, le puits le plus profond, la
+	// table a la plus haute paroi -- ce qui est exactement ce qu'on cherche
+	// quand on veut aller voir quelque chose.
+	constexpr int32 ParFamille = 10;
+
+	{
+		TArray<const FWorldseedCaveArch*> Tri;
+		for (const FWorldseedCaveArch& A : Resultat.Caves.Arches) { Tri.Add(&A); }
+		Tri.Sort([](const FWorldseedCaveArch& A, const FWorldseedCaveArch& B)
+			{ return A.RayonM > B.RayonM; });
+
+		int32 Rang = 0;
+		for (const FWorldseedCaveArch* A : Tri)
+		{
+			if (Rang >= ParFamille) { break; }
+			Ajouter(TEXT("Arche"), Rang + 1,
+				FVector2D(A->CentreM.X, A->CentreM.Y), A->RayonM * 2.0f, TEXT("m"));
+			++Rang;
+		}
+	}
+
+	{
+		// Dolines et avens sont tries ENSEMBLE mais nommes separement : ce
+		// sont deux formes, et le sens du profil est tout ce qui les separe.
+		TArray<const FWorldseedCavePuits*> Tri;
+		for (const FWorldseedCavePuits& P : Resultat.Caves.Puits) { Tri.Add(&P); }
+		Tri.Sort([](const FWorldseedCavePuits& A, const FWorldseedCavePuits& B)
+			{ return (A.HautM - A.BasM) > (B.HautM - B.BasM); });
+
+		int32 RangDoline = 0;
+		int32 RangAven = 0;
+		for (const FWorldseedCavePuits* P : Tri)
+		{
+			int32& Rang = P->bDoline ? RangDoline : RangAven;
+			if (Rang >= ParFamille) { continue; }
+			Ajouter(P->bDoline ? TEXT("Doline") : TEXT("Aven"), Rang + 1,
+				FVector2D(P->CentreM.X, P->CentreM.Y),
+				P->HautM - P->BasM, TEXT("m de chute"));
+			++Rang;
+		}
+	}
+
+	{
+		TArray<const FWorldseedPlateauSite*> Tri;
+		for (const FWorldseedPlateauSite& T : Resultat.Tables) { Tri.Add(&T); }
+		Tri.Sort([](const FWorldseedPlateauSite& A, const FWorldseedPlateauSite& B)
+			{ return A.EscarpementM > B.EscarpementM; });
+
+		int32 Rang = 0;
+		for (const FWorldseedPlateauSite* T : Tri)
+		{
+			if (Rang >= ParFamille) { break; }
+			Ajouter(TEXT("Table"), Rang + 1, T->CentreM, T->EscarpementM,
+				TEXT("m de paroi"));
+			++Rang;
+		}
+	}
+
+	LieuxCombo->SetSelectedIndex(0);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] menu : %d lieux offerts (%d arches, %d puits, %d tables produits)"),
+		LieuxXYM.Num() - 1, Resultat.Caves.Arches.Num(),
+		Resultat.Caves.Puits.Num(), Resultat.Tables.Num());
+}
+
+void UWorldseedMenuWidget::HandleLieuChanged(FString SelectedItem,
+	ESelectInfo::Type SelectionType)
+{
+	if (!LieuxCombo)
+	{
+		return;
+	}
+
+	// UNE SELECTION POSEE PAR LE CODE N'EST PAS UN CHOIX DU JOUEUR, et Slate
+	// le dit : `Direct` vient de SetSelectedIndex, `OnMouseClick` de la main.
+	// Sans ce test, ramener la liste a son entree vide apres un clic sur le
+	// globe effacerait le repere qu'on vient tout juste de poser -- et de
+	// meme, remplir la liste apres une generation l'effacerait aussi.
+	if (SelectionType == ESelectInfo::Direct)
+	{
+		return;
+	}
+
+	const int32 Index = LieuxCombo->GetSelectedIndex();
+
+	// L'entree vide rend la main au terrain.
+	if (Index <= 0 || !LieuxXYM.IsValidIndex(Index))
+	{
+		PoserDepart(0.0f, 0.0f, INDEX_NONE);
+		return;
+	}
+
+	const FWorldseedGeometry G = GeometrieCarte();
+	const FVector2D XY = LieuxXYM[Index];
+
+	const float Lat = G.LatitudeDegForV(XY.Y / G.HeightM + 0.5f);
+	const float Lon = (XY.X / G.WidthM() + 0.5f) * 360.0f;
+
+	PoserDepart(Lat, Lon, CelluleDe(Lat, Lon));
+
+	// ON AMENE LE LIEU FACE A L'OBSERVATEUR, sinon on choisit un point qu'on
+	// ne voit pas : le repere ne se dessine que sur l'hemisphere visible, et
+	// l'ecran ne changerait donc pas du tout.
+	//
+	// Le centre du disque montre la longitude du decalage et la latitude
+	// OPPOSEE a l'inclinaison -- c'est ce que rend PointerCadre en (0, 0).
+	GlobeLongitudeDeg = FMath::Fmod(Lon + 360.0f, 360.0f);
+	GlobeTiltDeg = FMath::Clamp(-Lat, -80.0f, 80.0f);
 }
