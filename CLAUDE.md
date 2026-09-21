@@ -6212,3 +6212,45 @@ conditions. `-WorldseedNappeVue=<metres>` recule l'enfoncement sans recompiler.
 L'autre levier, non employe, serait de porter la vue a 2400 m : la marche
 resterait haute mais deux fois plus loin, pour douze pour cent de chunks en
 plus -- chiffre deja mesure dans ce registre.
+
+### Les diaclases GROSSISSENT avec la distance au lieu de s'effacer (21 septembre 2026)
+
+Signale en jeu : « toutes les faces de la montagne a droite ne sont pas finies
+d'afficher et l'on voit l'interieur, il y a des diaclases derriere la surface
+de la roche non affichee ».
+
+**CE N'EST PAS UN TROU, ET LA MESURE LE DIT.** Echantillonnage du fond des
+fentes contre des references prises dans la meme image :
+
+    ciel                 194/201/204    luminance ~200
+    brume lointaine      157/170/191    luminance ~173
+    roche sombre proche    4/  6/ 10    luminance ~7
+    FOND DES FENTES       10/ 13/ 15    luminance ~13
+
+Le fond des fentes est de la roche NON ECLAIREE, pas du vide : la surface est
+fermee. On y distingue meme les bancs stratigraphiques sur les parois. Premier
+releve fait avec une reference de « ciel » prise par erreur SUR LA MONTAGNE
+(158/159/137) : il ne mesurait rien, et il a fallu le refaire.
+
+**LE VRAI DEFAUT EST AILLEURS, ET C'EST LE PROPRIETAIRE QUI L'A ISOLE** en
+marchant vers la montagne : « une grande partie des fentes se referment ». Donc
+ce sont les ANNEAUX DE RESOLUTION qui les exagerent.
+
+**LA CAUSE EST UN PROBLEME D'ECHANTILLONNAGE, PAS DE GEOMETRIE.** Une diaclase
+a deux metres d'ouverture au minimum -- plancher IMPOSE par le voxel, « a 1 m
+de voxel, le marching cubes ne peut pas representer une fente plus etroite que
+deux voxels ». Or les anneaux maillent a 2 m puis 4 m : une fente de deux
+metres y tombe SOUS la limite representable. Elle ne disparait pas pour autant,
+elle s'ALIASE -- le mailleur en attrape des morceaux au hasard des cellules, et
+la falaise parait dechiree.
+
+**LE REMEDE EST CELUI DU MIP-MAPPING, et il n'a pas ete ecrit** : un detail
+plus fin que la maille ne doit pas etre echantillonne, il doit etre ATTENUE.
+Le terme de diaclase devrait donc s'effacer en fonction de la taille de voxel
+du chunk en cours, au lieu d'etre evalue a l'identique a tous les niveaux. Le
+meme argument vaut pour toute forme dont l'epaisseur approche la maille --
+lames et fentes de canyon au premier chef.
+
+**NON CORRIGE, PAR DECISION DU PROPRIETAIRE** : « les reglages sont
+globalement bons, surtout que le monde n'est pas encore texture ». A reprendre
+avec l'habillage.
