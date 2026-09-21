@@ -389,6 +389,33 @@ public:
 	 */
 	void DemanderDepart(const FVector2D& XYMetres);
 
+	/**
+	 * Les deux champs CONTINUS du climat, pour le releve de jeu.
+	 *
+	 * A PART D'AdoptWorld, ET POUR LA MEME RAISON QUE LE DEPART : ce que
+	 * transmet AdoptWorld est ce dont le TERRAIN a besoin pour se mailler.
+	 * Ceux-ci ne servent qu'a EXPLIQUER, et l'explication n'est pas une donnee
+	 * de generation. Les melanger inviterait a croire que le champ de densite
+	 * les lit.
+	 */
+	void AdoptChampsClimat(const TArray<float>& InContinentalite,
+		const TArray<float>& InSaisonAmpC);
+
+	/**
+	 * Le releve local sous le joueur, une chaine par ligne.
+	 *
+	 * IL VIT ICI ET NON DANS L'AFFICHAGE, parce que tout ce qu'il dit est la
+	 * connaissance de CET acteur : la geometrie qui donne la latitude, les
+	 * biomes, le climat, la lithologie, les strates, le champ de densite, les
+	 * anneaux et l'etat des chunks. Un overlay qui irait chercher tout cela
+	 * lui-meme en dupliquerait les conventions -- et ce depot a deja paye ce
+	 * que coute une seconde lecture d'une meme grille.
+	 *
+	 * Rend un tableau VIDE tant que le monde n'est pas charge : l'appelant
+	 * n'a alors rien a afficher, ce qui vaut mieux qu'une ligne de zeros.
+	 */
+	TArray<FString> ReleveJoueur() const;
+
 private:
 
 	void UpdateChunks();
@@ -701,6 +728,10 @@ private:
 	 */
 	bool bDepartDemande = false;
 	FVector2D DepartXYM = FVector2D::ZeroVector;
+
+	/** Champs continus du climat : ils n'expliquent, ils ne generent rien. */
+	TArray<float> Continentalite;
+	TArray<float> SaisonAmpC;
 
 	FWorldseedDensityRules DensityRules;
 	FWorldseedDensity Density;

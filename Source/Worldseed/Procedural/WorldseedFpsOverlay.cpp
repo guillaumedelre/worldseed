@@ -12,6 +12,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Styling/CoreStyle.h"
+#include "EngineUtils.h"
+#include "Procedural/WorldseedVoxelTerrain.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -58,6 +60,16 @@ namespace WorldseedFps
 	 */
 	constexpr float MargeXPx = 10.0f;
 	constexpr float MargeYPx = 6.0f;
+
+	/**
+	 * Hauteur d'une ligne du compteur, en pixels.
+	 *
+	 * POSEE ET NON MESUREE, et c'est delibere : demander sa taille a un widget
+	 * Slate exige qu'il ait ete mis en page, ce qui n'est pas vrai a la
+	 * construction. Une constante calee sur la police de 13 tient le releve
+	 * juste dessous sans dependre de l'ordre des passes de mise en page.
+	 */
+	constexpr float HauteurLignePx = 19.0f;
 
 	/** Au-dessus de toute UI de jeu : c'est un outil de debug. */
 	constexpr int32 ZOrdre = 1000;
@@ -181,6 +193,30 @@ void UWorldseedFpsOverlay::Construire()
 			.ShadowOffset(FVector2D(1.0f, 1.0f))
 			.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
 			.Text(FText::FromString(TEXT("-- FPS")))
+		]
+
+		// --- LE RELEVE DU MONDE, SOUS LE COMPTEUR ---------------------------
+		//
+		// UN SECOND BLOC ET NON DES LIGNES DANS LE PREMIER, parce que la
+		// COULEUR du compteur porte une information -- verte, ambre ou rouge
+		// selon le budget de trame. Fondre le releve dedans le peindrait en
+		// rouge chaque fois que la cadence chute, ce qui n'aurait aucun sens :
+		// une latitude n'est ni bonne ni mauvaise.
+		//
+		// Son decalage vertical est celui du compteur PLUS sa hauteur de
+		// ligne : il se pose dessous sans rien mesurer a l'execution.
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Top)
+		.Padding(FMargin(WorldseedFps::MargeXPx,
+			WorldseedFps::MargeYPx + WorldseedFps::HauteurLignePx, 0.0f, 0.0f))
+		[
+			SAssignNew(TexteMonde, STextBlock)
+			.Font(FCoreStyle::GetDefaultFontStyle("Mono", 12))
+			.ShadowOffset(FVector2D(1.0f, 1.0f))
+			.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
+			.ColorAndOpacity(FLinearColor(0.85f, 0.88f, 0.95f))
+			.Text(FText::GetEmpty())
 		];
 
 	// LE LABEL NE DOIT PAS MANGER LES CLICS. Le conteneur couvre tout l'ecran ;
@@ -294,6 +330,34 @@ void UWorldseedFpsOverlay::Publier(float MoyenneMs)
 		: (MoyenneMs <= WorldseedFps::BudgetMs * 2.0f) ? FLinearColor(1.0f, 0.8f, 0.3f)
 		                                               : FLinearColor(1.0f, 0.4f, 0.4f);
 	Texte->SetColorAndOpacity(Teinte);
+
+	// --- LE RELEVE DU MONDE -------------------------------------------------
+	//
+	// IL SE DEMANDE AU TERRAIN, QUI SAIT. Tout ce qu'il dit -- la latitude par
+	// projection equivalente-aire, le biome, la roche, l'anneau, les strates --
+	// releve des conventions de CET acteur. Un overlay qui irait les relire
+	// lui-meme en tiendrait une seconde copie, et ce depot sait ce que coute
+	// une formule ecrite deux fois.
+	//
+	// AU MEME RYTHME QUE LE COMPTEUR, quatre fois par seconde : ces grandeurs
+	// changent quand on marche, pas quand on tourne la tete, et les rafraichir
+	// a chaque trame paierait une lecture de grille pour rien.
+	if (!TexteMonde.IsValid())
+	{
+		return;
+	}
+
+	FString Releve;
+	if (const UWorld* const W = GetWorld())
+	{
+		for (TActorIterator<AWorldseedVoxelTerrain> It(const_cast<UWorld*>(W)); It; ++It)
+		{
+			const TArray<FString> Lignes = It->ReleveJoueur();
+			Releve = FString::Join(Lignes, TEXT("\n"));
+			break;
+		}
+	}
+	TexteMonde->SetText(FText::FromString(Releve));
 }
 
 TStatId UWorldseedFpsOverlay::GetStatId() const

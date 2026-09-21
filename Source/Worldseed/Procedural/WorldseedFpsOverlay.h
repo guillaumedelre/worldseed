@@ -96,6 +96,17 @@ private:
 	TSharedPtr<SWidget> Racine;
 	TSharedPtr<STextBlock> Texte;
 
+	/**
+	 * Le releve du monde, sous le compteur.
+	 *
+	 * UN SECOND BLOC ET NON DES LIGNES DANS LE PREMIER : la couleur du
+	 * compteur porte une information -- verte, ambre ou rouge selon le budget
+	 * de trame. Fondre le releve dedans le peindrait en rouge chaque fois que
+	 * la cadence chute, ce qui n'aurait aucun sens : une latitude n'est ni
+	 * bonne ni mauvaise.
+	 */
+	TSharedPtr<STextBlock> TexteMonde;
+
 	/** Fenetre d'accumulation en cours : duree cumulee et nombre de trames. */
 	double FenetreS = 0.0;
 	int32 FenetreTrames = 0;

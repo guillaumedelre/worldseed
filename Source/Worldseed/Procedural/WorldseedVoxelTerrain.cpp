@@ -2132,3 +2132,159 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 	return Sortie;
 }
 
+
+
+// ------------------------------------------- le releve local, pour l'ecran
+
+void AWorldseedVoxelTerrain::AdoptChampsClimat(const TArray<float>& InContinentalite,
+	const TArray<float>& InSaisonAmpC)
+{
+	Continentalite = InContinentalite;
+	SaisonAmpC = InSaisonAmpC;
+}
+
+TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
+{
+	TArray<FString> Lignes;
+
+	UWorld* const W = GetWorld();
+	APawn* const Pawn = W ? UGameplayStatics::GetPlayerPawn(W, 0) : nullptr;
+	if (!Pawn || !bWorldReady || Geometry.NX < 2)
+	{
+		return Lignes;
+	}
+
+	const FVector PosCm = Pawn->GetActorLocation() - GetActorLocation();
+	const double X = PosCm.X / WorldseedMetersToCm;
+	const double Y = PosCm.Y / WorldseedMetersToCm;
+	const double Z = PosCm.Z / WorldseedMetersToCm;
+
+	// LA CELLULE SE PREND AU PLUS PROCHE VOISIN, comme partout ailleurs : biome
+	// et roche sont des IDENTIFIANTS, et interpoler entre deux categories
+	// fabrique une valeur qui n'existe pas. Le depot a paye ce piege sur la
+	// carte des biomes lue par PCG -- 1,71 % des points affectes a un biome
+	// absent de l'endroit.
+	const double U = FMath::Frac((X / Geometry.WidthM()) + 0.5);
+	const double V = FMath::Clamp((Y / Geometry.HeightM) + 0.5, 0.0, 1.0);
+	const int32 I = FMath::Clamp(FMath::RoundToInt(U * Geometry.NX), 0, Geometry.NX - 1);
+	const int32 J = FMath::Clamp(FMath::RoundToInt(V * Geometry.NY), 0, Geometry.NY - 1);
+	const int32 Cellule = J * Geometry.NX + I;
+
+	// --- 1. OU SUIS-JE ------------------------------------------------------
+	//
+	// LA LATITUDE NE SE DEDUIT PAS DE Y PAR UNE REGLE DE TROIS. La carte est en
+	// projection equivalente-aire : au point d'apparition, le produit lineaire
+	// donnait +65,77 degres la ou la vraie valeur est +46,95. Dix-neuf degres
+	// d'erreur, et c'est pourquoi le manifeste avait cesse d'ecrire un
+	// « degres par metre ».
+	//
+	// LA LONGITUDE, ELLE, EST UNE CONVENTION D'AFFICHAGE : le monde s'enroule
+	// en X, et l'on etale cet axe sur 360 degres pour donner une planete. On
+	// la centre sur zero, comme un meridien d'origine.
+	const float LatitudeDeg = Geometry.LatitudeDegForV(static_cast<float>(V));
+	const float LongitudeDeg = static_cast<float>(U * 360.0) - 180.0f;
+
+	Lignes.Add(FString::Printf(
+		TEXT("lon %6.1f %s   lat %5.1f %s   alt %6.0f m   (%.0f, %.0f) m"),
+		FMath::Abs(LongitudeDeg), LongitudeDeg >= 0.0f ? TEXT("E") : TEXT("O"),
+		FMath::Abs(LatitudeDeg), LatitudeDeg >= 0.0f ? TEXT("N") : TEXT("S"),
+		Z, X, Y));
+
+	// --- 2. CLIMAT, BIOME, ROCHE --------------------------------------------
+	FString Biome = TEXT("--");
+	if (Biomes.Index.IsValidIndex(Cellule) && Biomes.Cover.IsValidIndex(Cellule))
+	{
+		Biome = WorldseedBiomes::Name(WorldseedBiomes::AppearanceBiome(
+			Biomes.Index[Cellule], Biomes.Cover[Cellule]));
+	}
+
+	FString Roche = TEXT("--");
+	if (Lithology.IsValid(Geometry.CellCount()))
+	{
+		const uint8 Id = Lithology.Id[Cellule];
+		Roche = NomParRoche.IsValidIndex(Id) ? NomParRoche[Id]
+			: FString::Printf(TEXT("roche %d"), Id);
+	}
+
+	// Temperature MOYENNE ANNUELLE et pluie : les deux axes du diagramme de
+	// Whittaker, donc les deux grandeurs qui decident du biome affiche a cote.
+	const float TempC = TempMeanC.IsValidIndex(Cellule) ? TempMeanC[Cellule] : 0.0f;
+	const float PluieMm = PrecipMm.IsValidIndex(Cellule) ? PrecipMm[Cellule] : 0.0f;
+
+	Lignes.Add(FString::Printf(
+		TEXT("%-24s %5.1f C  %5.0f mm/an   %s"), *Biome, TempC, PluieMm, *Roche));
+
+	// --- 3. CE QU'ON EST EN TRAIN DE REGARDER -------------------------------
+	//
+	// L'ANNEAU ET SA MAILLE SONT LA POUR UNE RAISON PRECISE : une falaise
+	// dechiree vue de loin et lisse de pres est un defaut d'ECHANTILLONNAGE,
+	// pas de geometrie -- les diaclases ont 2,4 m d'ouverture et l'anneau 1
+	// maille a 2 m. Sans ce chiffre a l'ecran, il faut marcher jusqu'a la
+	// paroi pour s'en apercevoir.
+	const FVector OrigineM =
+		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
+	const int32 Niveau = NiveauEn(FVector(X, Y, Z), OrigineM);
+	// Un chunk de niveau N porte TOUJOURS le meme nombre de cellules ; c'est le
+	// voxel qui double a chaque cran.
+	const double MailleM = DensityRules.VoxelSizeM * FMath::Pow(2.0, Niveau);
+
+	const float SurfaceM = Density.SurfaceHeightM(X, Y);
+
+	// La pente se mesure sur le CHAMP, pas sur la grille : c'est le relief
+	// qu'on a reellement sous les pieds, deplacement 3D compris.
+	const double Pas = 4.0;
+	const double DX = Density.SurfaceHeightM(X + Pas, Y) - Density.SurfaceHeightM(X - Pas, Y);
+	const double DY = Density.SurfaceHeightM(X, Y + Pas) - Density.SurfaceHeightM(X, Y - Pas);
+	const double PenteDeg = FMath::RadiansToDegrees(
+		FMath::Atan(FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas)));
+
+	Lignes.Add(FString::Printf(
+		TEXT("anneau %d (maille %.0f m)   pente %3.0f deg   sol %+.0f m"),
+		Niveau, MailleM, PenteDeg, Z - SurfaceM));
+
+	// --- 4. QUELLES CAVITES, ET POURQUOI CETTE FALAISE ----------------------
+	//
+	// LA KARSTIFIABILITE DIT QUELLE FORME ATTENDRE ICI, et les deux s'excluent
+	// par construction : la ou la roche se dissout, chambres et galeries ; la
+	// ou elle ne se dissout pas, des fractures. Aucun reglage ne choisit entre
+	// les deux, c'est la ROCHE qui decide.
+	const float Karst = Density.KarstifiableAt(X, Y);
+
+	FString Banc = TEXT("pas de serie ici");
+	if (StratRules.IsActive())
+	{
+		const int32 Rang = WorldseedStrata::BancAt(X, Y, SurfaceM, StratRules, WorldSeed);
+		if (StratRules.Serie.IsValidIndex(Rang))
+		{
+			Banc = FString::Printf(TEXT("banc %d durete %.2f"),
+				Rang, StratRules.Serie[Rang].Hardness);
+		}
+	}
+
+	Lignes.Add(FString::Printf(
+		TEXT("karst %.2f (%s)   %s"), Karst,
+		Karst > 0.5f ? TEXT("grottes") : TEXT("diaclases"), *Banc));
+
+	// --- 5. POURQUOI CE BIOME -----------------------------------------------
+	//
+	// LES DEUX CHAMPS CONTINUS QUI L'EXPLIQUENT. L'etiquette de biome n'est
+	// qu'un cache pose a cote pour lier des assets ; ce sont ces grandeurs-la
+	// qui la decident, et les lire evite de croire qu'un biome est « faux »
+	// alors qu'il est la consequence exacte de son climat.
+	const float Cont = Continentalite.IsValidIndex(Cellule) ? Continentalite[Cellule] : -1.0f;
+	const float Saison = SaisonAmpC.IsValidIndex(Cellule) ? SaisonAmpC[Cellule] : -1.0f;
+
+	Lignes.Add(FString::Printf(
+		TEXT("continentalite %.2f   amplitude saisonniere %.0f C"), Cont, Saison));
+
+	// --- 6. EST-CE QUE CA A FINI DE CHARGER ? -------------------------------
+	//
+	// LA LIGNE QUI AURAIT TRANCHE TOUT DE SUITE le jour ou « les faces de la
+	// montagne ne sont pas finies d'afficher ». Un compte fige et zero travail
+	// en vol disent que ce qu'on voit est ce qu'il y aura.
+	Lignes.Add(FString::Printf(
+		TEXT("chunks %d poses, %d en vol   rayon %.0f m"),
+		Chunks.Num(), TravauxEnVol(), LoadRadiusM));
+
+	return Lignes;
+}
