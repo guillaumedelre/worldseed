@@ -59,6 +59,11 @@
     "_comment_poleContinentBonusM": "CALIBRE. Prime d'altitude du pole force en continent, avant mise a l'echelle par VerticalScale. ELLE DOIT FRANCHIR LE NIVEAU DE LA MER APRES AMPUTATION PAR poleForcingStrength, et c'est tout le piege : le forçage melange la cible au relief existant, E = E*(1-W) + Cible*W avec W = strength = 0,85, donc il n'en garde que 85 %. A 100, sur un monde de 64 x 32 km ou VerticalScale vaut 4, la cible valait continentBase + bonus = 120 + 400 = 520 m et le pole sud arrivait a 0,85 x 520 = 442 m pour une mer a 445,6 : il ratait l'emergence de TROIS METRES SIX, et l'Antarctique n'existait pas. Mesure avant : 0,0 % emerge au-dela de 70 degres sud, calotte glaciaire 1,16 % des terres contre 10 sur Terre. La condition est 0,85 x (continentBase + 4 x bonus) > niveau de la mer + marge ; a 175 la cible monte a 820 m et le pole arrive a 697, soit 250 m de franc-bord.",
     "poleContinentBonusM": 175.0
   },
+  "glace": {
+    "_comment": "Epaisseur de la calotte glaciaire, posee APRES la classification : la glace est une consequence du climat, jamais une cause. epaisseurMaxM est l'epaisseur au centre du dome AVANT mise a l'echelle par VerticalScale, comme toutes les valeurs metriques du fichier. CALIBRE SUR LE RAPPORT TERRESTRE : l'Antarctique culmine a 2300 m pour un Himalaya a 8800, soit un peu plus du quart ; nos montagnes visent mountainHeightM = 500, d'ou 175 pour la glace. POURQUOI ELLE EXISTE : le classificateur posait deja la calotte au bon endroit -- 9,2 % des terres pour 10 sur Terre -- mais PLATE, altitude moyenne 28 a 38 m. Un plateau a trente metres n'est pas une calotte, et le globe le montrait en vert, la teinte des plaines. porteeDomeKm est la distance au bord ou le dome atteint son epaisseur maximale ; au-dela il est plat. Le profil suit la RACINE de la distance au bord -- solution de Vialov : la glace flue d'autant plus vite qu'elle est epaisse, et le dome s'etale jusqu'a l'equilibre. Une rampe lineaire donnerait un cone, une constante une falaise de glace sur tout le pourtour.",
+    "epaisseurMaxM": 175.0,
+    "porteeDomeKm": 6.0
+  },
   "temperature": {
     "equatorC": 27.0,
     "poleC": -25.0,

@@ -10,12 +10,51 @@
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedErosion.h"
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedIce.h"
 #include "Procedural/WorldseedTectonics.h"
 
 #include "UObject/StrongObjectPtr.h"
 
 namespace WorldseedPipeline
 {
+	/**
+	 * Pose le dome de glace sur la calotte, et rafraichit les bornes.
+	 *
+	 * ELLE EST APPELEE AUX DEUX ENDROITS OU L'ON CLASSE -- au retour du cache
+	 * et en generation -- et c'est pour cela qu'elle existe : le depot a une
+	 * regle contre la formule recopiee dans deux fichiers, et deux copies
+	 * d'un meme traitement divergent a la premiere retouche.
+	 *
+	 * ELLE PASSE APRES LA MISE EN CACHE, qui garde le relief de ROCHE. La
+	 * glace se recalcule donc a chaque chargement, comme les biomes, et ne
+	 * peut pas s'empiler d'une session a l'autre.
+	 */
+	void EpaissirLaGlace(FResult& Out, const FWorldseedGeometry& Geometry,
+		const UWorldseedRules& Rules)
+	{
+		const float Epaisseur = WorldseedIce::Apply(Out.ElevationM, Out.Biomes.Index,
+			Geometry, WorldseedIce::FRules::FromRules(Rules, Geometry));
+		if (Epaisseur <= 0.0f)
+		{
+			return;
+		}
+
+		// LES BORNES SONT RELEVEES PLUS HAUT, donc avant la glace. Sans ce
+		// rafraichissement, le globe garderait l'ancien sommet pour son
+		// echelle de neige et le menu afficherait une altitude maximale
+		// fausse -- deux chiffres justes hier, faux aujourd'hui.
+		for (const float E : Out.ElevationM)
+		{
+			Out.MinElevationM = FMath::Min(Out.MinElevationM, E);
+			Out.MaxElevationM = FMath::Max(Out.MaxElevationM, E);
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] glace : dome de calotte, %.0f m au centre ; ")
+			TEXT("sommet du monde %.0f m"),
+			Epaisseur, Out.MaxElevationM);
+	}
+
 	namespace
 	{
 		/**
@@ -155,6 +194,8 @@ namespace WorldseedPipeline
 						Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 						NoWaterMask, NoWaterMask,
 						FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
+
+					EpaissirLaGlace(Out, Geometry, *BioRules);
 
 					WorldseedFields::Compute(Geometry, Out.ElevationM,
 						Out.Climate.PrecipMm,
@@ -523,6 +564,8 @@ namespace WorldseedPipeline
 					Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 					NoWaterMask, NoWaterMask,
 					FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
+
+				EpaissirLaGlace(Out, Geometry, *BioRules);
 
 				WorldseedFields::Compute(Geometry, Out.ElevationM,
 					Out.Climate.PrecipMm,
