@@ -57,10 +57,10 @@ namespace WorldseedVoxelChunk
 		const double FieldStart = FPlatformTime::Seconds();
 
 		FMarchingCubes MC;
-		MC.Implicit = [&Density, Caves, &Samples](const FVector3d& P) -> double
+		MC.Implicit = [&Density, Caves, &Samples, VoxelSizeM](const FVector3d& P) -> double
 		{
 			Samples.fetch_add(1, std::memory_order_relaxed);
-			return Density.At(FVector(P), Caves);
+			return Density.At(FVector(P), Caves, VoxelSizeM);
 		};
 		MC.IsoValue = 0.0;
 		MC.CubeSize = VoxelSizeM;
@@ -128,7 +128,7 @@ namespace WorldseedVoxelChunk
 			{
 				for (int32 I = 0; I <= NX; ++I)
 				{
-					Grossier[Index(I, J, K)] = Density.At(Point(I, J, K), Caves);
+					Grossier[Index(I, J, K)] = Density.At(Point(I, J, K), Caves, VoxelSizeM);
 				}
 			}
 		}
@@ -339,9 +339,9 @@ namespace WorldseedVoxelChunk
 			{
 				const FVector3d& V = MC.Vertices[I];
 				const FVector Gradient(
-					Density.At(FVector(V.X + H, V.Y, V.Z), Caves) - Density.At(FVector(V.X - H, V.Y, V.Z), Caves),
-					Density.At(FVector(V.X, V.Y + H, V.Z), Caves) - Density.At(FVector(V.X, V.Y - H, V.Z), Caves),
-					Density.At(FVector(V.X, V.Y, V.Z + H), Caves) - Density.At(FVector(V.X, V.Y, V.Z - H), Caves));
+					Density.At(FVector(V.X + H, V.Y, V.Z), Caves, VoxelSizeM) - Density.At(FVector(V.X - H, V.Y, V.Z), Caves, VoxelSizeM),
+					Density.At(FVector(V.X, V.Y + H, V.Z), Caves, VoxelSizeM) - Density.At(FVector(V.X, V.Y - H, V.Z), Caves, VoxelSizeM),
+					Density.At(FVector(V.X, V.Y, V.Z + H), Caves, VoxelSizeM) - Density.At(FVector(V.X, V.Y, V.Z - H), Caves, VoxelSizeM));
 
 				if (FVector::DotProduct(Gradient, Out.Normals[I]) < 0.0)
 				{

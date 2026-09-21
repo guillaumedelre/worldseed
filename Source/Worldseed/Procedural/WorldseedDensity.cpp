@@ -389,9 +389,26 @@ float FWorldseedDensity::DiaclaseZoneAt(double X, double Y) const
 	return Tirage * Masque * Pente;
 }
 
-double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM) const
+double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM,
+	float MailleM) const
 {
 	if (Rules.JointApertureM <= 0.0f || Rules.JointCellM <= 0.0f)
+	{
+		return -1.0;
+	}
+
+	// --- 0. LA MAILLE, ET C'EST LA GARDE LA PLUS BON MARCHE DE TOUTES -------
+	//
+	// UN DETAIL PLUS FIN QUE LA MAILLE NE S'ECHANTILLONNE PAS, IL S'ATTENUE.
+	// A deux metres de voxel, une fente de 2,4 n'a plus qu'un echantillon en
+	// travers : le mailleur en attrape des morceaux au hasard des cellules, et
+	// la falaise parait dechiree de loin alors qu'elle se referme de pres.
+	//
+	// ELLE PASSE AVANT LES TROIS AUTRES parce qu'elle ne lit rien -- ni la
+	// lithologie, ni le bruit de zone, ni le Worley a vingt-sept cellules. Sur
+	// les anneaux grossiers elle coupe donc tout le terme pour une division.
+	const double Finesse = AttenuationMaille(Rules.JointApertureM, MailleM);
+	if (Finesse <= 0.0)
 	{
 		return -1.0;
 	}
@@ -449,8 +466,11 @@ double FWorldseedDensity::JointAt(const FVector& PosM, double DepthM) const
 	// Distance a la paroi, ramenee en metres.
 	const double DistanceParoiM = (F2 - F1) * Rules.JointCellM * 0.5;
 
+	// L'ATTENUATION SE POSE SUR L'OUVERTURE, comme les trois autres fondus. La
+	// fente se referme donc progressivement au lieu de disparaitre d'un coup,
+	// et sa geometrie reste coherente avec elle-meme a chaque instant.
 	const double DemiOuverture =
-		0.5 * Rules.JointApertureM * Fracturable * Zone * FonduProfondeur;
+		0.5 * Rules.JointApertureM * Fracturable * Zone * FonduProfondeur * Finesse;
 
 	return DemiOuverture - DistanceParoiM;
 }
@@ -596,7 +616,8 @@ double FWorldseedDensity::CaveAt(const FVector& PosM, double DepthM) const
 	return Normalise * Rules.CaveRadiusM * Fondu;
 }
 
-double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Caves) const
+double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Caves,
+	float MailleM) const
 {
 	if (!IsValid())
 	{
@@ -779,7 +800,7 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	// L'autre forme de cavite, et celle de la roche qui NE se dissout PAS. Elle
 	// ne peut pas coexister avec la precedente au meme endroit : le test de
 	// lithologie les separe.
-	const double Fissure = JointAt(PosM, DepthM);
+	const double Fissure = JointAt(PosM, DepthM, MailleM);
 	if (Fissure > 0.0)
 	{
 		D = FMath::Max(D, Fissure);

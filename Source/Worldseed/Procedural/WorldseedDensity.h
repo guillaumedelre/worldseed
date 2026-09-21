@@ -449,7 +449,48 @@ public:
 	 * voxel serait du O(voxels x primitives), redhibitoire des quelques milliers
 	 * de capsules.
 	 */
-	double At(const FVector& PosM, const FWorldseedCaveLocal* Caves) const;
+	/**
+	 * MailleM est la taille de voxel du chunk EN COURS, et non celle des
+	 * regles. Zero signifie « celle des regles ».
+	 *
+	 * POURQUOI ELLE ARRIVE PAR PARAMETRE, comme la liste de cavites : le champ
+	 * est partage par tous les fils de maillage et doit rester SANS ETAT
+	 * MUTABLE. Or elle change d'un chunk a l'autre -- les anneaux maillent a 1,
+	 * 2 puis 4 metres -- donc elle ne peut pas vivre dans un membre.
+	 */
+	double At(const FVector& PosM, const FWorldseedCaveLocal* Caves,
+		float MailleM = 0.0f) const;
+
+	/**
+	 * Ce qui reste d'un detail d'epaisseur donnee quand on l'echantillonne a
+	 * une maille donnee. Entre 0 et 1.
+	 *
+	 * UN DETAIL PLUS FIN QUE LA MAILLE NE S'ECHANTILLONNE PAS, IL S'ATTENUE.
+	 * C'est la regle du mip-mapping, et elle vaut pour une geometrie comme pour
+	 * une texture : echantillonner sous Nyquist ne fait pas disparaitre le
+	 * detail, il le fait ALIASER -- le mailleur en attrape des morceaux au
+	 * hasard des cellules.
+	 *
+	 * DEFAUT OBSERVE EN JEU, ET C'EST LUI QUI A IMPOSE CETTE FONCTION. Les
+	 * diaclases ont 2,4 m d'ouverture, un plancher deja impose par le voxel
+	 * d'un metre. Les anneaux maillent a 2 puis 4 : la fente y tombe sous la
+	 * limite representable et la falaise parait DECHIREE de loin, alors qu'elle
+	 * se referme de pres. Signale ainsi : « les faces de la montagne ne sont
+	 * pas finies d'afficher et l'on voit l'interieur ».
+	 *
+	 * LE SEUIL EST CELUI DE NYQUIST : il faut deux echantillons en travers d'un
+	 * detail pour l'inscrire. En dessous d'un, il n'en reste rien ; au-dela de
+	 * deux, il est entier ; entre les deux on fond, pour que la disparition ne
+	 * soit pas un a-coup de plus.
+	 */
+	static double AttenuationMaille(double EpaisseurM, double MailleM)
+	{
+		if (MailleM <= 0.0 || EpaisseurM <= 0.0)
+		{
+			return 1.0;
+		}
+		return FMath::SmoothStep(1.0, 2.0, EpaisseurM / MailleM);
+	}
 
 	/** Altitude de la surface macro en un point, exageration comprise. */
 	float SurfaceHeightM(double X, double Y) const;
@@ -505,21 +546,6 @@ public:
 	/** La PENTE seule, deja fondue. Quatre lectures de grille : la plus chere. */
 	float DiaclasePenteAt(double X, double Y) const;
 
-private:
-	/** Creusement des galeries en un point : positif dans le vide. */
-	double CaveAt(const FVector& PosM, double DepthM) const;
-
-	/** Ouverture des diaclases en un point : positif dans le vide. */
-	double JointAt(const FVector& PosM, double DepthM) const;
-
-	/**
-	 * Creusement des arches et abris sous roche : positif dans le vide.
-	 *
-	 * DepthM est la profondeur VERTICALE ; la fonction en tire elle-meme la
-	 * distance perpendiculaire, dont elle a besoin et que l'appelant n'a pas.
-	 */
-	double ArchAt(const FVector& PosM, double DepthM) const;
-
 	/**
 	 * Aptitude de la roche a se dissoudre sous ce point, dans [0..1].
 	 *
@@ -529,6 +555,10 @@ private:
 	 * sur la carte des biomes lue par PCG -- 1,71 % des points affectes a un
 	 * biome absent -- et la lecon vaut pour tout champ categoriel.
 	 */
+	// PUBLIQUES A DESSEIN, et pour la meme raison que Surfaces et ZoneAt de la
+	// passe des plateaux : le champ les emploie pour creuser, le releve de jeu
+	// et les sondes pour MESURER. Une sonde qui reimplemente son critere valide
+	// une COPIE du mecanisme, pas le mecanisme.
 	float KarstifiableAt(double X, double Y) const;
 
 	/**
@@ -540,6 +570,27 @@ private:
 	 * peuvent se decouper.
 	 */
 	float DureteAt(double X, double Y) const;
+
+private:
+	/** Creusement des galeries en un point : positif dans le vide. */
+	double CaveAt(const FVector& PosM, double DepthM) const;
+
+	/**
+	 * Ouverture des diaclases en un point : positif dans le vide.
+	 *
+	 * MailleM sert a l'attenuation : une fente plus fine que deux voxels
+	 * s'efface au lieu de s'aliaser. Voir AttenuationMaille.
+	 */
+	double JointAt(const FVector& PosM, double DepthM, float MailleM) const;
+
+	/**
+	 * Creusement des arches et abris sous roche : positif dans le vide.
+	 *
+	 * DepthM est la profondeur VERTICALE ; la fonction en tire elle-meme la
+	 * distance perpendiculaire, dont elle a besoin et que l'appelant n'a pas.
+	 */
+	double ArchAt(const FVector& PosM, double DepthM) const;
+
 
 	/** Decoupe des lames de gres par fentes paralleles : positif dans le vide. */
 	double FinAt(const FVector& PosM, double DepthM) const;
