@@ -59,7 +59,25 @@ AWorldseedGroundProxy::AWorldseedGroundProxy()
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Mesh->SetCastShadow(false);
 
+	// --- LE SOL QU'ON VOIT, A COTE DE CELUI QUE L'EAU LIT -------------------
+	//
+	// Meme famille de composant, meme reglages de base, et une seule
+	// difference qui change tout : celui-ci n'est PAS declare au plugin Water.
+	// Il peut donc etre retire de l'image sans que l'ocean s'en apercoive, et
+	// enfonce aussi bas qu'il le faut sans le faire deborder.
+	Horizon = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GroundProxyHorizon"));
+	Horizon->SetupAttachment(Mesh);
+	Horizon->SetMobility(EComponentMobility::Movable);
+	Horizon->bUseAsyncCooking = false;
+	Horizon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Horizon->SetCastShadow(false);
+
 	WaterTerrain = CreateDefaultSubobject<UWorldseedWaterTerrainComponent>(TEXT("WaterTerrain"));
+
+	// SEUL `Mesh` EST DONNE A L'EAU, et c'est tout l'interet de la separation.
+	// `GetTerrainPrimitives` est surcharge precisement pour que le defaut --
+	// « toutes les primitives de l'acteur » -- ne ramasse pas l'horizon, qui
+	// est un objet d'AFFICHAGE et decrirait un sol trop bas.
 	WaterTerrain->Ground = Mesh;
 }
 

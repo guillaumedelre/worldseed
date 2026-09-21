@@ -86,12 +86,49 @@ public:
 	/** Declare le terrain detaille, dont les chunks serviront de sol a l'eau. */
 	void SetDetailedTerrain(AActor* Terrain);
 
-	/** Le sol AFFICHE : basse resolution, enfonce sous le relief detaille. */
+	/**
+	 * Le sol que l'EAU lit. Jamais visible.
+	 *
+	 * Il sort du rendu principal une fois pour toutes, a la construction, et
+	 * plus personne n'y touche. C'est ce qui rend son cout de bascule NUL par
+	 * construction : on ne bascule pas ce qu'on ne bascule jamais.
+	 */
 	UProceduralMeshComponent* GetMesh() const { return Mesh; }
+
+	/**
+	 * Le sol qu'on VOIT : l'horizon au-dela du terrain detaille.
+	 *
+	 * POURQUOI DEUX MAILLAGES, ET LA MESURE QUI L'A IMPOSE. Un seul servait
+	 * les deux, et les deux besoins se contredisent :
+	 *
+	 *   - l'EAU veut la nappe dans la passe de PROFONDEUR, toujours ;
+	 *   - l'IMAGE veut pouvoir la retirer quand on passe sous un plafond.
+	 *
+	 * Le seul levier qui distingue les deux est `bRenderInMainPass`
+	 * (PrimitiveSceneProxy.h:804), et le poser MARQUE l'etat de rendu sale :
+	 * le proxy de scene est recree, soit 8 388 608 sommets. Mesure en jeu,
+	 * quatre bascules, quatre trames -- 508 a 528 ms chacune, pour un budget
+	 * de 16,67. Le remede evident, `SetMeshSectionVisible`, tombe a 0,00 ms
+	 * mais retire la geometrie de TOUTES les passes : l'ocean se coupe, et
+	 * cela aussi a ete essaye puis rendu.
+	 *
+	 * Separes, chacun fait une seule chose. Celui de l'eau ne bascule plus ;
+	 * celui de l'image bascule pour rien, par visibilite de section.
+	 *
+	 * ET IL GAGNE UNE LIBERTE QUE L'AUTRE NE POUVAIT PAS LUI DONNER : ne
+	 * nourrissant plus l'eau, il peut etre ENFONCE bien plus bas. C'est ce qui
+	 * lui permet de cesser de boucher les ouvertures d'arches et de grottes --
+	 * l'autre, lui, doit rester colle au relief sous peine de faire deborder
+	 * l'ocean, defaut deja paye et deja consigne.
+	 */
+	UProceduralMeshComponent* GetHorizon() const { return Horizon; }
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed")
 	TObjectPtr<UProceduralMeshComponent> Mesh;
+
+	UPROPERTY(VisibleAnywhere, Category = "Worldseed")
+	TObjectPtr<UProceduralMeshComponent> Horizon;
 
 	/**
 	 * Declare le maillage exact au systeme d'eau comme etant LE sol.

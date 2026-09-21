@@ -74,9 +74,10 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	{
 		return;
 	}
-	UProceduralMeshComponent* const Nappe = GroundProxy->GetMesh();
+	// C'EST LA NAPPE QU'ON VOIT QU'ON BASCULE, PAS CELLE QUE L'EAU LIT.
+	UProceduralMeshComponent* const Vue = GroundProxy->GetHorizon();
 	UWorld* const World = GetWorld();
-	if (!Nappe || !World)
+	if (!Vue || !World)
 	{
 		return;
 	}
@@ -163,36 +164,34 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	//
 	// `SetMeshSectionVisible` n'appelle PAS MarkRenderStateDirty : il pousse
 	// une commande de rendu qui bascule un booleen dans le proxy existant
-	// (ProceduralMeshComponent.cpp:789), et il fait effectivement tomber la
-	// bascule de 520 ms a 0,00.
+	// (ProceduralMeshComponent.cpp:789). Mesure : 0,00 ms contre 508 a 528.
 	//
-	// IL A POURTANT ETE ESSAYE PUIS RENDU, ET IL NE FAUT PAS LE RETENTER TEL
-	// QUEL. La visibilite de section retire la geometrie de TOUTES les passes,
-	// celle de PROFONDEUR comprise -- donc le decor cesse de nourrir le plugin
-	// Water, et l'ocean se coupe. Signale en jeu des la premiere traversee :
-	// « avant j'avais de l'eau dans l'arche et maintenant elle est coupee ».
-	// C'est exactement la nuance que le drapeau de rendu principal permet et
-	// que la visibilite ne permet pas :
+	// IL AVAIT ETE ESSAYE PUIS RENDU, ET IL FAUT SAVOIR POURQUOI IL REVIENT.
+	// La visibilite de section retire la geometrie de TOUTES les passes, celle
+	// de PROFONDEUR comprise. Applique a la nappe QUE L'EAU LIT, elle coupait
+	// l'ocean -- signale en jeu des la premiere traversee : « avant j'avais de
+	// l'eau dans l'arche et maintenant elle est coupee ».
 	//
-	//     ShouldRenderInDepthPass() = bRenderInMainPass || bRenderInDepthPass
-	//     (PrimitiveSceneProxy.h:804)
+	// ELLE PORTE DESORMAIS SUR LA NAPPE QU'ON VOIT, qui ne nourrit rien. La
+	// nappe de l'eau, elle, est sortie du rendu principal une fois pour toutes
+	// a la construction et n'est plus jamais basculee : son cout est nul par
+	// construction, et sa passe de profondeur reste armee.
 	//
-	// ECHANGER UN A-COUP DE 520 MS CONTRE UN OCEAN COUPE EST UN MAUVAIS
-	// MARCHE. On reprend donc le drapeau, son cout connu et mesure, jusqu'a ce
-	// que la nappe soit separee en deux -- une pour l'eau, une pour l'image --
-	// qui est le seul montage ou les deux besoins cessent de se contredire.
+	// C'est la separation en deux maillages qui rend les deux compatibles ;
+	// tant qu'un seul servait les deux maitres, il fallait choisir entre un
+	// a-coup de 520 ms et un ocean coupe.
 	const double Depart = FPlatformTime::Seconds();
 
-	Nappe->SetRenderInMainPass(!bSousPlafond);
+	Vue->SetMeshSectionVisible(0, !bSousPlafond);
 
 	const double BasculeMs = (FPlatformTime::Seconds() - Depart) * 1000.0;
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] sol de fond : %s (plafond %s au-dessus de l'oeil) ")
-		TEXT("-- bascule %.2f ms sur %d sommets"),
+		TEXT("-- bascule %.2f ms sur %d sommets vus"),
 		bSousPlafond ? TEXT("retire") : TEXT("rendu"),
 		bSousPlafond ? TEXT("trouve") : TEXT("absent"),
-		BasculeMs, ProxySommets);
+		BasculeMs, ProxyVueSommets);
 }
 
 void AWorldseedTerrain::EndPlay(const EEndPlayReason::Type Reason)
@@ -1345,6 +1344,169 @@ void AWorldseedTerrain::BuildGroundProxy()
 	// DEGRADE en silence une fois le budget depasse -- et l'on cherche ensuite
 	// la cause d'un rendu terne du mauvais cote.
 	Mesh->SetVisibleInRayTracing(false);
+
+	// --- CELUI QUE L'EAU LIT NE SE VOIT PLUS JAMAIS -------------------------
+	//
+	// POSE UNE FOIS, ICI, ET PLUS JAMAIS TOUCHE. C'est toute la raison d'etre
+	// de la separation : ce drapeau est celui qui coute 520 ms quand on le
+	// bascule, parce qu'il marque l'etat de rendu sale et fait recreer un
+	// proxy de 8,4 millions de sommets. Ne jamais le basculer rend ce cout NUL
+	// par construction, et la profondeur reste armee juste au-dessus, donc
+	// l'ocean garde son sol.
+	Mesh->SetRenderInMainPass(false);
+
+	// --- LE SOL QU'ON VOIT, DECIME DEPUIS CELUI QUE L'EAU LIT ---------------
+	//
+	// ON DECIME AU LIEU DE RECALCULER : les sommets sont deja la, avec leur
+	// normale, leur teinte et leur apparence de biome. Les refaire couterait
+	// une seconde passe sur toute la grille pour un resultat identique au
+	// sommet pres -- et surtout, deux codes de construction finiraient par
+	// diverger, ce que ce depot a deja paye plus d'une fois.
+	//
+	// ON NE PEUT PAS LE DUPLIQUER A L'IDENTIQUE : un FProcMeshVertex pese de
+	// l'ordre de cent cinquante octets, donc une nappe pleine depasse le
+	// gigaoctet en copie processeur.
+	if (UProceduralMeshComponent* const Vue = GroundProxy->GetHorizon())
+	{
+		const int32 Pas = FMath::Clamp(GroundProxyHorizonStride, 1, 8);
+		const int32 HX = (CountX - 1) / Pas + 1;
+		const int32 HY = (CountY - 1) / Pas + 1;
+		const int32 HVerts = HX * HY;
+
+		// --- LE DECOR DOIT PASSER SOUS TOUT CE QUE LE VOXEL PEUT CREUSER ----
+		//
+		// L'ENFONCEMENT NE SE CHOISIT PAS, IL SE DEDUIT. Le terrain voxel ne
+		// creuse que dans une bande de `bandeM` sous la surface : rien, ni
+		// galerie, ni chambre, ni arche, ni gouffre, n'existe plus bas. Un
+		// decor de fond pose SOUS cette bande ne peut donc boucher aucune
+		// ouverture, ou qu'on soit.
+		//
+		// ET C'EST CE QUI FAIT DISPARAITRE L'APPARITION BRUTALE. Signale en
+		// jeu : « quand je sors de l'arche le paysage en fond apparait d'un
+		// coup ». C'etait la bascule qui se voyait enfin -- avant, le gel de
+		// 520 ms la masquait. Sous la bande, la nappe vue n'est visible de
+		// NULLE PART ou l'on pourrait se trouver sous un plafond : la cacher
+		// puis la rendre ne change plus rien a l'image, et il n'y a plus rien
+		// a faire apparaitre.
+		//
+		// La bascule est GARDEE malgre tout -- elle ne coute rien et reste un
+		// filet si un creusement futur sortait de la bande.
+		double SurEnfoncementM = GroundProxyHorizonExtraDropM;
+		{
+			FString RulesError;
+			if (const UWorldseedRules* R = WorldseedPipeline::GetRules(RulesError))
+			{
+				const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*R);
+				SurEnfoncementM = FMath::Max<double>(
+					SurEnfoncementM, DR.BandDepthM + GroundProxyHorizonMarginM);
+			}
+		}
+
+		// UNE SURCHARGE, PARCE QUE C'EST UN ARBITRAGE A L'IMAGE. Plus le decor
+		// est bas, moins il bouche -- mais plus la marche qu'il laisse a la
+		// limite du terrain charge est haute. Aucun calcul ne tranche cela, et
+		// un A/B qui demanderait de rouvrir le fichier de regles en changerait
+		// l'empreinte, donc regenererait le monde entre les deux moities.
+		{
+			FString Val;
+			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeVue="), Val))
+			{
+				SurEnfoncementM = FMath::Max(0.0, FCString::Atod(*Val));
+			}
+		}
+
+		// L'ENFONCEMENT SUIT L'EXAGERATION VERTICALE, comme celui de la nappe :
+		// un monde etire verticalement etire aussi la hauteur des ouvertures
+		// qu'il s'agit de ne plus boucher.
+		const float SurEnfoncementCm =
+			SurEnfoncementM * WorldseedMetersToCm * HeightExaggeration;
+
+		TArray<FVector> HVertices;
+		TArray<FVector> HNormals;
+		TArray<FVector2D> HUVs;
+		TArray<FVector2D> HTintRG;
+		TArray<FVector2D> HTintB;
+		TArray<FProcMeshTangent> HTangents;
+		TArray<FLinearColor> HColors;
+		TArray<int32> HTriangles;
+
+		HVertices.SetNumUninitialized(HVerts);
+		HNormals.SetNumUninitialized(HVerts);
+		HUVs.SetNumUninitialized(HVerts);
+		HTintRG.SetNumUninitialized(HVerts);
+		HTintB.SetNumUninitialized(HVerts);
+		HTangents.SetNumUninitialized(HVerts);
+		HColors.SetNumUninitialized(HVerts);
+
+		for (int32 Y = 0; Y < HY; ++Y)
+		{
+			// LE DERNIER SOMMET TOMBE SUR LE DERNIER, et pas sur un multiple
+			// du pas : sans ce bornage la nappe vue s'arreterait avant le bord
+			// du monde et le paysage se terminerait par une arete droite --
+			// defaut deja rencontre sur la nappe elle-meme.
+			const int32 SY = FMath::Min(Y * Pas, CountY - 1);
+			for (int32 X = 0; X < HX; ++X)
+			{
+				const int32 SX = FMath::Min(X * Pas, CountX - 1);
+				const int32 Src = SY * CountX + SX;
+				const int32 Dst = Y * HX + X;
+
+				HVertices[Dst] = Vertices[Src];
+				HVertices[Dst].Z -= SurEnfoncementCm;
+				HNormals[Dst] = Normals[Src];
+				HUVs[Dst] = UVs[Src];
+				HTintRG[Dst] = TintRG[Src];
+				HTintB[Dst] = TintB[Src];
+				HTangents[Dst] = Tangents[Src];
+				HColors[Dst] = Colors[Src];
+			}
+		}
+
+		HTriangles.Reserve((HX - 1) * (HY - 1) * 6);
+		for (int32 Y = 0; Y < HY - 1; ++Y)
+		{
+			for (int32 X = 0; X < HX - 1; ++X)
+			{
+				const int32 A = Y * HX + X;
+				const int32 C = A + HX;
+
+				if (bFlipWinding)
+				{
+					HTriangles.Add(A); HTriangles.Add(A + 1); HTriangles.Add(C);
+					HTriangles.Add(A + 1); HTriangles.Add(C + 1); HTriangles.Add(C);
+				}
+				else
+				{
+					HTriangles.Add(A); HTriangles.Add(C); HTriangles.Add(A + 1);
+					HTriangles.Add(A + 1); HTriangles.Add(C); HTriangles.Add(C + 1);
+				}
+			}
+		}
+
+		Vue->ClearAllMeshSections();
+		Vue->CreateMeshSection_LinearColor(
+			0, HVertices, HTriangles, HNormals, HUVs, HTintRG, HTintB,
+			TArray<FVector2D>(), HColors, HTangents, false);
+
+		if (UMaterialInterface* Material = ChooseTerrainMaterial(Mode))
+		{
+			Vue->SetMaterial(0, Material);
+		}
+
+		// Meme argument que pour la nappe : un decor de fond n'a rien a faire
+		// dans les reflets ni dans les ombres tracees, et le budget de ray
+		// tracing se degrade en SILENCE une fois depasse.
+		Vue->SetVisibleInRayTracing(false);
+		Vue->SetMeshSectionVisible(0, true);
+
+		ProxyVueSommets = HVerts;
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] sol de fond : vue %dx%d sommets (pas %.0f m, ")
+			TEXT("enfoncee de %.0f m en plus), eau %dx%d sommets"),
+			HX, HY, StepX * Geometry.MetersPerPixel() * Pas,
+			SurEnfoncementM, CountX, CountY);
+	}
 
 	// LE RELEVE DIT CE QUI EST COUVERT, PAS CE QUI A ETE DEMANDE.
 	//

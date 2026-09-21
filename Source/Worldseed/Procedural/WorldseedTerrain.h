@@ -111,8 +111,57 @@ public:
 		meta = (ClampMin = "0.1"))
 	float HeightExaggeration = 1.0f;
 
-	/** Sommets du sol de fond, pour rapporter le cout de sa bascule. */
+	/** Sommets des deux nappes, pour rapporter ce que chacune pese. */
 	int32 ProxySommets = 0;
+	int32 ProxyVueSommets = 0;
+
+	/**
+	 * Decimation du sol qu'on VOIT par rapport a celui que l'eau LIT.
+	 *
+	 * ON NE PEUT PAS DUPLIQUER LA NAPPE A L'IDENTIQUE, et le chiffre tranche :
+	 * un FProcMeshVertex porte position, normale, tangente, couleur et quatre
+	 * jeux de coordonnees, le tout en double precision -- de l'ordre de cent
+	 * cinquante octets. A 8 388 608 sommets, la copie processeur d'UNE nappe
+	 * pese plus d'un gigaoctet. La seconde se paie donc decimee.
+	 *
+	 * Deux, soit un sommet sur quatre : l'horizon passe de 16 a 31 metres de
+	 * pas. On ne le voit qu'au-dela du rayon de chargement, ou 31 metres a
+	 * 2400 sous-tendent moins d'un degre.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Worldseed|Sol de fond",
+		meta = (ClampMin = "1", ClampMax = "8", EditCondition = "bBuildGroundProxy"))
+	int32 GroundProxyHorizonStride = 2;
+
+	/**
+	 * De combien le sol qu'on VOIT s'enfonce EN PLUS, en metres.
+	 *
+	 * C'EST LUI QUI REND UNE ARCHE TRAVERSABLE DU REGARD, et il n'etait pas
+	 * reglable tant qu'une seule nappe servait les deux maitres : l'enfoncer
+	 * faisait croire a l'eau qu'elle pouvait monter d'autant, et elle noyait
+	 * des flancs de colline entiers -- defaut mesure, consigne, et paye.
+	 *
+	 * Separee, la nappe d'affichage ne nourrit plus rien : elle peut passer
+	 * sous les ouvertures d'arches et de grottes au lieu de les boucher.
+	 *
+	 * LE PRIX EST UNE MARCHE A LA LIMITE DU TERRAIN DETAILLE. A 2400 metres,
+	 * quarante metres sous-tendent un degre : c'est le genre de chose qui se
+	 * juge a l'image et pas au calcul.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Worldseed|Sol de fond",
+		meta = (ClampMin = "0.0", EditCondition = "bBuildGroundProxy"))
+	float GroundProxyHorizonExtraDropM = 40.0f;
+
+	/**
+	 * Marge sous la bande creusable, en metres.
+	 *
+	 * L'enfoncement du decor vu est DEDUIT et non choisi : il doit passer sous
+	 * `bandeM`, la seule profondeur ou le voxel creuse quoi que ce soit. Cette
+	 * marge couvre ce que la bande ne borne pas -- le deplacement vertical du
+	 * champ, et le fait qu'une ouverture s'evase vers le bas.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Worldseed|Sol de fond",
+		meta = (ClampMin = "0.0", EditCondition = "bBuildGroundProxy"))
+	float GroundProxyHorizonMarginM = 25.0f;
 
 	/**
 	 * Le point de depart choisi dans le menu, en metres sur la carte.
