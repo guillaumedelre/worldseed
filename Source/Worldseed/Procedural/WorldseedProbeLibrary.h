@@ -361,4 +361,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeCotes(int32 Seed = 20260909, float HeightMeters = 32000.0f,
 		int32 ResolutionY = 1024);
+
+	/**
+	 * Ecrit la carte du monde a plat dans Saved/Worldseed/Cartes/<Etiquette>.png.
+	 *
+	 * LE PENDANT VISUEL DE ProbeCotes, et il ne fait pas double emploi : la
+	 * dimension fractale mesure la rugosite FINE du trait, tandis que
+	 * « anguleux et geometrique » decrit la silhouette GENERALE. Un continent
+	 * polygonal a grande echelle peut mesurer 1,01 sans que le chiffre bronche.
+	 *
+	 * Terres en couleur de biome, mer en degrade de profondeur, trait de cote
+	 * souligne -- c'est lui qu'on vient juger.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeCarte(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024, const FString& Etiquette = TEXT("carte"));
 };

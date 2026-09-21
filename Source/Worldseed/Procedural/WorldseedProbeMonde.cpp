@@ -11,6 +11,11 @@
 
 #include "Procedural/WorldseedProbeCommun.h"
 
+#include "ImageUtils.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
+
+#include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedFins.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
@@ -931,4 +936,131 @@ FString UWorldseedProbeLibrary::ProbeCotes(int32 Seed, float HeightMeters,
 	const float Dim = DimensionDuTrait(World.ElevationM, World.Geometry,
 		TEXT("SUR LE RELIEF FINI"));
 	return FString::Printf(TEXT("dimension fractale : %.3f"), Dim);
+}
+
+/**
+ * Ecrire la carte du monde A PLAT, pour REGARDER la forme des continents.
+ *
+ * POURQUOI ELLE NE FAIT PAS DOUBLE EMPLOI AVEC ProbeCotes. La dimension
+ * fractale quantifie la rugosite FINE du trait. Un continent peut avoir une
+ * silhouette parfaitement polygonale -- des segments de plusieurs kilometres
+ * se rejoignant a angles nets -- et mesurer 1,01 quand meme : le chiffre ne
+ * voit pas ce qui se juge a l'oeil. Et ce depot a une regle, payee plusieurs
+ * fois, selon laquelle une forme qui n'a pas ete VUE n'est pas validee.
+ *
+ * POURQUOI PAS LE GLOBE DU MENU. Il montre deja les biomes, mais sur une
+ * SPHERE : on n'en voit qu'une face, elle tourne, et deux reglages ne s'y
+ * comparent donc pas image contre image. La carte equivalente-aire, elle, se
+ * superpose d'un essai a l'autre.
+ */
+FString UWorldseedProbeLibrary::ProbeCarte(int32 Seed, float HeightMeters,
+	int32 ResolutionY, const FString& Etiquette)
+{
+	WorldseedPipeline::ReloadRules();
+
+	FString Error;
+	WorldseedPipeline::FResult World;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const FWorldseedGeometry& Geo = World.Geometry;
+	const int32 NX = Geo.NX;
+	const int32 NY = Geo.NY;
+	const int32 Total = Geo.CellCount();
+
+	// Les biomes peuvent manquer -- une generation de secours n'en produit
+	// pas. On le DIT plutot que de rendre une carte grise sans explication.
+	const bool bBiomes = World.Biomes.Index.Num() == Total
+		&& World.Biomes.Cover.Num() == Total;
+
+	// Le fond marin porte un degrade de profondeur : sans lui le plateau
+	// continental disparait, et l'on ne voit plus POURQUOI une cote est la.
+	float Fond = 0.0f;
+	for (int32 I = 0; I < Total; ++I)
+	{
+		Fond = FMath::Min(Fond, World.ElevationM[I]);
+	}
+	Fond = FMath::Min(Fond, -1.0f);
+
+	TArray<FColor> Pixels;
+	Pixels.SetNumUninitialized(Total);
+
+	for (int32 I = 0; I < Total; ++I)
+	{
+		const float Z = World.ElevationM[I];
+		FLinearColor C;
+
+		if (Z > 0.0f)
+		{
+			C = bBiomes
+				? WorldseedBiomes::Colour(WorldseedBiomes::AppearanceBiome(
+					World.Biomes.Index[I], World.Biomes.Cover[I]))
+				: FLinearColor(0.45f, 0.42f, 0.36f);
+		}
+		else
+		{
+			// Clair sur le plateau, sombre dans l'abysse.
+			const float T = FMath::Clamp(Z / Fond, 0.0f, 1.0f);
+			C = FMath::Lerp(FLinearColor(0.40f, 0.60f, 0.76f),
+				FLinearColor(0.03f, 0.08f, 0.20f), T);
+		}
+
+		Pixels[I] = C.ToFColor(true);
+	}
+
+	// LE TRAIT DE COTE EST SOULIGNE, parce que c'est lui qu'on vient juger.
+	// Sans ce lisere, un biome cotier pale contre une mer peu profonde rend la
+	// frontiere illisible a l'echelle ou l'on regarde la FORME. On ecrit dans
+	// une COPIE : souligner en place propagerait le trait de proche en proche.
+	TArray<FColor> Trait = Pixels;
+	for (int32 J = 0; J < NY; ++J)
+	{
+		for (int32 I = 0; I < NX; ++I)
+		{
+			const int32 K = J * NX + I;
+			if (World.ElevationM[K] <= 0.0f)
+			{
+				continue;
+			}
+
+			// Le monde est cyclique en longitude : le trait ne doit pas se
+			// couper au meridien de bordure.
+			const int32 IG = (I + NX - 1) % NX;
+			const int32 ID = (I + 1) % NX;
+			const int32 JB = FMath::Max(J - 1, 0);
+			const int32 JH = FMath::Min(J + 1, NY - 1);
+
+			const bool bBord = World.ElevationM[J * NX + IG] <= 0.0f
+				|| World.ElevationM[J * NX + ID] <= 0.0f
+				|| World.ElevationM[JB * NX + I] <= 0.0f
+				|| World.ElevationM[JH * NX + I] <= 0.0f;
+
+			if (bBord)
+			{
+				Trait[K] = FColor(18, 18, 24);
+			}
+		}
+	}
+
+	const FString Nom = Etiquette.IsEmpty() ? TEXT("carte") : Etiquette;
+	const FString Chemin = FPaths::Combine(FPaths::ProjectSavedDir(),
+		TEXT("Worldseed"), TEXT("Cartes"), Nom + TEXT(".png"));
+
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Chemin), true);
+
+	const FImageView Image(Trait.GetData(), NX, NY);
+	if (!FImageUtils::SaveImageAutoFormat(*Chemin, Image))
+	{
+		return FString::Printf(TEXT("ecriture impossible : %s"), *Chemin);
+	}
+
+	const FString Bilan = FString::Printf(
+		TEXT("carte ecrite : %s (%d x %d, terres %.2f %%, biomes %s)"),
+		*Chemin, NX, NY, World.LandRatio * 100.0f,
+		bBiomes ? TEXT("oui") : TEXT("NON -- altitude seule"));
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Bilan);
+	return Bilan;
 }
