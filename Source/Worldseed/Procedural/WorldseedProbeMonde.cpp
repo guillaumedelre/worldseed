@@ -15,6 +15,7 @@
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
+#include "Procedural/WorldseedTectonics.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 
 FString UWorldseedProbeLibrary::ProbeGlobe(int32 Seed, float HeightMeters,
@@ -720,151 +721,214 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 		PartEligible);
 }
 
+namespace
+{
+	/**
+	 * Dimension fractale d'un trait de cote, par comptage de boites.
+	 *
+	 * ELLE EST FACTORISEE PARCE QU'ON LA MESURE DEUX FOIS -- a la sortie de la
+	 * tectonique et sur le relief fini -- et que le depot a une regle contre la
+	 * formule recopiee : deux copies divergent a la premiere retouche, et la
+	 * comparaison ne voudrait plus rien dire.
+	 *
+	 * Rend la dimension moyenne et journalise le detail par echelle.
+	 */
+	float DimensionDuTrait(const TArray<float>& ElevationM,
+		const FWorldseedGeometry& Geo, const TCHAR* Etiquette)
+	{
+		const int32 NX = Geo.NX;
+		const int32 NY = Geo.NY;
+
+		// Une terre qui touche la mer par un cote. La carte boucle en longitude :
+		// un continent coupe par le bord aurait sinon deux fausses cotes droites.
+		TArray<uint8> Cote;
+		Cote.SetNumZeroed(NX * NY);
+		int32 Cellules = 0;
+		for (int32 J = 0; J < NY; ++J)
+		{
+			for (int32 I = 0; I < NX; ++I)
+			{
+				const int32 Idx = J * NX + I;
+				if (ElevationM[Idx] < 0.0f) { continue; }
+				const int32 IG = (I + NX - 1) % NX;
+				const int32 ID = (I + 1) % NX;
+				const bool bMer =
+					(ElevationM[J * NX + IG] < 0.0f)
+					|| (ElevationM[J * NX + ID] < 0.0f)
+					|| (J > 0 && ElevationM[(J - 1) * NX + I] < 0.0f)
+					|| (J < NY - 1 && ElevationM[(J + 1) * NX + I] < 0.0f);
+				if (bMer) { Cote[Idx] = 1; ++Cellules; }
+			}
+		}
+		if (Cellules == 0) { return 0.0f; }
+
+		const int32 Tailles[] = { 1, 2, 4, 8, 16, 32 };
+		constexpr int32 NbTailles = UE_ARRAY_COUNT(Tailles);
+
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed]   --- %s ---"), Etiquette);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]     regle      boites   cote de la regle   dimension locale"));
+
+		double SommeX = 0.0, SommeY = 0.0, SommeXY = 0.0, SommeXX = 0.0;
+		int32 NbPoints = 0;
+		int32 DernierN = 0;
+		const float MetresParPixel = FMath::Max(Geo.MetersPerPixel(), 1e-3f);
+
+		for (int32 T = 0; T < NbTailles; ++T)
+		{
+			const int32 R = Tailles[T];
+			const int32 BX = (NX + R - 1) / R;
+			const int32 BY = (NY + R - 1) / R;
+
+			TArray<uint8> Boite;
+			Boite.SetNumZeroed(BX * BY);
+			for (int32 J = 0; J < NY; ++J)
+			{
+				for (int32 I = 0; I < NX; ++I)
+				{
+					if (Cote[J * NX + I] != 0) { Boite[(J / R) * BX + (I / R)] = 1; }
+				}
+			}
+
+			int32 N = 0;
+			for (const uint8 B : Boite) { N += B; }
+			if (N <= 0) { continue; }
+
+			// DernierN est le compte a la regle DEUX FOIS PLUS FINE, donc plus
+			// grand : il va au numerateur, sinon la dimension sort negative.
+			if (DernierN > 0)
+			{
+				const float DimLocale = FMath::Loge(
+					static_cast<float>(DernierN) / static_cast<float>(N)) / FMath::Loge(2.0f);
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed]     %3d px  %8d   %7.0f m        %.2f"),
+					R, N, R * MetresParPixel, DimLocale);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed]     %3d px  %8d   %7.0f m          --"),
+					R, N, R * MetresParPixel);
+			}
+			DernierN = N;
+
+			const double X = FMath::Loge(1.0 / static_cast<double>(R));
+			const double Y = FMath::Loge(static_cast<double>(N));
+			SommeX += X; SommeY += Y; SommeXY += X * Y; SommeXX += X * X;
+			++NbPoints;
+		}
+
+		if (NbPoints < 2) { return 0.0f; }
+
+		const double Denom = NbPoints * SommeXX - SommeX * SommeX;
+		const float Dim = (FMath::Abs(Denom) > 1e-12)
+			? static_cast<float>((NbPoints * SommeXY - SommeX * SommeY) / Denom)
+			: 0.0f;
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]     dimension %.3f   %d cellules de littoral"),
+			Dim, Cellules);
+		return Dim;
+	}
+}
+
 FString UWorldseedProbeLibrary::ProbeCotes(int32 Seed, float HeightMeters,
 	int32 ResolutionY)
 {
 	WorldseedPipeline::ReloadRules();
 
-	WorldseedPipeline::FResult World;
 	FString Error;
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules)
+	{
+		return FString::Printf(TEXT("regles illisibles : %s"), *Error);
+	}
+
+	WorldseedPipeline::FResult World;
 	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
 	{
 		return FString::Printf(TEXT("generation impossible : %s"), *Error);
 	}
 
-	const FWorldseedGeometry& Geo = World.Geometry;
-	const int32 NX = Geo.NX;
-	const int32 NY = Geo.NY;
-
-	// LE TRAIT DE COTE : une terre qui touche la mer par un cote. On prend la
-	// terre et non la mer pour que les lacs interieurs -- s'il en revenait un
-	// jour -- ne comptent pas comme du littoral oceanique.
-	TArray<uint8> Cote;
-	Cote.SetNumZeroed(NX * NY);
-	int32 Cellules = 0;
-	for (int32 J = 0; J < NY; ++J)
-	{
-		for (int32 I = 0; I < NX; ++I)
-		{
-			const int32 Idx = J * NX + I;
-			if (World.ElevationM[Idx] < 0.0f)
-			{
-				continue;
-			}
-			// La carte boucle en longitude : un continent coupe par le bord
-			// aurait sinon deux fausses cotes verticales.
-			const int32 IG = (I + NX - 1) % NX;
-			const int32 ID = (I + 1) % NX;
-			const bool bMer =
-				(World.ElevationM[J * NX + IG] < 0.0f)
-				|| (World.ElevationM[J * NX + ID] < 0.0f)
-				|| (J > 0 && World.ElevationM[(J - 1) * NX + I] < 0.0f)
-				|| (J < NY - 1 && World.ElevationM[(J + 1) * NX + I] < 0.0f);
-			if (bMer)
-			{
-				Cote[Idx] = 1;
-				++Cellules;
-			}
-		}
-	}
-
-	if (Cellules == 0)
-	{
-		return TEXT("aucun trait de cote : monde sans terre ou sans mer");
-	}
-
-	// --- COMPTAGE DE BOITES -------------------------------------------------
-	//
-	// Pour une regle de cote R, combien de boites R x R contiennent du trait ?
-	// Sur une droite, N double quand R est divise par deux : la pente de
-	// log N contre log(1/R) vaut 1. Sur une cote decoupee, la regle fine
-	// trouve des details que la grosse ignorait, et la pente monte.
-	const int32 Tailles[] = { 1, 2, 4, 8, 16, 32 };
-	constexpr int32 NbTailles = UE_ARRAY_COUNT(Tailles);
-
-	double SommeX = 0.0, SommeY = 0.0, SommeXY = 0.0, SommeXX = 0.0;
-	int32 DernierN = 0;
-	int32 NbPoints = 0;
-
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] === TRAIT DE COTE ==="));
-	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed]   regle      boites   cote de la regle   dimension locale"));
 
-	for (int32 T = 0; T < NbTailles; ++T)
+	// --- DEUX TEMOINS, AVANT TOUTE CONCLUSION -------------------------------
+	//
+	// UNE METRIQUE NON VALIDEE NE MESURE RIEN, et ce depot l'a deja paye : le
+	// comptage des composants d'herbe de Landscape rendait zero, on en a
+	// conclu a un defaut du materiau, et la demo du pack -- qui a pourtant un
+	// tapis visible -- rendait le meme zero. Le compteur ne mesurait rien.
+	//
+	// Ici cinq reglages tres differents ont rendu la meme dimension a deux
+	// millemes pres. Avant d'en conclure que le monde est plat, il faut savoir
+	// si la sonde SAIT voir autre chose. On lui donne donc deux formes dont la
+	// reponse est connue : un disque, qui vaut 1,00 par definition, et le
+	// contour d'un bruit fractal de gain 0,7, qui vaut 2 - H = 1,49.
 	{
-		const int32 R = Tailles[T];
-		const int32 BX = (NX + R - 1) / R;
-		const int32 BY = (NY + R - 1) / R;
+		const int32 NX = World.Geometry.NX;
+		const int32 NY = World.Geometry.NY;
 
-		TArray<uint8> Boite;
-		Boite.SetNumZeroed(BX * BY);
+		TArray<float> Disque;
+		Disque.SetNumUninitialized(NX * NY);
+		const float CX = NX * 0.5f;
+		const float CY = NY * 0.5f;
+		const float Rayon = NY * 0.35f;
 		for (int32 J = 0; J < NY; ++J)
 		{
 			for (int32 I = 0; I < NX; ++I)
 			{
-				if (Cote[J * NX + I] != 0)
-				{
-					Boite[(J / R) * BX + (I / R)] = 1;
-				}
+				const float DX = I - CX;
+				const float DY = J - CY;
+				// Positif dedans : la sonde lit « terre » au-dessus de zero.
+				Disque[J * NX + I] = Rayon - FMath::Sqrt(DX * DX + DY * DY);
 			}
 		}
+		DimensionDuTrait(Disque, World.Geometry, TEXT("TEMOIN : un disque (attendu 1,00)"));
 
-		int32 N = 0;
-		for (const uint8 B : Boite) { N += B; }
-		if (N <= 0) { continue; }
-
-		// LA DIMENSION LOCALE, ENTRE DEUX ECHELLES VOISINES. Une regression sur
-		// TOUTE la plage melange deux regimes et ne decrit aucun des deux : en
-		// dessous de la plus fine octave du bruit, la cote est lisse PAR
-		// CONSTRUCTION et tire la pente vers 1 ; au-dessus, elle porte le
-		// decoupage qu'on cherche a mesurer. Le depot a deja paye ce melange
-		// quatre fois, sur le routage des galeries.
-		const float MetresParPixel = FMath::Max(Geo.MetersPerPixel(), 1e-3f);
-		if (DernierN > 0)
-		{
-			// DernierN est le compte a la regle DEUX FOIS PLUS FINE, donc plus
-			// grand : c'est lui qui va au numerateur, sinon la dimension sort
-			// negative.
-			const float DimLocale = FMath::Loge(
-				static_cast<float>(DernierN) / static_cast<float>(N)) / FMath::Loge(2.0f);
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed]   %3d px  %8d   %7.0f m        %.2f"),
-				R, N, R * MetresParPixel, DimLocale);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed]   %3d px  %8d   %7.0f m          --"),
-				R, N, R * MetresParPixel);
-		}
-		DernierN = N;
-
-		// Regression de log N contre log(1/R) : la pente EST la dimension.
-		const double X = FMath::Loge(1.0 / static_cast<double>(R));
-		const double Y = FMath::Loge(static_cast<double>(N));
-		SommeX += X; SommeY += Y; SommeXY += X * Y; SommeXX += X * X;
-		++NbPoints;
+		TArray<float> Bruit;
+		WorldseedPerlin::FBMSphere(Bruit, World.Geometry, 6.0f, 8, Seed + 1234, 2.0f, 0.7f);
+		// Centre sur zero pour que le contour coupe au milieu du champ.
+		float Somme = 0.0f;
+		for (const float V : Bruit) { Somme += V; }
+		const float Moyenne = Somme / FMath::Max(Bruit.Num(), 1);
+		for (float& V : Bruit) { V -= Moyenne; }
+		DimensionDuTrait(Bruit, World.Geometry,
+			TEXT("TEMOIN : contour d'un fBm de gain 0,7 (attendu ~1,49)"));
 	}
 
-	if (NbPoints < 2)
+	// --- LA MESURE QUI TRANCHE ---------------------------------------------
+	//
+	// La cote NAIT-ELLE lisse de la tectonique, ou le DEVIENT-elle ensuite ?
+	// Quatre reglages du bruit de cote rendaient le meme nombre de cellules de
+	// littoral a un demi pour cent pres, et couper la diffusion de l'erosion
+	// n'y changeait rien non plus : quelque chose plafonne le trait en amont.
+	// On mesure donc la MEME grandeur aux deux bouts de la chaine.
+	//
+	// La tectonique recale elle-meme le niveau de la mer sur la part de terres
+	// visee, donc son relief porte deja un trait de cote comparable.
+	FWorldseedTectonicResult Tecto;
+	if (WorldseedTectonics::Generate(*Rules, World.Geometry, Seed, Tecto)
+		&& Tecto.ElevationM.Num() == World.ElevationM.Num())
 	{
-		return TEXT("pas assez d'echelles pour une dimension");
+		const float DimAvant = DimensionDuTrait(Tecto.ElevationM, World.Geometry,
+			TEXT("A LA SORTIE DE LA TECTONIQUE (avant erosion)"));
+		const float DimApres = DimensionDuTrait(World.ElevationM, World.Geometry,
+			TEXT("SUR LE RELIEF FINI (apres erosion et littoral)"));
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   VERDICT : %.3f a la naissance, %.3f a l'arrivee ")
+			TEXT("(ecart %+.3f)"),
+			DimAvant, DimApres, DimApres - DimAvant);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   reperes : droite 1,00 ; Afrique du Sud 1,05 ; ")
+			TEXT("Grande-Bretagne 1,25 ; Norvege 1,52"));
+
+		return FString::Printf(
+			TEXT("trait de cote : %.3f avant erosion, %.3f apres (Grande-Bretagne 1,25)"),
+			DimAvant, DimApres);
 	}
 
-	const double Denom = NbPoints * SommeXX - SommeX * SommeX;
-	const double Dimension = (FMath::Abs(Denom) > 1e-12)
-		? (NbPoints * SommeXY - SommeX * SommeY) / Denom
-		: 0.0;
-
-	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed]   dimension fractale %.3f   ")
-		TEXT("(droite 1,00 ; Afrique du Sud 1,05 ; Grande-Bretagne 1,25 ; Norvege 1,52)"),
-		Dimension);
-	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed]   %d cellules de littoral sur %d terres"),
-		Cellules, static_cast<int32>(World.LandRatio * NX * NY));
-
-	return FString::Printf(
-		TEXT("dimension fractale du trait de cote : %.3f (Grande-Bretagne 1,25)"),
-		Dimension);
+	const float Dim = DimensionDuTrait(World.ElevationM, World.Geometry,
+		TEXT("SUR LE RELIEF FINI"));
+	return FString::Printf(TEXT("dimension fractale : %.3f"), Dim);
 }
