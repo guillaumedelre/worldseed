@@ -6254,3 +6254,91 @@ lames et fentes de canyon au premier chef.
 **NON CORRIGE, PAR DECISION DU PROPRIETAIRE** : « les reglages sont
 globalement bons, surtout que le monde n'est pas encore texture ». A reprendre
 avec l'habillage.
+
+### Le carre d'ocean : ce que le plugin Water ancre, et ce qu'il ne suit pas (21 septembre 2026)
+
+Signale en jeu : « je vois nettement un carre d'ocean autour de moi », puis
+« elle ne me suit pas, j'arrive au bord et elle se regenere devant moi ». Un
+seul defaut, deux visages -- et TROIS affirmations de ce registre etaient
+fausses.
+
+**`r.Water.WaterMesh.MaxWidthInTiles` N'EXISTE PAS.** La vraie variable est
+**`r.Water.WaterMesh.MaxDimensionInTiles`** (WaterMeshComponent.cpp:38,
+defaut 256). Le mauvais nom vient du MOTEUR lui-meme : son message
+d'avertissement (ligne 605) cite la variable inexistante, et ce registre l'a
+recopie. La ligne reclamee dans `DefaultEngine.ini` etait donc doublement
+morte -- absente ET mal nommee. **Un message du moteur n'est pas une source
+pour un nom de variable : le chercher dans la declaration.**
+
+**LA NAPPE LOINTAINE NE COUVRE PAS L'HORIZON, ET ELLE NE LE PEUT PAS.**
+`FarMeshBounds = WaterZoneBounds2D` (WaterQuadTreeBuilder.cpp:181) : la jupe
+de huit quads s'accroche aux bornes de la ZONE -- 64 x 32 km chez nous -- et
+part vers l'EXTERIEUR. Depuis l'interieur du monde elle est inatteignable,
+quelle que soit sa portee. Le commit qui la posait a 40 km est juste sur le
+fond (le reglage valait zero) mais **ne pouvait rien corriger de visible**,
+et il l'annoncait a tort comme verifie.
+
+**LA TEXTURE D'INFO VALAIT 512, PAS 4096.** Le defaut du plugin est
+512 x 512 (WaterZoneActor.cpp:96) et notre code ne la reglait pas. Le 4096
+du registre appartenait a la zone posee dans l'editeur, morte avec elle --
+meme famille que le PlayerStart qui revient et les acteurs d'eclairage
+disparus. **Tout reglage d'une `WaterZone` se pose PAR CODE.** Le moteur ne
+plafonne rien (`r.Water.WaterInfo.RenderTargetResolutionMax` vaut 0).
+
+**LE PLAFOND DE LA FENETRE SE CALCULE.** `RoundUpToPowerOfTwo(demi-etendue /
+24 m)`, borne a 256 tuiles : 4 km -> 128, 8 km -> 256, **12,288 km -> 256
+exactement**, 16 km -> 512 donc tuiles DIVISEES par deux. A 12,288 km la
+boite du quadtree coincide pile avec la fenetre. Retenu, avec la texture a
+4096 : **7,8 -> 3,0 m par texel**, soit un rivage 2,6 fois plus fin malgre
+une fenetre triplee.
+
+**LE SAUT DE LA FENETRE EST UN REGLAGE DU MOTEUR** : `UpdateMargin`
+(WaterViewExtension.cpp:24) vaut 150 m, donc le recentrage n'a lieu qu'apres
+**1 850 m** de marche sur une fenetre de 4 km. Agrandir la fenetre le repousse
+au-dela de ce qu'on peut atteindre : inutile d'y toucher.
+
+**AGRANDIR NE SUPPRIME PAS LA COUTURE, CELA LA DEPLACE.** Ce qu'on voit
+derriere le bord n'est pas du vide : c'est le sol de fond, qui peint son
+plateau cotier en PLAGE. Mesure au temoin : eau R78 G125 B153, plateau a sec
+R196 G188 B174, et au zoom le trait droit TRAVERSE les dunes. Le remede qui
+ferme la question est de peindre en mer tout le sol de fond sous zero --
+couleur seulement, jamais la geometrie, et **jamais sur le voxel** : sous les
+pieds on voit le fond a travers l'eau, et c'est ce qu'on veut.
+
+**UN A/B PEUT ETRE RIGOUREUX ET PARFAITEMENT VIDE.** Deux captures au meme
+point, au meme metre, a la meme altitude -- donc valides -- et tournees vers
+les collines, sans une goutte d'eau, alors qu'il s'agissait de juger la mer.
+`-WorldseedDepartX/Y` posent le joueur, elles ne disent rien de ce qu'il
+REGARDE. D'ou `-WorldseedCap=`. **Une capture ne vaut que par son SUJET.**
+
+**ET L'ECLAIRAGE INTERDIT L'A/B PAR LANCEMENTS SUCCESSIFS DANS CE PROJET.**
+`Animate Time of Day` tourne, et trente secondes d'ecart au chargement font
+douze minutes de jeu. Mesure : la crete rocheuse TEMOIN, au-dessus du niveau
+de la mer donc hors d'atteinte du traitement, a bouge de **101 sur 765**
+quand la zone testee bougeait de 15 -- le bruit a sept fois le signal, et
+51 % de l'image « changee » sur toute sa surface. **Le remede n'est pas une
+meilleure moyenne, c'est un TEMOIN DE COULEUR** : peindre la zone traitee en
+magenta. Une couleur franche ne se compare a rien, elle est la ou elle n'est
+pas. Avec, en plus, un COMPTE journalise -- « 5 939 134 sommets sur
+8 388 608 sous zero » -- parce qu'une couleur invisible a deux causes
+opposees, le terme qui ne s'evalue jamais et le terme dont rien n'atteint
+l'ecran, qui n'appellent pas le meme remede.
+
+**PIEGE DE MONTAGE PAYE SUR CE MEME ESSAI** : pour grossir le defaut j'ai
+ramene la fenetre a 0,5 km. Le bord tombait alors a 250 m, donc DANS le rayon
+voxel de 1 200 m -- la seule zone ou le terme testé ne s'applique pas. **On
+peut pousser un defaut hors de portee du traitement qu'on veut juger.**
+
+**LE GETTER DU PLUGIN N'EST PAS EXPORTE** : `SetRenderTargetResolution` porte
+`UE_API`, `GetRenderTargetResolution` non (WaterZoneActor.h, lignes 66 et 67).
+On peut ECRIRE depuis notre module, pas RELIRE -- et l'erreur n'arrive qu'a
+l'EDITION DE LIENS, bien apres une compilation reussie. Relire par reflexion,
+comme la fenetre glissante : c'est de toute facon la valeur que l'acteur
+porte vraiment.
+
+**RESTE OUVERT** : le pion ne reste pas ou on le pose -- 2,7 km de glissade
+mesures depuis un depart a 22,1 degres de pente, sans ligne de filet au
+journal, mais NON reproduit au lancement suivant. Hypothese non verifiee :
+`PenteDepartMaxDeg` se lit sur la grille 2D a 15,6 m de maille quand le voxel
+travaille au metre. Et aucune vue n'a ete prise depuis un VRAI sommet : 69,
+229 et 315 m, pas 1 500.
