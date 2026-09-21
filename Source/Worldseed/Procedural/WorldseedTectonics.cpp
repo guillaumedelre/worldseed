@@ -335,12 +335,39 @@ const int32 Count = NX * NY;
 		TArray<float> WarpX;
 		TArray<float> WarpY;
 		TArray<float> WarpZ;
-		const float PlateWarp = static_cast<float>(
+		// --- LA SEULE FACON D'AVOIR DES FRONTIERES DE PLAQUE NON DROITES ------
+		//
+		// Un diagramme de Voronoi a des aretes RECTILIGNES par definition :
+		// l'ensemble des points equidistants de deux germes est un plan. Aucun
+		// reglage du Voronoi ne peut les courber. Le seul levier est de
+		// DEPLACER LE POINT D'ECHANTILLONNAGE avant de le classer -- le
+		// domain warping : on calcule le Voronoi en un point voisin, tire par
+		// un bruit, et la frontiere ondule d'autant.
+		//
+		// CELA PORTE PLUS LOIN QUE LE MASQUE. Le soulevement Uplift est
+		// calcule depuis la PROXIMITE d'une frontiere, donc il herite lui aussi
+		// de cette geometrie : courber les frontieres courbe a la fois le trait
+		// continent/ocean et les chaines de montagnes qui le bordent. C'est le
+		// seul terme de la chaine qui agisse sur les deux sources du trait de
+		// cote a la fois.
+		float PlateWarp = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("plateWarpStrength"), 0.0));
+		float WarpForce = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WarpForce="), WarpForce)
+			&& WarpForce >= 0.0f)
+		{
+			PlateWarp = WarpForce;
+		}
 		if (PlateWarp > 0.0f)
 		{
-			const float WarpFreq = static_cast<float>(
+			float WarpFreq = static_cast<float>(
 				Rules.Num(TEXT("tectonics"), TEXT("plateWarpFrequency"), 2.2));
+			float FreqForce = -1.0f;
+			if (FParse::Value(FCommandLine::Get(), TEXT("WarpFreq="), FreqForce)
+				&& FreqForce > 0.0f)
+			{
+				WarpFreq = FreqForce;
+			}
 			WorldseedPerlin::FBMSphere(WarpX, Geo, WarpFreq, 5, Seed + 4441);
 			WorldseedPerlin::FBMSphere(WarpY, Geo, WarpFreq, 5, Seed + 4457);
 			WorldseedPerlin::FBMSphere(WarpZ, Geo, WarpFreq, 5, Seed + 4463);
@@ -451,9 +478,20 @@ const int32 Count = NX * NY;
 		// En rendant le MASQUE fractal, le trait de cote devient decoupe a
 		// toutes les echelles.
 		TArray<float> Mask = RawContinental;
-		const float SmoothPx = static_cast<float>(
+		float SmoothPx = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("continentSmoothKm"), 0.0))
 			* 1000.0f / Geo.MetersPerPixel();
+
+		// SURCHARGE DE BANC D'ESSAI. C'est le lissage qui donne sa PRISE au
+		// bruit : le masque brut est binaire, et un bruit ajoute a une marche
+		// ne peut deplacer le trait que de l'epaisseur de cette marche. Plus
+		// la transition est large, plus le meme bruit deplace loin.
+		float LissageForce = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedLissage="), LissageForce)
+			&& LissageForce >= 0.0f)
+		{
+			SmoothPx = LissageForce * 1000.0f / Geo.MetersPerPixel();
+		}
 		if (SmoothPx >= 0.5f)
 		{
 			WorldseedGrid::GaussianFilter(Mask, NX, NY, SmoothPx);
