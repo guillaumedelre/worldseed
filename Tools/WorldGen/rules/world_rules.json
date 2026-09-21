@@ -62,7 +62,9 @@
   "glace": {
     "_comment": "Epaisseur de la calotte glaciaire, posee APRES la classification : la glace est une consequence du climat, jamais une cause. epaisseurMaxM est l'epaisseur au centre du dome AVANT mise a l'echelle par VerticalScale, comme toutes les valeurs metriques du fichier. CALIBRE SUR LE RAPPORT TERRESTRE : l'Antarctique culmine a 2300 m pour un Himalaya a 8800, soit un peu plus du quart ; nos montagnes visent mountainHeightM = 500, d'ou 175 pour la glace. POURQUOI ELLE EXISTE : le classificateur posait deja la calotte au bon endroit -- 9,2 % des terres pour 10 sur Terre -- mais PLATE, altitude moyenne 28 a 38 m. Un plateau a trente metres n'est pas une calotte, et le globe le montrait en vert, la teinte des plaines. porteeDomeKm est la distance au bord ou le dome atteint son epaisseur maximale ; au-dela il est plat. Le profil suit la RACINE de la distance au bord -- solution de Vialov : la glace flue d'autant plus vite qu'elle est epaisse, et le dome s'etale jusqu'a l'equilibre. Une rampe lineaire donnerait un cone, une constante une falaise de glace sur tout le pourtour.",
     "epaisseurMaxM": 175.0,
-    "porteeDomeKm": 6.0
+    "porteeDomeKm": 6.0,
+    "_comment_banquise": "SOURCE. La MER prend en glace quand son mois le plus chaud reste sous ce seuil -- meme critere que la calotte, et pour la meme raison : ce qui fond en ete ne tient pas l'annee. IL EST SEPARE DE permanentIceTempC A DESSEIN : l'eau de mer est salee et gele vers -1,8 degre, pas a zero, et son inertie thermique n'est pas celle de la roche. POURQUOI ELLE EXISTE : le pole NORD n'a aucune terre et n'en aura jamais, northPole valant 'ocean' comme l'Arctique -- sans banquise il reste bleu sur toute carte, alors que le vrai est blanc. Elle est une COUVERTURE et non un biome : elle flotte, fait quelques metres et disparait si l'eau se rechauffe, quand une calotte repose sur de la terre et s'y accumule sur des kilometres. Les compter ensemble fausserait les parts de biomes, qui se mesurent sur les TERRES.",
+    "banquiseTempC": 0.0
   },
   "temperature": {
     "equatorC": 27.0,

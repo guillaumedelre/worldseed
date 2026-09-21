@@ -59,7 +59,8 @@ namespace WorldseedGlobe
 	 */
 	WORLDSEED_API UTexture2D* Render(const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
-		int32 PreviewResolution, const TArray<uint8>* BiomeIndex = nullptr);
+		int32 PreviewResolution, const TArray<uint8>* BiomeIndex = nullptr,
+		const TArray<uint8>* CoverIndex = nullptr);
 
 	/**
 	 * Redessine dans une texture existante. C'est cette voie qu'utilise la
@@ -79,5 +80,6 @@ namespace WorldseedGlobe
 	 */
 	WORLDSEED_API bool RenderInto(UTexture2D* Texture, const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
-		const TArray<uint8>* BiomeIndex = nullptr);
+		const TArray<uint8>* BiomeIndex = nullptr,
+		const TArray<uint8>* CoverIndex = nullptr);
 }

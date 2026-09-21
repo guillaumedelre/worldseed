@@ -203,6 +203,16 @@ struct WORLDSEED_API FWorldseedBiomeRules
 	float ColdDesertMaxTempC = 18.0f;
 
 	float AlpineMinElevationM = 212.5f;
+
+	/**
+	 * La mer gele quand son mois le plus chaud reste sous ce seuil.
+	 *
+	 * SEPARE DE permanentIceTempC A DESSEIN : l''eau a une inertie thermique
+	 * que la roche n''a pas, et elle est salee -- elle gele vers -1,8 degre,
+	 * pas a zero. Les confondre reviendrait a poser que terre et mer prennent
+	 * en glace a la meme temperature.
+	 */
+	float SeaIceTempC = 0.0f;
 	float PermanentIceTempC = 0.0f;
 	float BareRockSlopeDeg = 55.0f;
 
@@ -279,7 +289,22 @@ enum class EWorldseedCover : uint8
 	/** Estran : bande littorale. Meme raisonnement -- une forme, pas un climat. */
 	Beach = 5,
 
-	Count = 6
+	/**
+	 * Banquise : la MER prise en glace.
+	 *
+	 * ELLE N'EST PAS UNE CALOTTE, et c'est pourquoi elle est une couverture et
+	 * non un biome. La calotte repose sur de la terre et s'y accumule sur des
+	 * kilometres ; la banquise flotte, fait quelques metres, et disparait si
+	 * l'eau se rechauffe. Les compter ensemble fausserait les parts de biomes,
+	 * qui se mesurent sur les TERRES.
+	 *
+	 * ELLE EXISTE PARCE QUE LE POLE NORD N'A PAS DE TERRE, et n'en aura
+	 * jamais : northPole vaut "ocean", comme l'Arctique. Sans elle, ce pole
+	 * reste bleu sur toute carte, alors que le vrai est blanc.
+	 */
+	SeaIce = 6,
+
+	Count = 7
 };
 
 /** Ce que la classification produit. */

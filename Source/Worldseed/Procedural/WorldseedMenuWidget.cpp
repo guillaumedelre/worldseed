@@ -1508,6 +1508,10 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	const TArray<uint8>* GlobeBiomesPtr =
 		(GlobeBiomes.Num() == GlobeHeights.Num()) ? &GlobeBiomes : nullptr;
 
+	const TArray<uint8>& GlobeCover = bUsePreview ? PreviewCover : CachedBiomes.Cover;
+	const TArray<uint8>* GlobeCoverPtr =
+		(GlobeCover.Num() == GlobeHeights.Num()) ? &GlobeCover : nullptr;
+
 	WorldseedGlobe::FGlobeSettings GlobeSettings;
 	if (Rules)
 	{
@@ -1535,7 +1539,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	if (!PreviewTexture)
 	{
 		PreviewTexture = WorldseedGlobe::Render(
-			GlobeHeights, Geometry, GlobeSettings, 512, GlobeBiomesPtr);
+			GlobeHeights, Geometry, GlobeSettings, 512, GlobeBiomesPtr, GlobeCoverPtr);
 
 		if (!PreviewTexture)
 		{
@@ -1555,7 +1559,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	}
 
 	WorldseedGlobe::RenderInto(PreviewTexture, GlobeHeights,
-		Geometry, GlobeSettings, GlobeBiomesPtr);
+		Geometry, GlobeSettings, GlobeBiomesPtr, GlobeCoverPtr);
 }
 
 void UWorldseedMenuWidget::BuildPreviewField()
@@ -1592,6 +1596,8 @@ void UWorldseedMenuWidget::BuildPreviewField()
 	// qui n'existe nulle part sur la carte.
 	WorldseedGrid::DownsampleNearest(CachedBiomes.Index, WorldGeometry.NX,
 		WorldGeometry.NY, DstNX, DstNY, PreviewBiomes);
+	WorldseedGrid::DownsampleNearest(CachedBiomes.Cover, WorldGeometry.NX,
+		WorldGeometry.NY, DstNX, DstNY, PreviewCover);
 
 	PreviewGeometry = WorldGeometry;
 	PreviewGeometry.NX = DstNX;

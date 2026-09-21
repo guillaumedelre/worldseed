@@ -516,6 +516,8 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 		int32 Taiga = 0;
 		int32 Alpin = 0;
 		int32 SousZeroEte = 0;   // TempMax < 0 : eligible a la calotte
+		int32 Mer = 0;
+		int32 Banquise = 0;      // mer prise en glace
 	};
 	// --- LES HEMISPHERES NE SE MELANGENT PAS -------------------------------
 	//
@@ -577,6 +579,16 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 			const float Elev = World.ElevationM[Idx];
 			if (Elev < 0.0f)
 			{
+				// LA MER SE COMPTE A PART. La banquise n'est pas un biome : on
+				// ne peut donc pas la lire dans Index, et la ranger avec les
+				// terres gonflerait la calotte d'une surface qui n'en est pas.
+				++Ba.Mer;
+				if (World.Biomes.Cover.IsValidIndex(Idx)
+					&& static_cast<EWorldseedCover>(World.Biomes.Cover[Idx])
+						== EWorldseedCover::SeaIce)
+				{
+					++Ba.Banquise;
+				}
 				continue;
 			}
 
@@ -661,6 +673,28 @@ FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   terres dont le mois le plus chaud reste sous 0 C : %.2f %% (Terre : ~10)"),
 		PartEligible);
+
+	// LA BANQUISE, PAR BANDE ET SUR LA MER. Elle ne peut pas se lire dans le
+	// tableau ci-dessus, dont toutes les colonnes portent sur les TERRES : au
+	// pole nord il n'y en a aucune, et c'est justement la que la banquise doit
+	// exister.
+	int32 MerTotale = 0;
+	int32 BanquiseTotale = 0;
+	for (int32 B = 17; B >= 0; --B)
+	{
+		MerTotale += Bandes[B].Mer;
+		BanquiseTotale += Bandes[B].Banquise;
+		if (Bandes[B].Banquise > 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   banquise %3d a %3d deg : %.1f %% de la mer de la bande"),
+				B * 10 - 90, B * 10 - 80,
+				100.0f * Bandes[B].Banquise / FMath::Max(Bandes[B].Mer, 1));
+		}
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   banquise : %.2f %% de la mer du monde (Terre : ~3 a 5 selon la saison)"),
+		MerTotale > 0 ? 100.0f * BanquiseTotale / MerTotale : 0.0f);
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   altitudes %.0f .. %.0f m ; seuil alpin %.1f m ; ")
 		TEXT("mois le plus chaud %s"),

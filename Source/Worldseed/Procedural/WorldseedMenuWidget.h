@@ -274,6 +274,9 @@ private:
 	 */
 	TArray<uint8> PreviewBiomes;
 
+	/** Les couvertures a la meme resolution : c'est elles qui portent la banquise. */
+	TArray<uint8> PreviewCover;
+
 	/** Geometrie correspondant a PreviewHeights. */
 	FWorldseedGeometry PreviewGeometry;
 

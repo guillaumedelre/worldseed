@@ -196,6 +196,8 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 	Out.AlpineMinElevationM = Num(TEXT("alpineMinElevationM"), 212.5)
 		* WorldseedVerticalScale(Rules, Geo.HeightM);
 	Out.PermanentIceTempC = Num(TEXT("permanentIceTempC"), 0.0);
+	Out.SeaIceTempC = static_cast<float>(
+		Rules.Num(TEXT("glace"), TEXT("banquiseTempC"), 0.0));
 	auto Sub = [&Rules](const TCHAR* Key, double Fallback)
 	{
 		return static_cast<float>(Rules.Num(WorldseedSection::Substrat, Key, Fallback));
@@ -294,6 +296,12 @@ namespace WorldseedBiomes
 		case EWorldseedCover::River: return Colour(EWorldseedBiome::River);
 		case EWorldseedCover::Rock:  return Colour(EWorldseedBiome::BareRock);
 		case EWorldseedCover::Beach: return Colour(EWorldseedBiome::Beach);
+
+		// LA BANQUISE N'EST PAS LA CALOTTE, et elle ne doit pas lui ressembler
+		// tout a fait : un blanc legerement bleute, un peu plus sombre, dit
+		// qu'on est sur de la glace FLOTTANTE et non sur un continent.
+		case EWorldseedCover::SeaIce: return FLinearColor(0.82f, 0.88f, 0.94f);
+
 		default:                     return FLinearColor::Transparent;
 		}
 	}
@@ -580,8 +588,18 @@ namespace WorldseedBiomes
 				EWorldseedCover Substrate = EWorldseedCover::None;
 				if (!bLand)
 				{
+					// LA MER PREND EN GLACE quand meme son mois le plus chaud
+					// reste sous le seuil -- le meme critere que la calotte, et
+					// pour la meme raison : ce qui fond en ete ne tient pas
+					// l'annee. C'est ce qui donne un pole NORD blanc, lui qui
+					// n'a aucune terre et n'en aura jamais.
+					const bool bGelee = bHasTempMax
+						&& (TempMaxC[I] < Rules.SeaIceTempC);
+
 					Out.Index[I] = static_cast<uint8>(Biome);
-					Out.Cover[I] = static_cast<uint8>(EWorldseedCover::Ocean);
+					Out.Cover[I] = static_cast<uint8>(bGelee
+						? EWorldseedCover::SeaIce
+						: EWorldseedCover::Ocean);
 					continue;
 				}
 
