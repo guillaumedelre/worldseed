@@ -601,8 +601,42 @@ private:
 	bool TrouverTerreEmergee(const FVector2D& AutourM,
 		double& OutX, double& OutY) const;
 
+	/**
+	 * Pente toleree quand le joueur a CHOISI son point de depart.
+	 *
+	 * Plus permissive que les douze degres d'une naissance libre, et c'est
+	 * voulu : qui a vise un versant accepte d'etre sur un versant. Le pion
+	 * marche jusqu'a environ 45 degres (`GetWalkableFloorAngle`), donc
+	 * vingt-cinq laisse une marge confortable et ne glisse pas.
+	 */
+	static constexpr float PenteDepartMaxDeg = 25.0f;
+
+	/**
+	 * Ecart d'ALTITUDE tolere autour du point choisi, en metres.
+	 *
+	 * POURQUOI CETTE BORNE EXISTE. `FindFlatGround` retient le PREMIER point
+	 * acceptable de sa spirale : sur un versant raide, le premier sol a moins
+	 * de douze degres est la plaine d'en bas. Mesure sur deux parties
+	 * independantes, latitudes 73,1 et 15,3 degres -- donc sans rapport de
+	 * terrain -- le joueur est ne 89 et 92 metres SOUS le point qu'il avait
+	 * choisi. Qui vise un sommet naissait a son pied.
+	 *
+	 * Quarante metres pour trois cent quatre-vingt-quatre de fouille, soit
+	 * une pente moyenne de six degres : on peut vous deplacer le long du
+	 * relief, pas vous faire descendre une falaise.
+	 */
+	static constexpr float EcartAltitudeDepartM = 40.0f;
+
+	/**
+	 * PenteMaxDeg et la borne d'altitude ont une valeur par defaut qui rend
+	 * EXACTEMENT le comportement d'avant : une naissance libre ne doit rien
+	 * changer, l'endroit n'y a aucune importance. Un EcartAltitudeMaxM nul
+	 * signifie « pas de borne ».
+	 */
 	bool FindFlatGround(const FVector2D& AroundM, double& OutX, double& OutY,
-		float& OutSurfaceM, float& OutSlopeDeg) const;
+		float& OutSurfaceM, float& OutSlopeDeg,
+		float PenteMaxDeg = 12.0f, float EcartAltitudeMaxM = 0.0f,
+		float AltitudeRefM = 0.0f) const;
 
 	UPROPERTY()
 	TObjectPtr<USceneComponent> RootScene;

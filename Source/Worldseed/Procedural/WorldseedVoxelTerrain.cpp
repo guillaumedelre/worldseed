@@ -1533,21 +1533,31 @@ bool AWorldseedVoxelTerrain::TrouverTerreEmergee(const FVector2D& AutourM,
 	return true;
 }
 bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
-	double& OutX, double& OutY, float& OutSurfaceM, float& OutSlopeDeg) const
+	double& OutX, double& OutY, float& OutSurfaceM, float& OutSlopeDeg,
+	float PenteMaxDeg, float EcartAltitudeMaxM, float AltitudeRefM) const
 {
 	// Spirale carree autour du point demande : on prend le PREMIER endroit
 	// acceptable, donc le plus proche, et non le meilleur du monde.
 	constexpr double PasM = 16.0;
 	constexpr int32 Anneaux = 24;
 	constexpr double SondeM = 6.0;        // ecart pour estimer la pente
-	constexpr float PenteMaxDeg = 12.0f;
 
-	auto Convient = [this](double X, double Y, float& Surface, float& PenteDeg) -> bool
+	auto Convient = [this, PenteMaxDeg, EcartAltitudeMaxM, AltitudeRefM]
+		(double X, double Y, float& Surface, float& PenteDeg) -> bool
 	{
 		Surface = Density.SurfaceHeightM(X, Y);
 		if (Surface < 2.0f)
 		{
 			return false;   // sous la mer, ou tout juste au bord
+		}
+
+		// LA BORNE D'ALTITUDE PASSE AVANT LA PENTE, parce qu'elle est
+		// beaucoup plus selective et qu'elle coute une soustraction quand
+		// l'autre coute quatre echantillonnages du champ.
+		if (EcartAltitudeMaxM > 0.0f
+			&& FMath::Abs(Surface - AltitudeRefM) > EcartAltitudeMaxM)
+		{
+			return false;
 		}
 
 		const float HX = Density.SurfaceHeightM(X + SondeM, Y)
@@ -1647,10 +1657,40 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 			return;
 		}
 
+		// ON DIT OU, ET CE QU'ON Y TROUVE. Le filet disait seulement qu'il
+		// avait joue, jamais ce qu'il rattrapait : impossible de savoir si le
+		// joueur etait tombe dans une galerie, passe par un trou de chunk, ou
+		// simplement sorti par le bas d'une falaise. Ce releve ne coute rien
+		// -- il ne s'ecrit qu'a la chute -- et il est la seule trace qui reste
+		// une fois le pion remonte.
+		const FVector VitesseCms = Pawn->GetVelocity();
+
+		// LE CHAMP SE REJOUE AVEC LES CAVITES, jamais sans. Ce depot a deja
+		// paye la difference : un balayage de diagnostic qui appelait At(P)
+		// quand le mailleur appelle At(P, &Caves) mesurait un autre monde et
+		// le disait avec aplomb.
+		const FVector PosM(X, Y, PosCm.Z / WorldseedMetersToCm);
+		FWorldseedCaveLocal Local;
+		CaveNetwork.Query(FBox(PosM, PosM).ExpandBy(DensityRules.CaveBlendM + 4.0f), Local);
+		const bool bDansLaRoche = Density.At(PosM, &Local) <= 0.0;
+
 		UE_LOG(LogTemp, Warning,
 			TEXT("[Worldseed] voxel : joueur a %.0f m SOUS la bande de terrain ")
 			TEXT("-- hors du monde, on le remonte"),
 			SousM - DensityRules.BandDepthM);
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed]   chute : (%.0f, %.0f) m, z %.1f m, surface %.1f m, ")
+			TEXT("descente %.1f m/s, champ %s, mode %d"),
+			X, Y, PosCm.Z / WorldseedMetersToCm, SurfaceM,
+			-VitesseCms.Z / 100.0, bDansLaRoche ? TEXT("PLEIN") : TEXT("vide"),
+			Move ? static_cast<int32>(Move->MovementMode.GetValue()) : -1);
+
+		// L'ETAT DES CHUNKS DE LA COLONNE : c'est lui qui distingue un TROU
+		// -- aucune surface la ou il devrait y en avoir -- d'une chute par une
+		// ouverture parfaitement normale.
+		UE_LOG(LogTemp, Warning, TEXT("[Worldseed]   %s"),
+			*DiagnostiquerColonne(Pawn->GetActorLocation()));
 
 		// On rearme la mise en place initiale, qui sait deja poser le pion et
 		// ne le relacher qu'une fois le chunk SOLIDE. Refaire ce travail ici
@@ -1681,12 +1721,19 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		// place quand le joueur passe sous la bande de terrain ; le rejouer le
 		// ramenerait a son point de naissance a chaque chute, ce qui n'est pas
 		// un filet mais une laisse.
+		// LE DRAPEAU EST CONSOMME TOUT DE SUITE, MAIS LE FAIT SURVIT. La suite
+		// a besoin de savoir qu'un point a ete CHOISI -- pour borner le
+		// denivele -- et a quelle altitude il etait, pour la mesurer.
+		const bool bChoisi = bDepartDemande;
+		float SurfaceDemandeeM = 0.0f;
+
 		if (bDepartDemande)
 		{
 			bDepartDemande = false;
 			X = DepartXYM.X;
 			Y = DepartXYM.Y;
 			SurfaceM = Density.SurfaceHeightM(X, Y);
+			SurfaceDemandeeM = SurfaceM;
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : depart demande a (%.0f, %.0f) m, ")
@@ -1732,15 +1779,55 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		double FX = X;
 		double FY = Y;
 		float FSurface = SurfaceM;
-		if (FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg))
+
+		// --- QUAND LE JOUEUR A CHOISI, ON RESTE SUR SON RELIEF ---------------
+		//
+		// La spirale retient le PREMIER point acceptable, pas le meilleur : sur
+		// un versant raide, le premier sol a moins de douze degres est la
+		// plaine d'en bas. Mesure sur deux parties independantes -- latitudes
+		// 73,1 et 15,3 degres, donc sans rapport de terrain -- le joueur
+		// naissait 89 et 92 metres SOUS le point qu'il avait choisi. Qui visait
+		// un sommet naissait a son pied.
+		//
+		// La passe bornee accepte une pente PLUS FORTE en echange d'un ecart
+		// d'altitude PLUS FAIBLE : qui a vise un versant accepte d'etre sur un
+		// versant, c'est la descente qu'il n'a pas demandee.
+		bool bPose = false;
+		if (bChoisi)
+		{
+			bPose = FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg,
+				PenteDepartMaxDeg, EcartAltitudeDepartM, SurfaceM);
+
+			if (!bPose)
+			{
+				// ON LE DIT AU LIEU DE LE TAIRE. Un repli silencieux
+				// redonnerait le comportement d'avant sans que personne ne
+				// sache pourquoi le joueur est en bas de la montagne.
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] voxel : aucun sol tenable a moins de ")
+					TEXT("%.0f m d'altitude du point choisi -- on elargit"),
+					EcartAltitudeDepartM);
+			}
+		}
+
+		if (!bPose)
+		{
+			bPose = FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg);
+		}
+
+		if (bPose)
 		{
 			X = FX;
 			Y = FY;
 			SurfaceM = FSurface;
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : sol plat trouve a (%.0f, %.0f) m, ")
-				TEXT("altitude %.1f m, pente %.1f deg"),
-				X, Y, SurfaceM, PenteDeg);
+				TEXT("altitude %.1f m, pente %.1f deg%s"),
+				X, Y, SurfaceM, PenteDeg,
+				bChoisi
+					? *FString::Printf(TEXT(" (%+.0f m du point choisi)"),
+						SurfaceM - SurfaceDemandeeM)
+					: TEXT(""));
 		}
 		else
 		{
