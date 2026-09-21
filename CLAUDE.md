@@ -6056,3 +6056,25 @@ troncature. Une planche de comparaison a quatre vignettes en a perdu une, dessin
 hors du cadre. Utiliser `[Math]::Floor`. Et une commande PowerShell passee en
 ligne a travers bash se fait manger ses `$tableau[$i]` avant que PowerShell ne
 les voie : ecrire le script dans un fichier.
+
+**VU EN JEU LE 21 SEPTEMBRE, ET C'EST CE QUI VALIDE LE CHANTIER.** Le globe du
+menu porte desormais une cote irreguliere -- baies, mer interieure, peninsule
+au nord, avancee au sud -- et plus aucune arete droite. Graine 1337, grille
+4096 x 2048, 15,6 m par cellule, terres 29,2 %, altitudes -337 a 1520 m ; le
+sous-sol a suivi avec 155 chambres, 11 reseaux, 39 bouches, 26 gouffres,
+33 dolines et 24 arches, dont neuf ARCHES MARINES percees dans des caps de
+basalte.
+
+**ET CE MONDE CORRIGE UN CHIFFRE DU CORPS DE `d52057a`.** J'y annonce une
+calotte glaciaire portee a 16,2 % des terres pour 10 attendus. Celui-ci la
+donne a **10,3 %**, et la savane a 14,1 pour 13. Ma mesure portait sur la
+graine 20260909 a la resolution 1024 ; celle-ci est la graine 1337 a 4096,
+quatre fois plus fine. **Le cout sur les biomes depend donc de la GRAINE et de
+la RESOLUTION bien plus que je ne l'ai ecrit** -- ce n'est pas une degradation
+generale, et il ne faut pas lire ce tableau comme tel. Ce qui reste vrai et
+independant de la graine est la foret temperee mixte a 3,4 % pour 13 attendus :
+c'est le deficit de terres temperees deja ouvert au registre.
+
+**LA LECON DE MESURE, pour la enieme fois** : un releve sur UNE graine a la
+resolution de travail ne se generalise pas a la resolution de production. Le
+dire quand on cite le chiffre, ou mesurer sur plusieurs graines.
