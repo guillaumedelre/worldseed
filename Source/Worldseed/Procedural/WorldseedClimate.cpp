@@ -425,6 +425,26 @@ namespace WorldseedClimate
 			const float Wobble = static_cast<float>(Rules.Num(PREC, TEXT("cellWobble"), 0.0));
 			const float Front = static_cast<float>(Rules.Num(PREC, TEXT("polarFrontStrength"), 0.45));
 
+			// Bornes du frein applique a la subsidence : plein effet jusqu'a la
+			// premiere, nul au-dela de la seconde. Surchargeables pour l'A/B --
+			// le depot interdit d'editer le fichier de regles pour comparer.
+			float SubFade0 = static_cast<float>(
+				Rules.Num(PREC, TEXT("subsidenceFadeLat0Deg"), 90.0));
+			float SubFade1 = static_cast<float>(
+				Rules.Num(PREC, TEXT("subsidenceFadeLat1Deg"), 90.0));
+			float FadeForce = -1.0f;
+			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedSubFade0="), FadeForce)
+				&& FadeForce >= 0.0f)
+			{
+				SubFade0 = FadeForce;
+			}
+			FadeForce = -1.0f;
+			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedSubFade1="), FadeForce)
+				&& FadeForce >= 0.0f)
+			{
+				SubFade1 = FadeForce;
+			}
+
 			TArray<float> WobbleNoise;
 			if (Wobble > 0.0f)
 			{
@@ -447,6 +467,29 @@ namespace WorldseedClimate
 				// l'equateur.
 				const float FrontWeight = Front + (1.0f - Front) * (1.0f - AbsLat / Half);
 
+				// --- LA BRANCHE DESCENDANTE DE HADLEY EST BORNEE EN LATITUDE ---
+				//
+				// Le cosinus fait descendre l'air partout ou il est negatif,
+				// c'est-a-dire de 15 a 45 degres : une ceinture seche de trente
+				// degres de large, centree sur 30. La Terre n'a pas cela. Sa
+				// cellule de Hadley redescend vers 20-25 et s'arrete la ; au-dela
+				// de 35 on est dans la cellule de Ferrel, ou l'air REMONTE, et
+				// c'est pourquoi le Sahara cede la place au climat mediterraneen
+				// puis tempere au lieu de s'etendre jusqu'aux Alpes.
+				//
+				// MESURE DU DEGAT, graine 1337 -- pluie par bande contre la
+				// Terre : 30-40 degres 255 mm contre 600, -40 a -30 246 contre
+				// 600, 40-50 520 contre 700. La bande 5-12 degres, ou vit la
+				// foret temperee, se retrouve a 520 mm pour un seuil de case a
+				// 400 : la moitie de ses cellules bascule en STEPPE. Quatre
+				// graines mesurees donnent 0,81 a 1,11 % de foret temperee --
+				// l'ecart est structurel, pas geographique.
+				//
+				// Le frein s'efface entre deux latitudes plutot que de trancher :
+				// une bordure nette dessinerait un trait de pluie sur la carte.
+				const float FadeSub = 1.0f - WorldseedPerlin::Smoothstep(
+					SubFade0, SubFade1, AbsLat);
+
 				for (int32 I = 0; I < NX; ++I)
 				{
 					const int32 Index = J * NX + I;
@@ -456,7 +499,7 @@ namespace WorldseedClimate
 						Omega = FMath::Clamp(Omega + Wobble * WobbleNoise[Index], -1.0f, 1.0f);
 					}
 					Out.Convergence[Index] = FMath::Max(Omega, 0.0f) * FrontWeight;
-					Subsidence[Index] = FMath::Max(-Omega, 0.0f);
+					Subsidence[Index] = FMath::Max(-Omega, 0.0f) * FadeSub;
 				}
 			});
 		}
