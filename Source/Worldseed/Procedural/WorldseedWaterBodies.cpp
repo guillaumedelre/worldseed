@@ -261,6 +261,52 @@ namespace WorldseedWaterBodies
 		}
 		Out.Zone->SetZoneExtent(FVector2D(WidthCm, HeightCm));
 
+		// --- LA NAPPE LOINTAINE, SANS QUOI L'EAU S'ARRETE NET ----------------
+		//
+		// SIGNALE EN JEU : « l'eau se coupait ». La surface s'arrete sur un
+		// trait DROIT en travers d'une baie -- au CENTRE du monde, longitude
+		// 12,7 E, ce qui ecarte la couture de la carte. Balayage de sept
+		// rivages etales de -178,9 a +178,8 degres : la coupure n'est visible
+		// qu'au seul point ou le joueur est EN HAUTEUR (324 m contre 5 a 76 m
+		// pour les six autres). LA VARIABLE N'EST DONC PAS LA LONGITUDE, C'EST
+		// L'ALTITUDE DU POINT DE VUE -- de profil, le bord tombe sous
+		// l'horizon ; d'en haut, on le regarde.
+		//
+		// LA CAUSE, LUE ET NON SUPPOSEE : « relais lointain 0.0 km, materiau
+		// ABSENT ». Le maillage glissant ne couvre que 6,1 km -- 256 tuiles de
+		// 24 m, plafond du moteur -- et AU-DELA IL N'Y A RIEN. Pas une nappe
+		// degradee : le neant.
+		//
+		// POURQUOI CE REGLAGE AVAIT DISPARU. Le registre du projet affirmait
+		// que le composant portait « 40 km avec le materiau Water_FarMesh ».
+		// Il portait zero. La `WaterZone` ne se spawne pas : le plugin la cree
+		// lui-meme a chaque partie et on l'ADOPTE -- donc tout reglage pose sur
+		// elle dans l'editeur meurt avec elle. C'est la regle que ce depot a
+		// deja ecrite pour le PlayerStart et les acteurs d'eclairage. On le
+		// pose donc PAR CODE, a cote de l'etendue et de la fenetre glissante,
+		// qui sont la pour exactement la meme raison.
+		if (UWaterMeshComponent* const Maillage = Out.Zone->GetWaterMeshComponent())
+		{
+			// Le materiau est celui du plugin, et il DOIT porter son drapeau
+			// « utilise avec l'eau » : `IsMaterialUsedWithWater` le verifie, et
+			// un materiau qui echoue est silencieusement remis a nul
+			// (WaterMeshComponent.cpp:283). On journalise donc ce qui est pose.
+			UMaterialInterface* const Lointain = LoadObject<UMaterialInterface>(
+				nullptr, TEXT("/Water/Materials/WaterSurface/Water_FarMesh.Water_FarMesh"));
+
+			// Quarante kilometres : de quoi couvrir la diagonale du monde
+			// depuis n'importe quel point, donc un horizon sans trou.
+			constexpr float PorteeCm = 4000000.0f;
+
+			Maillage->FarDistanceMaterial = Lointain;
+			Maillage->FarDistanceMeshExtent = PorteeCm;
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] eau : nappe lointaine posee -- %.0f km, materiau %s"),
+				PorteeCm / 100000.0f,
+				Lointain ? *Lointain->GetName() : TEXT("INTROUVABLE"));
+		}
+
 		// --- fenetre glissante ------------------------------------------------
 		// UNE SEULE TEXTURE ETIREE SUR SEIZE KILOMETRES NE PEUT PAS DECRIRE UN
 		// RIVAGE. A mille pixels de cote, chaque texel couvre seize metres : la
@@ -516,6 +562,26 @@ namespace WorldseedWaterBodies
 				HalfTiles.X * 2, HalfTiles.Y * 2, Mesh->GetTileSize() / 100.0f,
 				HalfTiles.X * 2 * Mesh->GetTileSize() / 100000.0f,
 				HalfTiles.Y * 2 * Mesh->GetTileSize() / 100000.0f);
+
+			// --- LE RELAIS LOINTAIN, ET S'IL EST ARME -----------------------
+			//
+			// SIGNALE EN JEU : « l'eau se coupait ». La surface s'arrete sur un
+			// trait DROIT en travers d'une baie, au CENTRE du monde -- longitude
+			// 12,7 E -- ce qui ecarte la couture de la carte. La distance colle
+			// a la demi-largeur du maillage glissant ci-dessus : 6,1 km de cote,
+			// donc un bord a trois kilometres.
+			//
+			// AU-DELA, C'EST LE MAILLAGE LOINTAIN QUI DOIT PRENDRE LE RELAIS, et
+			// c'est tout l'objet de ces deux valeurs. Une portee nulle ou un
+			// materiau absent expliquent une coupure nette ; les deux renseignes
+			// deplacent le soupcon vers la transition elle-meme. Sans les lire,
+			// on ne peut que supposer -- et ce depot a une regle contre cela.
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] eau : relais lointain %.1f km, materiau %s"),
+				Mesh->FarDistanceMeshExtent / 100000.0f,
+				Mesh->FarDistanceMaterial
+					? *Mesh->FarDistanceMaterial->GetName()
+					: TEXT("ABSENT"));
 		}
 
 		if (const UWaterBodyComponent* Ocean = Bodies.Ocean.IsValid()
