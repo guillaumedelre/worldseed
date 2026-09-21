@@ -6078,3 +6078,60 @@ c'est le deficit de terres temperees deja ouvert au registre.
 **LA LECON DE MESURE, pour la enieme fois** : un releve sur UNE graine a la
 resolution de travail ne se generalise pas a la resolution de production. Le
 dire quand on cite le chiffre, ou mesurer sur plusieurs graines.
+
+### Choisir ou naitre : trois pieges, dont deux dans l'outillage (21 septembre 2026)
+
+Le globe du menu laisse desormais CHOISIR le point de depart, au clic ou dans
+une liste de lieux remarquables. Le chantier tenait en peu de code -- tout
+existait -- mais il a paye trois pieges qui resserviront.
+
+**UN ACTEUR QUI LIT L'INSTANCE DE JEU NE LA LIT PEUT-ETRE JAMAIS.**
+`AWorldseedVoxelTerrain::LoadWorld` interroge bien le `GameInstance`, et j'y ai
+branche la lecture du depart. Elle n'a jamais servi : **ce chemin n'est pris
+que si PERSONNE ne donne de monde au voxel**, c'est-a-dire un PIE lance depuis
+l'editeur sans passer par le menu. Des que `L_Menu` a joue, c'est
+`AWorldseedTerrain` qui consomme l'instance et transmet par `AdoptWorld`. Rien
+ne le signalait : le monde arrivait juste, et le joueur naissait ailleurs.
+**Le journal, lui, le disait en deux lignes** -- « monde repris du TERRAIN »
+puis « terre emergee la plus proche a (8, 8) m », soit une recherche partie de
+l'origine alors que le menu avait demande (-2766, 2297). Devant une donnee qui
+« ne passe pas », lire le journal pour savoir QUEL chemin a ete pris avant de
+relire le code du chemin qu'on croit pris.
+
+**`PrintWindow` SANS `PW_CLIENTONLY` DESSINE LA BARRE DE TITRE**, dans un
+bitmap qu'on a dimensionne sur le CLIENT. L'image est donc decalee d'une
+trentaine de pixels vers le bas par rapport aux coordonnees client, et tout
+clic vise d'apres elle tombe trop haut. **Le defaut est invisible tant qu'on ne
+fait que REGARDER** : il ne mord que le jour ou l'on POINTE. Le drapeau vaut
+`1 | 2` -- `PW_CLIENTONLY | PW_RENDERFULLCONTENT`, le second restant
+indispensable pour une surface Direct3D.
+
+**NE PAS PILOTER LA SOURIS PENDANT QUE LE PROPRIETAIRE MANIPULE L'ECRAN.** J'ai
+passe plusieurs essais a expliquer des « glissers parasites » par la mise en
+veille des fenetres non focalisees -- hypothese plausible, chiffree (32 % des
+pixels du globe changes entre le reperage et le clic), et FAUSSE. C'etait lui
+qui tournait le globe. Avant d'injecter des clics, le dire, ou lui laisser la
+main et se contenter de lire le journal.
+
+**Trois points de conception qui valent d'etre gardes :**
+- le CLIC se distingue du glisser par le chemin **CUMULE**, jamais par l'ecart
+  entre depart et arrivee : un aller-retour revient a son point de depart et
+  serait declare clic ;
+- `SetSelectedIndex` sur une liste deroulante **declenche le gestionnaire**, et
+  ramener la liste a son entree vide apres un clic effacerait le choix qu'on
+  vient de poser. Slate distingue les deux : `ESelectInfo::Direct` vient du
+  code, `OnMouseClick` de la main ;
+- une ROTATION AUTOMATIQUE devient une cible mobile des qu'on pointe. A cinq
+  degres par seconde, la meme terre n'est plus sous le curseur deux secondes
+  plus tard. Elle s'arrete a la premiere prise en main.
+
+**ET PARTAGER UNE FORMULE GARANTIT L'ACCORD, PAS LA JUSTESSE.** Le rendu du
+globe, le pointage et le reticule appellent le meme code (regle du depot), mais
+une projection partagee et fausse serait partagee et fausse. D'ou
+**`ProbePointage`**, un aller-retour : latitude et longitude connues, projetees
+vers l'image puis reinversees. Hors limbe, 0,000069 degre sur 25 158 points et
+zero incoherent ; le partage presque exact entre face visible (25 158) et face
+cachee (25 242) valide au passage le test de visibilite. **Le limbe est mal
+conditionne PAR NATURE** -- la derivee de l'arc sinus y diverge -- d'ou deux
+chiffres rendus, celui du disque entier et celui du disque franc, plutot qu'un
+seul qui flatterait ou accablerait.
