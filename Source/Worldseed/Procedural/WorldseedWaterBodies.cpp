@@ -2,6 +2,9 @@
 
 #include "Procedural/WorldseedWaterBodies.h"
 
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+
 
 
 #include "Components/SceneComponent.h"
@@ -261,6 +264,42 @@ namespace WorldseedWaterBodies
 		}
 		Out.Zone->SetZoneExtent(FVector2D(WidthCm, HeightCm));
 
+		// --- LA FINESSE DU RIVAGE, ET ELLE NE SE REGLE QU'ICI ----------------
+		//
+		// La `water info texture` encode la hauteur du sol et celle de la
+		// surface pour TOUTE l'eau du niveau. C'est elle qui dessine le trait
+		// de cote : a texel grossier, le rivage devient un escalier et l'eau
+		// monte en plaques sur les falaises (defaut deja documente au
+		// registre).
+		//
+		// SON DEFAUT EST 512 x 512 (WaterZoneActor.cpp:96) ET NOTRE CODE NE LA
+		// REGLAIT PAS. Le registre annoncait 4096 : cette valeur appartenait a
+		// la zone posee dans l'editeur, qui n'existe plus -- meme histoire que
+		// la nappe lointaine. Une `WaterZone` ne se spawne pas, le plugin la
+		// recree a chaque partie, donc TOUT reglage pose sur elle doit l'etre
+		// PAR CODE.
+		//
+		// Le moteur ne la plafonne pas : `r.Water.WaterInfo.RenderTargetResolutionMax`
+		// vaut 0, c'est-a-dire illimite (WaterZoneActor.cpp:47). Le format est
+		// RGBA16f, huit octets par texel, une tranche en solo :
+		//
+		//      512^2    2 Mo    24,0 m par texel sur la fenetre de 12,288 km
+		//     2048^2   34 Mo     6,0 m
+		//     4096^2  134 Mo     3,0 m   <- retenu
+		//     8192^2  537 Mo     1,5 m
+		//
+		// Le vrai cout n'est pas la memoire mais le REDESSIN : la texture se
+		// re-rend entierement a chaque deplacement de la fenetre glissante.
+		int32 Texels = 4096;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedEauTexels="), Texels))
+		{
+			Texels = FMath::Clamp(Texels, 128, 8192);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] eau : texture d'info imposee a %d par la ligne de commande"),
+				Texels);
+		}
+		Out.Zone->SetRenderTargetResolution(FIntPoint(Texels, Texels));
+
 		// --- LA NAPPE LOINTAINE, SANS QUOI L'EAU S'ARRETE NET ----------------
 		//
 		// SIGNALE EN JEU : « l'eau se coupait ». La surface s'arrete sur un
@@ -318,7 +357,51 @@ namespace WorldseedWaterBodies
 		// seize, donc quatre fois plus fin — et c'est LE MOTEUR qui la
 		// regenere quand la fenetre glisse. On n'a donc plus a la redemander
 		// nous-memes, ce qui faisait disparaitre l'eau le temps du redessin.
-		constexpr float LocalWindowCm = 400000.0f;   // quatre kilometres
+		// LA TAILLE N'EST PAS RONDE, ELLE EST DEDUITE DU PLAFOND DE TUILES.
+		// `UWaterMeshComponent::GetExtentInTiles` (WaterMeshComponent.cpp:233)
+		// fait `RoundUpToPowerOfTwo(demi-etendue / 24 m)`, et
+		// `r.Water.WaterMesh.MaxDimensionInTiles` plafonne le resultat a 256
+		// (WaterMeshComponent.cpp:38). Au-dela, le moteur DIVISE la taille de
+		// tuile -- tuiles de 48 m, rivage deux fois plus grossier, ce qui
+		// annule le benefice d'agrandir.
+		//
+		//     4,000 km -> 83,3  -> 128 tuiles       (l'ancienne valeur)
+		//     8,000 km -> 166,7 -> 256 tuiles
+		//    12,288 km -> 256,0 -> 256 tuiles       <- le maximum
+		//    16,000 km -> 333,3 -> 512, donc biaise
+		//
+		// A 12,288 km = 2 x 256 x 24 m, la boite du quadtree (+/- 6144 m)
+		// coincide PILE avec la fenetre d'information : aucun arrondi perdu.
+		//
+		// ATTENTION AU NOM DE LA VARIABLE DE CONSOLE : le message
+		// d'avertissement du moteur (WaterMeshComponent.cpp:605) cite
+		// `r.Water.WaterMesh.MaxWidthInTiles`, QUI N'EXISTE PAS. La vraie est
+		// `MaxDimensionInTiles`. Ce depot avait recopie le mauvais nom.
+		//
+		// LA SURCHARGE EXISTE PARCE QU'UN A/B NE S'EDITE PAS. Comparer deux
+		// tailles en rouvrant un fichier -- regles ou source -- impose soit de
+		// regenerer le monde, soit de recompiler entre les deux moities : ce
+		// n'est alors plus le meme essai. Ce depot a paye cette regle en vidant
+		// `world_rules.json` un soir. `-WorldseedEauFenetre=<km>` compare sur
+		// le MEME binaire et le MEME monde, et sert ensuite a regler sans
+		// recompiler.
+		float FenetreKm = 12.288f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedEauFenetre="), FenetreKm))
+		{
+			FenetreKm = FMath::Clamp(FenetreKm, 0.5f, 24.576f);
+
+			// ON PREVIENT AU LIEU DE BORNER EN SILENCE. Au-dela de 12,288 km le
+			// moteur ne refuse pas : il DIVISE la taille de tuile, et le rivage
+			// devient deux fois plus grossier sans que rien d'autre ne change.
+			// Un essai fait la sans le savoir conclurait a l'envers.
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] eau : fenetre imposee a %.3f km par la ligne de commande%s"),
+				FenetreKm,
+				FenetreKm > 12.288f
+					? TEXT(" -- AU-DELA DU PLAFOND DE 256 TUILES, le moteur va diviser la taille de tuile")
+					: TEXT(""));
+		}
+		const float LocalWindowCm = FenetreKm * 100000.0f;
 
 		const bool bLocalWindow = (WidthCm > LocalWindowCm)
 			&& EnableLocalWindow(Out.Zone.Get(),
@@ -482,10 +565,18 @@ namespace WorldseedWaterBodies
 			Report(TEXT("ocean"), Out.Ocean.Get(), Out.Ocean->GetWaterBodyComponent());
 		}
 
+		// LA TAILLE SE LIT DANS LA CONSTANTE, ELLE NE SE RECOPIE PAS. Cette
+		// ligne annoncait « glissante 4 km » en dur : elle aurait menti des le
+		// premier agrandissement, et ce depot a deja paye deux fois un journal
+		// qui affirme une valeur que le code ne pose plus.
+		const FString Fenetre = bLocalWindow
+			? FString::Printf(TEXT("glissante %.3f km"), LocalWindowCm / 100000.0f)
+			: FString(TEXT("globale"));
+
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] plugin Water : zone %.1f x %.1f km, fenetre=%s, ocean=%d  (%.0f ms)"),
 			Geometry.WidthM() / 1000.0f, Geometry.HeightM / 1000.0f,
-			bLocalWindow ? TEXT("glissante 4 km") : TEXT("globale"),
+			*Fenetre,
 			Out.Ocean.IsValid() ? 1 : 0,
 			(FPlatformTime::Seconds() - StartTime) * 1000.0);
 
@@ -542,6 +633,37 @@ namespace WorldseedWaterBodies
 			InfoExtent.X / 100000.0f, InfoExtent.Y / 100000.0f,
 			Zone->IsLocalOnlyTessellationEnabled() ? TEXT(" (glissante)") : TEXT(""),
 			Heights.X / 100.0f, Heights.Y / 100.0f, Zone->GetGroundZMin() / 100.0f);
+
+		// LA FINESSE DU RIVAGE EST UN QUOTIENT, PAS UNE RESOLUTION. Deux mondes
+		// a 4096 texels n'ont pas le meme rivage si leur fenetre differe. On
+		// journalise donc les metres par texel, qui est la grandeur qui compte,
+		// a cote des deux nombres dont elle sort -- sans quoi le registre
+		// recommence a affirmer une valeur que personne ne relit.
+		//
+		// ET LE GETTER DU PLUGIN N'EST PAS EXPORTE. `SetRenderTargetResolution`
+		// porte `UE_API`, `GetRenderTargetResolution` NON -- deux lignes de
+		// suite dans `WaterZoneActor.h`, 66 et 67. On peut donc ECRIRE la
+		// resolution depuis notre module et pas la RELIRE : l'edition de liens
+		// tombe sur un symbole non resolu, et l'erreur n'arrive qu'au LIEN,
+		// bien apres une compilation reussie. On relit par reflexion, comme la
+		// fenetre glissante -- ce qui a de toute facon la bonne vertu : c'est
+		// la valeur REELLEMENT portee par l'acteur, pas celle qu'on a demandee.
+		{
+			FIntPoint Res(0, 0);
+			if (const FStructProperty* const Prop = CastField<FStructProperty>(
+					Zone->GetClass()->FindPropertyByName(TEXT("RenderTargetResolution"))))
+			{
+				if (Prop->Struct && Prop->Struct->GetFName() == TEXT("IntPoint"))
+				{
+					Res = *Prop->ContainerPtrToValuePtr<FIntPoint>(Zone);
+				}
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] eau : texture d'info %dx%d, soit %.1f x %.1f m par texel"),
+				Res.X, Res.Y,
+				Res.X > 0 ? (InfoExtent.X / 100.0f) / Res.X : 0.0f,
+				Res.Y > 0 ? (InfoExtent.Y / 100.0f) / Res.Y : 0.0f);
+		}
 
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] eau : %d sol(s), %d primitives sur %.1f x %.1f km, intersecte=%s"),
