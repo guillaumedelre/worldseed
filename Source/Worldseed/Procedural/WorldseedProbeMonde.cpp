@@ -472,3 +472,185 @@ FString UWorldseedProbeLibrary::ProbeWhittaker(int32 Seed, float HeightMeters,
 		TEXT("%d cases mesurees sur %d cellules de terre ; le detail est au journal"),
 		Tally.Num(), LandTotal);
 }
+
+FString UWorldseedProbeLibrary::ProbeZonal(int32 Seed, float HeightMeters,
+	int32 ResolutionY)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult World;
+	FString Error;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+	const UWorldseedRules* Rules = WorldseedPipeline::GetRules(Error);
+	if (!Rules) { return FString::Printf(TEXT("regles illisibles : %s"), *Error); }
+	const FWorldseedBiomeRules Bio = FWorldseedBiomeRules::FromRules(*Rules, World.Geometry);
+	if (!World.bHasClimate) { return TEXT("le climat n'a pas tourne"); }
+
+	const FWorldseedGeometry& Geo = World.Geometry;
+	const int32 NX = Geo.NX;
+	const int32 NY = Geo.NY;
+
+	// LA REFERENCE TERRESTRE, moyenne annuelle par bande de latitude.
+	// Valeurs zonales classiques, TOUTES SURFACES confondues : c'est la
+	// grandeur que notre TempMeanC decrit. On ne compare donc pas des terres
+	// a des terres, et la ligne de comparaison le dit.
+	static const float TerreMoyenneC[9] = {
+		26.0f, 25.0f, 21.0f, 16.0f, 9.0f, 2.0f, -6.0f, -14.0f, -22.0f
+	};
+
+	struct FBande
+	{
+		int32 Cellules = 0;
+		int32 Terres = 0;
+		double SommeT = 0.0;
+		double SommeTMax = 0.0;
+		double SommeAlt = 0.0;
+		int32 Calotte = 0;
+		int32 Toundra = 0;
+		int32 Taiga = 0;
+		int32 Alpin = 0;
+		int32 SousZeroEte = 0;   // TempMax < 0 : eligible a la calotte
+	};
+	FBande Bandes[9];
+
+	const TArray<float>& T = World.Climate.TempMeanC;
+
+	// TempMaxC N'EST PAS DANS LE CACHE, et le pipeline le RECONSTRUIT lui-meme
+	// avant de classer (WorldseedPipeline.cpp:144). Une sonde qui lirait
+	// World.Climate.TempMaxC mesurerait donc un tableau VIDE sur tout monde
+	// repris du cache -- et afficherait 0,0 C partout sans rien signaler.
+	// C'est exactement le piege que le socle des sondes existe pour eviter :
+	// « un temoin non branche mesure le monde d'avant ». Ici le zero n'etait
+	// pas plausible, ce qui l'a trahi ; il aurait pu l'etre.
+	const int32 Cells = World.ElevationM.Num();
+	TArray<float> TMax;
+	bool bMaxReconstruit = false;
+	if (World.Climate.TempMaxC.Num() == Cells)
+	{
+		TMax = World.Climate.TempMaxC;
+	}
+	else if (World.Climate.TempMeanC.Num() == Cells
+		&& World.Climate.SeasonalAmpC.Num() == Cells)
+	{
+		TMax.SetNumUninitialized(Cells);
+		for (int32 I = 0; I < Cells; ++I)
+		{
+			TMax[I] = World.Climate.TempMeanC[I]
+				+ World.Climate.SeasonalAmpC[I] * 0.5f;
+		}
+		bMaxReconstruit = true;
+	}
+	const bool bHasMax = (TMax.Num() == Cells);
+
+	int32 TerresTotal = 0;
+
+	for (int32 J = 0; J < NY; ++J)
+	{
+		const float Lat = Geo.LatitudeDegForRow(J);
+		const int32 B = FMath::Clamp(
+			static_cast<int32>(FMath::Abs(Lat) / 10.0f), 0, 8);
+
+		for (int32 I = 0; I < NX; ++I)
+		{
+			const int32 Idx = J * NX + I;
+			FBande& Ba = Bandes[B];
+			++Ba.Cellules;
+
+			const float Elev = World.ElevationM[Idx];
+			if (Elev < 0.0f)
+			{
+				continue;
+			}
+
+			++Ba.Terres;
+			++TerresTotal;
+			Ba.SommeT += T.IsValidIndex(Idx) ? T[Idx] : 0.0f;
+			Ba.SommeAlt += Elev;
+			if (bHasMax)
+			{
+				Ba.SommeTMax += TMax[Idx];
+				if (TMax[Idx] < 0.0f) { ++Ba.SousZeroEte; }
+			}
+
+			if (World.Biomes.Index.IsValidIndex(Idx))
+			{
+				switch (static_cast<EWorldseedBiome>(World.Biomes.Index[Idx]))
+				{
+				case EWorldseedBiome::IceCap: ++Ba.Calotte; break;
+				case EWorldseedBiome::Tundra: ++Ba.Toundra; break;
+				case EWorldseedBiome::Taiga:  ++Ba.Taiga;   break;
+				case EWorldseedBiome::Alpine: ++Ba.Alpin;   break;
+				default: break;
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] === PROFIL ZONAL ==="));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   |lat|     surface   emerge   part des    alt     T an    T ete   Terre    calotte  toundra   taiga   alpin"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]            du monde   local     terres      m        C        C      C an     %%       %%       %%      %%"));
+
+	int32 EligibleCalotte = 0;
+
+	for (int32 B = 0; B < 9; ++B)
+	{
+		const FBande& Ba = Bandes[B];
+		if (Ba.Cellules == 0) { continue; }
+
+		const float PartSurface = 100.0f * Ba.Cellules / static_cast<float>(NX * NY);
+		const float Emerge = 100.0f * Ba.Terres / static_cast<float>(Ba.Cellules);
+		const float PartTerres = TerresTotal > 0
+			? 100.0f * Ba.Terres / static_cast<float>(TerresTotal) : 0.0f;
+
+		EligibleCalotte += Ba.SousZeroEte;
+
+		if (Ba.Terres == 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   %2d-%2d  %8.2f  %6.1f      --        --       --       --  %6.1f       --       --      --      --"),
+				B * 10, B * 10 + 10, PartSurface, Emerge, TerreMoyenneC[B]);
+			continue;
+		}
+
+		const float MoyT = static_cast<float>(Ba.SommeT / Ba.Terres);
+		const float MoyTMax = static_cast<float>(Ba.SommeTMax / Ba.Terres);
+		const float MoyAlt = static_cast<float>(Ba.SommeAlt / Ba.Terres);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   %2d-%2d  %8.2f  %6.1f  %8.2f  %6.0f  %7.1f  %7.1f  %6.1f  %7.1f  %7.1f %7.1f %7.1f"),
+			B * 10, B * 10 + 10, PartSurface, Emerge, PartTerres, MoyAlt,
+			MoyT, MoyTMax, TerreMoyenneC[B],
+			100.0f * Ba.Calotte / Ba.Terres,
+			100.0f * Ba.Toundra / Ba.Terres,
+			100.0f * Ba.Taiga / Ba.Terres,
+			100.0f * Ba.Alpin / Ba.Terres);
+	}
+
+	// LE CRITERE DE LA CALOTTE, ISOLE. Elle exige que le mois le PLUS CHAUD
+	// reste sous le gel ; c'est donc cette colonne-la qu'il faut regarder, et
+	// non la moyenne annuelle. Une bande a -10 C de moyenne mais +5 C en ete
+	// ne portera jamais de glace permanente.
+	const float PartEligible = TerresTotal > 0
+		? 100.0f * EligibleCalotte / static_cast<float>(TerresTotal) : 0.0f;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   terres dont le mois le plus chaud reste sous 0 C : %.2f %% (Terre : ~10)"),
+		PartEligible);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   altitudes %.0f .. %.0f m ; seuil alpin %.1f m ; ")
+		TEXT("mois le plus chaud %s"),
+		World.MinElevationM, World.MaxElevationM,
+		Bio.AlpineMinElevationM,
+		bHasMax
+			? (bMaxReconstruit ? TEXT("RECONSTRUIT (absent du cache)") : TEXT("lu"))
+			: TEXT("INDISPONIBLE -- la colonne T ete ne vaut rien"));
+
+	return FString::Printf(
+		TEXT("profil zonal : %.2f %% des terres eligibles a la calotte (Terre ~10) ; detail au journal"),
+		PartEligible);
+}

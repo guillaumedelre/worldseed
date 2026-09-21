@@ -190,6 +190,24 @@ public:
 		int32 ResolutionY = 1024);
 
 	/**
+	 * LE PROFIL PAR BANDE DE LATITUDE -- fait-il froid LA OU il doit ?
+	 *
+	 * POURQUOI ELLE MANQUAIT. ProbeBiomes donne des PARTS, ProbeTerre des
+	 * criteres sourcés, ProbeWhittaker des cases : aucune ne dit OU se trouve
+	 * ce qu'elle compte. Or un monde peut porter exactement la bonne part de
+	 * toundra en la posant au mauvais endroit, et les trois sondes le
+	 * declareraient conforme.
+	 *
+	 * ELLE ISOLE SURTOUT LE CRITERE DE LA CALOTTE, qui n'est pas la moyenne
+	 * annuelle mais le MOIS LE PLUS CHAUD : une bande a -10 C de moyenne mais
+	 * +5 C en ete ne portera jamais de glace permanente. Confondre les deux
+	 * fait chercher le froid la ou il ne manque pas.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeZonal(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024);
+
+	/**
 	 * Y a-t-il des LAMES de roche assez minces pour porter une arche ?
 	 *
 	 * C'EST LA SEULE QUESTION QUI DECIDE DES ARCHES, et elle avait ete tranchee
