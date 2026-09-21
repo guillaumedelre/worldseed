@@ -5985,3 +5985,74 @@ avec la diffusion.
 `rugositeMin` n'est volontairement PAS dans `world_rules.json` : elle y
 changerait l'empreinte, donc invaliderait les mondes en cache pour un reglage
 inerte. Meme choix que `LargeurTransition`. `-WorldseedRugosite=` la pilote.
+
+### Une metrique JUSTE peut ne pas mesurer le defaut signale (21 septembre 2026)
+
+Signale : « la forme des continents est anguleuse et geometrique, elle n'est pas
+organique du tout ». Le diagnostic a pris trois seances, et la lecon ne porte
+pas sur les continents.
+
+**LA SONDE ETAIT BONNE. ELLE NE REGARDAIT SIMPLEMENT PAS AU BON ENDROIT.**
+`ProbeCotes` mesure la dimension fractale du trait par comptage de boites, elle
+est validee sur deux temoins, et elle DISTINGUE. Mais une dimension fractale
+quantifie la rugosite **FINE** du contour, alors que « anguleux et geometrique »
+decrit la **SILHOUETTE** : des segments de plusieurs kilometres se rejoignant a
+angles nets. Les deux sont independants. Nos continents mesuraient **1,013**,
+c'est-a-dire mieux que la cote sud-africaine -- la plus lisse de la Terre --
+tout en etant, a l'image, des polygones a aretes rectilignes.
+
+**C'EST CE QUI A FAIT ECHOUER SEPT ESSAIS DE SUITE.** Gain du bruit de cote,
+amplitude, octaves, diffusion de versant, bruit de relief, erosion elle-meme,
+socle continental : tous reglaient la bonne grandeur a la MAUVAISE ECHELLE, et
+aucune mesure ne pouvait le dire puisque la mesure ne voyait pas l'echelle
+fautive. On regle longtemps le mauvais bouton quand la metrique est muette sur
+le vrai defaut.
+
+**LA REGLE A EN TIRER, et elle est plus generale que ce cas :** quand un defaut
+est signale A L'OEIL et qu'aucun reglage ne deplace le chiffre, se demander si
+le chiffre MESURE LE DEFAUT -- avant de se demander quel terme le corrige.
+C'est la cousine de « quand une correction ne bouge pas la mesure, se demander
+si la mesure melange deux populations » : la aussi, on decompose au lieu de
+regler plus fort.
+
+**LE CORRECTIF PROPREMENT DIT.** Un diagramme de Voronoi a des aretes
+RECTILIGNES par definition -- l'ensemble des points equidistants de deux germes
+est un plan -- et aucun reglage du Voronoi ne les courbe. Seul le deplacement du
+point d'ECHANTILLONNAGE avant classement le fait. `plateWarpStrength` valait
+0,14 pour 0,60 necessaire.
+
+**ET C'EST LA FREQUENCE QUI DECIDE SI L'ON COURBE OU SI L'ON DECHIRE**, bien
+plus que la force. Sur un monde de 64 km : a 3, longueur d'onde 21 km, la
+frontiere ondule a l'echelle du CONTINENT et les peninsules deviennent courbes
+et effilees ; a 14, longueur d'onde 4,6 km, l'echelle d'une ILE, et le continent
+se fragmente en chapelet. **Les deux ne se distinguent pas au chiffre** --
+1,010 contre 1,007 a l'arrivee -- alors que ce sont deux mondes differents.
+
+D'ou **`ProbeCarte`**, qui ecrit la carte a plat dans `Saved/Worldseed/Cartes/`,
+un pixel par cellule de simulation. Le globe du menu ne pouvait pas tenir ce
+role : il est SPHERIQUE, on n'en voit qu'une face, il tourne, et deux reglages
+ne s'y comparent pas image contre image.
+
+**UN A/B MAL MONTE, ET JE L'AI ECRIT DANS UN CORPS DE COMMIT.** `fdf62aa`
+affirme que « l'arrivee plafonne vers 1,01, la chaine reprend tout le gain ».
+C'est faux : j'avais compare un chiffre mesure ce jour-la a un chiffre mesure la
+veille dans un autre etat du CODE. Le temoin refait dans le meme etat donne
+0,981, et le warp gagne bien trois centiemes. **Les regles n'avaient pourtant
+pas bouge entre les deux -- verifie par `git log` sur le fichier.** Un temoin
+doit etre refait dans l'etat courant, pas repris d'un releve anterieur, meme
+quand on croit que rien n'a change.
+
+**LE CONTROLE QUI RESTE OBLIGATOIRE SUR TOUT REGLAGE DE FORME** : les BIOMES, pas
+seulement le trait. L'essai du socle avait donne la meilleure dimension de toutes
+en effondrant la toundra de 13,7 a 6,6 %. Ici la toundra ne bouge pas (8,49 ->
+8,52) ; ce qui bouge est un jeu a somme nulle -- des cotes plus decoupees donnent
+des terres plus MARITIMES, donc prairie et foret temperee gagnent ce que la
+savane et le desert chaud perdent, et l'ecart absolu moyen passe de 35,1 a
+37,0 %. Accepte : le deficit de terres temperees se traite par le climat.
+
+**PIEGE D'OUTILLAGE, paye deux fois dans la meme heure.** `[int](3/2)` vaut
+**2** en PowerShell : l'arrondi par defaut est au pair (banquier), pas la
+troncature. Une planche de comparaison a quatre vignettes en a perdu une, dessinee
+hors du cadre. Utiliser `[Math]::Floor`. Et une commande PowerShell passee en
+ligne a travers bash se fait manger ses `$tableau[$i]` avant que PowerShell ne
+les voie : ecrire le script dans un fichier.
