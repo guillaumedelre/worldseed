@@ -56,7 +56,8 @@
     "coastNoiseAmount": 0.42,
     "coastNoiseFrequency": 5.5,
     "ridgedMix": 0.45,
-    "poleContinentBonusM": 100.0
+    "_comment_poleContinentBonusM": "CALIBRE. Prime d'altitude du pole force en continent, avant mise a l'echelle par VerticalScale. ELLE DOIT FRANCHIR LE NIVEAU DE LA MER APRES AMPUTATION PAR poleForcingStrength, et c'est tout le piege : le forçage melange la cible au relief existant, E = E*(1-W) + Cible*W avec W = strength = 0,85, donc il n'en garde que 85 %. A 100, sur un monde de 64 x 32 km ou VerticalScale vaut 4, la cible valait continentBase + bonus = 120 + 400 = 520 m et le pole sud arrivait a 0,85 x 520 = 442 m pour une mer a 445,6 : il ratait l'emergence de TROIS METRES SIX, et l'Antarctique n'existait pas. Mesure avant : 0,0 % emerge au-dela de 70 degres sud, calotte glaciaire 1,16 % des terres contre 10 sur Terre. La condition est 0,85 x (continentBase + 4 x bonus) > niveau de la mer + marge ; a 175 la cible monte a 820 m et le pole arrive a 697, soit 250 m de franc-bord.",
+    "poleContinentBonusM": 175.0
   },
   "temperature": {
     "equatorC": 27.0,
