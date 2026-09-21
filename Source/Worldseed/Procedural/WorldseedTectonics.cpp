@@ -9,9 +9,38 @@
 #include "Procedural/WorldseedPerlin.h"
 
 #include "Async/ParallelFor.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace WorldseedTectonics
 {
+	/**
+	 * Le socle continental, avec sa surcharge de banc d'essai.
+	 *
+	 * IL EST LU A DEUX ENDROITS -- le forçage polaire et l'assemblage du
+	 * relief -- et le depot a une regle contre la valeur recopiee : deux
+	 * lectures divergent a la premiere retouche, et ici elles doivent
+	 * imperativement s'accorder, sinon le continent polaire flotterait a une
+	 * autre hauteur que les autres.
+	 *
+	 * La surcharge existe pour l'A/B : ce depot interdit d'editer le fichier
+	 * de regles pour comparer -- une boucle qui modifie puis restaure l'a deja
+	 * vide une fois, et rouvrir le fichier change son empreinte, donc regenere
+	 * le monde entre les deux moities de la comparaison.
+	 */
+	float SocleContinentalM(const UWorldseedRules& Rules, float VerticalScale)
+	{
+		float Base = static_cast<float>(
+			Rules.Num(TEXT("tectonics"), TEXT("continentBaseM"), 30.0));
+		float Force = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedSocle="), Force)
+			&& Force >= 0.0f)
+		{
+			Base = Force;
+		}
+		return Base * VerticalScale;
+	}
+
 	namespace
 	{
 		/**
@@ -51,8 +80,7 @@ namespace WorldseedTectonics
 			const float Half = Geo.LatSpanDeg * 0.5f;
 			const float OceanDepth = static_cast<float>(
 				Rules.Num(TEXT("tectonics"), TEXT("oceanDepthM"), -200.0)) * VerticalScale;
-			const float ContinentBase = static_cast<float>(
-				Rules.Num(TEXT("tectonics"), TEXT("continentBaseM"), 30.0)) * VerticalScale;
+			const float ContinentBase = SocleContinentalM(Rules, VerticalScale);
 			const float PoleBonus = static_cast<float>(
 				Rules.Num(TEXT("tectonics"), TEXT("poleContinentBonusM"), 100.0)) * VerticalScale;
 
@@ -473,8 +501,7 @@ const int32 Count = NX * NY;
 		// --- assemblage du relief ------------------------------------------
 		const float OceanDepth = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("oceanDepthM"), -200.0)) * SeabedScale;
-		const float ContinentBase = static_cast<float>(
-			Rules.Num(TEXT("tectonics"), TEXT("continentBaseM"), 30.0)) * VerticalScale;
+		const float ContinentBase = SocleContinentalM(Rules, VerticalScale);
 		const float MountainHeight = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("mountainHeightM"), 325.0)) * VerticalScale;
 		const float RiftDepth = static_cast<float>(
