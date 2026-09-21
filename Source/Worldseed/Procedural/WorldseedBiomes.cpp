@@ -173,7 +173,28 @@ FWorldseedBiomeRules FWorldseedBiomeRules::FromRules(const UWorldseedRules& Rule
 	Out.TreeLineWarmestMonthC = Num(TEXT("treeLineWarmestMonthC"), 10.0);
 	Out.TaigaMinPrecipMm = Num(TEXT("taigaMinPrecipMm"), 350.0);
 	Out.ColdDesertMaxTempC = Num(TEXT("coldDesertMaxTempC"), 18.0);
-	Out.AlpineMinElevationM = Num(TEXT("alpineMinElevationM"), 212.5);
+	// --- LE SEUIL ALPIN SUIT L'ECHELLE VERTICALE ---------------------------
+	//
+	// IL EST COMPARE A UNE ALTITUDE, DONC IL DOIT SE MESURER DANS LA MEME
+	// UNITE QU'ELLE. WorldseedTectonics met a l'echelle tout ce qui fabrique le
+	// relief -- oceanDepthM, continentBaseM, poleContinentBonusM,
+	// mountainHeightM -- par WorldseedVerticalScale. Ce seuil-la ne l'etait
+	// pas : il restait a 212,5 m pendant que le relief passait a 1609 m.
+	//
+	// CE QUE CELA COUTAIT, mesure par ProbeZonal sur la graine 1337 en
+	// 64 x 32 km : l'altitude MOYENNE des terres vaut 420 a 530 m selon la
+	// bande, donc le seuil etait franchi presque partout, et l'etage alpin
+	// confisquait 70,3 % des terres a 50-60 degres et 47,9 % a 40-50 -- la ou
+	// devraient se trouver la taiga et la foret temperee, qui tombaient a 14,9
+	// et 1,7 %. Le froid n'y manquait pas : il portait la mauvaise etiquette.
+	//
+	// C'est le piege que le depot a deja paye deux fois et consigne : « une
+	// constante metrique en dur suffit a fausser un monde entier », « une
+	// valeur d'auteur JUSTE devient fausse quand on change l'echelle du
+	// monde ». La valeur du fichier garde son sens -- le seuil d'un monde de
+	// REFERENCE -- et suit desormais toute taille de carte.
+	Out.AlpineMinElevationM = Num(TEXT("alpineMinElevationM"), 212.5)
+		* WorldseedVerticalScale(Rules, Geo.HeightM);
 	Out.PermanentIceTempC = Num(TEXT("permanentIceTempC"), 0.0);
 	auto Sub = [&Rules](const TCHAR* Key, double Fallback)
 	{
