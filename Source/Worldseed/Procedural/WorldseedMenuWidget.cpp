@@ -147,6 +147,71 @@ namespace
 	const FLinearColor ColSeparator(1.0f, 1.0f, 1.0f, 0.08f);
 
 	/**
+	 * LES COULEURS DE BOUTON, PAR ROLE ET NON PAR ENDROIT.
+	 *
+	 * Elles etaient ecrites en clair a chaque appel, et elles avaient derive :
+	 * DEUX gris-bleu -- (0.18, 0.20, 0.26) pour le de, (0.16, 0.18, 0.23) pour
+	 * « Purger les perimees » -- et DEUX rouges -- (0.26, 0.14, 0.14) pour
+	 * « Annuler », (0.24, 0.13, 0.13) pour « Tout vider » -- alors que ces
+	 * quatre boutons ne jouent que DEUX roles. L'ecart est trop faible pour se
+	 * voir et trop reel pour etre voulu : c'est la signature d'un litteral
+	 * recopie de memoire. Une constante nommee ne derive pas.
+	 *
+	 * Quatre roles, et la hierarchie se lit a la couleur : ce qui est neutre,
+	 * ce qui engage le calcul, ce qui fait entrer dans le monde, ce qui
+	 * detruit.
+	 */
+	const FLinearColor ColBoutonNeutre(0.18f, 0.20f, 0.26f, 1.0f);
+	const FLinearColor ColBoutonPrimaire(0.15f, 0.28f, 0.40f, 1.0f);
+	const FLinearColor ColBoutonDanger(0.26f, 0.14f, 0.14f, 1.0f);
+	const FLinearColor ColBoutonAction = ColAccent * 0.55f;
+
+	/**
+	 * LE BAREME TYPOGRAPHIQUE. Cinq roles, cinq tailles, et rien d'autre.
+	 *
+	 * L'ecran employait deja cinq tailles, mais sans regle : les boutons
+	 * secondaires etaient tantot en 11 -- le de, « Annuler » -- tantot en 10
+	 * -- « Purger », « Tout vider ». Et surtout, les deux CONTROLES DE SAISIE
+	 * n'etaient pas regles du tout : le champ de graine et la liste
+	 * d'habillage tombaient sur la taille par defaut du style Slate, bien plus
+	 * grosse que le bouton pose juste a cote. C'est le meme defaut que
+	 * PackHint, qui s'affichait en vingt-quatre points faute de passer par le
+	 * fabricant commun -- « un widget construit directement echappe a tous les
+	 * reglages de l'ecran ».
+	 *
+	 * La regle desormais : UN CONTROLE EST UN CONTROLE. Champ, liste et
+	 * boutons partagent TypoControle ; seule l'action finale s'en detache.
+	 */
+	constexpr int32 TypoTitre = 32;
+	constexpr int32 TypoAction = 16;
+	constexpr int32 TypoControle = 12;
+	constexpr int32 TypoTexte = 11;
+	constexpr int32 TypoLegende = 10;
+
+	/**
+	 * LA TAILLE D'UNE ICONE N'EST PAS UNE TAILLE DE TEXTE, et elle n'ecorne
+	 * donc pas le bareme : un glyphe pictural doit se LIRE COMME UN DESSIN,
+	 * pas s'aligner sur la hauteur d'x des mots voisins. A douze points le de
+	 * serait un pate ; a dix-huit on distingue ses points.
+	 */
+	constexpr int32 TypoIcone = 18;
+
+	/**
+	 * La hauteur commune des controles de l'en-tete.
+	 *
+	 * Sans elle, chacun prenait la hauteur que lui donnait son contenu : le
+	 * champ de graine, le de et la liste d'habillage se retrouvaient a trois
+	 * hauteurs differentes sur une meme ligne. C'est ce qui se voyait le plus.
+	 */
+	constexpr float HauteurControle = 30.0f;
+
+	/**
+	 * Le de porte un libelle court ; sans largeur imposee il se reduirait a
+	 * une pastille a cote de « Generer », et la ligne perdrait son assise.
+	 */
+	constexpr float LargeurBoutonDe = 46.0f;
+
+	/**
 	 * Le fond du volet de statistiques, POSE SUR LE GLOBE.
 	 *
 	 * Opaque, il ferait une colonne collee sur l'image et on perdrait le
@@ -234,6 +299,41 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			return B;
 		};
 
+		/**
+		 * La police de l'ecran, a une taille donnee.
+		 *
+		 * Elle est lue sur le DEFAUT de UTextBlock -- exactement celle que
+		 * MakeText emploie -- et non prise a FCoreStyle. Les deux ne sont pas
+		 * forcement la meme famille, et un controle de saisie qui porterait
+		 * une autre fonte que les textes voisins serait precisement
+		 * l'incoherence qu'on vient corriger.
+		 */
+		auto PoliceEcran = [](int32 Size) -> FSlateFontInfo
+		{
+			FSlateFontInfo F = GetDefault<UTextBlock>()->GetFont();
+			F.Size = Size;
+			return F;
+		};
+
+		/**
+		 * Enveloppe un controle pour lui imposer la hauteur commune.
+		 *
+		 * Largeur nulle = on ne l'impose pas, le controle prend la sienne.
+		 */
+		auto MakeControlBox = [this](const TCHAR* Name, UWidget* Inner,
+			float Width) -> USizeBox*
+		{
+			USizeBox* Box = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), Name);
+			Box->SetHeightOverride(HauteurControle);
+			if (Width > 0.0f)
+			{
+				Box->SetWidthOverride(Width);
+			}
+			Box->AddChild(Inner);
+			return Box;
+		};
+
 		auto MakeRule = [this](const TCHAR* Name) -> UBorder*
 		{
 			UBorder* S = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
@@ -245,7 +345,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 		/** Intitule de section : petites capitales, discret, au-dessus du reglage. */
 		auto MakeSectionLabel = [this, &MakeText](const TCHAR* Name, const FString& Label)
 		{
-			return MakeText(Name, Label, 10, ColTextMuted);
+			return MakeText(Name, Label, TypoLegende, ColTextMuted);
 		};
 
 		/** Ligne de mesure : intitule a gauche, valeur alignee a droite. */
@@ -255,13 +355,13 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
 				UHorizontalBox::StaticClass(), RowName);
 
-			UTextBlock* L = MakeText(LabelName, Label, 11, ColTextMuted);
+			UTextBlock* L = MakeText(LabelName, Label, TypoTexte, ColTextMuted);
 			if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(L))
 			{
 				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			}
 
-			UTextBlock* V = MakeText(ValueName, TEXT("--"), 11, ColTextPrimary);
+			UTextBlock* V = MakeText(ValueName, TEXT("--"), TypoTexte, ColTextPrimary);
 			V->SetJustification(ETextJustify::Right);
 			Row->AddChildToHorizontalBox(V);
 
@@ -309,10 +409,10 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				}
 
 				Marque->AddChildToVerticalBox(
-					MakeText(TEXT("Title"), TEXT("WORLDSEED"), 32, ColTextPrimary));
+					MakeText(TEXT("Title"), TEXT("WORLDSEED"), TypoTitre, ColTextPrimary));
 
 				UTextBlock* Sub = MakeText(TEXT("Subtitle"),
-					TEXT("tectonique  -  climat  -  erosion"), 11, ColTextMuted);
+					TEXT("tectonique  -  climat  -  erosion"), TypoTexte, ColTextMuted);
 				if (UVerticalBoxSlot* S = Marque->AddChildToVerticalBox(Sub))
 				{
 					S->SetPadding(FMargin(2.0f, 2.0f, 0.0f, 0.0f));
@@ -343,21 +443,53 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 					S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
 				}
 
-				USizeBox* SeedBoxSize = WidgetTree->ConstructWidget<USizeBox>(
-					USizeBox::StaticClass(), TEXT("SeedBoxSize"));
-				SeedBoxSize->SetWidthOverride(LargeurGraine);
-
 				SeedBox = WidgetTree->ConstructWidget<UEditableTextBox>(
 					UEditableTextBox::StaticClass(), TEXT("SeedBox"));
-				SeedBoxSize->AddChild(SeedBox);
-				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(SeedBoxSize))
+
+				// LE CHAMP NE PASSE PAS PAR MakeText, donc rien ne reglait sa
+				// police : il gardait celle du style, bien plus grosse que le
+				// bouton pose juste a cote. C'est ce qui donnait a l'en-tete
+				// son air depareille.
+				{
+					FEditableTextBoxStyle Style = SeedBox->GetWidgetStyle();
+					Style.SetFont(PoliceEcran(TypoControle));
+					SeedBox->SetWidgetStyle(Style);
+				}
+
+				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(
+					MakeControlBox(TEXT("SeedBoxSize"), SeedBox, LargeurGraine)))
 				{
 					S->SetVerticalAlignment(VAlign_Center);
 				}
 
 				RandomButton = MakeButton(TEXT("RandomButton"), TEXT("RandomLabel"),
-					TEXT("Aleatoire"), 11, FLinearColor(0.18f, 0.20f, 0.26f, 1.0f));
-				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(RandomButton))
+					TEXT("⚄"), TypoIcone, ColBoutonNeutre);
+				// UNE ICONE SEULE NE SE LIT PAS, et c'est le prix du glyphe :
+				// le mot « De » disait ce que faisait le bouton, le dessin
+				// demande d'avoir reconnu un de ET devine ce qu'il fait ici.
+				// L'infobulle rend cette phrase, sans reprendre la place que
+				// l'icone vient de liberer.
+				RandomButton->SetToolTipText(
+					FText::FromString(TEXT("Tirer une graine au hasard")));
+
+				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(
+					MakeControlBox(TEXT("RandomBox"), RandomButton, LargeurBoutonDe)))
+				{
+					S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+
+				// GENERER. L'action existait deja -- taper Entree dans le champ
+				// relance la generation -- mais rien ne le disait, et le seul
+				// declencheur visible, le de, impose une graine tiree au sort.
+				// Qui voulait LA SIENNE n'avait aucun bouton a viser.
+				GenerateButton = MakeButton(TEXT("GenerateButton"),
+					TEXT("GenerateLabel"), TEXT("Générer"), TypoControle,
+					ColBoutonPrimaire);
+				GenerateButton->SetToolTipText(
+					FText::FromString(TEXT("Generer le monde avec la graine saisie")));
+				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(
+					MakeControlBox(TEXT("GenerateBox"), GenerateButton, 0.0f)))
 				{
 					S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
 					S->SetVerticalAlignment(VAlign_Center);
@@ -377,17 +509,34 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				Habillage->AddChildToVerticalBox(
 					MakeSectionLabel(TEXT("PackLabel"), TEXT("HABILLAGE DU SOL")));
 
-				USizeBox* PackSize = WidgetTree->ConstructWidget<USizeBox>(
-					USizeBox::StaticClass(), TEXT("PackSize"));
-				PackSize->SetWidthOverride(LargeurHabillage);
-				if (UVerticalBoxSlot* S = Habillage->AddChildToVerticalBox(PackSize))
+				PackCombo = WidgetTree->ConstructWidget<UComboBoxString>(
+					UComboBoxString::StaticClass(), TEXT("PackCombo"));
+
+				// LA POLICE DE LA LISTE N'A AUCUN SETTER PUBLIC.
+				//
+				// UComboBoxString expose un getter, et rien pour ecrire :
+				// InitFont est PROTECTED -- prevu pour une classe derivee --
+				// et la propriete Font est publique mais depreciee « use the
+				// getter ». Il n'y a donc que trois voies : deriver une UCLASS
+				// entiere pour appeler InitFont, ecrire par reflexion, ou
+				// ecrire la propriete en assumant la depreciation. La
+				// troisieme est celle que le code du moteur emploie lui-meme,
+				// elle tient en une ligne, et elle DIT ce qu'elle fait.
+				//
+				// Elle doit rester ICI, avant que le widget Slate ne soit
+				// construit : la declaration previent que la valeur n'est lue
+				// qu'a la construction. Posee plus tard, elle serait ignoree
+				// en silence et la liste garderait la grosse police du style
+				// pendant que son voisin serait en douze.
+				PRAGMA_DISABLE_DEPRECATION_WARNINGS
+				PackCombo->Font = PoliceEcran(TypoControle);
+				PRAGMA_ENABLE_DEPRECATION_WARNINGS
+
+				if (UVerticalBoxSlot* S = Habillage->AddChildToVerticalBox(
+					MakeControlBox(TEXT("PackSize"), PackCombo, LargeurHabillage)))
 				{
 					S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
 				}
-
-				PackCombo = WidgetTree->ConstructWidget<UComboBoxString>(
-					UComboBoxString::StaticClass(), TEXT("PackCombo"));
-				PackSize->AddChild(PackCombo);
 			}
 
 			if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(MakeRule(TEXT("RuleTop"))))
@@ -486,7 +635,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 
 			// Conserve pour la compatibilite : l'ancienne ligne unique devient
 			// une note discrete sous le tableau.
-			InfoText = MakeText(TEXT("InfoText"), TEXT(""), 10, ColTextMuted);
+			InfoText = MakeText(TEXT("InfoText"), TEXT(""), TypoLegende, ColTextMuted);
 			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(InfoText))
 			{
 				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
@@ -522,7 +671,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			// l'intitule surplomberait le vide, ce qui se lit comme un ecran
 			// casse plutot que comme un ecran en attente.
 			BiomesHint = MakeText(TEXT("BiomesHint"),
-				TEXT("choisissez une graine, puis generez"), 10, ColTextMuted);
+				TEXT("choisissez une graine, puis generez"), TypoLegende, ColTextMuted);
 			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(BiomesHint))
 			{
 				S->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
@@ -551,7 +700,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				Row->AddChildToVerticalBox(Head);
 
 				UTextBlock* Nom = MakeText(*FString::Printf(TEXT("BiomeNom%02d"), I),
-					TEXT(""), 10, ColTextPrimary);
+					TEXT(""), TypoLegende, ColTextPrimary);
 				if (UHorizontalBoxSlot* S = Head->AddChildToHorizontalBox(Nom))
 				{
 					S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -559,7 +708,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				}
 
 				UTextBlock* Val = MakeText(*FString::Printf(TEXT("BiomeVal%02d"), I),
-					TEXT(""), 10, ColTextMuted);
+					TEXT(""), TypoLegende, ColTextMuted);
 				Val->SetJustification(ETextJustify::Right);
 				Head->AddChildToHorizontalBox(Val);
 
@@ -633,7 +782,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				S->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
 			}
 
-			StatusText = MakeText(TEXT("StatusText"), TEXT(""), 11, ColTextMuted);
+			StatusText = MakeText(TEXT("StatusText"), TEXT(""), TypoTexte, ColTextMuted);
 			if (UHorizontalBoxSlot* S = StatusRow->AddChildToHorizontalBox(StatusText))
 			{
 				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -641,8 +790,9 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			}
 
 			CancelButton = MakeButton(TEXT("CancelButton"), TEXT("CancelLabel"),
-				TEXT("Annuler"), 11, FLinearColor(0.26f, 0.14f, 0.14f, 1.0f));
-			StatusRow->AddChildToHorizontalBox(CancelButton);
+				TEXT("Annuler"), TypoControle, ColBoutonDanger);
+			StatusRow->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("CancelBox"), CancelButton, 0.0f));
 		}
 
 		// ============================================================== PIED
@@ -661,7 +811,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				UHorizontalBox::StaticClass(), TEXT("Footer"));
 			Shell->AddChildToVerticalBox(Footer);
 
-			CacheText = MakeText(TEXT("CacheText"), TEXT(""), 10, ColTextMuted);
+			CacheText = MakeText(TEXT("CacheText"), TEXT(""), TypoLegende, ColTextMuted);
 			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(CacheText))
 			{
 				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -669,17 +819,19 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			}
 
 			ClearObsoleteButton = MakeButton(TEXT("ClearObsoleteButton"),
-				TEXT("ClearObsoleteLabel"), TEXT("Purger les perimees"), 10,
-				FLinearColor(0.16f, 0.18f, 0.23f, 1.0f));
-			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(ClearObsoleteButton))
+				TEXT("ClearObsoleteLabel"), TEXT("Purger les perimees"),
+				TypoControle, ColBoutonNeutre);
+			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("ClearObsoleteBox"), ClearObsoleteButton, 0.0f)))
 			{
 				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
 				S->SetVerticalAlignment(VAlign_Center);
 			}
 
 			ClearAllButton = MakeButton(TEXT("ClearAllButton"), TEXT("ClearAllLabel"),
-				TEXT("Tout vider"), 10, FLinearColor(0.24f, 0.13f, 0.13f, 1.0f));
-			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(ClearAllButton))
+				TEXT("Tout vider"), TypoControle, ColBoutonDanger);
+			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("ClearAllBox"), ClearAllButton, 0.0f)))
 			{
 				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
 				S->SetVerticalAlignment(VAlign_Center);
@@ -691,7 +843,7 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			PlayBox->SetWidthOverride(LargeurAction);
 
 			PlayButton = MakeButton(TEXT("PlayButton"), TEXT("PlayLabel"),
-				TEXT("ENTRER DANS LE MONDE"), 16, ColAccent * 0.55f);
+				TEXT("ENTRER DANS LE MONDE"), TypoAction, ColBoutonAction);
 			PlayBox->AddChild(PlayButton);
 
 			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(PlayBox))
@@ -760,6 +912,11 @@ void UWorldseedMenuWidget::NativeConstruct()
 	if (RandomButton)
 	{
 		RandomButton->OnClicked.AddDynamic(this, &UWorldseedMenuWidget::HandleRandomSeedClicked);
+	}
+
+	if (GenerateButton)
+	{
+		GenerateButton->OnClicked.AddDynamic(this, &UWorldseedMenuWidget::HandleGenerateClicked);
 	}
 
 	if (CancelButton)
@@ -1678,6 +1835,17 @@ void UWorldseedMenuWidget::HandleRandomSeedClicked()
 	{
 		SeedBox->SetText(FText::FromString(FString::FromInt(Params.Seed)));
 	}
+	StartGeneration();
+}
+
+void UWorldseedMenuWidget::HandleGenerateClicked()
+{
+	// RIEN DE PLUS QUE LA TOUCHE ENTREE, ET C'EST VOULU : HandleSeedCommitted
+	// ne fait pas autre chose. StartGeneration lit lui-meme le formulaire
+	// (PullFormIntoParams) puis annule la generation en cours avant de
+	// relancer -- on peut donc cliquer a tout moment, y compris pendant un
+	// calcul, ce qui est exactement ce qu'on attend d'un bouton « Generer »
+	// quand on vient de changer la graine.
 	StartGeneration();
 }
 

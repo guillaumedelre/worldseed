@@ -134,6 +134,19 @@ protected:
 	UFUNCTION()
 	void HandleRandomSeedClicked();
 
+	/**
+	 * Relance la generation avec la graine SAISIE.
+	 *
+	 * POURQUOI CE BOUTON EXISTE. L'action existait deja -- taper Entree dans le
+	 * champ appelle HandleSeedCommitted, qui appelle StartGeneration -- mais
+	 * rien ne le disait. Le seul declencheur VISIBLE etait le de, qui impose
+	 * une graine tiree au sort : qui voulait la sienne n'avait aucun bouton a
+	 * viser. Une action qu'il faut deviner n'existe pas pour celui qui ne la
+	 * devine pas.
+	 */
+	UFUNCTION()
+	void HandleGenerateClicked();
+
 	UFUNCTION()
 	void HandleSeedCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
@@ -173,6 +186,7 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> InfoText;
 	UPROPERTY(Transient) TObjectPtr<UButton> PlayButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> RandomButton;
+	UPROPERTY(Transient) TObjectPtr<UButton> GenerateButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> CancelButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> ClearObsoleteButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> ClearAllButton;
