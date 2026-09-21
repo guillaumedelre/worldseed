@@ -1138,6 +1138,32 @@ void AWorldseedTerrain::BuildGroundProxy()
 		&& (PrecipMm.Num() == Geometry.CellCount());
 	Mode.bHasCover = (Biomes.Cover.Num() == Geometry.CellCount());
 
+	// LA MER DU DECOR EST OPAQUE, CELLE DES PIEDS NE L'EST PAS. Le seul
+	// endroit du projet ou ce drapeau s'arme : voir son commentaire dans
+	// `FWorldseedAppearance`.
+	//
+	// La surcharge existe pour l'A/B : la couture que ce drapeau masque ne se
+	// voit qu'a fenetre d'eau ETROITE, donc les deux corrections se cachent
+	// l'une l'autre et une capture « apres » ne prouverait rien toute seule.
+	// A combiner avec `-WorldseedEauFenetre=4`.
+	// 0 = coupee, 1 = couleur de mer, 2 = MAGENTA de controle.
+	Mode.bMerOpaque = true;
+	int32 MerOpaque = 1;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedMerOpaque="), MerOpaque))
+	{
+		Mode.bMerOpaque = (MerOpaque != 0);
+		Mode.bMerTemoin = (MerOpaque == 2);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] sol de fond : mer opaque %s par la ligne de commande"),
+			Mode.bMerTemoin ? TEXT("en MAGENTA de controle")
+				: (Mode.bMerOpaque ? TEXT("ARMEE") : TEXT("COUPEE")));
+	}
+
+	// COMPTER CE QU'ON PEINT. Une couleur qui ne se voit pas a deux causes
+	// opposees -- le terme ne s'evalue jamais, ou il s'evalue et rien ne
+	// l'affiche -- et elles n'appellent pas du tout le meme remede. Le compte
+	// separe les deux avant meme de regarder l'image.
+	int32 SommetsSousZero = 0;
 
 	// LE PAS SE PREND EN REEL, ET LE DERNIER SOMMET TOMBE SUR LA DERNIERE
 	// CELLULE.
@@ -1246,8 +1272,15 @@ void AWorldseedTerrain::BuildGroundProxy()
 
 			ComputeVertexAppearance(Cell, HereM, N, Mode,
 				Colors[Index], TintRG[Index], TintB[Index]);
+
+			if (HereM < 0.0f) { ++SommetsSousZero; }
 		}
 	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] sol de fond : %d sommets sur %d sous le niveau zero (%.1f %%)"),
+		SommetsSousZero, Verts,
+		Verts > 0 ? 100.0f * SommetsSousZero / Verts : 0.0f);
 
 	Triangles.Reserve((CountX - 1) * (CountY - 1) * 6);
 	for (int32 Y = 0; Y < CountY - 1; ++Y)
@@ -1620,6 +1653,38 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 	// a que faire, et le mode couleur de biome la met dans RGBA.
 	OutTintRG = FVector2D::ZeroVector;
 	OutTintB = FVector2D::ZeroVector;
+
+	// --- LE DECOR LOINTAIN DOIT LIRE COMME UNE MER SOUS ZERO --------------
+	//
+	// SIGNALE EN JEU : « je vois nettement un carre d'ocean autour de moi ».
+	// Le bord du carre est la fenetre glissante du plugin Water ; au-dela, il
+	// n'y a AUCUNE eau rendue. Le plateau cotier s'y dessinait donc a sec, et
+	// son biome le peint en PLAGE -- d'ou une bande de sable pale, coupee par
+	// un trait DROIT qui traverse les dunes sans les suivre. Verifie a
+	// l'echantillon sur `balayage/4_centre.png` : eau R78 G125 B153, puis
+	// plateau R196 G188 B174 de l'autre cote du trait.
+	//
+	// AGRANDIR LA FENETRE NE SUPPRIME PAS CETTE COUTURE, IL LA DEPLACE. Elle
+	// reapparait des qu'un haut-fond clair s'etend au-dela. Peindre en mer ce
+	// qui est sous zero la rend invisible PAR CONSTRUCTION, a n'importe quelle
+	// distance et depuis n'importe quelle altitude, pour zero appel de dessin.
+	//
+	// CE QUE CE N'EST PAS : de l'eau. C'est du DECOR qui a la couleur de
+	// l'eau. Il n'a ni vague, ni reflet, ni profondeur -- exactement comme le
+	// `Water_FarMesh` du plugin, qui remplit le meme role et que nous ne
+	// pouvons pas employer ici (sa jupe s'accroche aux bornes de la ZONE,
+	// 64 x 32 km, donc hors d'atteinte depuis l'interieur du monde).
+	//
+	// LA GEOMETRIE N'EST PAS TOUCHEE, seulement la couleur. Le sol de fond est
+	// deja ENFONCE sous la bande creusable pour ne rien boucher ; le remonter
+	// a zero le ferait ressortir au travers du relief.
+	if (Mode.bMerOpaque && bColourByBiome && HereM < 0.0f)
+	{
+		OutColour = Mode.bMerTemoin
+			? FLinearColor(1.0f, 0.0f, 1.0f, 1.0f)
+			: WorldseedBiomes::Colour(EWorldseedBiome::Ocean);
+		return;
+	}
 
 	if (bTexturePack)
 	{
