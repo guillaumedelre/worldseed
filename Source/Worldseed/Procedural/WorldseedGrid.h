@@ -45,6 +45,20 @@ namespace WorldseedGrid
 		TArray<float>& OutDistancePixels);
 
 	/**
+	 * Reduit une carte d'IDENTIFIANTS par prelevement au plus proche voisin.
+	 *
+	 * ON NE MOYENNE JAMAIS UN IDENTIFIANT. Downsample fait une moyenne, ce qui
+	 * est juste pour des altitudes et faux pour un code de biome : la moyenne
+	 * de « desert » et de « toundra » n'est pas un biome intermediaire, c'est
+	 * un biome qui n'existe nulle part sur la carte. Le depot a deja paye
+	 * exactement cela -- le filtre bilineaire de PCG sur biome_index.png
+	 * rendait 307 points faux sur 17956, du type « plage » lu comme « alpin »,
+	 * sans la moindre erreur.
+	 */
+	WORLDSEED_API void DownsampleNearest(const TArray<uint8>& Src, int32 SrcNX, int32 SrcNY,
+		int32 DstNX, int32 DstNY, TArray<uint8>& Out);
+
+	/**
 	 * Gradients (d/dY, d/dX) en unites par metre, equivalent a np.gradient :
 	 * differences centrees a l'interieur, unilaterales sur les bords.
 	 */

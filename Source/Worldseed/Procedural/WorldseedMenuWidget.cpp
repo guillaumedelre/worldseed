@@ -1499,6 +1499,15 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	const TArray<float>& GlobeHeights = bUsePreview ? PreviewHeights : CachedHeights;
 	FWorldseedGeometry Geometry = bUsePreview ? PreviewGeometry : WorldGeometry;
 
+	// LES BIOMES DONNENT SA COULEUR AU GLOBE. Sans eux il teintait par
+	// ALTITUDE, et cette teinte mentait : une calotte glaciaire posee a trente
+	// metres s'affichait au vert des plaines, et les sommets blancs n'etaient
+	// pas de la neige mais de la hauteur. Ils doivent decrire LA MEME grille
+	// que les altitudes, d'ou le meme choix apercu/plein.
+	const TArray<uint8>& GlobeBiomes = bUsePreview ? PreviewBiomes : CachedBiomes.Index;
+	const TArray<uint8>* GlobeBiomesPtr =
+		(GlobeBiomes.Num() == GlobeHeights.Num()) ? &GlobeBiomes : nullptr;
+
 	WorldseedGlobe::FGlobeSettings GlobeSettings;
 	if (Rules)
 	{
@@ -1526,7 +1535,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	if (!PreviewTexture)
 	{
 		PreviewTexture = WorldseedGlobe::Render(
-			GlobeHeights, Geometry, GlobeSettings, 512);
+			GlobeHeights, Geometry, GlobeSettings, 512, GlobeBiomesPtr);
 
 		if (!PreviewTexture)
 		{
@@ -1546,7 +1555,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	}
 
 	WorldseedGlobe::RenderInto(PreviewTexture, GlobeHeights,
-		Geometry, GlobeSettings);
+		Geometry, GlobeSettings, GlobeBiomesPtr);
 }
 
 void UWorldseedMenuWidget::BuildPreviewField()
@@ -1576,6 +1585,13 @@ void UWorldseedMenuWidget::BuildPreviewField()
 
 	WorldseedGrid::Downsample(CachedHeights, WorldGeometry.NX, WorldGeometry.NY,
 		DstNX, DstNY, PreviewHeights);
+
+	// LES BIOMES SE REDUISENT AU PLUS PROCHE VOISIN, jamais par Downsample :
+	// celui-ci fait une MOYENNE, juste pour des altitudes et faux pour un code
+	// de biome -- la moyenne de « desert » et de « toundra » designe un biome
+	// qui n'existe nulle part sur la carte.
+	WorldseedGrid::DownsampleNearest(CachedBiomes.Index, WorldGeometry.NX,
+		WorldGeometry.NY, DstNX, DstNY, PreviewBiomes);
 
 	PreviewGeometry = WorldGeometry;
 	PreviewGeometry.NX = DstNX;

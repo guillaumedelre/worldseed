@@ -1,6 +1,7 @@
 // Worldseed - rendu du monde sous forme de globe, pour l'ecran d'entree.
 
 #include "Procedural/WorldseedGlobe.h"
+#include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedGrid.h"
 
 #include "Async/ParallelFor.h"
@@ -52,8 +53,14 @@ namespace WorldseedGlobe
 	{
 	void FillPixels(uint8* Pixels, int32 Res, const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry,
-		const FGlobeSettings& Settings)
+		const FGlobeSettings& Settings, const TArray<uint8>* BiomeIndex)
 	{
+		// Les biomes ne servent que s'ils decrivent LA MEME grille : une carte
+		// d'une autre resolution peindrait des couleurs decalees, et rien ne
+		// le signalerait.
+		const bool bHasBiomes = (BiomeIndex != nullptr)
+			&& (BiomeIndex->Num() == Heights.Num());
+
 		// Altitude maximale reelle : apres erosion le sommet n'est plus la
 		// valeur theorique, et normaliser dessus ecraserait tout le relief.
 		float MaxLand = KINDA_SMALL_NUMBER;
@@ -136,7 +143,25 @@ namespace WorldseedGlobe
 					}
 					else
 					{
-						Color = LandTint(Height / SnowScale);
+						// LA COULEUR VIENT DU BIOME QUAND ON L'A. L'ombrage,
+						// lui, est applique plus bas dans les deux cas : c'est
+						// le relief qui rend le globe lisible.
+						if (bHasBiomes)
+						{
+							// PLUS PROCHE VOISIN, jamais d'interpolation : la
+							// moyenne de deux identifiants est un biome qui
+							// n'existe nulle part.
+							const int32 CellX = FMath::Clamp(
+								static_cast<int32>(U * Geometry.NX), 0, Geometry.NX - 1);
+							const int32 CellY = FMath::Clamp(
+								static_cast<int32>(V * Geometry.NY), 0, Geometry.NY - 1);
+							Color = WorldseedBiomes::Colour(static_cast<EWorldseedBiome>(
+								(*BiomeIndex)[CellY * Geometry.NX + CellX]));
+						}
+						else
+						{
+							Color = LandTint(Height / SnowScale);
+						}
 					}
 
 					// --- normale du terrain, en distances REELLES ---------
@@ -249,7 +274,7 @@ namespace WorldseedGlobe
 
 	UTexture2D* Render(const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
-		int32 PreviewResolution)
+		int32 PreviewResolution, const TArray<uint8>* BiomeIndex)
 	{
 		const int32 Res = FMath::Clamp(PreviewResolution, 32, 2048);
 		if (Geometry.NX < 2 || Heights.Num() != Geometry.CellCount())
@@ -273,7 +298,7 @@ namespace WorldseedGlobe
 
 		FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
 		uint8* Pixels = static_cast<uint8*>(Mip.BulkData.Lock(LOCK_READ_WRITE));
-		FillPixels(Pixels, Res, Heights, Geometry, Settings);
+		FillPixels(Pixels, Res, Heights, Geometry, Settings, BiomeIndex);
 		Mip.BulkData.Unlock();
 		Texture->UpdateResource();
 
@@ -281,7 +306,8 @@ namespace WorldseedGlobe
 	}
 
 	bool RenderInto(UTexture2D* Texture, const TArray<float>& Heights,
-		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings)
+		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
+		const TArray<uint8>* BiomeIndex)
 	{
 		if (!Texture || Geometry.NX < 2 || Heights.Num() != Geometry.CellCount())
 		{
@@ -320,7 +346,7 @@ namespace WorldseedGlobe
 		// il doit donc lui survivre, et c'est le rappel de nettoyage qui le
 		// libere une fois le televersement fait.
 		uint8* Pixels = new uint8[Bytes];
-		FillPixels(Pixels, Res, Heights, Geometry, Settings);
+		FillPixels(Pixels, Res, Heights, Geometry, Settings, BiomeIndex);
 
 		FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, Res, Res);
 

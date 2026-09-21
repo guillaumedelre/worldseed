@@ -268,6 +268,12 @@ private:
 	 */
 	TArray<float> PreviewHeights;
 
+	/**
+	 * Les biomes a la resolution de PreviewHeights, pour que le globe les
+	 * colore. Reduits au PLUS PROCHE VOISIN : on ne moyenne pas un identifiant.
+	 */
+	TArray<uint8> PreviewBiomes;
+
 	/** Geometrie correspondant a PreviewHeights. */
 	FWorldseedGeometry PreviewGeometry;
 

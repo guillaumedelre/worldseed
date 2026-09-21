@@ -197,6 +197,33 @@ namespace WorldseedGrid
 		BlurAxis(InOut, NX, NY, SigmaPixels, bAlongRows);
 	}
 
+	void DownsampleNearest(const TArray<uint8>& Src, int32 SrcNX, int32 SrcNY,
+		int32 DstNX, int32 DstNY, TArray<uint8>& Out)
+	{
+		Out.Reset();
+		if (SrcNX < 1 || SrcNY < 1 || DstNX < 1 || DstNY < 1
+			|| Src.Num() != SrcNX * SrcNY)
+		{
+			return;
+		}
+
+		Out.SetNumUninitialized(DstNX * DstNY);
+		for (int32 J = 0; J < DstNY; ++J)
+		{
+			// Le CENTRE de la cellule de destination, et non son coin : un
+			// prelevement au coin decale la carte d'un demi-pixel, ce qui se
+			// voit sur un trait de cote.
+			const int32 SrcJ = FMath::Clamp(
+				static_cast<int32>((J + 0.5) * SrcNY / DstNY), 0, SrcNY - 1);
+			for (int32 I = 0; I < DstNX; ++I)
+			{
+				const int32 SrcI = FMath::Clamp(
+					static_cast<int32>((I + 0.5) * SrcNX / DstNX), 0, SrcNX - 1);
+				Out[J * DstNX + I] = Src[SrcJ * SrcNX + SrcI];
+			}
+		}
+	}
+
 	void DistanceTransform(const TArray<uint8>& Mask, int32 NX, int32 NY,
 		TArray<float>& OutDistancePixels)
 	{

@@ -59,13 +59,25 @@ namespace WorldseedGlobe
 	 */
 	WORLDSEED_API UTexture2D* Render(const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
-		int32 PreviewResolution);
+		int32 PreviewResolution, const TArray<uint8>* BiomeIndex = nullptr);
 
 	/**
 	 * Redessine dans une texture existante. C'est cette voie qu'utilise la
 	 * rotation : recreer une UTexture2D a chaque frame saturerait le ramasse-
 	 * miettes pour rien, seuls les pixels changent.
 	 */
+	/**
+	 * BiomeIndex est FACULTATIF et doit avoir la taille de Heights.
+	 *
+	 * Fourni, il donne sa couleur a chaque terre ; absent, le globe retombe
+	 * sur la teinte d'ALTITUDE, qui etait son seul mode et qui MENTAIT : une
+	 * calotte glaciaire posee a trente metres s'affichait au vert des
+	 * plaines, et les sommets blancs n'etaient pas de la neige mais de la
+	 * hauteur. L'ombrage du relief est garde dans les deux cas -- c'est lui
+	 * qui donne sa lecture au globe, et une carte de biomes a plat ne
+	 * montrerait plus aucun relief.
+	 */
 	WORLDSEED_API bool RenderInto(UTexture2D* Texture, const TArray<float>& Heights,
-		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings);
+		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
+		const TArray<uint8>* BiomeIndex = nullptr);
 }
