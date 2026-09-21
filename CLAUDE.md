@@ -6135,3 +6135,80 @@ cachee (25 242) valide au passage le test de visibilite. **Le limbe est mal
 conditionne PAR NATURE** -- la derivee de l'arc sinus y diverge -- d'ou deux
 chiffres rendus, celui du disque entier et celui du disque franc, plutot qu'un
 seul qui flatterait ou accablerait.
+
+### Le sol de fond servait deux maitres, et c'est ce qui coutait 520 ms (21 septembre 2026)
+
+Signale en jeu : « l'arche parait muree de l'exterieur, je traverse un faux
+mur, et un ralentissement marque l'entree comme la sortie ». Deux symptomes,
+une cause, et trois lecons de methode.
+
+**CHRONOMETRER UN APPEL QUI NE FAIT QUE MARQUER NE MESURE RIEN.**
+`SetRenderInMainPass` chronometre sur place rend **0,02 ms**, et l'on conclut
+que la bascule est gratuite. C'est vrai et sans le moindre interet : l'appel
+MARQUE l'etat de rendu sale, et la recreation du proxy de scene -- 8 388 608
+sommets ici -- a lieu en FIN DE TRAME. La mesure juste se prend sur la trame
+SUIVANTE : **508 a 528 ms**, pour un budget de 16,67.
+
+**LE TEMOIN SE PREND SUR TOUTE LA SESSION, PAS AUTOUR DU SUSPECT.** Le journal
+d'Unreal horodate ET numerote les trames : `(t2 - t1) / (f2 - f1)` entre deux
+lignes consecutives donne le temps par trame, gratuitement et retroactivement.
+Sur une partie entiere : EXACTEMENT quatre trames au-dessus de 300 ms, et
+EXACTEMENT quatre bascules, sur les trames 390, 396, 804 et 94 -- les numeros
+memes des bascules. Rien d'autre n'a jamais depasse 300 ms. C'est cela qui
+attribue, pas la coincidence d'un horodatage.
+
+**LE REMEDE EVIDENT CASSE L'OCEAN, ET J'AVAIS ECRIT POURQUOI UNE HEURE PLUS
+TOT.** `SetMeshSectionVisible` n'appelle pas MarkRenderStateDirty
+(ProceduralMeshComponent.cpp:789) : **0,00 ms**, l'a-coup disparait. Mais la
+visibilite de section retire la geometrie de TOUTES les passes, celle de
+PROFONDEUR comprise -- donc la nappe cesse de nourrir le plugin Water.
+Signale des la premiere traversee : « avant j'avais de l'eau dans l'arche et
+maintenant elle est coupee ». Mon propre commentaire, dans ce meme fichier,
+annoncait que la masquer entierement « ferait cesser l'ocean de se dessiner
+sans le moindre avertissement ». **Echanger un a-coup contre un ocean coupe est
+un mauvais marche**, et relire ses propres avertissements avant d'essayer un
+autre outil aurait coute moins cher.
+
+**LE MONTAGE JUSTE : DEUX NAPPES.** Une pour l'EAU -- drapeaux poses une fois,
+jamais touches, cout nul par construction -- et une pour l'IMAGE, decimee un
+sommet sur quatre, basculee par visibilite de section. On ne peut pas les
+dupliquer a l'identique : un `FProcMeshVertex` pese de l'ordre de cent
+cinquante octets, donc une nappe pleine depasse le gigaoctet en copie
+processeur. `GetTerrainPrimitives` etant deja surcharge, seule celle de l'eau
+y figure.
+
+**ET LA SEPARATION DEBLOQUE CE QU'AUCUN REGLAGE NE POUVAIT.** La nappe de
+l'image, ne nourrissant plus rien, peut etre ENFONCEE -- ce qui etait interdit
+tant qu'une seule servait les deux, l'eau croyant alors pouvoir monter d'autant.
+**L'ENFONCEMENT SE DEDUIT, IL NE SE CHOISIT PAS** : le voxel ne creuse que dans
+`bandeM` sous la surface, donc un decor pose sous cette bande ne peut boucher
+aucune ouverture, ou qu'on soit.
+
+**UN GAIN NON PREVU, ET IL EST GROS.** La passe principale ne dessine plus que
+2 097 152 sommets de decor au lieu de 8 388 608 ; celle de l'eau n'est plus que
+dans la passe de PROFONDEUR, qui n'execute pas le materiau. Releve en jeu :
+**4,92 ms de trame, pire 6,83, 203 images par seconde**. Separer deux
+responsabilites a retire les trois quarts du decor de la passe la plus chere.
+
+**CORRIGER UN DEFAUT EN REVELE PARFOIS UN AUTRE QU'IL MASQUAIT.** L'a-coup
+cachait une apparition brutale du fond a la sortie de l'arche : le gel de
+520 ms la recouvrait. Une fois la bascule gratuite, elle s'est vue. Elle a
+disparu d'elle-meme en passant le decor sous la bande creusable -- il n'y a
+plus rien a faire apparaitre.
+
+**ECARTE, POUR QU'ON NE LE RETENTE PAS** : decouper la nappe en sections et
+cacher celles du champ proche. `FProceduralMeshSceneProxy::GetDynamicMeshElements`
+**n'elimine PAS les sections hors champ** -- il emet un lot de dessin pour
+chaque section visible, a chaque trame. Et les sections doivent tenir dans le
+rayon de chargement pour ne pas laisser de trou a l'horizon : 850 m a 1200 m de
+vue, soit 2775 sections, donc 2775 appels de dessin permanents.
+
+**CE QUI RESTE OUVERT, DIT FRANCHEMENT** : a la limite du terrain detaille, le
+sol qu'on voit tombe de 125 m d'un coup -- un anneau de falaise centre sur le
+joueur, a 1200 m, qui le suit. Regarde depuis un sommet, rien de visible : le
+relief lointain se lit comme du relief lointain, et la bande de transition
+tombait sous la couche nuageuse. Ce n'est PAS une certitude pour toutes les
+conditions. `-WorldseedNappeVue=<metres>` recule l'enfoncement sans recompiler.
+L'autre levier, non employe, serait de porter la vue a 2400 m : la marche
+resterait haute mais deux fois plus loin, pour douze pour cent de chunks en
+plus -- chiffre deja mesure dans ce registre.
