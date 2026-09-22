@@ -6877,3 +6877,151 @@ qu'on espere d'accord.
   pire TRAME relevee (6,12 ms), mais a surveiller.
 - **Les jointures n'ont pas ete regardees** depuis l'equilibrage corrige. Une
   forme qui n'a pas ete vue n'est pas validee.
+
+### Le plancher de 4 ms : c'est Lumen, pas la geometrie (22 septembre 2026)
+
+Suite de la session. Le banc disait « GPU 3,4 ms » sans dire ou, et la mesure
+de la veille avait etabli que ce cout ne vient PAS du terrain -- trente chunks
+et 62 000 triangles rendent encore 3,38 ms contre 3,47 pour deux mille quatre
+cents chunks et trois millions de triangles.
+
+**L'OUTIL : `ProfileGPU` ECRIT DANS LE JOURNAL.** RHI, `GPUProfiler.cpp:2199`,
+derriere `WITH_PROFILEGPU` -- actif en Development, absent du build final. Il
+est donc utilisable SANS editeur, ce qui est la condition pour mesurer ici. Le
+banc le declenche par `-WorldseedProfilGPU`, APRES la stabilisation et apres la
+fenetre de mesure : lance pendant le remplissage, il capturerait une trame ou
+le streaming travaille encore.
+
+**DEUX PIEGES DE BRANCHEMENT**, payes tous les deux : la capture se declenche a
+la trame SUIVANTE et son vidage est asynchrone -- quitter aussitot rend un
+journal sans ventilation ; et `IsTickable` rendait `bArme || bEnCours`, tous
+deux faux apres `Conclure`, donc l'attente ne s'ecoulait jamais.
+
+#### La ventilation
+
+GPU total 3,51 ms, monde 4096x2048, vue 1200 m, ciel d'inspection :
+
+    Lumen (DiffuseIndirectAndAO + LumenSceneLighting)   1,02 ms   29 %
+    ombres (ShadowDepths + VSM non-Nanite)              0,63      18 %
+    eau (SingleLayerWater + son prepass)                0,57      16 %
+    post-traitement (dont TSR 0,31)                     0,54      15 %
+    eclairage differe                                   0,39      11 %
+    RayTracingScene + build                             0,26       7 %
+    BasePass -- le dessin de la scene                   0,17       5 %
+
+**LE DESSIN DE LA GEOMETRIE COUTE CINQ POUR CENT.**
+
+#### UN A/B QUI MUTE UN ETAT PERSISTANT N'EST PAS UN A/B
+
+**LA FAUTE LA PLUS COUTEUSE DE CETTE SEANCE, et elle a invalide six mesures.**
+`Scalability::SetQualityLevels` et les cvars `sg.*` sont SAUVEGARDES a la
+fermeture dans `Saved/Config/<Plateforme>/GameUserSettings.ini`. Une passe de
+balayage qui pose `sg.EffectsQuality 0` le laisse donc en place pour TOUTES
+les suivantes.
+
+Constate en lisant le fichier apres coup :
+
+    sg.ResolutionQuality=0    sg.ViewDistanceQuality=0   sg.AntiAliasingQuality=0
+    sg.ShadowQuality=0        sg.PostProcessQuality=0    sg.TextureQuality=0
+    sg.EffectsQuality=0       sg.FoliageQuality=0        sg.ShadingQuality=0
+    sg.GlobalIlluminationQuality=1   sg.ReflectionQuality=1
+
+Les neuf zeros venaient d'une passe « tout au minimum » lancee bien avant. Les
+mesures qui ont suivi, presentees comme « seul le groupe GI baisse », tournaient
+en realite avec HUIT AUTRES GROUPES au minimum. L'echelle annoncait alors
+3,34 ms au cran 1 et 2,22 au cran 0 ; les vrais chiffres sont 3,83 et 3,23.
+
+**C'est exactement le piege deja ecrit pour `world_rules.json`**, sous une autre
+forme : la ou une boucle de mesure avait VIDE le fichier de regles en etant
+interrompue, ici elle l'a rempli sans le dire. La regle se generalise donc :
+**un balayage doit remettre a zero l'etat persistant entre chaque passe**, et
+pas seulement s'abstenir d'editer des fichiers. `Tools` : supprimer
+`GameUserSettings.ini` avant chaque lancement.
+
+**LE SIGNE QUI AURAIT DU ALERTER, et il etait sous les yeux** : le sous-systeme
+declare INERTE rendait quand meme 3,36 ms la ou la reference en donnait 4,34.
+Un reglage eteint qui deplace la mesure ne peut signifier qu'une chose --
+quelque chose d'autre a change et n'a pas ete remis.
+
+#### L'echelle, mesuree PROPREMENT
+
+Cinq passes, `GameUserSettings.ini` supprime avant chacune, tout le reste egal :
+
+    niveau                         trame    images/s   GPU    ecart
+    reference (rien applique)      4,38 ms     228     3,47     --
+    3 Epique, pose explicitement   4,29        233     3,45   -0,09   <- temoin
+    2 Haut                         4,29        233     3,35   -0,09
+    1 Moyen                        3,83        261     2,91   -0,55
+    0 Bas (plus de Lumen)          3,23        310     2,64   -1,15
+
+**LUMEN COUTE 1,15 ms SUR 4,38, soit vingt-six pour cent de la trame** -- et non
+la moitie, comme la mesure contaminee le laissait croire.
+
+Le TEMOIN est la ligne du cran 3 : appliquer explicitement le niveau que le
+moteur avait deja ne deplace rien (0,09 ms, la variation d'une execution a
+l'autre). Sans elle, on ne saurait pas distinguer l'effet du reglage de l'effet
+du sous-systeme lui-meme.
+
+**ET LA TRAME SUIT LE GPU, contrairement a ce que j'avais conclu.** 3,47 ->
+2,64 de GPU pour 4,38 -> 3,23 de trame : les deux bougent ensemble. Mon « la
+trame n'est pas limitee par le GPU » reposait sur la passe `eau-off`, qui etait
+justement contaminee. Ce qui reste etabli, en revanche, c'est que le NOMBRE DE
+CHUNKS n'y change rien : trente chunks au lieu de deux mille trois cent
+quarante-six ne rendent que huit pour cent.
+
+#### DEUX INTERRUPTEURS POUR LA MEME CHOSE, ET ILS NE COUPENT PAS PAREIL
+
+`r.Lumen.DiffuseIndirect.Allow 0` rend **0,15 ms**.
+`sg.GlobalIlluminationQuality 0` rend **1,15 ms**. Un facteur huit.
+
+Le cvar n'arrete que le rassemblement final ; la SCENE Lumen -- cache de
+surface, cartes, capture -- et le lancer de rayons materiel continuent de
+tourner. Le groupe de qualite, lui, coupe l'ensemble. **Avoir coupe « Lumen » ne
+dit donc rien tant qu'on n'a pas dit PAR QUEL interrupteur** : j'ai d'abord
+conclu que Lumen etait marginal sur la foi du premier.
+
+#### Ce que coute le cran 0, mesure a l'image
+
+Deux captures au meme point, ciel fige, seul le reglage change :
+
+    sable, tiers bas    avec Lumen L=169,4    sans L=206,1    +36,7
+    sable, mi-hauteur   avec Lumen L=160,2    sans L=198,3    +38,1
+    ciel                avec Lumen L=125,6    sans L=110,9    -14,7
+
+**LE SABLE ET LE CIEL BOUGENT EN SENS OPPOSES, et c'est ce qui prouve que ce
+n'est pas une derive d'exposition** -- celle-ci les deplacerait ensemble. Le sol
+perd reellement son occlusion ambiante et se delave de vingt-deux pour cent ;
+l'auto-exposition assombrit le ciel pour compenser. L'eau perd aussi ses
+reflexions.
+
+#### DECISION DU PROPRIETAIRE : ON NE CHANGE RIEN
+
+4,38 ms pour un budget de 16,67, soit vingt-six pour cent : il n'y a pas de
+probleme a resoudre. Et la scene qui justifie Lumen -- une foret, une grotte,
+des materiaux -- **n'existe pas encore** : ce monde n'est ni texture ni
+vegetalise. Trancher sur une dune nue reviendrait a juger une fonction sur le
+cas ou elle sert le moins.
+
+`UWorldseedQualiteRendu` reste, ETEINT (`NiveauParDefaut = INDEX_NONE`), pour
+deux raisons : il porte la mesure ci-dessus, qui serait autrement a refaire, et
+il est la couture ou un menu d'affichage viendra se brancher -- il appellera
+`Appliquer`, et rien d'autre n'aura a changer. `-WorldseedQualite=<0..4>`
+l'arme pour un A/B sans recompiler.
+
+**POURQUOI PAS UN CVAR DANS UN .INI** : les groupes `sg.*` sont precisement ce
+que le systeme de qualite REECRIT -- au demarrage, a la detection materielle, et
+a chaque application des reglages joueur. Un `sg.` pose dans
+`[ConsoleVariables]` serait ecrase sans prevenir, et l'on chercherait longtemps
+pourquoi le reglage « ne prend pas ». On passe par `Scalability::SetQualityLevels`,
+qui est ce que le systeme lit.
+
+**ET L'ON NE DEPLACE QUE DEUX GROUPES.** `SetFromSingleQualityLevel` les
+ecraserait tous les huit, y compris les six que la mesure declare sans
+interet -- c'est exactement ce qu'un reglage global fait sans le dire.
+
+#### A SUIVRE
+
+Le vrai consommateur du budget n'est pas encore la : la vegetation, qui n'a pas
+ete portee au monde voxel. Le registre parle de douze millions neuf cent mille
+instances pour le monde entier. C'est a ce moment-la que cette ventilation
+servira -- et c'est pourquoi elle est ecrite ici plutot que refaite alors.
