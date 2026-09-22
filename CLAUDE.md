@@ -7796,3 +7796,44 @@ n'ouvre un fichier.
 - **Outillage** : `-WorldseedNormales=0/1`, `-WorldseedPerp=0/1`,
   `-WorldseedDetailOctaves=` pour rejouer chaque ligne du tableau sans
   recompiler.
+
+#### Les terrasses ne sont PAS les bancs -- et les bancs, eux, ne se voient pas
+
+Question du proprietaire, et elle etait la bonne a poser : « ces strates ne
+sont-elles pas normales et dues a la stratification des differents types de
+roche et de la couleur de texture qui leur est attribuee ? » Le doute etait
+d'autant plus fonde qu'une session precedente avait DEJA trouve un cotele de
+couleur a cet endroit exact du code -- « LE COTELE DU MONDE VENAIT D'ICI » --
+corrige depuis par une marge egale a l'amplitude du deplacement.
+
+**TROIS MESURES INDEPENDANTES DISENT NON**, et elles ne peuvent pas toutes se
+tromper dans le meme sens :
+
+    sans eclairage (ShowFlag.Lighting 0)   la paroi est un gris UNIFORME
+    teinte de roche COUPEE                 les terrasses sont IDENTIQUES
+    voxel porte a 2 m                      l'ondulation passe de 1,49 a 6,63
+
+La premiere suffirait : une bande de COULEUR survit a l'extinction des lumieres,
+c'est meme ainsi que la session precedente avait nomme la sienne. La troisieme
+ferme la porte autrement : un banc sedimentaire fait dix-huit a trente-cinq
+metres d'epaisseur, une grandeur METRIQUE qui ne peut pas doubler parce qu'on a
+double le voxel.
+
+**MAIS LA QUESTION EN A OUVERT UNE VRAIE.** La teinte de roche change 96,5 % des
+pixels de cette vue -- elle peint donc bel et bien la paroi -- et pourtant, sans
+eclairage, cette paroi est d'UNE SEULE COULEUR. Le code lit la serie
+(`WorldseedStrata::BancAt`), attribue une teinte par roche, et son commentaire
+promet « exactement ce qui donne au Grand Canyon ses rayures : les bancs durs
+font les corniches, les tendres les talus, et chacun a sa couleur ».
+
+**Ces rayures ne sont pas la.** La stratigraphie est calculee, elle coute dans
+l'erosion et dans le sapement, elle est lue par la peinture des sommets -- et
+elle n'atteint pas l'ecran. Piste la plus probable, NON VERIFIEE : `Profondeur`
+se mesure contre la surface MACRO a l'aplomb du sommet, or sur une paroi le
+sommet EST la surface a son propre aplomb, donc la profondeur y vaut zero et la
+teinte de roche ne mord jamais -- elle ne sert qu'aux cavites et aux
+dessous de surplomb.
+
+Le registre avait deja ecrit, le 19 septembre : « Rien n'a ete REGARDE depuis la
+stratigraphie. Les parois rayees sont branchees et compilent ; elles n'ont pas
+ete photographiees. » Elles le sont maintenant, et elles ne rayent rien.
