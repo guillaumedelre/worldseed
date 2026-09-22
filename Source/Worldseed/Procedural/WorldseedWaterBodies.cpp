@@ -4,6 +4,7 @@
 
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "HAL/IConsoleManager.h"
 
 
 
@@ -385,20 +386,55 @@ namespace WorldseedWaterBodies
 		// `world_rules.json` un soir. `-WorldseedEauFenetre=<km>` compare sur
 		// le MEME binaire et le MEME monde, et sert ensuite a regler sans
 		// recompiler.
-		float FenetreKm = 12.288f;
+		// --- LE PLAFOND DE TUILES SE LEVE ICI, PAS DANS UN INI ---------------
+		//
+		// `r.Water.WaterMesh.MaxDimensionInTiles` vaut 256 par defaut, et c'est
+		// LUI qui bornait la fenetre a 12,288 km. Le porter a 512 double la
+		// portee de l'eau detaillee -- 24,576 km, bord a 12,3 km au lieu de
+		// 6,1.
+		//
+		// LES DEUX VALEURS NE PEUVENT PAS VIVRE SEPAREMENT. Une fenetre plus
+		// large qu'un plafond inchange ne rend pas une erreur : le moteur
+		// DIVISE la taille de tuile jusqu'a rentrer (WaterMeshComponent.cpp:601)
+		// et le rivage devient deux fois plus grossier, en silence. Les poser
+		// cote a cote, dans le meme fichier et a la meme ligne de raisonnement,
+		// est la seule facon d'empecher qu'elles derivent l'une de l'autre --
+		// et c'est exactement ce que ce depot a paye en posant jadis
+		// `MaxWidthInTiles` dans un ini, nom qui n'existe pas et ligne qui
+		// n'etait pas la.
+		//
+		// CE QUE CELA COUTE, ET IL FAUT LE DIRE : quatre fois les tuiles du
+		// quadtree. La documentation d'Epic previent -- « Having too many tiles
+		// can create very large GPU allocations ». Et la texture d'info, a
+		// nombre de texels constant, s'etale sur deux fois la distance : 3,0 ->
+		// 6,0 m par texel. C'est le rivage qu'on echange contre l'horizon.
+		if (IConsoleVariable* const Plafond = IConsoleManager::Get()
+				.FindConsoleVariable(TEXT("r.Water.WaterMesh.MaxDimensionInTiles")))
+		{
+			if (Plafond->GetInt() < 512)
+			{
+				Plafond->Set(512, ECVF_SetByCode);
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed] eau : plafond de tuiles porte a 512 ")
+					TEXT("(defaut 256) -- sans quoi la fenetre serait ramenee a 12,288 km"));
+			}
+		}
+
+		float FenetreKm = 24.576f;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedEauFenetre="), FenetreKm))
 		{
 			FenetreKm = FMath::Clamp(FenetreKm, 0.5f, 24.576f);
 
-			// ON PREVIENT AU LIEU DE BORNER EN SILENCE. Au-dela de 12,288 km le
-			// moteur ne refuse pas : il DIVISE la taille de tuile, et le rivage
-			// devient deux fois plus grossier sans que rien d'autre ne change.
-			// Un essai fait la sans le savoir conclurait a l'envers.
+			// ON PREVIENT AU LIEU DE BORNER EN SILENCE. Au-dela du plafond de
+			// tuiles le moteur ne refuse pas : il DIVISE la taille de tuile, et
+			// le rivage devient deux fois plus grossier sans que rien d'autre
+			// ne change. Un essai fait la sans le savoir conclurait a l'envers.
+			// Le plafond etant desormais a 512, la borne est 24,576 km.
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Worldseed] eau : fenetre imposee a %.3f km par la ligne de commande%s"),
 				FenetreKm,
-				FenetreKm > 12.288f
-					? TEXT(" -- AU-DELA DU PLAFOND DE 256 TUILES, le moteur va diviser la taille de tuile")
+				FenetreKm > 24.576f
+					? TEXT(" -- AU-DELA DU PLAFOND DE 512 TUILES, le moteur va diviser la taille de tuile")
 					: TEXT(""));
 		}
 		const float LocalWindowCm = FenetreKm * 100000.0f;
