@@ -14,6 +14,7 @@
 #include "Styling/CoreStyle.h"
 #include "EngineUtils.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -53,23 +54,35 @@ namespace WorldseedFps
 	constexpr float BudgetMs = 1000.0f / 60.0f;
 
 	/**
-	 * LA MARGE, CALEE SUR LA PILE DU MOTEUR. Celle-ci commence a
-	 * MessageStartY = GIsEditor ? 45 : 100 (UnrealEngine.cpp:13615-13624).
-	 * Une ligne de 13 points fait environ 18 pixels : posee a 6, elle se
-	 * termine vers 24, donc bien au-dessus du releve meteo dans les deux cas.
+	 * LE RELEVE EST ANCRE EN BAS, ET C'EST UNE CORRECTION.
+	 *
+	 * IL ETAIT EN HAUT A GAUCHE, ET LE MOTEUR ECRIT PAR-DESSUS. Sa pile de
+	 * messages d'ecran part de `MessageStartY = GIsEditor ? 45 : 100` a
+	 * `MessageX = 40`, par lignes de 20 pixels (UnrealEngine.cpp:13619-13625),
+	 * et elle DESCEND. Le raisonnement d'origine -- « une ligne de 13 points
+	 * fait environ 18 pixels : posee a 6, elle se termine vers 24, donc bien
+	 * au-dessus » -- etait juste pour le COMPTEUR, qui fait une ligne. Il
+	 * oubliait le RELEVE, second bloc pose juste dessous, qui en fait six et
+	 * descend donc jusque vers 130 : il traverse les deux seuils.
+	 *
+	 * Constate a l'image : l'avertissement du VSM recouvrait exactement la
+	 * ligne des chunks, qui devenait illisible.
+	 *
+	 * ANCRER EN BAS PLUTOT QU'AJOUTER UNE MARGE EN HAUT, parce que la pile du
+	 * moteur GRANDIT : toute marge calculee pour N messages est fausse a N+1.
+	 * En bas, le bloc grandit vers le HAUT et la pile vers le BAS -- il
+	 * faudrait une quarantaine de messages simultanes pour qu'ils se
+	 * rejoignent.
+	 *
+	 * ET L'ON NE MASQUE PAS LES MESSAGES DU MOTEUR pour regler cela.
+	 * `r.Shadow.Virtual.AllowScreenOverflowMessages=0` en cacherait QUATRE,
+	 * dont `PagePool` et `VisibleInstances` qui signalent de VRAIS artefacts
+	 * -- on perdrait un avertissement utile pour en cacher un inoffensif
+	 * (mesure du 22 septembre : le debordement de marquage coute au plus
+	 * 0,29 ms sur un budget de 16,67).
 	 */
 	constexpr float MargeXPx = 10.0f;
 	constexpr float MargeYPx = 6.0f;
-
-	/**
-	 * Hauteur d'une ligne du compteur, en pixels.
-	 *
-	 * POSEE ET NON MESUREE, et c'est delibere : demander sa taille a un widget
-	 * Slate exige qu'il ait ete mis en page, ce qui n'est pas vrai a la
-	 * construction. Une constante calee sur la police de 13 tient le releve
-	 * juste dessous sans dependre de l'ordre des passes de mise en page.
-	 */
-	constexpr float HauteurLignePx = 19.0f;
 
 	/** Au-dessus de toute UI de jeu : c'est un outil de debug. */
 	constexpr int32 ZOrdre = 1000;
@@ -173,50 +186,62 @@ void UWorldseedFpsOverlay::Construire()
 		return;
 	}
 
+	// UN SEUL ANCRAGE, ET UNE BOITE VERTICALE DEDANS.
+	//
+	// LES DEUX BLOCS CALCULAIENT CHACUN SON DECALAGE DEPUIS LE HAUT, le second
+	// devant connaitre la hauteur de ligne du premier pour se poser dessous.
+	// Deux constantes devaient rester d'accord, et rien ne le verifiait :
+	// changer la police du compteur decalait le releve sans que personne ne le
+	// voie. Une boite verticale empile ses enfants elle-meme -- c'est son
+	// travail, et la constante `HauteurLignePx` a disparu avec le probleme.
 	TSharedRef<SWidget> Construit =
 		SNew(SOverlay)
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Left)
-		.VAlign(VAlign_Top)
-		.Padding(FMargin(WorldseedFps::MargeXPx, WorldseedFps::MargeYPx, 0.0f, 0.0f))
+		.VAlign(VAlign_Bottom)
+		.Padding(FMargin(WorldseedFps::MargeXPx, 0.0f, 0.0f, WorldseedFps::MargeYPx))
 		[
-			SAssignNew(Texte, STextBlock)
-			// UNE POLICE A CHASSE FIXE, PARCE QUE LES CHIFFRES CHANGENT. En
-			// police proportionnelle, un 1 est plus etroit qu'un 8 : le label
-			// tressaute a chaque republication et devient penible a lire.
-			// Mono ne bouge pas.
-			.Font(FCoreStyle::GetDefaultFontStyle("Mono", 13))
-			// UNE OMBRE PLUTOT QU'UN FOND OPAQUE. Un texte blanc est illisible
-			// sur un desert en plein jour ; un fond masquerait le monde. Le
-			// moteur fait exactement cela pour ses propres messages
-			// (SmallTextItem.EnableShadow).
-			.ShadowOffset(FVector2D(1.0f, 1.0f))
-			.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
-			.Text(FText::FromString(TEXT("-- FPS")))
-		]
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(Texte, STextBlock)
+				// UNE POLICE A CHASSE FIXE, PARCE QUE LES CHIFFRES CHANGENT.
+				// En police proportionnelle, un 1 est plus etroit qu'un 8 : le
+				// label tressaute a chaque republication et devient penible a
+				// lire. Mono ne bouge pas.
+				.Font(FCoreStyle::GetDefaultFontStyle("Mono", 13))
+				// UNE OMBRE PLUTOT QU'UN FOND OPAQUE. Un texte blanc est
+				// illisible sur un desert en plein jour ; un fond masquerait le
+				// monde. Le moteur fait exactement cela pour ses propres
+				// messages (SmallTextItem.EnableShadow).
+				.ShadowOffset(FVector2D(1.0f, 1.0f))
+				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
+				.Text(FText::FromString(TEXT("-- FPS")))
+			]
 
-		// --- LE RELEVE DU MONDE, SOUS LE COMPTEUR ---------------------------
-		//
-		// UN SECOND BLOC ET NON DES LIGNES DANS LE PREMIER, parce que la
-		// COULEUR du compteur porte une information -- verte, ambre ou rouge
-		// selon le budget de trame. Fondre le releve dedans le peindrait en
-		// rouge chaque fois que la cadence chute, ce qui n'aurait aucun sens :
-		// une latitude n'est ni bonne ni mauvaise.
-		//
-		// Son decalage vertical est celui du compteur PLUS sa hauteur de
-		// ligne : il se pose dessous sans rien mesurer a l'execution.
-		+ SOverlay::Slot()
-		.HAlign(HAlign_Left)
-		.VAlign(VAlign_Top)
-		.Padding(FMargin(WorldseedFps::MargeXPx,
-			WorldseedFps::MargeYPx + WorldseedFps::HauteurLignePx, 0.0f, 0.0f))
-		[
-			SAssignNew(TexteMonde, STextBlock)
-			.Font(FCoreStyle::GetDefaultFontStyle("Mono", 12))
-			.ShadowOffset(FVector2D(1.0f, 1.0f))
-			.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
-			.ColorAndOpacity(FLinearColor(0.85f, 0.88f, 0.95f))
-			.Text(FText::GetEmpty())
+			// --- LE RELEVE DU MONDE, SOUS LE COMPTEUR -----------------------
+			//
+			// UN SECOND BLOC ET NON DES LIGNES DANS LE PREMIER, parce que la
+			// COULEUR du compteur porte une information -- verte, ambre ou
+			// rouge selon le budget de trame. Fondre le releve dedans le
+			// peindrait en rouge chaque fois que la cadence chute, ce qui
+			// n'aurait aucun sens : une latitude n'est ni bonne ni mauvaise.
+			//
+			// IL NE CALCULE PLUS SON DECALAGE : la boite verticale l'empile
+			// sous le compteur. C'est elle qui connait la hauteur reelle du
+			// premier bloc, et elle la connait APRES la mise en page -- ce
+			// qu'une constante posee a la construction ne pouvait pas faire.
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(TexteMonde, STextBlock)
+				.Font(FCoreStyle::GetDefaultFontStyle("Mono", 12))
+				.ShadowOffset(FVector2D(1.0f, 1.0f))
+				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
+				.ColorAndOpacity(FLinearColor(0.85f, 0.88f, 0.95f))
+				.Text(FText::GetEmpty())
+			]
 		];
 
 	// LE LABEL NE DOIT PAS MANGER LES CLICS. Le conteneur couvre tout l'ecran ;
