@@ -307,6 +307,49 @@ void WorldseedPlateau::Sites(const FWorldseedGeometry& Geometry,
 		S.CentreM = FVector2D(X, Y);
 		S.AltitudeM = ElevationM[K.C];
 		S.EscarpementM = K.Relief;
+
+		// --- DE QUEL COTE LA TABLE TOMBE ------------------------------------
+		//
+		// ELLE NE LE DISAIT PAS, ET LA TOURNEE PHOTO EN A PAYE LE PRIX. Le
+		// champ `VersLeBas` n'etait rempli QUE pour les canyons ; les tables le
+		// laissaient a zero. Le photographe se rabattait donc sur un cap fixe,
+		// le meme pour toutes les tables du monde, et posait la camera du
+		// mauvais cote une fois sur deux -- elle remontait alors sur le
+		// plateau, et l'on photographiait le DESSUS de la table en croyant
+		// cadrer sa paroi. Mesure : « sommet 222 m, paroi 200 m » annonces,
+		// une pente de dune a l'image.
+		//
+		// Le registre attribuait ce manque a la distance de vue. C'etait une
+		// explication plausible, et elle etait fausse deux fois : ni la
+		// distance, ni meme le cadrage -- c'est la DONNEE qui manquait.
+		//
+		// LA PORTEE N'EST PAS CELLE D'UN CANYON. Un fond de gorge se lit sur
+		// deux cellules ; une table est une BUTTE dont le rebord est a
+		// `ReachM` du sommet. On cherche donc la plus forte chute sur ce
+		// rayon-la, converti en cellules, sans quoi l'on rendrait la pente du
+		// plateau lui-meme -- presque plate, donc une direction sans rapport
+		// avec la paroi.
+		{
+			const double MailleM = FMath::Max(LargeurM / FMath::Max(NX, 1), 1.0);
+			const int32 Portee = FMath::Clamp(
+				FMath::RoundToInt(Rules.ReachM / MailleM), 2, 16);
+
+			float Chute = 0.0f;
+			FIntPoint Vers = FIntPoint::ZeroValue;
+			for (int32 DJ = -Portee; DJ <= Portee; ++DJ)
+			{
+				const int32 JV = J + DJ;
+				if (JV < 0 || JV >= NY) { continue; }
+				for (int32 DI = -Portee; DI <= Portee; ++DI)
+				{
+					const int32 V = JV * NX + (((I + DI) % NX + NX) % NX);
+					const float D = ElevationM[K.C] - ElevationM[V];
+					if (D > Chute) { Chute = D; Vers = FIntPoint(DI, DJ); }
+				}
+			}
+			S.VersLeBas = FVector2D(Vers.X, Vers.Y).GetSafeNormal();
+		}
+
 		OutSites.Add(S);
 	}
 
@@ -434,7 +477,8 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 	const FWorldseedFinRules& FinRules,
 	const FWorldseedStratRules& StratRules, int32 Seed,
 	TArray<float>& ElevationM,
-	TArray<FWorldseedPlateauSite>* OutSites)
+	TArray<FWorldseedPlateauSite>* OutSites,
+	TArray<FWorldseedPlateauSite>* OutCanyons)
 {
 	WORLDSEED_TRACE(Plateaux);
 
@@ -661,10 +705,13 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 		}
 	}
 
+	// LES CANYONS SORTENT AVEC LES TABLES, et ce sont les deux faces d-un meme
+	// objet -- ce qui reste, et ce qui a ete enleve. `Sites` les produisait deja
+	// et les journalisait sous le nom de PAROIS ; seul l-appelant les jetait.
 	if (OutSites)
 	{
 		Sites(Geometry, ElevationM, Rules, Lithology, LithoRules, PrecipMm,
-			TempMeanC, Seed, *OutSites);
+			TempMeanC, Seed, *OutSites, OutCanyons);
 	}
 
 	// LE RELEVE PORTE LA PART EN ZONE, ET PAS SEULEMENT LES CELLULES TOUCHEES.

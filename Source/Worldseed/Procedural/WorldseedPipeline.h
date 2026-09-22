@@ -92,6 +92,20 @@ namespace WorldseedPipeline
 		 */
 		TArray<FWorldseedPlateauSite> Tables;
 
+		/**
+		 * Les fonds de canyon, l'AUTRE face du meme objet.
+		 *
+		 * `Sites` les produisait deja et les journalisait sous le nom de
+		 * PAROIS -- seul l'appelant les jetait. Une table est ce qui RESTE, un
+		 * canyon ce qui a ete ENLEVE : les offrir tous deux au menu est la
+		 * moindre des choses, puisque la passe les designe ensemble.
+		 *
+		 * `AltitudeM` y designe le FOND, pas le sommet, et `VersLeBas` la
+		 * direction de la plus forte chute : c'est ce qui permet de se placer
+		 * du bon cote d'une paroi.
+		 */
+		TArray<FWorldseedPlateauSite> Canyons;
+
 		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
 		bool bFromCache = false;
 

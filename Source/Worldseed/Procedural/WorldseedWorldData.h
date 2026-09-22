@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedTexturePack.h"
@@ -121,6 +122,24 @@ struct WORLDSEED_API FWorldseedWorldData
 	 * sentinelle : (0, 0) est un point parfaitement valide de cette carte.
 	 */
 	bool bHasSpawn = false;
+
+	/**
+	 * Les tables et les canyons, PORTES et non recalcules.
+	 *
+	 * ILS NE SE SERIALISENT PAS -- le cache n'en ecrit pas un octet -- mais ils
+	 * voyagent avec le monde en memoire, et c'est tout l'objet. `Sites` est une
+	 * fonction pure du relief fini : la rejouer donne exactement le meme
+	 * resultat, et elle coute **2,8 secondes** sur la grille du jeu.
+	 *
+	 * ELLE ETAIT JOUEE DEUX FOIS, et c'est ce qui a fait ecrire ces deux
+	 * champs : une fois par la chaine -- qui en a besoin pour la liste des
+	 * lieux du menu -- et une fois par l'acteur voxel, qui les recalculait pour
+	 * son propre compte. Le journal montrait les deux blocs identiques a la
+	 * suite. Les porter coute quelques centaines d'octets en memoire et rend
+	 * ces 2,8 secondes au chargement.
+	 */
+	TArray<FWorldseedPlateauSite> Tables;
+	TArray<FWorldseedPlateauSite> Canyons;
 
 	int32 CellCount() const { return Geometry.CellCount(); }
 

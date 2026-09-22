@@ -290,6 +290,8 @@ bool AWorldseedTerrain::AcquireWorld()
 		Bati.SeasonalAmpC = MoveTemp(World.Climate.SeasonalAmpC);
 		Bati.Continentality = MoveTemp(World.Climate.Continentality);
 		Bati.Biomes = MoveTemp(World.Biomes);
+		Bati.Tables = MoveTemp(World.Tables);
+		Bati.Canyons = MoveTemp(World.Canyons);
 
 		Monde = MakeShared<const FWorldseedWorldData, ESPMode::ThreadSafe>(MoveTemp(Bati));
 	}

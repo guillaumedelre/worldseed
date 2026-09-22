@@ -148,7 +148,7 @@ namespace WorldseedPipeline
 		// 12 982 ms, et le mot « cache » laissait croire a un simple chargement.
 		// Cette branche REJOUE quatre passes derivees, et sans chrono par passe
 		// on ne peut que supposer laquelle coute -- ce que ce depot s'interdit.
-		double TLoad = 0.0, TBiomes = 0.0, TChamps = 0.0, TGrottes = 0.0;
+		double TLoad = 0.0, TBiomes = 0.0, TChamps = 0.0, TGrottes = 0.0, TSites = 0.0;
 		const double TAvantLoad = FPlatformTime::Seconds();
 
 		FWorldseedWorldData Cached;
@@ -240,6 +240,33 @@ namespace WorldseedPipeline
 					}
 					TGrottes = (FPlatformTime::Seconds() - TC) * 1000.0;
 
+					// --- LES TABLES ET LES CANYONS, QUI MANQUAIENT ICI ------
+					//
+					// DEFAUT TROUVE EN VOULANT LES OFFRIR AU MENU : `Sites`
+					// n'etait appele que depuis `Build`, donc sur le seul
+					// chemin de GENERATION. Des la seconde partie -- c'est-a-
+					// dire presque toujours -- le monde venait du cache et la
+					// liste des lieux perdait ses tables, sans que rien ne le
+					// dise. Le journal l'avouait pourtant : « 0 tables
+					// produits ».
+					//
+					// ELLES NE SE SERIALISENT PAS, ET C'EST LE BON CHOIX.
+					// `Sites` est une fonction PURE du relief fini, des regles
+					// et de la graine ; la transporter doublerait une donnee
+					// qu'on sait refaire. C'est le meme raisonnement qui vaut
+					// pour le reseau de cavites -- sauf que celui-ci coutait
+					// onze secondes, ce qui a fini par le faire serialiser.
+					// Le cout de celle-ci est mesure et journalise ci-dessous
+					// pour qu'on puisse trancher pareil le jour ou il gene.
+					const double TS = FPlatformTime::Seconds();
+					WorldseedPlateau::Sites(Geometry, Out.ElevationM,
+						FWorldseedPlateauRules::FromRules(*BioRules),
+						Out.Lithology,
+						FWorldseedLithologyRules::FromRules(*BioRules),
+						Out.Climate.PrecipMm, Out.Climate.TempMeanC,
+						Seed, Out.Tables, &Out.Canyons);
+					TSites = (FPlatformTime::Seconds() - TS) * 1000.0;
+
 					// LE RELEVE VIENT ICI ET NULLE PART AILLEURS : c'est la seule
 					// place ou TOUTES les cles ont ete demandees. Pose plus haut,
 					// il ne voyait rien de ce que la classification et les champs
@@ -257,9 +284,9 @@ namespace WorldseedPipeline
 			// ce qui est LU tient dans `lecture`, tout le reste est RECALCULE.
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] monde repris du cache : seed=%d  %dx%d  (%.0f ms) ")
-				TEXT("-- lecture %.0f, biomes %.0f, champs %.0f, GROTTES %.0f ms"),
+				TEXT("-- lecture %.0f, biomes %.0f, champs %.0f, GROTTES %.0f, sites %.0f ms"),
 				Seed, Geometry.NX, Geometry.NY, TTotal,
-				TLoad, TBiomes, TChamps, TGrottes);
+				TLoad, TBiomes, TChamps, TGrottes, TSites);
 			return true;
 		}
 
@@ -505,7 +532,7 @@ namespace WorldseedPipeline
 				FWorldseedFinRules::FromRules(*Rules),
 				FWorldseedStratRules::FromRules(*Rules,
 					FWorldseedLithologyRules::FromRules(*Rules)), Seed,
-				Out.ElevationM, &Out.Tables);
+				Out.ElevationM, &Out.Tables, &Out.Canyons);
 		}
 
 		// --- etape 4d : le sapement des corniches ------------------------------

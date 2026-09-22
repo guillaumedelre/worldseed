@@ -338,5 +338,6 @@ namespace WorldseedPlateau
 		const FWorldseedFinRules& FinRules,
 		const FWorldseedStratRules& StratRules, int32 Seed,
 		TArray<float>& ElevationM,
-		TArray<FWorldseedPlateauSite>* OutSites = nullptr);
+		TArray<FWorldseedPlateauSite>* OutSites = nullptr,
+		TArray<FWorldseedPlateauSite>* OutCanyons = nullptr);
 }

@@ -249,7 +249,29 @@ int32 UWorldseedPhotographe::AjouterLesTables(int32 Combien)
 		// 600 m, une mesa entiere tient dans la vue en voxel, et c'est la
 		// SILHOUETTE qui fait lire la forme -- un trait horizontal pose sur
 		// un socle.
-		E.DepuisM = FVector2D(0.82, 0.57);
+		// --- LA DIRECTION SE LIT SUR LE SITE, ELLE NE SE DEVINE PAS ---------
+		//
+		// IL Y AVAIT ICI UNE CONSTANTE, `FVector2D(0.82, 0.57)` -- un cap fixe,
+		// le meme pour toutes les tables du monde. Les trois autres familles
+		// calculent la leur : l'arche suit son axe de percement, le canyon et
+		// la falaise marine suivent `VersLeBas`. Les tables etaient la SEULE
+		// exception, et elles sont exactement la seule famille dont la vue ne
+		// montrait rien.
+		//
+		// MESURE : cible annoncee « sommet 222 m, paroi 200 m », image obtenue
+		// une pente de dune lisse, AUCUNE paroi. Le cap fixe posait la camera
+		// du mauvais cote ; la remontee qui sort de la roche en MONTANT
+		// l'amenait alors au sommet du plateau, et l'on photographiait le
+		// dessus de la table en croyant cadrer sa paroi.
+		//
+		// LE REGISTRE ATTRIBUAIT CE MANQUE A LA DISTANCE DE VUE -- « a 250 m de
+		// rayon, une table de plus d'un kilometre ne tient pas dans une vue ».
+		// C'etait une explication plausible, et elle etait FAUSSE : la donnee
+		// pour viser juste existait depuis le debut, dans le champ dont le
+		// commentaire dit lui-meme « ON SE PLACE DU COTE BAS, sinon on
+		// photographie le plateau et la paroi est DERRIERE la camera ».
+		E.DepuisM = S.VersLeBas.IsNearlyZero()
+			? FVector2D(0.82, 0.57) : S.VersLeBas;
 		E.DistanceM = 520.0f;
 
 		// Au PIED de la paroi, le regard vers le haut : c'est la seule position

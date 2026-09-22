@@ -1147,6 +1147,13 @@ void UWorldseedMenuWidget::PollGeneration()
 		CachedBiomes = MoveTemp(PendingResult->Biomes);
 		CachedLithologyId = MoveTemp(PendingResult->Lithology.Id);
 
+		// COPIES, PAS DEPLACES : `RemplirLieux` les relit trente lignes plus
+		// bas pour garnir la liste des lieux. Un MoveTemp ici la laisserait
+		// vide, et le menu n-offrirait plus ni table ni canyon -- sans erreur.
+		// Ils pesent quelques centaines d-octets : la copie est gratuite.
+		CachedTables = PendingResult->Tables;
+		CachedCanyons = PendingResult->Canyons;
+
 		// LA GEOMETRIE D'ABORD, ET C'EST PORTANT.
 		//
 		// `BakeGlobe` et `BuildPreviewField` commencent tous deux par
@@ -2032,6 +2039,8 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 		ToPlay.TexturePack = SelectedPack;
 		ToPlay.SpawnXYM = DepartXYM;
 		ToPlay.bHasSpawn = bDepartChoisi;
+		ToPlay.Tables = CachedTables;
+		ToPlay.Canyons = CachedCanyons;
 		GI->StoreWorld(ToPlay);
 
 		if (bDepartChoisi)
@@ -2387,12 +2396,39 @@ void UWorldseedMenuWidget::RemplirLieux(const WorldseedPipeline::FResult& Result
 		}
 	}
 
+	{
+		// LES CANYONS SONT L'AUTRE FACE DES TABLES -- ce qui a ete ENLEVE, quand
+		// la table est ce qui RESTE -- et la passe les designe ENSEMBLE. Les
+		// offrir separement serait arbitraire.
+		//
+		// ON VISE LE FOND, ET C'EST LA DIFFERENCE AVEC UNE TABLE. `AltitudeM`
+		// designe le sommet pour une table et le FOND pour un canyon : naitre
+		// au fond d'une gorge, c'est avoir la paroi devant soi, ce qu'on est
+		// precisement venu voir. Sur une table, on nait sur le plateau et la
+		// paroi est sous les pieds.
+		TArray<const FWorldseedPlateauSite*> Tri;
+		for (const FWorldseedPlateauSite& C : Resultat.Canyons) { Tri.Add(&C); }
+		Tri.Sort([](const FWorldseedPlateauSite& A, const FWorldseedPlateauSite& B)
+			{ return A.EscarpementM > B.EscarpementM; });
+
+		int32 Rang = 0;
+		for (const FWorldseedPlateauSite* C : Tri)
+		{
+			if (Rang >= ParFamille) { break; }
+			Ajouter(TEXT("Canyon"), Rang + 1, C->CentreM, C->EscarpementM,
+				TEXT("m de chute"));
+			++Rang;
+		}
+	}
+
 	LieuxCombo->SetSelectedIndex(0);
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] menu : %d lieux offerts (%d arches, %d puits, %d tables produits)"),
+		TEXT("[Worldseed] menu : %d lieux offerts ")
+		TEXT("(%d arches, %d puits, %d tables, %d canyons produits)"),
 		LieuxXYM.Num() - 1, Resultat.Caves.Arches.Num(),
-		Resultat.Caves.Puits.Num(), Resultat.Tables.Num());
+		Resultat.Caves.Puits.Num(), Resultat.Tables.Num(),
+		Resultat.Canyons.Num());
 }
 
 void UWorldseedMenuWidget::HandleLieuChanged(FString SelectedItem,

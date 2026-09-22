@@ -564,12 +564,26 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		TEXT("collision partout, %d travaux simultanes"),
 		ChunkSideM, DensityRules.VoxelSizeM, LoadRadiusM, MaxJobsInFlight);
 
-	// LES SITES DE TABLES SE REBATISSENT, ILS NE SE TRANSPORTENT PAS. Meme
-	// raisonnement que pour le reseau de grottes, que le menu ne transporte pas
-	// non plus : la recherche est une fonction PURE du relief, des regles et de
-	// la graine, donc la transporter doublerait une donnee deterministe. Et il
-	// FAUT la faire ici, sans quoi une partie lancee depuis le menu n'aurait
-	// aucun lieu remarquable la ou une partie lancee en PIE en a.
+	// --- LES SITES ARRIVENT AVEC LE MONDE, ILS NE SE REBATISSENT PLUS -------
+	//
+	// IL ETAIT ECRIT ICI QU'ILS « SE REBATISSENT, ILS NE SE TRANSPORTENT PAS »,
+	// au motif qu'une fonction PURE du relief ne doit pas etre doublee. Le
+	// raisonnement etait bon tant que personne d'autre ne la jouait. Depuis que
+	// le menu offre les tables et les canyons dans sa liste de lieux, la chaine
+	// la joue AUSSI -- et le journal montrait alors les deux blocs identiques a
+	// la suite, pour **2,8 secondes** de calcul en double sur la grille du jeu.
+	//
+	// Le monde les porte donc, en memoire seulement : le cache n'en ecrit pas
+	// un octet, et une partie lancee en PIE sans menu les recalcule ci-dessous.
+	if (Monde.IsValid() && Monde->Tables.Num() + Monde->Canyons.Num() > 0)
+	{
+		Tables = Monde->Tables;
+		Canyons = Monde->Canyons;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : %d tables et %d canyons repris du monde"),
+			Tables.Num(), Canyons.Num());
+	}
+	else
 	{
 		FString Err;
 		if (const UWorldseedRules* const R = WorldseedPipeline::GetRules(Err))

@@ -58,6 +58,10 @@ public:
 	 */
 	TArray<uint8> CachedLithologyId;
 
+	/** Tables et canyons du monde genere, portes jusqu-au jeu. */
+	TArray<FWorldseedPlateauSite> CachedTables;
+	TArray<FWorldseedPlateauSite> CachedCanyons;
+
 	bool bAutoJouer = false;
 
 	/** Etat courant du formulaire. */
