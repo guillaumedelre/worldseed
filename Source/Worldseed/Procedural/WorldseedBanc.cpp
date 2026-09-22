@@ -4,6 +4,7 @@
 
 #include "Procedural/WorldseedVoxelTerrain.h"
 
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMemory.h"
@@ -28,6 +29,7 @@ void UWorldseedBanc::OnWorldBeginPlay(UWorld& InWorld)
 	}
 
 	bQuitterEnsuite = FParse::Param(FCommandLine::Get(), TEXT("WorldseedQuitter"));
+	bProfilGPU = FParse::Param(FCommandLine::Get(), TEXT("WorldseedProfilGPU"));
 	bArme = true;
 
 	// ON ARME ICI, ON NE MESURE PAS. Le sous-systeme recoit son OnWorldBeginPlay
@@ -50,6 +52,26 @@ AWorldseedVoxelTerrain* UWorldseedBanc::Terrain() const
 void UWorldseedBanc::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// LE PROFIL EST LA SEULE CHOSE QUI SURVIT A `bFini` : la capture se fait a
+	// la trame suivante et son vidage est asynchrone. On tient donc le jeu en
+	// vie le temps qu'il faut, puis on quitte.
+	if (bProfilDemande)
+	{
+		if (FPlatformTime::Seconds() - DebutAttenteProfil >= AttenteProfilS)
+		{
+			bProfilDemande = false;
+			if (bQuitterEnsuite)
+			{
+				if (UWorld* const W = GetWorld())
+				{
+					UKismetSystemLibrary::QuitGame(W, nullptr,
+						EQuitPreference::Quit, false);
+				}
+			}
+		}
+		return;
+	}
 
 	if (bFini) { return; }
 
@@ -226,6 +248,29 @@ void UWorldseedBanc::Conclure()
 		TEXT("PAR LE JEU sur son propre DeltaTime, donc a l'abri du bridage de ")
 		TEXT("l'editeur en arriere-plan -- piege qui a deja coute une journee de ")
 		TEXT("conclusions fausses a ce depot."));
+
+	// --- LA VENTILATION DU GPU, SI ON L'A DEMANDEE -------------------------
+	//
+	// ELLE VIENT ICI ET NULLE PART AILLEURS : apres la stabilisation et apres
+	// la fenetre de mesure, donc sur une scene qui ne bouge plus. Lancee
+	// pendant le remplissage, elle capturerait une trame ou le streaming
+	// travaille encore et l'on attribuerait au rendu ce qui est du transitoire.
+	if (bProfilGPU)
+	{
+		if (UWorld* const W = GetWorld())
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   ventilation GPU demandee -- la capture arrive ")
+				TEXT("a la trame suivante, on laisse %.0f s au vidage"),
+				AttenteProfilS);
+			GEngine->Exec(W, TEXT("ProfileGPU"));
+			bProfilDemande = true;
+			DebutAttenteProfil = FPlatformTime::Seconds();
+			// ON NE QUITTE PAS MAINTENANT : le Tick s'en chargera une fois le
+			// delai ecoule. `bFini` reste vrai, donc plus aucune mesure.
+			return;
+		}
+	}
 
 	if (bQuitterEnsuite)
 	{

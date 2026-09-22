@@ -43,7 +43,13 @@ public:
 	{
 		RETURN_QUICK_DECLARE_CYCLE_STAT(UWorldseedBanc, STATGROUP_Tickables);
 	}
-	virtual bool IsTickable() const override { return bArme || bEnCours; }
+	// LE PROFIL DOIT ROUVRIR LE TICK. Sans `bProfilDemande` ici, le
+	// sous-systeme cesse d'etre tickable des que `Conclure` a tourne -- donc
+	// l'attente du vidage ne s'ecoulerait jamais et le jeu ne quitterait pas.
+	virtual bool IsTickable() const override
+	{
+		return bArme || bEnCours || bProfilDemande;
+	}
 
 private:
 	AWorldseedVoxelTerrain* Terrain() const;
@@ -54,6 +60,35 @@ private:
 	bool bEnCours = false;
 	bool bFini = false;
 	bool bQuitterEnsuite = false;
+
+	/**
+	 * Demander au RHI de VENTILER la trame GPU, et attendre son vidage.
+	 *
+	 * POURQUOI CE DRAPEAU EXISTE. Le banc dit que le GPU coute 3,4 ms ; il ne
+	 * dit pas OU. Or la mesure du 22 septembre a etabli que ce cout ne vient
+	 * PAS du terrain -- trente chunks et 62 000 triangles rendent encore
+	 * 3,38 ms, contre 3,47 pour deux mille quatre cents chunks et trois
+	 * millions de triangles. Il y a donc un plancher, et un total ne se
+	 * corrige pas : il se DECOMPOSE. C'est la lecon que ce depot a payee
+	 * quatre fois sur le routage des galeries, et une fois de plus le jour
+	 * meme sur le retour au menu.
+	 *
+	 * `ProfileGPU` (RHI, GPUProfiler.cpp:2199) capture une trame et imprime sa
+	 * ventilation DANS LE JOURNAL -- donc utilisable sans editeur, ce qui est
+	 * la condition pour mesurer ici. Il vit derriere `WITH_PROFILEGPU`, actif
+	 * en Development et absent du build final.
+	 *
+	 * IL FAUT ATTENDRE APRES L'AVOIR DEMANDE : la capture se declenche a la
+	 * trame SUIVANTE et le vidage est asynchrone. Quitter aussitot rendrait un
+	 * journal sans ventilation -- et un fichier present mais vide ressemble
+	 * exactement a un outil qui ne marche pas.
+	 */
+	bool bProfilGPU = false;
+	bool bProfilDemande = false;
+	double DebutAttenteProfil = 0.0;
+
+	/** Delai laisse au vidage du profil avant de quitter, en secondes. */
+	float AttenteProfilS = 5.0f;
 
 	/**
 	 * ON LAISSE LE MONDE SE POSER AVANT DE MESURER.
