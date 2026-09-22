@@ -6342,3 +6342,41 @@ journal, mais NON reproduit au lancement suivant. Hypothese non verifiee :
 `PenteDepartMaxDeg` se lit sur la grille 2D a 15,6 m de maille quand le voxel
 travaille au metre. Et aucune vue n'a ete prise depuis un VRAI sommet : 69,
 229 et 315 m, pas 1 500.
+
+### La carte de `ProbeCarte` a sa LIGNE 0 AU SUD (22 septembre 2026)
+
+Pour choisir un point de vue depuis la carte -- un sommet qui domine la mer,
+par exemple -- il faut savoir la lire. Deux conventions, et se tromper met
+tous les reperes en pleine mer.
+
+    U = X / 64000 + 0.5        colonne = U * largeur
+    V = Y / 32000 + 0.5        ligne   = V * hauteur      <- ligne 0 au SUD
+
+**LA LONGITUDE EST LINEAIRE EN U, LA LATITUDE NE L'EST PAS EN V.** La carte
+est EQUIVALENTE-AIRE : `lat = asin(2V - 1)`. Verifie sur un point releve en
+jeu : (2262, -3842) donne U 0,535 -> 12,7 E et V 0,380 -> asin(-0,240) =
+13,9 S, exactement ce que le releve affiche. **Convertir V en latitude par un
+produit donnerait 21,6 S au lieu de 13,9.**
+
+**ET LE SENS VERTICAL NE SE DEDUIT PAS, IL SE MESURE.** Les deux poles sont
+blancs, donc une calotte ne tranche rien -- meme piege que la toundra qui
+existe aux deux hemispheres, deja consigne. Le controle qui tranche est un
+point dont on connait le TERRAIN en jeu :
+
+    temoin    (2262, -3842)  Savane sur Granite
+      ligne 0 = nord -> R 48 G 80 B124   ocean      FAUX
+      ligne 0 = sud  -> R128 G152 B 70   vert olive JUSTE
+    belvedere (930, -5758)   Roche nue sur Gres
+      ligne 0 = nord -> R117 G146 B174   ocean      FAUX
+      ligne 0 = sud  -> R214 G190 B126   sable      JUSTE
+
+**CE QUE LA CARTE PERMET, ET QUI VALAIT LE DETOUR** : choisir un point de vue
+par CALCUL au lieu de le chercher en relancant le jeu. Balayer huit caps
+depuis un sommet et mesurer la distance a la premiere cellule bleue donne
+d'un coup la direction ou regarder -- « mer a 1 000 m au NE » -- et un profil
+le long de ce cap dit si la mer reste ouverte au-dela de la couture. Trois
+relances economisees par point de vue.
+
+Les altitudes utilisables se lisent dans le journal sans rien recalculer : la
+passe des cavites journalise chaque DOLINE et chaque GOUFFRE avec sa position
+ET son altitude. C'est la qu'on trouve un sommet a 662 m.
