@@ -27,6 +27,7 @@
 #include "Procedural/WorldseedProbeLibrary.h"
 
 #include "Procedural/WorldseedProbeCommun.h"
+#include "Procedural/WorldseedClimatsReels.h"
 
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedClimate.h"
@@ -37,115 +38,6 @@
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
-
-namespace
-{
-	const TCHAR* const Saisons[4] = { TEXT("Winter"), TEXT("Spring"),
-		TEXT("Summer"), TEXT("Autumn") };
-
-	double Champ(const TSharedPtr<FJsonObject>& O, const FString& Cle)
-	{
-		double V = 0.0;
-		O->TryGetNumberField(Cle, V);
-		return V;
-	}
-
-	/**
-	 * Temperature moyenne annuelle et cumul de precipitations d'un releve.
-	 *
-	 * TROIS PIEGES DE LECTURE, tous payes en lisant les prereglages plutot
-	 * qu'en raisonnant de tete. "Rainfall (mm)" est un cumul MENSUEL, pas
-	 * saisonnier -- on multiplie donc par trois. "Snowfall (mm)" est un
-	 * EQUIVALENT-EAU, donc il s'ajoute a la pluie. Et les temperatures sont des
-	 * MOYENNES haute et basse, pas des extremes : leur demi-somme est la
-	 * moyenne de la saison.
-	 */
-	void ClimatAnnuel(const TSharedPtr<FJsonObject>& P, double& OutT,
-		double& OutMm, double& OutTMax)
-	{
-		double SommeT = 0.0;
-		double SommeMm = 0.0;
-		OutTMax = -1e9;
-
-		for (const TCHAR* S : Saisons)
-		{
-			const double Haut = Champ(P, FString(S) + TEXT(" Average High Temp (C)"));
-			const double Bas = Champ(P, FString(S) + TEXT(" Average Low Temp (C)"));
-			const double Moy = 0.5 * (Haut + Bas);
-
-			SommeT += Moy;
-			OutTMax = FMath::Max(OutTMax, Moy);
-
-			SommeMm += 3.0 * (Champ(P, FString(S) + TEXT(" Rainfall (mm)"))
-				+ Champ(P, FString(S) + TEXT(" Snowfall (mm)")));
-		}
-
-		OutT = SommeT / 4.0;
-		OutMm = SommeMm;
-	}
-
-	/** Part des precipitations tombant au semestre chaud. */
-	double FractionEte(const TSharedPtr<FJsonObject>& P)
-	{
-		auto Cumul = [&P](const TCHAR* S)
-		{
-			return Champ(P, FString(S) + TEXT(" Rainfall (mm)"))
-				+ Champ(P, FString(S) + TEXT(" Snowfall (mm)"));
-		};
-		// L'ETE PESE PLEIN, LES SAISONS MOYENNES A MOITIE. Prendre simplement
-		// printemps + ete donne un semestre franc, mais ce n'est pas ce que
-		// mesure le modele : les equinoxes sont a cheval, et les compter entiers
-		// d'un cote decale toute la comparaison.
-		const double Chaud = Cumul(TEXT("Summer"))
-			+ 0.5 * (Cumul(TEXT("Spring")) + Cumul(TEXT("Autumn")));
-		const double Tout = Cumul(TEXT("Winter")) + Cumul(TEXT("Spring"))
-			+ Cumul(TEXT("Summer")) + Cumul(TEXT("Autumn"));
-		return (Tout > 0.0) ? Chaud / Tout : 0.5;
-	}
-
-	/**
-	 * Ce que la Terre repond pour chaque releve, EN ENUMERATION.
-	 *
-	 * PAS EN CHAINE D'AFFICHAGE, et le premier jet l'a paye : comparer
-	 * "Foret temperee mixte" au libelle rend "Foret tempEREe mixte" different
-	 * de lui-meme des qu'un accent s'en mele. Quatre releves sur vingt-trois
-	 * passaient -- exactement ceux dont le nom n'a pas d'accent. Un libelle est
-	 * fait pour etre LU, pas pour servir de cle ; le depot a deja la meme regle
-	 * pour les identifiants de biome et de roche.
-	 */
-	struct FAttendu
-	{
-		const TCHAR* Cle;
-		EWorldseedBiome A;
-		EWorldseedBiome B;   // seconde case acceptable, ou la meme
-	};
-
-	const FAttendu Attendus[] = {
-		{ TEXT("Polar_Ice_Cap"), EWorldseedBiome::Tundra, EWorldseedBiome::ColdDesert },
-		{ TEXT("Polar_Tundra"), EWorldseedBiome::Tundra, EWorldseedBiome::Tundra },
-		{ TEXT("Subarctic"), EWorldseedBiome::Taiga, EWorldseedBiome::Taiga },
-		{ TEXT("Subarctic-Severe_Winter"), EWorldseedBiome::Taiga, EWorldseedBiome::Taiga },
-		{ TEXT("Subpolar_Oceanic"), EWorldseedBiome::Taiga, EWorldseedBiome::TemperateForest },
-		{ TEXT("Oceanic"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest },
-		{ TEXT("Humid_Subtropical"), EWorldseedBiome::SubtropicalForest, EWorldseedBiome::SubtropicalForest },
-		{ TEXT("Humid_Subtropical-Dry_Winter"), EWorldseedBiome::SubtropicalForest, EWorldseedBiome::SubtropicalForest },
-		{ TEXT("Hot_Summer_Continental"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest },
-		{ TEXT("Warm_Summer_Continental"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest },
-		{ TEXT("Mediterranean_Hot_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean },
-		{ TEXT("Mediterranean_Cool_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean },
-		{ TEXT("Mediterranean_Cold_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean },
-		{ TEXT("Hot_Desert"), EWorldseedBiome::HotDesert, EWorldseedBiome::HotDesert },
-		{ TEXT("Cold_Desert"), EWorldseedBiome::ColdDesert, EWorldseedBiome::ColdDesert },
-		{ TEXT("Hot_Semi-Arid"), EWorldseedBiome::HotDesert, EWorldseedBiome::Savanna },
-		{ TEXT("Cold_Semi-Arid"), EWorldseedBiome::Steppe, EWorldseedBiome::ColdDesert },
-		{ TEXT("Tropical_Rainforest"), EWorldseedBiome::TropicalRainforest, EWorldseedBiome::TropicalRainforest },
-		{ TEXT("Tropical_Monsoon"), EWorldseedBiome::TropicalRainforest, EWorldseedBiome::TropicalRainforest },
-		{ TEXT("Tropical_Savanna-Dry_Winter"), EWorldseedBiome::Savanna, EWorldseedBiome::Savanna },
-		{ TEXT("Tropical_Savanna-Dry_Summer"), EWorldseedBiome::Savanna, EWorldseedBiome::Savanna },
-		{ TEXT("Subtropical_Highland"), EWorldseedBiome::TemperateForest, EWorldseedBiome::SubtropicalForest },
-		{ TEXT("Subtropical_Highland-Dry_Winter"), EWorldseedBiome::TemperateForest, EWorldseedBiome::SubtropicalForest },
-	};
-}
 
 FString UWorldseedProbeLibrary::ProbeTerre(int32 Seed, float HeightMeters,
 	int32 ResolutionY)
@@ -159,81 +51,52 @@ FString UWorldseedProbeLibrary::ProbeTerre(int32 Seed, float HeightMeters,
 	const FWorldseedBiomeRules BioRegles =
 		FWorldseedBiomeRules::FromRules(*S.Regles, S.World.Geometry);
 
-	// --- DEUX SEUILS, ET LES CONFONDRE SERAIT UNE FAUTE ----------------------
-	//
-	// Notre part estivale est plus CONTRASTEE que la realite -- 0,15 a 0,21
-	// entre 38 et 50 degres dans le monde genere, contre 0,24 a 0,30 mesures
-	// sur les villes mediterraneennes reelles -- parce que le modele de
-	// circulation est purement zonal : ni moderation maritime de la
-	// saisonnalite, ni asymetrie est/ouest des bassins oceaniques. Sur Terre,
-	// le mediterraneen est d'ailleurs un climat de FACADE OUEST, pas une
-	// ceinture.
-	//
-	// Le seuil du MOTEUR vaut 0,25 -- le rapport 1/3 de Koppen ramene a deux
-	// semestres. Celui des RELEVES vaut 0,31, qui separe proprement les trois
-	// mediterraneens (0,243 / 0,289 / 0,299) de leurs voisins immediats,
-	// Oceanic a 0,427 et Humid_Subtropical a 0,413. Les unifier ferait basculer
-	// l'un ou l'autre, et le depot l'interdit sans refaire la mesure.
-	FWorldseedBiomeRules ReglesReleves = BioRegles;
-	ReglesReleves.MediterraneanSummerFracMax = 0.31f;
-
 	// --- 1. LES VINGT-TROIS CLIMATS REELS -----------------------------------
-	const FString Chemin = FPaths::Combine(FPaths::ProjectDir(),
-		TEXT("Tools/WorldGen/rules/climats_reels.json"));
-
-	FString Texte;
+	//
+	// LA LECTURE DES RELEVES ET LA TABLE DES ATTENDUS VIVENT AILLEURS, dans
+	// `WorldseedClimatsReels`, parce qu'un test d'automation les appelle aussi.
+	// Les garder ici, dans un namespace anonyme, obligeait le test a en ecrire
+	// une COPIE -- donc a valider une copie de la lecture plutot que la lecture
+	// elle-meme. C'est exactement le defaut que le portage de `terre.py` avait
+	// corrige sur le classificateur, et il n'y a pas de raison de le refaire un
+	// cran plus haut.
+	TArray<FWorldseedReleveReel> Releves;
+	FString ErreurReleves;
 	int32 Bons = 0;
 	int32 Total = 0;
 
-	if (FFileHelper::LoadFileToString(Texte, *Chemin))
+	if (WorldseedClimatsReels::Charger(Releves, ErreurReleves))
 	{
-		TSharedPtr<FJsonObject> Racine;
-		const TSharedRef<TJsonReader<>> Lecteur = TJsonReaderFactory<>::Create(Texte);
-		if (FJsonSerializer::Deserialize(Lecteur, Racine) && Racine.IsValid())
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] === 1. les climats REELS dans NOTRE diagramme ==="));
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   %-34s %7s %9s   %-26s %s"),
+			TEXT("climat reel"), TEXT("T an"), TEXT("pluie an"),
+			TEXT("notre case"), TEXT("verdict"));
+
+		for (const FWorldseedReleveReel& R : Releves)
 		{
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] === 1. les climats REELS dans NOTRE diagramme ==="));
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed]   %-34s %7s %9s   %-26s %s"),
-				TEXT("climat reel"), TEXT("T an"), TEXT("pluie an"),
-				TEXT("notre case"), TEXT("verdict"));
+			const EWorldseedBiome Case =
+				WorldseedClimatsReels::Classer(R, BioRegles);
+			const bool bOk = R.Accepte(Case);
 
-			for (const FAttendu& A : Attendus)
-			{
-				const TSharedPtr<FJsonObject>* Preset = nullptr;
-				if (!Racine->TryGetObjectField(A.Cle, Preset) || !Preset) { continue; }
-
-				double T = 0.0;
-				double Mm = 0.0;
-				double TMax = 0.0;
-				ClimatAnnuel(*Preset, T, Mm, TMax);
-				const double Ete = FractionEte(*Preset);
-
-				const EWorldseedBiome Case = WorldseedBiomes::FromClimate(
-					static_cast<float>(T), static_cast<float>(Mm),
-					static_cast<float>(TMax), static_cast<float>(Ete), true, ReglesReleves);
-
-				const bool bOk = (Case == A.A || Case == A.B);
-
-				++Total;
-				Bons += bOk ? 1 : 0;
-
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed]   %-34s %6.1f C %7.0f mm   %-26s %s"),
-					A.Cle, T, Mm, WorldseedBiomes::Name(Case),
-					bOk ? TEXT("OK") : *FString::Printf(TEXT("!! attendu %s"),
-						WorldseedBiomes::Name(A.A)));
-			}
+			++Total;
+			Bons += bOk ? 1 : 0;
 
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed]   -> %d sur %d climats reels tombent dans la case attendue"),
-				Bons, Total);
+				TEXT("[Worldseed]   %-34s %6.1f C %7.0f mm   %-26s %s"),
+				*R.Cle, R.TmoyC, R.PluieMm, WorldseedBiomes::Name(Case),
+				bOk ? TEXT("OK") : *FString::Printf(TEXT("!! attendu %s"),
+					WorldseedBiomes::Name(R.AttenduA)));
 		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   -> %d sur %d climats reels tombent dans la case attendue"),
+			Bons, Total);
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Worldseed] terre : releves reels introuvables (%s)"), *Chemin);
+		UE_LOG(LogTemp, Warning, TEXT("[Worldseed] terre : %s"), *ErreurReleves);
 	}
 
 	// --- 2. LE BULLETIN, SUR DES CRITERES SOURCES ---------------------------
