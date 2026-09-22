@@ -337,6 +337,7 @@ namespace WorldseedVoxelChunk
 		// son SENS. Cout : six evaluations par sommet, mesure ci-dessous.
 		{
 			const double H = FMath::Max(VoxelSizeM * 0.5f, 0.05f);
+			const FWorldseedDensityRules& Rules = Density.GetRules();
 
 			for (int32 I = 0; I < VertexCount; ++I)
 			{
@@ -346,7 +347,32 @@ namespace WorldseedVoxelChunk
 					Density.At(FVector(V.X, V.Y + H, V.Z), Caves, VoxelSizeM) - Density.At(FVector(V.X, V.Y - H, V.Z), Caves, VoxelSizeM),
 					Density.At(FVector(V.X, V.Y, V.Z + H), Caves, VoxelSizeM) - Density.At(FVector(V.X, V.Y, V.Z - H), Caves, VoxelSizeM));
 
-				if (FVector::DotProduct(Gradient, Out.Normals[I]) < 0.0)
+				// --- ET ON GARDE LE VECTEUR, PAS SEULEMENT SON SIGNE --------
+				//
+				// C'est ici que les parois cessent d'etre en terrasses. La
+				// moyenne des faces ne decrit que la TRIANGULATION : sur une
+				// surface raide, le marching cubes produit des lamelles dont
+				// l'orientation suit la grille, et la normale herite de la
+				// cellule. Le gradient, lui, decrit le CHAMP -- il est lisse
+				// par construction et ignore le decoupage.
+				//
+				// IL NE COUTE RIEN DE PLUS : les six evaluations etaient deja
+				// faites pour trancher le sens, et leur resultat etait jete.
+				//
+				// LA MOYENNE DES FACES RESTE LE REPLI, et il faut un repli :
+				// la ou le champ est plat -- dans le plateau de la sortie
+				// rapide, ou entre deux formes qui s'annulent -- le gradient
+				// est nul et ne dit rien. `GetSafeNormal` rend alors le vecteur
+				// nul, et l'on garde ce que la geometrie sait.
+				const FVector Lisse = Rules.bNormalesGradient
+					? Gradient.GetSafeNormal()
+					: FVector::ZeroVector;
+
+				if (!Lisse.IsNearlyZero())
+				{
+					Out.Normals[I] = Lisse;
+				}
+				else if (FVector::DotProduct(Gradient, Out.Normals[I]) < 0.0)
 				{
 					Out.Normals[I] = -Out.Normals[I];
 				}

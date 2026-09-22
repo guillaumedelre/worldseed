@@ -476,6 +476,62 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
+	// --- LE DETAIL, ET SON DERNIER OCTAVE QUI TOMBE SOUS NYQUIST ------------
+	//
+	// Le commentaire de la regle l'annonce comme une qualite : « quatre octaves
+	// depuis douze metres descendent a un metre et demi, SOIT LA TAILLE DU
+	// VOXEL ». C'est exactement ce qu'une grille ne peut pas representer -- il
+	// faut deux echantillons par periode, donc deux metres de longueur d'onde
+	// pour un voxel d'un metre. Le dernier octave n'est pas rendu, il est
+	// ALIASE, et l'aliasing d'un bruit se lit comme une moire a basse
+	// frequence : les terrasses des parois.
+	//
+	// ET IL NE SE VOIT QUE SUR LES PAROIS, ce qui acheve de le designer : le
+	// detail est MODULE PAR LA PENTE (`detailPenteMin` 0,15 a plat, plein sur
+	// une falaise). Le sol plat n'en porte presque pas, donc il n'aliase pas.
+	{
+		int32 Ng = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNormales="), Ng)
+			&& Ng >= 0)
+		{
+			DensityRules.bNormalesGradient = (Ng > 0);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : normales %s"),
+				DensityRules.bNormalesGradient
+					? TEXT("prises au GRADIENT du champ")
+					: TEXT("moyennees sur les FACES (etat d'avant, parois en terrasses)"));
+		}
+	}
+
+	{
+		int32 Perp = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPerp="), Perp)
+			&& Perp >= 0)
+		{
+			DensityRules.bPorteePerpendiculaire = (Perp > 0);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : portes du champ %s"),
+				DensityRules.bPorteePerpendiculaire
+					? TEXT("PERPENDICULAIRES a la surface")
+					: TEXT("VERTICALES (etat d'avant, parois en terrasses)"));
+		}
+	}
+
+	{
+		int32 Oct = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDetailOctaves="), Oct)
+			&& Oct >= 0)
+		{
+			DensityRules.DetailOctaves = Oct;
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : detail force a %d octaves ")
+				TEXT("(longueur d'onde la plus fine %.2f m)"),
+				Oct, Oct > 0
+					? 1.0f / (DensityRules.DetailFrequency * (1 << (Oct - 1)))
+					: 0.0f);
+		}
+	}
+
 	if (NiveauMax > 0)
 	{
 		UE_LOG(LogTemp, Log,

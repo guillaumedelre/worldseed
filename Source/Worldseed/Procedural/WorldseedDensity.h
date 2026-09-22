@@ -34,6 +34,78 @@ struct WORLDSEED_API FWorldseedDensityRules
 	bool bTransvoxel = false;
 
 	/**
+	 * Les portes du champ se mesurent-elles PERPENDICULAIREMENT a la surface ?
+	 *
+	 * LE CHAMP MESURE UNE DISTANCE VERTICALE, `z - H(x, y)`, et ses deux portes
+	 * -- la sortie rapide et la bande ou le bruit s'applique -- sont des seuils
+	 * sur cette distance. Sur un terrain plat les deux coincident. SUR UNE
+	 * PAROI elles n'ont plus rien a voir : a une pente de vingt, quatorze
+	 * metres de distance VERTICALE sont atteints en soixante-dix centimetres
+	 * horizontalement, c'est-a-dire MOINS D'UN VOXEL.
+	 *
+	 * La porte tombe alors DANS la cellule que le mailleur interpole, et le
+	 * champ y saute de toute l'amplitude du bruit -- douze metres. Le sommet
+	 * est place n'importe ou, et l'erreur est quantifiee par la cellule : la
+	 * paroi sort en TERRASSES.
+	 *
+	 * MESURE QUI L'A ETABLI (22 septembre, paroi de canyon) : amplitude de
+	 * l'ondulation 1,49 a un metre de voxel, **6,63 a deux metres** -- elle
+	 * suit la grille. Identique au chiffre pres entre les deux mailleurs
+	 * (1,49 et 1,49), donc ce n'est pas le maillage. Inchangee en retirant les
+	 * deux octaves de bruit les plus fins (1,81), donc ce n'est pas l'aliasing
+	 * du detail. Il ne restait que la porte.
+	 *
+	 * Le remede est celui que le depot emploie deja pour les arches depuis le
+	 * 19 septembre -- diviser par la norme du gradient -- et qu'il s'etait note
+	 * de reprendre « pour toute forme de PAROI ». Le terrain lui-meme ne
+	 * l'avait jamais recu.
+	 *
+	 * ET IL ARRIVE ETEINT, PARCE QU'IL N'A RIEN RENDU. La discontinuite est
+	 * reelle et le remede est juste, mais il ne deplace pas le defaut qu'on
+	 * cherchait : ondulation 1,49 avec la porte verticale, **1,49 avec la
+	 * porte perpendiculaire**, au centieme pres. Les terrasses venaient des
+	 * NORMALES, pas du champ -- voir `bNormalesGradient`. Cout mesure :
+	 * 9,91 ms par chunk contre 9,71, soit deux pour cent du maillage.
+	 *
+	 * On le garde eteint plutot que de le supprimer, comme `overhangWarpM` et
+	 * `rugositeMin` avant lui : le code est juste, la mesure reste
+	 * reproductible par `-WorldseedPerp=1`, et le jour ou une forme de paroi
+	 * butera sur cette discontinuite il sera deja ecrit.
+	 */
+	bool bPorteePerpendiculaire = false;
+
+	/**
+	 * La normale vient-elle du GRADIENT du champ, ou de la moyenne des faces ?
+	 *
+	 * LES PAROIS SORTAIENT EN TERRASSES, et le test qui a tranche est celui que
+	 * ce depot s'impose EN PREMIER depuis le 18 septembre : `ShowFlag.Lighting 0`.
+	 * Sans eclairage, la paroi est un gris parfaitement uniforme -- les
+	 * terrasses DISPARAISSENT. Ce n'etait donc pas la geometrie, c'etaient les
+	 * NORMALES. Trois hypotheses avaient ete essayees et refutees avant de
+	 * faire ce test : le mailleur (amplitude 1,49 des deux cotes), l'aliasing
+	 * du detail (1,81 en retirant les deux octaves les plus fins), et la porte
+	 * verticale du champ (1,49, inchangee).
+	 *
+	 * POURQUOI LA MOYENNE DES FACES BANDE SUR UNE PAROI. Elle est lisse le long
+	 * des aretes partagees -- c'est ce qui l'avait fait choisir -- mais elle ne
+	 * decrit que la TRIANGULATION, et sur une surface raide le marching cubes
+	 * produit des triangles en lamelles dont l'orientation suit la grille. La
+	 * normale herite donc de la cellule, et la bande suit la taille du voxel :
+	 * amplitude mesuree 1,49 a un metre, 6,63 a deux.
+	 *
+	 * ET LE GRADIENT NE COUTE RIEN, ce qui est le point. Il est DEJA calcule
+	 * pour chaque sommet -- six evaluations -- mais on n'en gardait que le
+	 * SIGNE, pour retourner la normale des faces ; le vecteur etait jete.
+	 * L'employer tel quel remplace une grandeur qui decrit le maillage par une
+	 * grandeur qui decrit le CHAMP, donc lisse par construction.
+	 *
+	 * Le registre l'avait d'ailleurs annonce en le retirant, le 18 septembre :
+	 * « le gradient reste dans l'historique git si l'eclairage montre un jour
+	 * des facettes ».
+	 */
+	bool bNormalesGradient = true;
+
+	/**
 	 * Les anneaux de resolution, arbitres par le proprietaire le 20 septembre.
 	 *
 	 * ILS VIVENT DANS LES REGLES PARCE QUE CE SONT DES SEUILS, et la regle du

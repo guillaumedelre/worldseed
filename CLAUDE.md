@@ -7697,3 +7697,102 @@ le plafond n'eleve jamais un sommet (donc aucun fond marin ne peut emerger,
 question posee par le proprietaire) et ne laisse aucune terre passer sous la
 marge. Temoin monte puis retire : rendre l'enfoncement uniforme, comme avant, le
 fait tomber sur « on n'enfonce plus du tout to be 0, but it was 125 ».
+
+### Les parois en terrasses : c'etaient les NORMALES, et le test etait a une ligne (22 septembre 2026)
+
+Tache #21. Les parois de canyon sortaient en gradins, visibles de pres comme de
+loin. Le registre proposait trois hypotheses jamais mesurees. **Les trois etaient
+fausses, et la bonne reponse tenait dans le test que ce depot s'impose EN
+PREMIER depuis le 18 septembre -- que je n'ai fait qu'en quatrieme.**
+
+    ShowFlag.Lighting 0   ->  la paroi est un gris PARFAITEMENT UNIFORME
+
+La geometrie est lisse. Les terrasses ne sont pas dans le relief, elles sont
+dans l'ECLAIRAGE -- donc dans les normales.
+
+#### Ce qui a ete essaye, et ce que chaque essai a rendu
+
+Metrique : amplitude RMS de l'ondulation verticale de luminance sur une bande de
+paroi, tendance retiree. Meme monde, meme graine, meme cadrage, meme heure.
+
+    avant -- normales moyennees sur les faces          1,49   reference
+    voxel porte a 2 m                                  6,63   le defaut SUIT LA GRILLE
+    mailleur du moteur au lieu de Transvoxel           1,49   ce n'est pas le mailleur
+    deux octaves de bruit les plus fins retires        1,81   ce n'est pas l'aliasing
+    portes du champ rendues perpendiculaires           1,49   ce n'est pas la porte
+    NORMALES PRISES AU GRADIENT DU CHAMP               1,24   retenu, -17 %
+    gradient + un octave retire                        1,33   la combinaison n'aide pas
+
+**LE MAILLEUR RENDAIT 1,49 DES DEUX COTES, AU CENTIEME PRES.** C'est le signe
+que ce depot connait par coeur -- deux mesures identiques pour deux reglages
+differents -- et pour une fois il disait vrai : les deux mailleurs echantillonnent
+le meme champ et calculent leurs normales de la meme facon, donc ils ne
+pouvaient pas differer.
+
+#### Pourquoi la moyenne des faces bande, et pourquoi le gradient ne coute rien
+
+La normale moyennee sur les faces incidentes est lisse le long des aretes
+partagees -- c'est ce qui l'avait fait choisir le 18 septembre, a 1 ms par chunk
+contre 195 pour le gradient. Mais elle ne decrit que la TRIANGULATION. Sur une
+surface raide, le marching cubes produit des triangles en lamelles dont
+l'orientation suit la grille : la normale herite de la cellule, et la bande suit
+la taille du voxel. D'ou 1,49 a un metre et 6,63 a deux.
+
+**ET LE GRADIENT ETAIT DEJA LA.** Six evaluations du champ par sommet, calculees
+depuis le 18 septembre pour trancher le SENS de la normale -- et dont on jetait
+le vecteur. L'employer tel quel remplace une grandeur qui decrit le maillage par
+une grandeur qui decrit le CHAMP, lisse par construction, **pour zero evaluation
+de plus**. Trame mesuree : 4,40 ms contre 4,37, soit la derive machine.
+
+Le registre l'avait annonce en le retirant : « le gradient reste dans
+l'historique git si l'eclairage montre un jour des facettes ». Ce jour etait
+celui-la, et la note a suffi a retrouver le chemin.
+
+**LA MOYENNE DES FACES RESTE LE REPLI, et il en faut un** : la ou le champ est
+plat -- le plateau de la sortie rapide, deux formes qui s'annulent -- le gradient
+est nul et ne dit rien. `GetSafeNormal` rend alors le vecteur nul et l'on garde
+ce que la geometrie sait.
+
+#### La porte perpendiculaire est ECRITE et ETEINTE
+
+Le champ mesure `z - H(x, y)`, une distance VERTICALE, et ses deux portes -- la
+sortie rapide et la bande ou le bruit s'applique -- sont des seuils dessus. Sur
+une paroi de pente vingt, quatorze metres de distance verticale sont atteints en
+soixante-dix centimetres horizontalement, **soit moins d'un voxel** : la porte
+tombe DANS la cellule que le mailleur interpole, et le champ y saute de toute
+l'amplitude du bruit. La discontinuite est reelle, le remede -- diviser par la
+norme du gradient, comme le code des arches depuis le 19 septembre -- est juste.
+
+**Il ne deplace pas le defaut cherche : 1,49 contre 1,49.** Cout 9,91 ms par
+chunk contre 9,71. Livree ETEINTE, comme `overhangWarpM` et `rugositeMin` avant
+elle : le code est juste, la mesure reste reproductible par `-WorldseedPerp=1`,
+et le jour ou une forme de paroi butera sur cette discontinuite il sera ecrit.
+
+#### La lecon, et elle est deja dans ce fichier
+
+**J'AI PERDU TROIS HYPOTHESES FAUTE DE COMMENCER PAR `ShowFlag.Lighting 0`.**
+La note du 18 septembre dit exactement cela : « A faire AVANT de soupconner quoi
+que ce soit d'autre -- j'ai perdu deux hypotheses faute de commencer par la. »
+Elle a ete ecrite apres avoir perdu deux hypotheses ; je viens d'en perdre trois
+en ne la lisant pas. **Un registre ne sert que s'il est consulte AVANT de
+chercher, pas apres avoir trouve.**
+
+Corollaire de methode, plus general : devant un defaut visuel, la premiere
+question n'est pas « quel terme le produit » mais **« dans quelle passe vit-il »**
+-- geometrie, normales, couleur, eclairage. Une ligne de commande de rendu
+repond a celle-la, et elle elimine les trois quarts des suspects avant qu'on
+n'ouvre un fichier.
+
+#### Ce qui reste, dit franchement
+
+- **L'amelioration est partielle** : -17 %, les gradins sont adoucis, pas
+  supprimes. La piste suivante est la continuite de `SampleUVCubic` -- un
+  cubique C1 a une derivee SECONDE discontinue, donc la normale change de pente
+  a chaque maille de 31 m. Le depot la listait deja comme un oracle jamais
+  ecrit. **Non enchainee a dessein** : la regle interdit une quatrieme
+  hypothese a l'aveugle.
+- **Les blocs noirs perfores du bord gauche** sont un defaut DISTINCT, present
+  a l'identique dans les sept etats mesures, et jamais diagnostique.
+- **Outillage** : `-WorldseedNormales=0/1`, `-WorldseedPerp=0/1`,
+  `-WorldseedDetailOctaves=` pour rejouer chaque ligne du tableau sans
+  recompiler.

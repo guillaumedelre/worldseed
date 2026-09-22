@@ -695,7 +695,50 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	// surface -- impossible a attribuer sans connaitre cette ligne.
 	const double PorteeUtile = Rules.OverhangAmplitudeM + Rules.DetailAmplitudeM
 		+ Rules.CaveRadiusM;
-	if (D > PorteeUtile || D < -PorteeUtile - Rules.BandDepthM)
+
+	// --- PRE-GARDE VERTICALE, GENEREUSE -------------------------------------
+	//
+	// La vraie porte est PERPENDICULAIRE, mais elle coute quatre echantillons
+	// du relief. On elimine d'abord le gros du volume avec une borne verticale
+	// large : a la pente la plus raide qu'on accepte, la distance verticale
+	// vaut au plus `perpendiculaire * norme du gradient`. C'est exactement la
+	// recette que le code des arches emploie depuis le 19 septembre.
+	const double NormeMax = Rules.bPorteePerpendiculaire ? 8.0 : 1.0;
+	if (D > PorteeUtile * NormeMax
+		|| D < -PorteeUtile * NormeMax - Rules.BandDepthM)
+	{
+		return FMath::Max(D, Air);
+	}
+
+	// --- LA NORME DU GRADIENT, CALCULEE UNE FOIS ----------------------------
+	//
+	// Elle convertit une distance VERTICALE en distance PERPENDICULAIRE, et
+	// elle sert DEUX fois : aux portes ci-dessous, et a la modulation du
+	// detail par la pente -- qui la recalculait pour son compte. Une seule
+	// source, donc, et le surcout de la porte perpendiculaire est en grande
+	// partie paye par ce partage.
+	//
+	// AU PAS DE SIX METRES ET EN BILINEAIRE, comme le faisait le detail : on
+	// veut la pente du RELIEF, pas celle de son grain. Une pente relevee au
+	// metre porterait le bruit qu'on est justement en train de moduler.
+	double PenteXY = 0.0;
+	{
+		const double Pas = 6.0;
+		const double DX = SurfacePenteM(PosM.X + Pas, PosM.Y)
+			- SurfacePenteM(PosM.X - Pas, PosM.Y);
+		const double DY = SurfacePenteM(PosM.X, PosM.Y + Pas)
+			- SurfacePenteM(PosM.X, PosM.Y - Pas);
+		PenteXY = FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas);
+	}
+	const double Norme = Rules.bPorteePerpendiculaire
+		? FMath::Min(FMath::Sqrt(1.0 + PenteXY * PenteXY), NormeMax)
+		: 1.0;
+
+	// LA PORTE EXACTE. Sur du plat elle vaut celle d'avant au chiffre pres ;
+	// sur une paroi elle s'ouvre autant qu'il faut pour que la discontinuite
+	// du champ reste a plusieurs metres de la surface DANS TOUTES LES
+	// DIRECTIONS, donc hors des cellules que le mailleur interpole.
+	if (D > PorteeUtile * Norme || D < -PorteeUtile * Norme - Rules.BandDepthM)
 	{
 		return FMath::Max(D, Air);
 	}
@@ -709,8 +752,13 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	// Au fond de la bande creusable -- l'essentiel du volume -- il ne peut rien
 	// changer, et c'est trois des cinq bruits du calcul. La marge de 20 % evite
 	// de rogner les surplombs qui atteignent tout juste l'amplitude.
+	// LA MEME CONVERSION QUE CI-DESSUS, ET POUR LA MEME RAISON. C'est cette
+	// porte-la qui faisait les terrasses : le bruit s'appliquait d'un cote et
+	// pas de l'autre, et sur une paroi la frontiere tombait a moins d'un voxel
+	// de la surface.
 	const bool bPresDeLaSurface =
-		FMath::Abs(D) <= (Rules.OverhangAmplitudeM + Rules.DetailAmplitudeM) * 1.2;
+		FMath::Abs(D) <= (Rules.OverhangAmplitudeM + Rules.DetailAmplitudeM)
+			* 1.2 * Norme;
 
 	if (bPresDeLaSurface && Rules.OverhangAmplitudeM > 0.0f && Rules.OverhangOctaves > 0)
 	{
@@ -737,12 +785,11 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	if (bPresDeLaSurface && Rules.DetailAmplitudeM > 0.0f
 		&& Rules.DetailOctaves > 0)
 	{
-		const double Pas = 6.0;
-		const double DX = SurfacePenteM(PosM.X + Pas, PosM.Y)
-			- SurfacePenteM(PosM.X - Pas, PosM.Y);
-		const double DY = SurfacePenteM(PosM.X, PosM.Y + Pas)
-			- SurfacePenteM(PosM.X, PosM.Y - Pas);
-		const double Pente = FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas);
+		// LA PENTE EST CELLE QUI A DEJA SERVI AUX PORTES. Elle etait recalculee
+		// ici a l'identique -- meme pas, meme echantillonnage -- et le depot a
+		// une regle contre la formule ecrite deux fois : elles divergent a la
+		// premiere retouche.
+		const double Pente = PenteXY;
 
 		double Force = FMath::Min(1.0,
 			Rules.DetailPenteMin + Pente / FMath::Max(Rules.DetailPenteRef, 1e-3f));
