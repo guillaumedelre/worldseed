@@ -94,11 +94,15 @@ void WorldseedFields::Compute(const FWorldseedGeometry& Geometry,
 		// plus chere de ce depot : le detail fractal est ajoute APRES l'erosion,
 		// et tout ce qui est cale sur le relief d'avant se retrouve tantot
 		// enterre, tantot suspendu. L'eau, elle, coule sur le terrain qu'on voit.
+		const double T0 = FPlatformTime::Seconds();
+
 		FWorldseedFlow Flow;
 		WorldseedFlow::Compute(ElevationM, Weight, NX, NY, 0.0f, 1e-4f, Flow);
+		const double T1 = FPlatformTime::Seconds();
 
 		TArray<float> Pente;
 		WorldseedFlow::SlopeToReceiver(Flow.FilledM, NX, NY, SpacingM, Pente);
+		const double T2 = FPlatformTime::Seconds();
 
 		Out.SoilMoisture01.SetNumUninitialized(Count);
 
@@ -116,7 +120,9 @@ void WorldseedFields::Compute(const FWorldseedGeometry& Geometry,
 			const float TanBeta = bHasPente ? FMath::Max(Pente[I], 1e-3f) : 1e-3f;
 			Twi[I] = FMath::Loge((A + 1.0f) / TanBeta);
 		});
+		const double T3 = FPlatformTime::Seconds();
 		NormaliserParCentiles(Twi, 0.02f, 0.98f);
+		const double T4 = FPlatformTime::Seconds();
 
 		const float W = FMath::Clamp(Rules.SoilWetnessWeight, 0.0f, 1.0f);
 		const float RefMm = FMath::Max(Rules.SoilMoistureRefMm, 1.0f);
@@ -134,6 +140,17 @@ void WorldseedFields::Compute(const FWorldseedGeometry& Geometry,
 			Out.SoilMoisture01[I] = FMath::Clamp(
 				Pluie01 * (1.0f - W) + Pluie01 * Twi[I] * W * 2.0f, 0.0f, 1.0f);
 		});
+
+		// LE DETAIL AVANT LE TOTAL. Un seul chiffre de 2,9 s ne se corrige pas,
+		// il se decompose : le remplissage de depressions est sequentiel par
+		// nature, le reste ne l'est pas, et sans ce releve on optimiserait au
+		// hasard -- ce que ce depot a deja paye quatre fois de suite sur le
+		// routage des galeries.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] champs du sol : flux %.0f, pente %.0f, twi %.0f, ")
+			TEXT("centiles %.0f, melange %.0f ms"),
+			(T1 - T0) * 1000.0, (T2 - T1) * 1000.0, (T3 - T2) * 1000.0,
+			(T4 - T3) * 1000.0, (FPlatformTime::Seconds() - T4) * 1000.0);
 	}
 
 	// --- ensoleillement, l'adret et l'ubac ------------------------------------
@@ -148,9 +165,12 @@ void WorldseedFields::Compute(const FWorldseedGeometry& Geometry,
 	// soleil au Sahara qu'au Groenland : ca, la temperature le dit deja. D'ou
 	// 0,5 sur du plat, plus en adret, moins en ubac.
 	{
+		const double T5 = FPlatformTime::Seconds();
+
 		TArray<float> DY;
 		TArray<float> DX;
 		WorldseedGrid::Gradient(ElevationM, NX, NY, SpacingM, DY, DX);
+		const double T6 = FPlatformTime::Seconds();
 
 		Out.SunExposure01.SetNumUninitialized(Count);
 
@@ -178,6 +198,10 @@ void WorldseedFields::Compute(const FWorldseedGeometry& Geometry,
 				Out.SunExposure01[I] = FMath::Clamp(0.5f * Cos / PlatRef, 0.0f, 1.0f);
 			}
 		});
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] champs du sol : gradient %.0f, soleil %.0f ms"),
+			(T6 - T5) * 1000.0, (FPlatformTime::Seconds() - T6) * 1000.0);
 	}
 
 	UE_LOG(LogTemp, Log,

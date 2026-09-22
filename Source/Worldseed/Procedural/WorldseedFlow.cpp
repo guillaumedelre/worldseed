@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedFlow.h"
 #include "Async/ParallelFor.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace WorldseedFlow
 {
@@ -86,11 +88,29 @@ namespace WorldseedFlow
 		}
 
 		Heap.Heapify();
+		const double TA = FPlatformTime::Seconds();
+
+		// L'ORDRE TOPOLOGIQUE EST UN SOUS-PRODUIT DU COMBLEMENT, PAS UN TRI.
+		//
+		// Priority-Flood depile toujours le minimum, et la valeur empilee --
+		// `FilledM[N]` -- est FIGEE au moment de l'empilement : la garde
+		// `< Max` interdit de repasser sur une cellule deja traitee. Les
+		// depilements sortent donc par altitude NON DECROISSANTE, ce qui est
+		// exactement l'ordre topologique a l'envers.
+		//
+		// MESURE QUI A JUSTIFIE LE CHANGEMENT : le tri par comparaison qui
+		// occupait cette place coutait **1 038 ms sur les 2 647 du drainage**,
+		// soit 39 %. Son comparateur lisait `Filled[A]` a un autre endroit de
+		// la memoire a chaque appel -- un defaut de cache par comparaison, et
+		// il y en a une vingtaine par element sur 8,4 millions.
+		TArray<int32> Depilements;
+		Depilements.Reserve(Count);
 
 		while (Heap.Num() > 0)
 		{
 			FCell Current;
 			Heap.HeapPop(Current, EAllowShrinking::No);
+			Depilements.Add(Current.Index);
 
 			const int32 CI = Current.Index % NX;
 			const int32 CJ = Current.Index / NX;
@@ -113,6 +133,8 @@ namespace WorldseedFlow
 				Heap.HeapPush({ Out.FilledM[NIndex], NIndex });
 			}
 		}
+
+		const double TB = FPlatformTime::Seconds();
 
 		// --- directions D8 ----------------------------------------------------
 		Out.Receivers.SetNumUninitialized(Count);
@@ -146,16 +168,53 @@ namespace WorldseedFlow
 			}
 		});
 
+		const double TC = FPlatformTime::Seconds();
+
 		// --- ordre topologique -------------------------------------------------
 		// Trier par altitude decroissante suffit : toute cellule est traitee
 		// avant son receveur, qui est par construction plus bas.
 		Out.Order.SetNumUninitialized(Count);
-		for (int32 I = 0; I < Count; ++I)
+
+		// LA SURCHARGE EXISTE POUR L'A/B, ET SUR LE MEME BINAIRE. Comparer
+		// l'ancien chemin au nouveau en editant le code puis en recompilant ne
+		// compare pas deux etats du meme programme -- regle du depot, payee un
+		// soir ou `world_rules.json` s'est retrouve vide.
+		int32 ForcerTri = 0;
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedFluxTri="), ForcerTri);
+
+		if (ForcerTri == 0 && Depilements.Num() == Count)
 		{
-			Out.Order[I] = I;
+			// Le comblement a touche toutes les cellules : on retourne l'ordre
+			// de depilement, et il n'y a rien a trier.
+			for (int32 I = 0; I < Count; ++I)
+			{
+				Out.Order[I] = Depilements[Count - 1 - I];
+			}
 		}
-		const TArray<float>& Filled = Out.FilledM;
-		Out.Order.Sort([&Filled](int32 A, int32 B) { return Filled[A] > Filled[B]; });
+		else
+		{
+			// LE REPLI EXISTE PARCE QUE LA PROPRIETE SE VERIFIE, ELLE NE SE
+			// SUPPOSE PAS. Si une cellule n'est jamais atteinte par le
+			// comblement -- une region que ni la mer ni les lignes polaires ne
+			// touchent -- elle ne serait pas dans l'ordre, l'accumulation
+			// sauterait son bassin, et RIEN ne le signalerait : les debits
+			// seraient simplement faux, donc l'humidite du sol et les canyons
+			// avec eux. On retombe alors sur le tri, en le DISANT.
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] drainage : %d cellules depilees sur %d%s -- ")
+				TEXT("ordre repris par tri"),
+				Depilements.Num(), Count,
+				ForcerTri != 0 ? TEXT(" (tri IMPOSE par la ligne de commande)") : TEXT(""));
+
+			for (int32 I = 0; I < Count; ++I)
+			{
+				Out.Order[I] = I;
+			}
+			const TArray<float>& Filled = Out.FilledM;
+			Out.Order.Sort([&Filled](int32 A, int32 B) { return Filled[A] > Filled[B]; });
+		}
+
+		const double TD = FPlatformTime::Seconds();
 
 		// --- accumulation -------------------------------------------------------
 		Out.Accumulation.SetNumUninitialized(Count);
@@ -174,6 +233,33 @@ namespace WorldseedFlow
 				Out.Accumulation[Rec] += Out.Accumulation[Cell];
 			}
 		}
+
+		// LE DETAIL AVANT LE TOTAL. Le drainage pese 2 647 ms des 2 802 des
+		// champs du sol, soit 94,5 % -- mais « le drainage » recouvre quatre
+		// traitements de natures differentes, dont deux seulement sont
+		// sequentiels par nature. Sans ce releve on optimiserait au hasard.
+		const double TE = FPlatformTime::Seconds();
+
+		// L'EMPREINTE EST LE CONTROLE, PAS LE TEMPS. Un ordre topologique faux
+		// ne plante pas : il verse simplement l'eau dans le mauvais sens, et
+		// l'on obtient des debits errones -- donc une humidite du sol et des
+		// canyons faux -- sans le moindre message. La somme et le maximum de
+		// l'accumulation doivent etre IDENTIQUES d'un chemin a l'autre ;
+		// `-WorldseedFluxTri=1` permet de le verifier sans recompiler.
+		double Somme = 0.0;
+		float Pic = 0.0f;
+		for (const float A : Out.Accumulation)
+		{
+			Somme += A;
+			Pic = FMath::Max(Pic, A);
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] drainage : flood %.0f, D8 %.0f, TRI %.0f, accumulation %.0f ms")
+			TEXT("  |  empreinte somme %.6g pic %.6g"),
+			(TB - TA) * 1000.0, (TC - TB) * 1000.0,
+			(TD - TC) * 1000.0, (TE - TD) * 1000.0,
+			Somme, Pic);
 
 		// Ce que le comblement a ajoute : matiere premiere des lacs.
 		Out.LakeDepthM.SetNumUninitialized(Count);
