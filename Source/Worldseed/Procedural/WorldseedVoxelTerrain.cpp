@@ -1840,8 +1840,40 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		// La passe bornee accepte une pente PLUS FORTE en echange d'un ecart
 		// d'altitude PLUS FAIBLE : qui a vise un versant accepte d'etre sur un
 		// versant, c'est la descente qu'il n'a pas demandee.
+		// --- LE DEPART EXACT, POUR INSPECTER UN POINT PRECIS ----------------
+		//
+		// SIGNALE : « tu n'es pas a l'endroit de la capture que je t'ai
+		// faite ». C'etait exact, et de loin : altitude demandee 925 m,
+		// obtenue 10,8 -- NEUF CENT QUATORZE METRES plus bas, au niveau de la
+		// mer. La passe bornee avait echoue (aucun sol a moins de 40 m
+		// d'altitude sur ce versant a 18 degres) et le repli large avait pris
+		// la plaine.
+		//
+		// C'est le bon comportement pour un JOUEUR -- on ne le fait pas naitre
+		// sur une pente ou il glisse -- et le mauvais pour une INSPECTION : un
+		// point de vue ne se juge que depuis le point de vue. Sans ce drapeau,
+		// une couture qui ne se voit qu'a 930 m est inatteignable par
+		// l'outillage, et c'est exactement le defaut qu'on cherche a regarder.
+		bool bExact = false;
+		{
+			int32 Exact = 0;
+			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDepartExact="), Exact)
+				&& Exact != 0)
+			{
+				bExact = true;
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] voxel : depart EXACT demande -- ")
+					TEXT("aucune recherche de sol plat, pente non bornee"));
+			}
+		}
+
 		bool bPose = false;
-		if (bChoisi)
+		if (bExact)
+		{
+			// On garde X, Y et SurfaceM tels quels : c'est tout l'objet.
+			bPose = true;
+		}
+		else if (bChoisi)
 		{
 			bPose = FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg,
 				PenteDepartMaxDeg, EcartAltitudeDepartM, SurfaceM);
@@ -1869,8 +1901,9 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 			Y = FY;
 			SurfaceM = FSurface;
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : sol plat trouve a (%.0f, %.0f) m, ")
+				TEXT("[Worldseed] voxel : %s a (%.0f, %.0f) m, ")
 				TEXT("altitude %.1f m, pente %.1f deg%s"),
+				bExact ? TEXT("depart EXACT tenu") : TEXT("sol plat trouve"),
 				X, Y, SurfaceM, PenteDeg,
 				bChoisi
 					? *FString::Printf(TEXT(" (%+.0f m du point choisi)"),
