@@ -6380,3 +6380,69 @@ relances economisees par point de vue.
 Les altitudes utilisables se lisent dans le journal sans rien recalculer : la
 passe des cavites journalise chaque DOLINE et chaque GOUFFRE avec sa position
 ET son altitude. C'est la qu'on trouve un sommet a 662 m.
+
+### La peinture du decor en mer : cablee, vue, et sans effet mesurable (22 septembre 2026)
+
+**CORRECTION DU COMMIT `99e43ee`, qui en promet plus qu'il n'a prouve.** Le
+terme qui peint en mer le sol de fond sous zero est juste, il s'execute et il
+atteint l'ecran -- mais **aucun des trois points de vue eprouves n'a montre
+la moindre difference a l'oeil ni au compteur**, et il faut le dire.
+
+| point de vue | altitude | verdict |
+|---|---|---|
+| belvedere (930, -5758) cap 240 | 69 m | aucune difference |
+| sommet (-3600, 6603) cap 45/46 | 307 m | **27 contre 25 pixels sable sur 27 000** |
+| fenetre forcee a 0,5 km | 69 m | montage FAUX, voir plus bas |
+
+**CE QUI EST PROUVE, ET PAR QUOI.** Le temoin magenta
+(`-WorldseedMerOpaque=2`) fait apparaitre deux bandes franches pres de
+l'horizon : le chemin s'execute ET son resultat est affiche. Le compteur
+journalise dit l'ampleur -- **5 939 134 sommets sur 8 388 608 sous le niveau
+zero, soit 70,8 %**. La question n'est donc pas « est-ce branche » mais
+« est-ce que cela se voit quelque part ».
+
+**POURQUOI ON NE LE VOIT PAS** : au-dela de la fenetre de 12,288 km, le
+relief visible depuis les points essayes est AU-DESSUS du niveau de la mer --
+un plateau vert a falaises dans le cas du sommet. Il n'y a rien a repeindre.
+Le terme reste une ceinture de securite, pas un correctif dont l'effet est
+etabli : c'est **l'elargissement de la fenetre** qui a corrige ce que le
+proprietaire voyait.
+
+**TROIS MESURES FAUSSES SUR CE SEUL POINT, ET ELLES SE RESSEMBLENT :**
+
+1. **Une region de mesure qui mord sur le premier plan.** Comptant les pixels
+   « sable » dans une bande large, j'ai trouve 1 746 contre 83 -- vingt-et-une
+   fois moins, et j'allais conclure. **Le surlignage des pixels comptes a
+   montre qu'ils etaient la DUNE du premier plan et la JAMBE du personnage**,
+   pas une bande dans la mer. Une difference spectaculaire sur une region mal
+   bornee ne mesure que le bornage. **Localiser les pixels comptes avant de
+   lire le compte.**
+2. **Un A/B dont le montage pousse le defaut hors de portee du traitement.**
+   Pour grossir la couture j'ai ramene la fenetre a 0,5 km : le bord tombait
+   alors a 250 m, donc DANS le rayon voxel de 1 200 m -- la seule zone ou ce
+   terme ne s'applique pas, et volontairement (sous les pieds on voit le fond
+   a travers l'eau, et c'est ce qu'on veut).
+3. **Un fichier PRESENT n'est pas un fichier FRAIS.** J'ai lu et commente une
+   magnifique vue de sommet au-dessus des nuages avant de voir qu'elle datait
+   de ONZE HEURES et precedait tout le chantier. Le depot avait deja la regle
+   « un fichier ecrit n'est pas une vue jugee » ; en voici la variante.
+   **Controler l'horodatage AVANT de regarder, et supprimer le fichier cible
+   avant de relancer.**
+
+**ET L'ECLAIRAGE INTERDIT TOUJOURS L'A/B PAR LANCEMENTS SUCCESSIFS.** Temoin
+sur la dune du premier plan, hors d'atteinte du traitement : **98 sur 765**
+de derive entre les deux moities. Quand la derive joue DANS le sens de
+l'effet cherche, aucune conclusion n'est possible ; quand elle joue contre --
+ici l'image « avec » etait plus claire, donc favorable a la classification
+« sable » -- un effet observe malgre elle garde une valeur. **Dire dans quel
+sens le biais joue fait partie de la mesure.**
+
+**LE PION NE RESTE PAS OU ON LE POSE, ET LA CAUSE EST MAINTENANT VISIBLE.**
+`FindFlatGround` privilegie la PLATITUDE sur la PROXIMITE : demande a
+(-3641, 6516) ou la surface est a 661,4 m, il a rendu (-3600, 6603) a
+**304,8 m, pente 0,2 degre -- 357 metres plus bas**. Ce n'est donc pas une
+glissade : c'est la recherche qui descend chercher du plat. Consequence
+pratique : **on ne peut pas viser un sommet**, et le choix du point de
+naissance perd son sens des que le relief est raide. A reprendre en bornant
+l'ecart d'altitude, comme `EcartAltitudeDepartM` le fait deja pour le depart
+choisi au menu.
