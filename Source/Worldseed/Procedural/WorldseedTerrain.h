@@ -144,6 +144,25 @@ public:
 	float GroundProxyHorizonMarginM = 25.0f;
 
 	/**
+	 * Ou la rampe d'enfoncement se termine, en multiples du rayon de vue.
+	 *
+	 * LA RAMPE CONCILIE DEUX EXIGENCES QUI PORTENT SUR DES DISTANCES
+	 * DIFFERENTES. Pres du joueur, le decor doit passer sous la bande
+	 * creusable, sans quoi il bouche les cavites -- c'est ce que l'enfoncement
+	 * fait depuis le 21 septembre. Au loin, il doit rester a son altitude
+	 * VRAIE, sans quoi il noie sous la mer seize pour cent des terres du
+	 * monde -- ce que personne n'avait chiffre avant le 22.
+	 *
+	 * Le facteur regle la LONGUEUR de la transition. A deux, elle occupe le
+	 * rayon de vue entier : cent vingt-cinq metres repartis sur douze cents,
+	 * soit six pour cent de pente, invisible. Plus court, la remontee se
+	 * lirait comme un talus.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Worldseed|Sol de fond",
+		meta = (ClampMin = "1.1", EditCondition = "bBuildGroundProxy"))
+	float GroundProxyRampFactor = 2.0f;
+
+	/**
 	 * Le point de depart choisi dans le menu, en metres sur la carte.
 	 *
 	 * CE TERRAIN NE S'EN SERT PAS : c'est l'acteur voxel qui place le joueur.
@@ -371,6 +390,29 @@ protected:
 
 	/** Pose l'acteur voxel qui prend le relief proche en charge. */
 	void SpawnVoxelTerrain();
+
+	/**
+	 * Arme la rampe d'enfoncement de la nappe vue.
+	 *
+	 * ELLE EST APPELEE DEUX FOIS, ET IL LE FAUT. La nappe se batit AVANT que
+	 * l'acteur voxel soit pondu -- donc au premier appel le rayon de vue n'est
+	 * pas connu et l'on pose le defaut. Le second appel, juste apres la ponte,
+	 * le corrige. Poser la valeur une seule fois a la construction donnerait
+	 * une rampe calee sur un rayon qui n'est pas celui du jeu, et rien ne le
+	 * signalerait.
+	 */
+	void ReglerRampeDeLaNappe();
+
+	/**
+	 * Le materiau de la nappe VUE, instancie pour porter la rampe.
+	 *
+	 * Une instance dynamique et non le materiau lui-meme : les chunks du
+	 * terrain partagent ce materiau, et la rampe ne doit bouger qu'ici. Le
+	 * parametre `NappeRampeActive` vaut zero dans le materiau de base, donc un
+	 * maillage qui n'a pas cette instance ne subit aucun deplacement.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> MatiereNappeVue;
 
 	/** Rebatit le reseau de grottes quand le monde vient du menu. */
 	void RebuildCaveNetwork();

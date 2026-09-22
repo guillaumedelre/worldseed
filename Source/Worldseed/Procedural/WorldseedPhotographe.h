@@ -91,6 +91,32 @@ public:
 	 */
 	int32 AjouterLesCanyons(int32 Combien);
 
+	/**
+	 * UNE VUE DESIGNEE A LA MAIN, POUR CE QUE LA TOURNEE NE SAIT PAS CADRER.
+	 *
+	 * Les quatre familles d'arrets visent des FORMES -- une arche, une paroi,
+	 * une table -- et se placent donc pres d'elles, entre quatre-vingt-dix et
+	 * cent soixante-dix metres. C'est exactement ce qu'il faut pour juger une
+	 * geometrie, et exactement ce qui ne montre JAMAIS l'horizon.
+	 *
+	 * Or certains defauts ne vivent qu'a la limite du terrain charge : la
+	 * marche que laisse le decor de fond sous le voxel ne se voit qu'a douze
+	 * cents metres, et aucune forme du monde ne se trouve la pour y amener une
+	 * camera. D'ou un arret dont TOUT est donne en ligne de commande.
+	 *
+	 * IL N'Y A AUCUNE MECANIQUE NOUVELLE, et c'est voulu : un arret est deja
+	 * « se poser en `Cible + Depuis * Distance`, puis viser `Cible` ». Une vue
+	 * libre est donc un arret dont la cible est posee LOIN dans l'axe du cap,
+	 * la distance valant ce meme eloignement -- le pion retombe alors
+	 * exactement au point demande, et la visee suit le cap. Ecrire un second
+	 * chemin de placement aurait fait diverger deux moities qui doivent rester
+	 * identiques.
+	 *
+	 * Rend faux si `-WorldseedVue=` est absent, auquel cas la tournee normale
+	 * a lieu.
+	 */
+	bool AjouterLaVueLibre();
+
 	/** Reecrit l heure a midi avant chaque prise. Sans effet sans UDS. */
 	void MidiFige();
 

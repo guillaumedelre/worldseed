@@ -7539,3 +7539,161 @@ de sa racine d'installation. Le jeu demarre, ne charge rien, et QUITTE -- le
 journal ne porte alors **aucune ligne `[Worldseed]`**, ce qui ressemble trait
 pour trait a un module qui ne s'initialise pas. **Tout lancement du jeu passe
 par PowerShell**, ou le chemin arrive intact.
+
+### L'horizon etait NOYE, pas marche : la rampe pilotee par la camera (22 septembre 2026)
+
+La tache #19 parlait d'« une marche de 125 m au bord du terrain detaille ». Le
+defaut etait tout autre, et bien plus gros : **l'enfoncement de la nappe vue
+faisait passer 16,3 % des terres SOUS LE NIVEAU DE LA MER**, ou l'ocean les
+recouvrait. Vu depuis un sommet, une vallee verte avec sa plage se lisait comme
+une baie.
+
+**LE MECANISME.** La nappe vue s'enfonce de `bandeM + marge` -- cent vingt-cinq
+metres -- pour passer sous tout ce que le voxel peut creuser. Mais elle porte le
+relief du monde ENTIER : tout ce qui culmine plus bas que l'enfoncement se
+retrouve sous l'altitude zero, et l'ocean est un plan a zero. Mesure :
+**398 839 sommets de terre sur 2 449 474**. Courbe relevee au passage -- part
+des terres noyees selon l'enfoncement : 25 m -> 7,1 % ; 50 -> 9,1 ; 75 -> 11,3 ;
+100 -> 13,8 ; **125 -> 16,3** ; 150 -> 18,7.
+
+**POURQUOI LA NOTE DU 21 CONCLUAIT « RIEN DE VISIBLE DEPUIS UN SOMMET », ET
+POURQUOI C'ETAIT LE PIRE ENDROIT OU REGARDER.** Le sol lointain ne reapparait
+qu'a `R.(1 + 125/h)` ou h est la hauteur de l'oeil : **1,5 km depuis un oeil a
+500 m, mais 7,2 km depuis un oeil a 25 m**. Plus on est HAUT, moins la bande
+cachee est large. Le pire cas est donc le joueur debout dans une plaine, pas le
+belvedere -- et c'est depuis le belvedere qu'on avait juge.
+
+#### Deux plafonds essayes et MESURES COMME MAUVAIS
+
+Arbitrage rendu par le proprietaire : plafonner l'enfoncement au niveau de la
+mer, `z' = max(z - 125, marge)`. L'argument etait bon sur le papier -- aucune
+chambre n'existe sous soixante-six metres d'altitude, donc une nappe arretee a
+la marge de mer reste sous tout plancher de cavite. **La mesure l'a refute.**
+
+    lointain, part d'eau     cap 270    cap 225
+    avant (125 m uniforme)    73,7 %     51,4 %
+    plafond a 5 m             77,3 %     53,7 %     <- PIRE
+    plafond a 40 m            67,8 %     65,3 %     <- se contredit
+    verite (sans enfoncement) 63,0 %     38,9 %
+
+**UNE PLATE-FORME A HAUTEUR DE RIVAGE N'EST PAS UNE TERRE.** A trois
+kilometres, cinq metres d'altitude ne se distinguent pas de l'eau -- et la
+houle passe par-dessus. Le plafond sauvait la terre du noyage et la rendait
+indiscernable de la mer, donc *plus* d'eau a l'ecran qu'avant. Remonte a
+quarante metres, il ameliore un cap et degrade l'autre : **un critere qui change
+de verdict selon le cadrage ne decide de rien.**
+
+#### Ce qui marche : la rampe, et pourquoi elle n'a pas les memes bornes
+
+Les deux exigences ne portent pas sur la meme DISTANCE, et c'est tout le
+probleme -- les opposer etait l'erreur. Pres du joueur, la nappe doit passer
+sous la bande creusable ; au loin, elle doit etre a son altitude vraie. Un
+deplacement de sommets pilote par la position de la CAMERA les concilie :
+enfoncement entier jusqu'au rayon de vue, nul au-dela de deux fois ce rayon.
+
+    lointain, part d'eau     cap 270    cap 225
+    rampe                     61,4 %     39,1 %
+    verite                    63,0 %     38,9 %
+
+**0,2 et 1,6 point de la verite, sur les deux caps, sans contradiction.**
+
+**LE PLAFOND DE MER RESTE, ET IL CHANGE DE ROLE.** Il ne sert plus a sauver les
+terres -- la rampe le fait mieux -- mais a **EPINGLER LE RIVAGE**. C'est ce qui
+supprime le seul risque serieux de la rampe.
+
+**LE COUT, mesure sur le meme binaire** (`-WorldseedRampe=0/1`) : trame **4,37 ms
+armee contre 4,34 coupee**, soit la derive machine. Le deplacement de sommets
+sur deux millions de sommets ne se paie pas.
+
+#### Les deux risques, eprouves au lieu d'etre supposes
+
+- **LA RESPIRATION.** La rampe suit la camera, donc un point du monde change
+  d'altitude dessinee quand on marche -- environ un metre tous les dix metres.
+  Mesure sur 200 m parcourus, silhouette du relief lointain : **10,8 px de
+  deplacement avec la rampe contre 13,0 px sans**, c'est-a-dire MOINS que la
+  parallaxe de la marche elle-meme. Le risque ne se materialise pas. Le rivage,
+  lui, ne bouge pas du tout : le plafond de mer l'epingle.
+- **L'ARCHE.** Pres du joueur la rampe enfonce autant qu'avant, donc rien ne
+  change aux cavites. Verifie sur les quatre vues d'arche de la tournee, rampe
+  armee puis coupee : **aucune n'est muree, dans aucun etat**.
+
+**ET J'AI PRESENTE LA REGRESSION DE L'ARCHE COMME JUGEABLE SUR UNE IMAGE FIXE.**
+Le proprietaire l'a releve : « tu me parles d'une problematique sur la fermeture
+de l'arche que je ne vois pas dans les differents cas d'usage ». Il avait raison.
+Ce que l'enfoncement a ferme le 21 septembre est un **SURGISSEMENT** du fond a
+la sortie d'une cavite -- un defaut qui n'existe qu'ENTRE deux images. Aucune
+capture ne pouvait le montrer. **Quand un risque est temporel, le dire, et ne
+pas laisser croire qu'une planche de vignettes en decide.**
+
+#### Comment la rampe est montee
+
+- **Le materiau porte le deplacement, le C++ porte le plafond.**
+  `M_WorldseedBiome` (VERSIONNE, `Content/Worldseed/Materials/`) recoit dix-huit
+  noeuds : distance XY a la camera, rampe lineaire entre deux parametres
+  scalaires, multipliee par un plafond PAR SOMMET lu dans le canal **UV3**.
+- **UV3 etait libre** : la nappe n'en posait que trois. Et les chunks du terrain,
+  qui partagent ce materiau, n'en posent AUCUN -- leur section se cree sans
+  tableau d'UV. Une porte `NappeRampeActive`, a zero dans le materiau de base,
+  garantit de toute facon qu'eux ne bougent pas : seule la nappe recoit une
+  instance dynamique qui l'arme.
+- **Le plafond ne peut pas vivre dans le materiau** : il demande l'altitude
+  VRAIE du sommet, que celui-ci ne porte pas une fois deplace. D'ou le canal.
+- **`ReglerRampeDeLaNappe` est appelee DEUX fois, et il le faut.** La nappe se
+  batit AVANT que l'acteur voxel soit pondu : au premier appel le rayon de vue
+  n'est pas connu et l'on pose le defaut de classe (600 m), le second appel le
+  corrige (1200). Une seule pose aurait cale la rampe sur un rayon qui n'est pas
+  celui du jeu, **et rien ne l'aurait signale** -- le journal dit desormais
+  laquelle des deux parle.
+
+#### L'outillage ajoute, reutilisable
+
+- **`-WorldseedVue=<caps separes par des virgules>`** avec `-WorldseedVueX/Y/H/
+  Tangage/Nom=` : une vue LIBRE, cadree a la main, au lieu de la tournee des
+  formes. Les quatre familles d'arrets visent des FORMES et se placent a
+  90-170 m d'elles -- exactement ce qu'il faut pour juger une geometrie, et
+  exactement ce qui ne montre JAMAIS l'horizon. Aucune mecanique nouvelle : un
+  arret est deja « se poser en Cible + Depuis * Distance puis viser Cible »,
+  donc une vue libre est un arret dont la cible est posee a quatre kilometres
+  dans l'axe du cap.
+- **PIEGE PAYE : `FParse::Value` s'arrete sur une VIRGULE.** Son quatrieme
+  argument `bShouldStopOnSeparator` vaut VRAI par defaut : « 0,90,180,270 »
+  arrive comme « 0 », une seule vue, **sans un mot**. Passer `false`.
+- `-WorldseedNappeMarge=` et `-WorldseedRampe=` pour les A/B sans recompiler.
+
+#### Trois pieges de mesure, tous de la meme famille
+
+1. **L'ECART RGB A LA VERITE MELANGE DEUX POPULATIONS.** Le plafond a 5 m
+   eloignait l'image du temoin (37,7 -> 52,4 sur 765) et j'ai failli conclure ;
+   c'etait un agregat sur du relief ET de la couleur d'eau. Decompose en « part
+   du lointain qui se lit comme de l'eau », le verdict devient lisible.
+2. **ET CE SECOND CRITERE ETAIT LUI-MEME CONFONDU.** Ne plus enfoncer le FOND
+   MARIN -- effet de bord du plafond -- le remonte de cent vingt-cinq metres,
+   donc l'eau change de couleur par la profondeur. Le compte mesurait en partie
+   cela. Il n'est redevenu franc qu'avec la rampe, qui laisse le fond a sa vraie
+   profondeur dans les deux moities.
+3. **UN TEMOIN DE RAYON DOIT COUVRIR LA DISTANCE QU'ON PHOTOGRAPHIE.** Premier
+   A/B monte a `-WorldseedRayon=300` : au-dela de 300 m ce n'est plus du voxel
+   mais la nappe, donc la vue large ne comparait rien. Deja consigne pour la
+   fenetre d'eau ramenee a 0,5 km ; refait.
+
+**PIEGE D'OUTILLAGE, SILENCIEUX : Git Bash reecrit les chemins de carte.**
+Lancer le jeu depuis bash avec `/Game/Worldseed/Maps/L_Worldseed_Proc` donne
+`LoadMap: C:/Program Files/Git/Game/...` puis `Failed to load package`. MSYS
+prend tout argument commencant par `/` pour un chemin POSIX. Le jeu demarre, ne
+charge rien, QUITTE -- et le journal ne porte **aucune ligne `[Worldseed]`**, ce
+qui ressemble trait pour trait a un module qui ne s'initialise pas. **Tout
+lancement du jeu passe par PowerShell.**
+
+**ET LES MATERIAUX S'EDITENT SANS MCP**, ce qui compte parce que le lien tombe a
+chaque relance de l'editeur. `unreal.MaterialEditingLibrary` en commandlet
+(`-run=pythonscript`) cree les expressions, les relie, branche la propriete et
+recompile. Le script est idempotent PAR CONSTAT -- il cherche son propre
+parametre et sort s'il le trouve -- jamais par destruction : le depot a deja paye
+une greffe posee deux fois sur la RVT.
+
+**L'ORACLE AJOUTE** : `Worldseed.Nappe.PlafondDeMer`. Il garde l'INVARIANT et
+non le chiffre -- le pourcentage bouge a chaque regeneration, la propriete non :
+le plafond n'eleve jamais un sommet (donc aucun fond marin ne peut emerger,
+question posee par le proprietaire) et ne laisse aucune terre passer sous la
+marge. Temoin monte puis retire : rendre l'enfoncement uniforme, comme avant, le
+fait tomber sur « on n'enfonce plus du tout to be 0, but it was 125 ».

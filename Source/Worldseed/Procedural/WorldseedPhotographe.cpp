@@ -131,6 +131,89 @@ void UWorldseedPhotographe::Photographier(double XMetres, double YMetres,
 	Demarrer();
 }
 
+bool UWorldseedPhotographe::AjouterLaVueLibre()
+{
+	// PLUSIEURS CAPS D'UN SEUL LANCEMENT, et ce n'est pas du confort. Une
+	// relance coute le chargement du monde et le remplissage du terrain ; a
+	// quatre caps depuis un meme point cela fait quatre fois ce prix pour
+	// quatre images qui ne different que par une rotation. Et surtout, les
+	// quatre sont alors prises dans le MEME etat du monde -- meme heure, meme
+	// diffusion -- donc comparables entre elles.
+	// LE QUATRIEME ARGUMENT EST INDISPENSABLE, et son defaut coute une
+	// relance : `FParse::Value` s'arrete sur une VIRGULE quand
+	// `bShouldStopOnSeparator` vaut vrai, ce qui est son defaut. Sans lui,
+	// « 0,90,180,270 » arrive comme « 0 » -- une seule vue, sans un mot.
+	FString Caps;
+	if (!FParse::Value(FCommandLine::Get(), TEXT("WorldseedVue="), Caps, false)
+		|| Caps.IsEmpty())
+	{
+		return false;
+	}
+
+	TArray<FString> Morceaux;
+	Caps.ParseIntoArray(Morceaux, TEXT(","), true);
+	if (Morceaux.Num() == 0) { return false; }
+
+	const AWorldseedVoxelTerrain* const T = Terrain();
+	if (!T) { return false; }
+
+	float XM = 0.0f, YM = 0.0f, HauteurOeilM = 2.0f, TangageDeg = 0.0f;
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedVueX="), XM);
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedVueY="), YM);
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedVueH="), HauteurOeilM);
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedVueTangage="), TangageDeg);
+
+	FString Nom;
+	if (!FParse::Value(FCommandLine::Get(), TEXT("WorldseedVueNom="), Nom)
+		|| Nom.IsEmpty())
+	{
+		Nom = TEXT("vue");
+	}
+
+	// ASSEZ LOIN POUR QUE LA VISEE SOIT UN CAP ET NON UN POINT. A quatre
+	// kilometres, un ecart de placement d'un metre fait moins d'un centieme de
+	// degre sur la direction regardee.
+	constexpr double PorteeM = 4000.0;
+
+	const double SolM = T->MondeChamp().SurfaceHeightM(XM, YM);
+	const double OeilM = SolM + HauteurOeilM;
+
+	// LE TANGAGE SE POSE EN DEPLACANT LA CIBLE, PAS LA CAMERA, parce que c'est
+	// la cible qui donne la visee. Mais le placement, lui, lit
+	// `Cible.Z + Hauteur` : on compense donc exactement, sans quoi une visee
+	// plongeante poserait aussi la camera au ras du sol vise.
+	const double Chute = PorteeM * FMath::Tan(FMath::DegreesToRadians(TangageDeg));
+
+	for (const FString& M : Morceaux)
+	{
+		const float CapDeg = FCString::Atof(*M.TrimStartAndEnd());
+
+		// LE CAP SUIT LA MEME CONVENTION QUE -WorldseedCap= : zero au NORD,
+		// donc vers +Y, et quatre-vingt-dix a l'est. Elle est ecrite ici en
+		// toutes lettres pour qu'on puisse la verifier plutot que la deduire.
+		const double Cap = FMath::DegreesToRadians(static_cast<double>(CapDeg));
+		const FVector2D Axe(FMath::Sin(Cap), FMath::Cos(Cap));
+
+		FWorldseedPhotoStop E;
+		E.Nom = Morceaux.Num() > 1
+			? FString::Printf(TEXT("%s_cap%03d"), *Nom,
+				FMath::RoundToInt(FRotator::ClampAxis(CapDeg)))
+			: Nom;
+		E.CibleM = FVector(XM + Axe.X * PorteeM, YM + Axe.Y * PorteeM, OeilM - Chute);
+		E.DepuisM = -Axe;
+		E.DistanceM = PorteeM;
+		E.HauteurM = Chute;
+		Tournee.Add(E);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] photo : VUE LIBRE « %s » a (%.0f, %.0f) m, sol %.0f m, ")
+			TEXT("oeil %.0f m, cap %.0f deg, tangage %.1f deg"),
+			*E.Nom, XM, YM, SolM, OeilM, CapDeg, TangageDeg);
+	}
+
+	return true;
+}
+
 int32 UWorldseedPhotographe::AjouterLesArches(int32 Combien)
 {
 	AWorldseedVoxelTerrain* const T = Terrain();
@@ -508,11 +591,17 @@ void UWorldseedPhotographe::Tick(float DeltaTime)
 		// vingt-sept arrets faisaient huit heures de jeu et la moitie des
 		// vues sortait de nuit. L'heure est figee par ailleurs, mais une
 		// tournee breve coute de toute facon moins cher a relancer.
-		constexpr int32 ParForme = 2;
-		AjouterLesFalaises(ParForme);
-		AjouterLesArches(ParForme);
-		AjouterLesTables(ParForme);
-		AjouterLesCanyons(ParForme);
+		// UNE VUE DESIGNEE REMPLACE LA TOURNEE, elle ne s'y ajoute pas : on la
+		// demande pour regarder UN point precis, et enchainer huit formes
+		// derriere ferait perdre le cadrage qu'on vient de choisir.
+		if (!AjouterLaVueLibre())
+		{
+			constexpr int32 ParForme = 2;
+			AjouterLesFalaises(ParForme);
+			AjouterLesArches(ParForme);
+			AjouterLesTables(ParForme);
+			AjouterLesCanyons(ParForme);
+		}
 		Demarrer();
 	}
 

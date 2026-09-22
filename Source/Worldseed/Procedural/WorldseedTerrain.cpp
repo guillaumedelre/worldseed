@@ -375,6 +375,49 @@ void AWorldseedTerrain::Rebuild()
 	}
 }
 
+void AWorldseedTerrain::ReglerRampeDeLaNappe()
+{
+	if (!MatiereNappeVue) { return; }
+
+	// LE RAYON VIENT DE L'ACTEUR VOXEL, pas d'une copie. C'est lui qui decide
+	// jusqu'ou le terrain detaille existe, et donc jusqu'ou la nappe doit
+	// rester enfoncee. Tant qu'il n'est pas pondu, on pose le defaut de sa
+	// classe -- corrige au second appel.
+	float RayonM = AWorldseedVoxelTerrain::StaticClass()
+		->GetDefaultObject<AWorldseedVoxelTerrain>()->LoadRadiusM;
+	if (VoxelTerrain)
+	{
+		RayonM = VoxelTerrain->LoadRadiusM;
+	}
+
+	// UNE PORTE POUR L'A/B, parce que c'est un arbitrage A L'IMAGE. Sans elle
+	// il faudrait recompiler entre les deux moities, et le depot a une regle
+	// contre les A/B qui rouvrent le fichier de regles.
+	float Active = 1.0f;
+	{
+		FString Val;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRampe="), Val))
+		{
+			Active = FMath::Clamp(FCString::Atof(*Val), 0.0f, 1.0f);
+		}
+	}
+
+	const float Facteur = FMath::Max(GroundProxyRampFactor, 1.1f);
+	const float DebutCm = RayonM * WorldseedMetersToCm;
+	const float FinCm = RayonM * Facteur * WorldseedMetersToCm;
+
+	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeDebutCm"), DebutCm);
+	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeFinCm"), FinCm);
+	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeActive"), Active);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] sol de fond : rampe %s -- entiere jusqu'a %.0f m, ")
+		TEXT("nulle au-dela de %.0f m (rayon de vue %.0f m%s)"),
+		Active > 0.0f ? TEXT("ARMEE") : TEXT("COUPEE"),
+		RayonM, RayonM * Facteur, RayonM,
+		VoxelTerrain ? TEXT("") : TEXT(", voxel pas encore pondu"));
+}
+
 void AWorldseedTerrain::SpawnVoxelTerrain()
 {
 	UWorld* World = GetWorld();
@@ -458,6 +501,12 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 		}
 
 		VoxelTerrain->FinishSpawning(GetActorTransform());
+
+		// LE RAYON DE VUE N'EST CONNU QU'ICI. La nappe s'est batie avant cette
+		// ponte, donc sa rampe a ete calee sur le defaut de classe ; on la
+		// recale maintenant sur le rayon REEL, surcharges de ligne de commande
+		// comprises.
+		ReglerRampeDeLaNappe();
 	}
 
 	if (!VoxelTerrain)
@@ -856,6 +905,70 @@ void AWorldseedTerrain::BuildGroundProxy()
 	// separe les deux avant meme de regarder l'image.
 	int32 SommetsSousZero = 0;
 
+	// --- CE QUE L'ENFONCEMENT DE LA NAPPE VUE VA NOYER -------------------
+	//
+	// LE CALCUL EST HISSE ICI POUR AVOIR UN SEUL PROPRIETAIRE. Il servait plus
+	// bas a enfoncer la nappe de l'IMAGE ; il sert aussi a compter ce que cet
+	// enfoncement coute, et deux copies d'un meme seuil divergent a la premiere
+	// retouche.
+	//
+	// POURQUOI CE COMPTE EXISTE. La nappe vue passe sous la bande creusable
+	// pour ne boucher aucune cavite -- cent vingt-cinq metres. Mais elle porte
+	// le relief du monde ENTIER, et tout ce qui culmine sous cette valeur passe
+	// alors SOUS LE NIVEAU DE LA MER : l'ocean, qui est un plan a l'altitude
+	// zero, le recouvre. Au-dela du rayon de chargement, une plaine cotiere ou
+	// une vallee basse ne se lit donc plus comme une terre un peu affaissee,
+	// elle DISPARAIT sous l'eau. Vu depuis un sommet, une vallee verte devient
+	// une baie.
+	//
+	// C'est le vrai cout de l'enfoncement, et il ne se voyait nulle part : le
+	// registre ne parlait que d'« une marche de 125 m ».
+	double SurEnfoncementM = GroundProxyHorizonExtraDropM;
+
+	// LA MARGE DE MER EST CELLE DES CAVITES, ET CE N'EST PAS UNE COINCIDENCE.
+	// C'est elle qui interdit a une chambre d'exister trop bas ; c'est donc
+	// elle, et pas un nombre choisi ici, qui borne par le bas ce que la nappe
+	// doit passer sous les cavites. La recopier les ferait diverger.
+	double MargeMerM = 5.0;
+	{
+		FString RulesError;
+		if (const UWorldseedRules* R = WorldseedPipeline::GetRules(RulesError))
+		{
+			const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*R);
+			SurEnfoncementM = FMath::Max<double>(
+				SurEnfoncementM, DR.BandDepthM + GroundProxyHorizonMarginM);
+			MargeMerM = FWorldseedCaveRules::FromRules(*R).SeaMarginM;
+		}
+	}
+	{
+		FString Val;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeVue="), Val))
+		{
+			SurEnfoncementM = FMath::Max(0.0, FCString::Atod(*Val));
+		}
+
+		// LA MARGE EST SURCHARGEABLE PARCE QU'ELLE EST EN QUESTION. Posee a la
+		// valeur des cavites -- cinq metres -- elle laisse la terre sauvee du
+		// noyage affleurer AU RAS de l'eau, donc indiscernable de la mer a
+		// trois kilometres. La regler demande un A/B, et le depot a une regle
+		// contre les A/B qui rouvrent le fichier de regles.
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeMarge="), Val))
+		{
+			MargeMerM = FMath::Max(0.0, FCString::Atod(*Val));
+		}
+	}
+
+	int32 SommetsEmerges = 0;
+	int32 SommetsNoyesParLaVue = 0;
+
+	// ET LA COURBE, PAS SEULEMENT LE POINT. « 16 % des terres noyees a 125 m »
+	// ne dit pas ce qu'on regagnerait en enfoncant moins : la distribution des
+	// altitudes basses n'est pas uniforme, et c'est elle qui decide si ramener
+	// l'enfoncement a quatre-vingts metres rend beaucoup ou presque rien.
+	constexpr int32 NbPaliers = 6;
+	constexpr double Paliers[NbPaliers] = { 25.0, 50.0, 75.0, 100.0, 125.0, 150.0 };
+	int32 ParPalier[NbPaliers] = {};
+
 	// LE MARQUAGE VOYAGE AVEC LE SOMMET, il ne se rededuit pas. La nappe vue
 	// est ENFONCEE sous le niveau de la mer, donc son Z ne dit plus rien de
 	// l'altitude reelle du terrain : relire « ce sommet est-il submerge » sur
@@ -974,6 +1087,15 @@ void AWorldseedTerrain::BuildGroundProxy()
 
 			SousZero[Index] = (HereM < 0.0f) ? 1 : 0;
 			if (HereM < 0.0f) { ++SommetsSousZero; }
+			else
+			{
+				++SommetsEmerges;
+				if (HereM < SurEnfoncementM) { ++SommetsNoyesParLaVue; }
+				for (int32 P = 0; P < NbPaliers; ++P)
+				{
+					if (HereM < Paliers[P]) { ++ParPalier[P]; }
+				}
+			}
 		}
 	}
 
@@ -981,6 +1103,32 @@ void AWorldseedTerrain::BuildGroundProxy()
 		TEXT("[Worldseed] sol de fond : %d sommets sur %d sous le niveau zero (%.1f %%)"),
 		SommetsSousZero, Verts,
 		Verts > 0 ? 100.0f * SommetsSousZero / Verts : 0.0f);
+
+	// LE COMPTE QUI DIT CE QUE LE PLAFOND SAUVE, et il se lit en part des
+	// TERRES, pas du monde : c'est la terre emergee qui etait en jeu.
+	//
+	// IL COMPTE CE QUI EST APLATI, PAS CE QUI EST NOYE, parce que depuis le
+	// plafonnement plus rien ne se noie. Le jour ou ce chiffre remonterait, ce
+	// serait que le plafond a saute -- et un compte le dit, la ou un
+	// chronometre ne dirait rien.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] sol de fond : enfoncement de la vue %.0f m, PLAFONNE a ")
+		TEXT("%.0f m au-dessus de la mer -- %d sommets de terre sur %d (%.1f %%) ")
+		TEXT("sont aplatis au lieu d'etre noyes"),
+		SurEnfoncementM, MargeMerM, SommetsNoyesParLaVue, SommetsEmerges,
+		SommetsEmerges > 0 ? 100.0f * SommetsNoyesParLaVue / SommetsEmerges : 0.0f);
+
+	{
+		FString Courbe;
+		for (int32 P = 0; P < NbPaliers; ++P)
+		{
+			Courbe += FString::Printf(TEXT("  %.0f m -> %.1f %%"), Paliers[P],
+				SommetsEmerges > 0 ? 100.0f * ParPalier[P] / SommetsEmerges : 0.0f);
+		}
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] sol de fond : part des terres noyee selon l'enfoncement --%s"),
+			*Courbe);
+	}
 
 	Triangles.Reserve((CountX - 1) * (CountY - 1) * 6);
 	for (int32 Y = 0; Y < CountY - 1; ++Y)
@@ -1151,41 +1299,28 @@ void AWorldseedTerrain::BuildGroundProxy()
 		//
 		// La bascule est GARDEE malgre tout -- elle ne coute rien et reste un
 		// filet si un creusement futur sortait de la bande.
-		double SurEnfoncementM = GroundProxyHorizonExtraDropM;
-		{
-			FString RulesError;
-			if (const UWorldseedRules* R = WorldseedPipeline::GetRules(RulesError))
-			{
-				const FWorldseedDensityRules DR = FWorldseedDensityRules::FromRules(*R);
-				SurEnfoncementM = FMath::Max<double>(
-					SurEnfoncementM, DR.BandDepthM + GroundProxyHorizonMarginM);
-			}
-		}
-
-		// UNE SURCHARGE, PARCE QUE C'EST UN ARBITRAGE A L'IMAGE. Plus le decor
-		// est bas, moins il bouche -- mais plus la marche qu'il laisse a la
-		// limite du terrain charge est haute. Aucun calcul ne tranche cela, et
-		// un A/B qui demanderait de rouvrir le fichier de regles en changerait
+		//
+		// LA VALEUR EST CALCULEE PLUS HAUT, avec le compte des terres qu'elle
+		// noie : c'est la meme grandeur, et la recopier ici l'aurait fait
+		// diverger de ce que le releve annonce.
+		//
+		// `-WorldseedNappeVue=` la surcharge, parce que c'est un arbitrage A
+		// L'IMAGE. Plus le decor est bas, moins il bouche -- mais plus il noie
+		// de terres basses. Aucun calcul ne tranche cela, et un A/B qui
+		// demanderait de rouvrir le fichier de regles en changerait
 		// l'empreinte, donc regenererait le monde entre les deux moities.
-		{
-			FString Val;
-			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeVue="), Val))
-			{
-				SurEnfoncementM = FMath::Max(0.0, FCString::Atod(*Val));
-			}
-		}
 
 		// L'ENFONCEMENT SUIT L'EXAGERATION VERTICALE, comme celui de la nappe :
 		// un monde etire verticalement etire aussi la hauteur des ouvertures
-		// qu'il s'agit de ne plus boucher.
-		const float SurEnfoncementCm =
-			SurEnfoncementM * WorldseedMetersToCm * HeightExaggeration;
+		// qu'il s'agit de ne plus boucher. Il s'applique SOMMET PAR SOMMET
+		// depuis que la mer le plafonne -- voir la boucle ci-dessous.
 
 		TArray<FVector> HVertices;
 		TArray<FVector> HNormals;
 		TArray<FVector2D> HUVs;
 		TArray<FVector2D> HTintRG;
 		TArray<FVector2D> HTintB;
+		TArray<FVector2D> HCapCm;
 		TArray<FProcMeshTangent> HTangents;
 		TArray<FLinearColor> HColors;
 		TArray<int32> HTriangles;
@@ -1195,6 +1330,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 		HUVs.SetNumUninitialized(HVerts);
 		HTintRG.SetNumUninitialized(HVerts);
 		HTintB.SetNumUninitialized(HVerts);
+		HCapCm.SetNumUninitialized(HVerts);
 		HTangents.SetNumUninitialized(HVerts);
 		HColors.SetNumUninitialized(HVerts);
 
@@ -1215,7 +1351,59 @@ void AWorldseedTerrain::BuildGroundProxy()
 				const int32 Dst = Y * HX + X;
 
 				HVertices[Dst] = Vertices[Src];
-				HVertices[Dst].Z -= SurEnfoncementCm;
+
+				// --- LE SOMMET RESTE A SON ALTITUDE, IL PORTE SON PLAFOND ---
+				//
+				// L'ENFONCEMENT NE SE CUIT PLUS DANS LA GEOMETRIE. Il depend
+				// desormais de la distance a la CAMERA -- entier pres du
+				// joueur, nul au loin -- donc il change a chaque image et ne
+				// peut pas vivre dans des sommets qu'on ne rebatit jamais. Il
+				// est applique par deplacement de sommets dans le materiau, et
+				// ce canal lui porte la seule chose que le materiau ne sait pas
+				// calculer : de combien CE sommet a le droit de descendre.
+				//
+				// --- L'ENFONCEMENT NE CREUSE JAMAIS SOUS LA MER -------------
+				//
+				// SANS CE PLAFOND, IL NOIE UN SIXIEME DES TERRES. Mesure sur le
+				// monde de reference : 398 839 sommets de terre sur 2 449 474,
+				// soit 16,3 %, passaient sous l'altitude zero -- et l'ocean,
+				// qui est un plan a zero, les recouvrait. Au-dela du rayon de
+				// chargement, une vallee verte avec sa plage se lisait comme
+				// une BAIE. Vu a l'image depuis le massif de l'est, et confirme
+				// par un temoin a `-WorldseedNappeVue=0` ou la meme vallee est
+				// verte : 28 a 30 % du cadre changeait entre les deux moities.
+				//
+				// ET LE PLAFOND NE ROUVRE RIEN, par construction. L'enfoncement
+				// existe pour que la nappe passe sous toute cavite ; or aucune
+				// chambre n'existe sous `profondeurMax + rayonMax + margeMer`
+				// d'altitude -- soixante-six metres ici -- donc tout plancher de
+				// cavite se trouve AU-DESSUS de la marge de mer, partout. Une
+				// nappe posee a cette marge reste dessous sans avoir a creuser
+				// davantage. Les deux contraintes se rejoignent exactement.
+				//
+				// CE QU'ON ECHANGE, ET IL FAUT LE DIRE : les terres qui
+				// culminent sous l'enfoncement ne sont plus noyees, elles sont
+				// APLATIES -- elles se lisent au loin comme une plate-forme a
+				// hauteur de rivage au lieu d'un relief. On troque une mer
+				// fausse contre une plaine faussement plate, ce qui est le bon
+				// sens de l'echange : une terre reste une terre.
+				const double FloorM =
+					(HVertices[Dst].Z + DropCm)
+					/ (WorldseedMetersToCm * HeightExaggeration);
+				const double EnfonceM = WorldseedNappe::PlafondDEnfoncement(
+					FloorM, MargeMerM, SurEnfoncementM);
+
+				// ET LE PLAFOND DE MER EPINGLE LE RIVAGE, ce qui supprime le
+				// seul risque serieux de la rampe. Un enfoncement qui suit la
+				// camera fait « respirer » le relief lointain : un point voit
+				// son altitude dessinee changer d'environ un metre par dix
+				// metres parcourus. Sur une crete c'est invisible ; sur un
+				// TRAIT DE COTE cela se verrait, le rivage avancant et reculant
+				// au rythme des pas. Or le plafond vaut zero des qu'on approche
+				// du niveau de la mer : le rivage ne bouge pas, par
+				// construction.
+				HCapCm[Dst] = FVector2D(
+					EnfonceM * WorldseedMetersToCm * HeightExaggeration, 0.0);
 				HNormals[Dst] = Normals[Src];
 				HUVs[Dst] = UVs[Src];
 				HTintRG[Dst] = TintRG[Src];
@@ -1302,7 +1490,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 			Remap.Init(INDEX_NONE, HVerts);
 
 			TArray<FVector> SV; TArray<FVector> SN; TArray<FVector2D> SU;
-			TArray<FVector2D> S2; TArray<FVector2D> S3;
+			TArray<FVector2D> S2; TArray<FVector2D> S3; TArray<FVector2D> S4;
 			TArray<FProcMeshTangent> ST; TArray<FLinearColor> SC;
 			TArray<int32> SI;
 			SI.Reserve(Source.Num());
@@ -1314,13 +1502,18 @@ void AWorldseedTerrain::BuildGroundProxy()
 					Remap[Ind] = SV.Num();
 					SV.Add(HVertices[Ind]); SN.Add(HNormals[Ind]);
 					SU.Add(HUVs[Ind]); S2.Add(HTintRG[Ind]); S3.Add(HTintB[Ind]);
+					S4.Add(HCapCm[Ind]);
 					ST.Add(HTangents[Ind]); SC.Add(HColors[Ind]);
 				}
 				SI.Add(Remap[Ind]);
 			}
 
+			// LE QUATRIEME CANAL PORTE LE PLAFOND D'ENFONCEMENT, et il etait
+			// libre : la nappe n'en posait que trois. Les chunks du terrain,
+			// eux, n'en posent AUCUN -- leur section se cree sans tableau
+			// d'UV -- donc ils ne peuvent pas lire ce canal par accident.
 			Vue->CreateMeshSection_LinearColor(
-				Index, SV, SI, SN, SU, S2, S3, TArray<FVector2D>(), SC, ST, false);
+				Index, SV, SI, SN, SU, S2, S3, S4, SC, ST, false);
 			if (Mat)
 			{
 				Vue->SetMaterial(Index, Mat);
@@ -1332,8 +1525,19 @@ void AWorldseedTerrain::BuildGroundProxy()
 		UMaterialInterface* const MatTerre = ChooseTerrainMaterial(Mode);
 		UMaterialInterface* const MatMer = ChoisirMateriauMerDecor(MatTerre);
 
-		SommetsTerre = PoserSection(0, TriTerre, MatTerre);
+		// L'INSTANCE DYNAMIQUE NE VA QUE SUR LA SECTION TERRE. La section MER
+		// porte le materiau du plugin Water, etranger a notre rampe -- et elle
+		// n'en a aucun besoin : son plafond vaut zero partout, un fond marin
+		// n'ayant jamais eu le droit de descendre.
+		MatiereNappeVue = MatTerre
+			? UMaterialInstanceDynamic::Create(MatTerre, this)
+			: nullptr;
+
+		SommetsTerre = PoserSection(
+			0, TriTerre, MatiereNappeVue ? MatiereNappeVue : MatTerre);
 		SommetsMer = PoserSection(1, TriMer, MatMer);
+
+		ReglerRampeDeLaNappe();
 
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] sol de fond : section terre %d sommets / %d triangles, ")

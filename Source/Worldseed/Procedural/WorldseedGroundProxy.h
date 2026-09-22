@@ -10,6 +10,46 @@
 
 class UProceduralMeshComponent;
 
+namespace WorldseedNappe
+{
+	/**
+	 * De combien CE sommet de la nappe vue a le droit de descendre.
+	 *
+	 * LA NAPPE VUE S'ENFONCE POUR NE BOUCHER AUCUNE CAVITE : le voxel ne creuse
+	 * que dans une bande sous la surface, et un decor pose sous cette bande ne
+	 * peut rien obstruer. Mais elle porte le relief du monde ENTIER, et un
+	 * enfoncement uniforme fait passer sous le niveau de la mer tout ce qui
+	 * culmine plus bas que lui -- l'ocean, plan a l'altitude zero, le recouvre
+	 * alors. Mesure du 22 septembre : **16,3 % des terres** ainsi noyees, une
+	 * vallee verte se lisant comme une baie depuis un sommet.
+	 *
+	 * LE PLAFOND EST EXACTEMENT LA BONNE BORNE, et ce n'est pas un reglage
+	 * heureux. Aucune chambre n'existe sous `profondeurMax + rayonMax +
+	 * margeMer` d'altitude -- soixante-six metres sur ce monde -- donc tout
+	 * plancher de cavite se trouve AU-DESSUS de la marge de mer, partout. Une
+	 * nappe qui s'arrete a cette marge reste dessous sans creuser plus loin :
+	 * les deux contraintes se rejoignent au lieu de s'opposer.
+	 *
+	 * ET IL EPINGLE LE RIVAGE, ce qui supprime le seul risque serieux de la
+	 * rampe. L'enfoncement suit la camera, donc le relief lointain « respire »
+	 * quand on marche ; sur un trait de cote cela se verrait. Or ce plafond
+	 * vaut ZERO au niveau de la mer : le rivage ne bouge pas, par construction.
+	 * Mesure sur 200 m parcourus : silhouette lointaine deplacee de 10,8 px
+	 * avec la rampe contre 13,0 sans, donc moins que la parallaxe de la marche.
+	 *
+	 * @param AltitudeM     altitude du sommet, en metres, zero au niveau de la mer
+	 * @param MargeMerM     la marge sous laquelle on ne descend jamais
+	 * @param EnfoncementM  l'enfoncement plein, celui qui passe sous la bande
+	 * @return de zero a `EnfoncementM`, JAMAIS negatif -- on n'eleve pas un sommet
+	 */
+	inline double PlafondDEnfoncement(double AltitudeM, double MargeMerM,
+		double EnfoncementM)
+	{
+		return FMath::Clamp(AltitudeM - MargeMerM, 0.0,
+			FMath::Max(EnfoncementM, 0.0));
+	}
+}
+
 /**
  * Le composant qui presente le sol au plugin Water — et LUI SEUL.
  *
