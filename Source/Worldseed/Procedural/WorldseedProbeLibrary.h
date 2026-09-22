@@ -291,6 +291,32 @@ public:
 		int32 ResolutionY = 2048, int32 Transects = 24, float LongueurM = 120.0f);
 
 	/**
+	 * LES GRADINS TOMBENT-ILS SUR LES LIMITES DE BANCS ?
+	 *
+	 * `ProbeParois` a etabli l'etage au-dessus : le terrassement vient de la
+	 * chaine 2D et non du champ de densite. Reste a savoir QUI le taille, et
+	 * la reponse evidente -- l'erosion stratifiee et le sapement des corniches
+	 * -- n'a jamais ete mesuree. Elle a meme ete ECRITE au registre comme si,
+	 * sur la foi d'une carte des causes ou les bandes de couleur suivaient les
+	 * gradins. Or ces bandes sont horizontales PAR CONSTRUCTION et les gradins
+	 * le sont aussi : deux choses independamment horizontales se superposent
+	 * toujours.
+	 *
+	 * Ce qu'on mesure ici est la PHASE : pour chaque point de paroi, sa
+	 * position dans son banc -- 0 au toit, 1 a la base -- et la pente moyenne
+	 * en fonction de cette phase. Une stratigraphie qui taille des marches
+	 * doit effondrer la pente pres du toit (la banquette) et la relever au
+	 * milieu (la contremarche).
+	 *
+	 * LE TEMOIN EST DANS LA SONDE : `DecalageDatumM` deplace les limites
+	 * SUPPOSEES sans toucher au terrain. A un demi banc, une structure reelle
+	 * doit se brouiller ; si elle survit, c'est la methode qui la fabrique.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeMarches(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 2048, float DecalageDatumM = 12.0f);
+
+	/**
 	 * QUE TROUVE-T-ON, ET DANS QUEL BIOME ?
 	 *
 	 * ATTENTION A LA PREMISSE : il n.existe AUCUNE table qui dirait « ce biome

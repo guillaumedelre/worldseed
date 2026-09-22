@@ -8171,3 +8171,74 @@ d'une mesure. Deux regles : ne jamais reutiliser le nom d'un parametre pour
 autre chose, et **faire tomber un script de mesure TOUT DE SUITE et FORT** --
 un `Test-Path` avec `throw` en tete de script aurait coute une ligne et rendu
 l'erreur en une seconde.
+
+#### Les gradins SONT cales sur les bancs, et la pile ne couvre que 13,7 % du terrain
+
+Suite directe du diagnostic du noir. J'avais ECRIT au registre que l'erosion
+stratifiee taillait les marches, sur la foi d'une carte des causes -- puis
+corrige en disant que c'etait une inference. `ProbeMarches` la mesure.
+
+**CE QU'ELLE MESURE : LA PHASE.** Pour chaque cellule de paroi de canyon, sa
+position DANS son banc -- 0 au toit, 1 a la base -- puis le nombre de points,
+la pente moyenne et la part de plats par dixieme de banc. Une stratigraphie qui
+taille des marches doit concentrer la surface et l'aplatir au TOIT des bancs.
+
+    casier   points (x attendu)   pente moy.   part de plats
+    0.0-0.1      4494  (x3.66)      31,4 deg      52,0 %
+    0.1-0.2       836  (x0.68)      51,0            2,8 %
+    0.3-0.4      1202  (x0.98)      42,8           22,0 %
+    les six autres  ~820 (x0.67)    ~50,8          ~2,3 %
+
+**LA SURFACE SEJOURNE AU TOIT DES BANCS**, trois fois et demie plus que le
+hasard ne le voudrait, elle y est deux fois moins pentue, et **la moitie de ces
+points sont PLATS contre deux pour cent ailleurs**. C'est la banquette, et
+c'est exactement le mecanisme que `WorldseedSapement` decrit.
+
+**DEUX TEMOINS, ET IL EN FALLAIT DEUX -- LE PREMIER JET N'EN AVAIT QU'UN, ET IL
+NE POUVAIT RIEN REFUTER.** J'avais compare des AMPLITUDES entre la vraie phase
+et une phase DECALEE. Or l'amplitude d'une courbe est INVARIANTE PAR
+TRANSLATION : decaler les limites de bancs ne detruit pas la structure, il la
+DEPLACE, donc le temoin rendait le meme chiffre quoi qu'il arrive. Il annoncait
+20,6 % contre 18,7 et concluait « aucun calage » -- l'inverse de la verite.
+
+    TEMOIN HASARD, phase tiree au hachage de la cellule :
+        concentration x1,03 et amplitude de pente 3,2 % contre 41,9 %
+    TEMOIN DECALAGE de 12 m, le pic doit BOUGER :
+        casier 6 contre casier 0
+
+Le hasard DETRUIT la structure et rend le bruit d'echantillonnage ; le decalage
+la DEPLACE. Les deux ensemble disent qu'elle est reelle. **Un temoin qui ne
+peut pas rendre un resultat negatif n'est pas un temoin.**
+
+**SECONDE FAUTE DU PREMIER JET, ET ELLE EST PIRE** : je filtrais les cellules
+sous huit degres de pente « pour ne garder que les parois ». J'ecartais donc
+exactement les BANQUETTES -- la partie plate d'une marche -- c'est-a-dire la
+moitie de ce dont je testais l'existence. **On ne cherche pas un escalier en
+jetant ses marches.** Le tri est desormais SPATIAL, par le relief local.
+
+**ET LE CHIFFRE QUI CHANGE LA LECTURE DU ZEBRE :**
+
+    couverture de la pile, sur les fenetres de canyon
+        13,7 % des cellules DEDANS
+        64,4 % AU-DESSUS du datum
+        21,9 % sous la pile
+
+La geometrie n'a de bancs que dans la pile BORNEE, 267 a 520 m -- l'erosion
+stratifiee et le sapement lisent celle-la, l'enroulement du 22 septembre
+n'ayant touche que `BancAt`, donc la couleur. **Sur pres des deux tiers du
+terrain de canyon, on peint donc des rayures sur un relief qui n'en porte
+aucune : de la strate sans marche.** C'est, mesuree, la consequence de
+l'incoherence signalee en livrant la pile cyclique -- et c'est tres
+probablement ce que le proprietaire designait par « la pile cyclique fait
+beaucoup de mal aux canyons ».
+
+**CE QUI RESTE VRAI DU DIAGNOSTIC PRECEDENT** : le noir n'est pas une couleur
+(66 a 234 ecrits, 0,00 % sur la branche des bancs), et il nait de l'ombre de
+surfaces raides. On sait maintenant d'ou viennent ces surfaces la ou la pile
+mord, et qu'ailleurs elles ne viennent pas des bancs.
+
+**PIEGE D'OUTILLAGE, PAYE DEUX FOIS DANS L'HEURE** : `sed` pour inserer du C++
+multi-ligne mange les barres obliques inverses d'un chemin Windows -- `"$t\$X\$V.png"`
+est devenu `"$t$X$V.png"` en silence, et le script a lu un fichier inexistant.
+Pour une insertion de code ou un chemin echappe, employer l'editeur de fichiers
+plutot qu'une substitution.
