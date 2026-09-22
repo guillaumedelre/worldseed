@@ -6523,3 +6523,63 @@ resultat identique (155 chambres des deux cotes, a 34 ms d'intervalle). Rien
 ne le signalait, les deux lignes etant separees par mille autres. Cela montre
 au passage que **l'annulation n'interrompt PAS une passe de grottes en
 cours**.
+
+### Le drainage triait ce qui sortait deja trie (22 septembre 2026)
+
+Suite du retour au menu. Une fois les cavites sorties du chemin, les champs
+du sol devenaient 82 % de l'attente -- et dedans, le drainage 94,5 %.
+
+**LA DECOMPOSITION, ET ELLE A SAUVE LE CHANTIER :**
+
+    flood 1 415 ms   TRI 1 038 ms   accumulation 73 ms   D8 17 ms
+
+**UNE SECONDE POUR TRIER CE QUI SORTAIT DEJA TRIE.** Priority-Flood depile
+toujours le minimum, et la valeur empilee est FIGEE au moment de
+l'empilement -- la garde `< Max` interdit de repasser sur une cellule, et
+toute valeur poussee vaut au moins celle qu'on vient de depiler. Les
+depilements sortent donc par altitude non decroissante, soit l'ordre
+topologique a l'envers. Noter l'ordre au passage : **1 000 ms -> 22 ms**.
+
+**CE QUI RENDAIT CE TRI SI CHER N'EST PAS SON O(n log n)**, c'est son
+comparateur : `Filled[A] > Filled[B]` lit AILLEURS en memoire a chaque
+appel, donc un defaut de cache par comparaison, une vingtaine par element,
+sur 8,4 millions. **Un tri indirect sur des indices est toujours suspect a
+cette taille.**
+
+**L'EQUIVALENCE SE PROUVE AVANT DE REGARDER LE TEMPS, et c'est LA regle de
+cette session.** Un ordre topologique faux NE PLANTE PAS : il verse l'eau
+dans le mauvais sens et rend des debits errones -- donc humidite du sol,
+canyons et lacs faux -- sans un message. Or supprimer un tri produit
+mecaniquement un meilleur temps, Y COMPRIS quand l'ordre obtenu est mauvais.
+D'ou une EMPREINTE de l'accumulation (somme et pic) journalisee a chaque
+appel, et un A/B sur le MEME binaire (`-WorldseedFluxTri=1`) :
+
+    AVANT  somme 1.91641e+11  pic 7.38526e+07
+    APRES  somme 1.91641e+11  pic 7.38526e+07
+
+**CE QUE J'AVAIS REPERE A LA LECTURE ET QUI NE VALAIT RIEN.**
+`NormaliserParCentiles` copie le champ, puis appelle `Quantile` deux fois,
+et `Quantile` recopie a chaque appel : trois copies de 33 Mo. Defaut reel,
+visible, et **98 ms sur 2 802** -- 3,5 %. Le corriger aurait donne soixante
+millisecondes en laissant les 94 % de cote. **Un defaut qu'on VOIT en lisant
+le code n'est pas forcement celui qui coute** : c'est la quatrieme fois que
+ce depot paye cette lecon, apres les quatre corrections du routage des
+galeries qui n'ont jamais bouge le chiffre.
+
+**BILAN DU RETOUR AU MENU, de bout en bout :**
+
+    au depart                      14 927 ms
+    reseau de cavites serialise     3 433 ms   (-77 %)
+    ordre topologique              2 439 ms   (-84 % au total)
+
+**RESTE, ET CE SONT MAINTENANT DE VRAIS MURS** : le Priority-Flood
+(1 437 ms) est sequentiel par nature -- un tas binaire sur 8,4 M cellules --
+et la lecture disque (418 ms) est incompressible. Les serialiser
+couterait 20 a 30 Mo de cache pour deux champs pleine resolution, contre
+0,1 Mo pour les cavites : **trois cents fois plus de disque par seconde
+gagnee**. Arbitrage non tranche.
+
+**NON MESURE, ET ANNONCE COMME TEL** : `WorldseedFlow::Compute` est aussi ce
+que l'EROSION appelle a chaque passe, trois cents fois par generation. Le
+gain devrait s'y retrouver ; il faudrait une regeneration complete pour le
+chiffrer.
