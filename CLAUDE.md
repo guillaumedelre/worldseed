@@ -8122,14 +8122,25 @@ d'albedo : un banc a 108 n'a pas de place dans la meme image.
 parce qu'ils habillent les CONTREMARCHES des gradins, des faces raides qui
 prennent mal la lumiere et que le maillage dentelle.
 
-**D'OU LA PISTE, ET ELLE DONNE RAISON AU PROPRIETAIRE SUR LA FORME** : il
-demandait « se peut-il que ce soit les 300 passes d'erosion ? ». Oui, pour la
-GEOMETRIE : l'erosion stratifiee et le sapement des corniches taillent une
-banquette par banc, et la carte des causes montre qu'elles coincident
-exactement avec les bandes de couleur. Ce n'est donc plus la matiere qu'il
-faut regarder mais LA MARCHE : des contremarches moins raides, ou moins
-nombreuses, et le zebre tombe des deux cotes a la fois -- moins d'ombre
-portee, moins de dentelure a mailler.
+**D'OU LA PISTE : LA MARCHE, ET NON PLUS LA MATIERE.** Ce que la mesure etablit
+est que le noir est l'OMBRE de surfaces raides, et que les bancs y tombent deux
+fois plus que le biome parce qu'ils habillent ces surfaces-la.
+
+**CE QUI N'EST PAS MESURE, ET J'AI FAILLI L'ECRIRE COMME SI.** Que les gradins
+soient TAILLES PAR LA STRATIGRAPHIE -- erosion stratifiee et sapement des
+corniches -- est une INFERENCE tiree de la carte des causes, pas une mesure.
+Les bandes de couleur sont horizontales PAR CONSTRUCTION (`BancAt` ne depend
+que de Z), et les gradins sont horizontaux aussi : leur coincidence a l'image
+peut n'etre que celle de deux choses independamment horizontales. **Deux
+grandeurs qui se ressemblent a l'ecran ne sont pas pour autant liees**, et ce
+depot a deja paye la version voisine de cette faute -- prendre l'ombrage d'un
+versant pour des bandes de roche.
+
+Le controle qui trancherait ne demande PAS de regeneration : relever un
+transect vertical du relief 2D sur une paroi de canyon et comparer l'espacement
+des marches aux epaisseurs de bancs (18 a 35 m), et leurs altitudes aux limites
+de bancs (datum 520 moins les epaisseurs cumulees). Si les marches tombent sur
+les limites, la stratigraphie les a faites ; sinon la piste est ailleurs.
 
 **TROIS INSTRUMENTS POSES, ET ILS RESSERVIRONT :**
 
