@@ -6446,3 +6446,80 @@ pratique : **on ne peut pas viser un sommet**, et le choix du point de
 naissance perd son sens des que le relief est raide. A reprendre en bornant
 l'ecart d'altitude, comme `EcartAltitudeDepartM` le fait deja pour le depart
 choisi au menu.
+
+### « Repris du cache » ne veut pas dire « lu » (22 septembre 2026)
+
+Signale : « lorsque je fais echap pour revenir au menu, malgre que la carte
+soit dans le cache, elle met beaucoup de temps a s'afficher sur le globe,
+pourtant aucun calcul de re-generation n'est effectue ». Le releve disait
+bien « monde repris du cache (12982 ms) », et le mot CACHE laissait croire a
+une lecture.
+
+**CETTE BRANCHE REJOUE QUATRE PASSES DERIVEES**, et il n'y avait aucun chrono
+pour le dire :
+
+    lecture du fichier      456 ms      3 %
+    biomes                  199 ms      1 %
+    champs du sol         3 066 ms     21 %
+    GROTTES              11 181 ms     75 %
+
+**UN TOTAL SANS DETAIL NE SE CORRIGE PAS, IL SE DECOMPOSE.** Meme famille que
+« quand une correction ne bouge pas la mesure, se demander si la mesure
+melange deux populations » : ici un seul chiffre couvrait quatre traitements
+dont un pesait les trois quarts.
+
+**LE RESEAU DE CAVITES EST DESORMAIS SERIALISE** -- reprise **14,9 s ->
+3,6 s**, grottes **0 ms**. L'argument du registre (« rebati a chaque
+chargement, donc aucun impact sur le cache ») valait quand on ne payait ce
+prix qu'une fois au lancement ; il ne vaut plus des qu'on fait des
+allers-retours menu / partie, et le prix etait paye DEUX fois puisque le jeu
+le rebatit aussi. Cout disque : **0,1 Mo** -- 74,0 -> 74,1 Mo, trois fois
+moins que les « quelques centaines de Ko » que j'avais annoncees.
+
+**L'INDEX SPATIAL NE SE SERIALISE PAS** : il est derive et pese PLUS que ce
+qu'il indexe (une entree par case TOUCHEE, donc un long tunnel figure dans
+des dizaines de cases). `ReconstruireIndex` le refait en quelques
+millisecondes -- et c'est la MEME fonction que le temps `Indexer` de la
+generation, sans quoi elles auraient diverge a la premiere retouche.
+
+**ECRIRE CHAMP PAR CHAMP, JAMAIS LA STRUCTURE EN BLOC.** Un
+`Serialize(&S, sizeof(S))` sur un tableau de structures grave le bourrage du
+compilateur et l'ordre des membres : ajouter un champ produirait un cache qui
+se relit SANS ERREUR en rendant des chambres au mauvais endroit.
+
+**LE DEFAUT D'ORDRE, ET IL S'EST VU AU JOURNAL AVANT LE CHRONOMETRE.** La
+premiere version ne changeait RIEN -- 10 682 ms de grottes au second
+lancement, comme avant. L'ecriture du cache etait placee AVANT la passe des
+biomes, donc avant les grottes : le reseau partait au fichier alors qu'il
+n'existait pas encore. Ce qui l'a trahi est l'ORDRE DES LIGNES -- « monde
+genere » precedait « grottes : 155 chambres ».
+
+    REGLE : une ecriture de cache se place APRES tout ce qu'elle pretend
+    contenir, jamais la ou la DERNIERE grandeur ajoutee se trouvait prete.
+    La place etait sans consequence tant que le cache ne portait que le
+    relief et le climat, tous deux prets a cet endroit.
+
+**UN CACHE D'UNE VERSION INTERMEDIAIRE PEUT ETRE VALIDE ET INUTILE.** Les
+fichiers ecrits par la premiere version portaient un reseau VIDE : ils se
+relisaient sans erreur, et le code retombait proprement sur la
+reconstruction. Personne n'aurait su pourquoi l'attente persistait. D'ou le
+second bump de version -- **22 -> 24** -- plutot que de laisser cohabiter des
+caches avec et sans cavites.
+
+**LE CONTROLE QUI TRANCHE N'EST PAS LE TEMPS, C'EST LE COMPTE.** Le script de
+verification compte les lignes « chambres, ... liaisons » par lancement :
+**0 au second tour** prouve que le reseau vient du fichier. Le temps total,
+lui, aurait pu passer pour une variation.
+
+**RESTE OUVERT** : les champs du sol, **2 923 ms**, sont dans le meme cas --
+deterministes, recalcules a l'identique. Les serialiser ramenerait la reprise
+autour de la seconde.
+
+**ET UN DEFAUT DU HARNAIS, TROUVE EN CHEMIN** : avec `-WorldseedMenuAuto`, le
+menu appelait `StartGeneration` DEUX fois -- une dans le bloc du parcours
+automatique, une inconditionnelle plus bas -- donc deux generations completes
+en parallele, deux reconstructions de cavites de onze secondes pour un
+resultat identique (155 chambres des deux cotes, a 34 ms d'intervalle). Rien
+ne le signalait, les deux lignes etant separees par mille autres. Cela montre
+au passage que **l'annulation n'interrompt PAS une passe de grottes en
+cours**.
