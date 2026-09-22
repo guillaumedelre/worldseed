@@ -27,26 +27,40 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Worldseed", meta = (WorldContext = "WorldContextObject"))
 	static UWorldseedGameInstance* GetWorldseedGameInstance(const UObject* WorldContextObject);
 
-	/** Range le monde calcule par le menu, climat compris. */
+	/**
+	 * Range le monde calcule par le menu, climat compris.
+	 *
+	 * IL EST COPIE UNE FOIS ICI, ET PLUS JAMAIS ENSUITE. Le menu tient encore
+	 * son resultat au moment de l'appel, donc on ne peut pas le lui prendre ;
+	 * mais a partir de cet instant le monde devient partage et immuable, et
+	 * tous ceux qui le consomment n'en prennent qu'une reference.
+	 */
 	void StoreWorld(const FWorldseedWorldData& InWorld);
 
-	/** Rend le monde en cache. Faux si le joueur n'est pas passe par le menu. */
-	bool TryGetWorld(FWorldseedWorldData& OutWorld) const;
+	/**
+	 * Rend une REFERENCE sur le monde en cache, ou un pointeur nul si le
+	 * joueur n'est pas passe par le menu.
+	 *
+	 * IL RENDAIT UNE COPIE. Sur la grille du jeu, cela faisait cent
+	 * quatre-vingt-treize megaoctets recopies a chaque consommateur -- et,
+	 * plus grave, cela laissait la donnee SANS PROPRIETAIRE CLAIR : les
+	 * travaux de maillage capturaient l'adresse d'un membre d'acteur que
+	 * `EndPlay` pouvait liberer sous eux.
+	 */
+	FWorldseedMondePtr MondePartage() const { return Monde; }
 
 	/** Vrai si un monde attend d'etre consomme. */
 	UFUNCTION(BlueprintPure, Category = "Worldseed")
-	bool HasPendingWorld() const { return bHasWorld; }
+	bool HasPendingWorld() const { return Monde.IsValid(); }
 
 private:
 	/**
-	 * Le monde entier : relief, climat, saisons — et demain l'hydrologie.
+	 * Le monde entier : relief, climat, saisons, roches, biomes, cavites.
 	 *
 	 * Pas d'UPROPERTY : la structure ne contient que des nombres, aucun
-	 * UObject a garder en vie pour le ramasse-miettes. Elle vit et meurt avec
-	 * le GameInstance, ce qui est exactement la duree voulue.
+	 * UObject a garder en vie pour le ramasse-miettes. Elle vit tant qu'un
+	 * porteur la tient -- l'instance de jeu, les acteurs, et les travaux de
+	 * maillage en vol.
 	 */
-	FWorldseedWorldData World;
-
-	UPROPERTY(Transient)
-	bool bHasWorld = false;
+	FWorldseedMondePtr Monde;
 };

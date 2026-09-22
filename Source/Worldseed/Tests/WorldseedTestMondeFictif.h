@@ -162,6 +162,22 @@ namespace WorldseedTest
 			W.LithologyId[I] = static_cast<uint8>(I % 8);
 		}
 
+		// LES BIOMES SONT GARNIS PARCE QU'UN TABLEAU VIDE REND UNE ASSERTION
+		// MUETTE. Le test de partage compare les ADRESSES des tableaux des deux
+		// porteurs ; sur un tableau vide, les deux valent nullptr et l'egalite
+		// passe qu'il y ait partage ou non. Ce depot a deja paye ce genre de
+		// controle qui ne discrimine pas -- le comptage de composants d'herbe
+		// qui rendait zero sur le cas TEMOIN comme sur le notre.
+		W.Biomes.Index.SetNumUninitialized(N);
+		W.Biomes.Cover.SetNumUninitialized(N);
+		W.Biomes.SlopeDeg.SetNumUninitialized(N);
+		for (int32 I = 0; I < N; ++I)
+		{
+			W.Biomes.Index[I] = static_cast<uint8>(I % 19);
+			W.Biomes.Cover[I] = static_cast<uint8>(I % 4);
+			W.Biomes.SlopeDeg[I] = 0.5f * static_cast<float>(I % 90);
+		}
+
 		W.Caves = Reseau();
 		return W;
 	}

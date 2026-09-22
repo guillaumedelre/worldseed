@@ -7025,3 +7025,68 @@ Le vrai consommateur du budget n'est pas encore la : la vegetation, qui n'a pas
 ete portee au monde voxel. Le registre parle de douze millions neuf cent mille
 instances pour le monde entier. C'est a ce moment-la que cette ventilation
 servira -- et c'est pourquoi elle est ecrite ici plutot que refaite alors.
+
+### Le monde etait recopie TROIS fois, et la memoire du processus ne savait pas le dire (22 septembre 2026)
+
+Le monde -- relief, climat, roches, biomes -- se transmettait PAR VALEUR a
+chaque etape : `StoreWorld` en gardait un exemplaire dans l'instance de jeu,
+`TryGetWorld(Out)` en rendait une COPIE, puis `AdoptWorld` la recopiait encore
+vers l'acteur voxel, argument par argument -- neuf parametres, dont cinq grands
+tableaux. Trois exemplaires vivants d'une donnee que PERSONNE ne modifie apres
+sa generation.
+
+**LE POIDS EST DETERMINISTE, ET IL SE CALCULE** : sur la grille 4096x2048, les
+neuf grands tableaux font **208 Mio** (cinq tableaux de flottants a 32 Mio, la
+pente 32, l'index et la couverture 8 chacun ; la roche ajoute 8 de plus quand
+elle est presente). Le banc le journalise desormais avec le NOMBRE DE PORTEURS,
+et c'est ce second chiffre qui dit s'il y a duplication.
+
+**MAIS LA MEMOIRE DU PROCESSUS NE PEUT PAS L'ETABLIR, et c'est la lecon de
+methode.** Releve sur cinq lancements rigoureusement identiques : **7,60 / 7,69
+/ 7,75 / 7,77 / 7,99 Go**. Quatre cents megaoctets de derive naturelle -- donc
+les deux cent huit qu'une copie ajoute s'y NOIENT. J'ai compare des moyennes
+avant de m'en apercevoir : 7,90 Go avant, 7,76 apres, avec des etendues qui se
+recouvrent. **Un instrument dont le bruit vaut le signal ne mesure rien**, et la
+bonne reponse n'est pas d'empiler les passes : c'est de COMPTER LES OCTETS, qui
+ne dependent que de la grille, et de compter les PORTEURS, qui ne dependent que
+du code.
+
+**UN POINTEUR VERS UN MEMBRE D'ACTEUR EST AUSSI DANGEREUX QUE L'ACTEUR.** Le
+champ de densite etait un membre par valeur, et chaque travail de maillage en
+capturait l'ADRESSE, sous un commentaire qui affirmait que c'etait sur « parce
+qu'on ne capture pas l'acteur ». On capturait un pointeur DEDANS, ce qui revient
+au meme des qu'il meurt : `EndPlay` annule les travaux SANS LES ATTENDRE -- le
+bon choix, attendre bloquerait la fermeture -- donc un travail deja entre dans
+`Build` lisait une memoire que le ramasse-miettes allait reprendre. Fenetre
+courte, plantage rare au changement de niveau : celui qu'on ne reproduit jamais.
+Le fichier portait pourtant deja la bonne regle, pour les primitives de grottes :
+« le fil de maillage ne doit rien tenir qui puisse mourir avant lui ».
+
+**UNE MESURE PRISE UNE HEURE PLUS TOT N'EST PAS UN TEMOIN.** Apres le chantier,
+la trame passait de 4,34 a 4,63 ms -- une degradation de sept pour cent sur le
+FIL DE RENDU, que ce refactor ne touche pas. J'ai monte le seul temoin qui
+tranche : `git stash` du chantier, reconstruction, et banc dans l'ETAT MACHINE
+DU MOMENT.
+
+    temoin (meme etat machine)   4,67  4,73 ms
+    monde partage                4,63  4,67  4,71 ms
+
+Identique. Les 4,34 appartenaient a une machine plus froide, et la derive a
+continue toute la session -- derniere passe a 5,07. **Le depot avait deja ecrit
+cette regle en septembre -- « un temoin doit etre refait dans l'etat courant,
+pas repris d'un releve anterieur, meme quand on croit que rien n'a change » --
+et j'ai failli conclure a une regression.** Stasher coute cinq minutes ; une
+fausse regression coute une journee.
+
+**ET UNE ASSERTION SUR UN TABLEAU VIDE NE VERIFIE RIEN.** Le test de partage
+compare les ADRESSES des tableaux de deux porteurs -- la seule chose qui prouve
+qu'il n'y a qu'un exemplaire, l'egalite des VALEURS passant justement dans le
+cas qu'on veut interdire. Mais la fixture ne garnissait pas les biomes : les
+deux adresses valaient `nullptr`, et la ligne passait qu'il y ait partage ou
+non. Meme famille que le comptage de composants d'herbe qui rendait zero sur le
+cas TEMOIN comme sur le notre. **Une fixture incomplete ne rend pas un test
+indulgent, elle le rend MUET sur ce qu'il pretend verifier.**
+
+**CE QUI RESTE COPIE, ET C'EST ASSUME** : `FWorldseedLithology::Id` (8 Mio), que
+la generation REMPLIT -- la partager demanderait de rendre la structure non
+proprietaire. On deplace ce qui pese, et l'on dit ce qu'on laisse.

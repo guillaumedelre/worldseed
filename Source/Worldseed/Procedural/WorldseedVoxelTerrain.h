@@ -12,6 +12,7 @@
 #include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedVoxelChunk.h"
+#include "Procedural/WorldseedWorldData.h"
 
 #include <atomic>
 
@@ -405,11 +406,9 @@ public:
 	 * A appeler AVANT FinishSpawning : BeginPlay charge le monde, et il est
 	 * trop tard apres.
 	 */
-	void AdoptWorld(int32 InSeed, const FWorldseedGeometry& InGeometry,
-		const TArray<float>& InHeightsM, const FWorldseedBiomeMap& InBiomes,
-		float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves,
-		const FWorldseedLithology& InLithology,
-		const TArray<float>& InPrecipMm, const TArray<float>& InTempMeanC);
+	void AdoptWorld(FWorldseedMondeRef InMonde, float InHeightExaggeration,
+		const FWorldseedCaveNetwork& InCaves,
+		const FWorldseedLithology& InLithology);
 
 	/**
 	 * Demande que le joueur naisse pres de ce point, en METRES sur la carte.
@@ -422,17 +421,17 @@ public:
 	 */
 	void DemanderDepart(const FVector2D& XYMetres);
 
-	/**
-	 * Les deux champs CONTINUS du climat, pour le releve de jeu.
-	 *
-	 * A PART D'AdoptWorld, ET POUR LA MEME RAISON QUE LE DEPART : ce que
-	 * transmet AdoptWorld est ce dont le TERRAIN a besoin pour se mailler.
-	 * Ceux-ci ne servent qu'a EXPLIQUER, et l'explication n'est pas une donnee
-	 * de generation. Les melanger inviterait a croire que le champ de densite
-	 * les lit.
-	 */
-	void AdoptChampsClimat(const TArray<float>& InContinentalite,
-		const TArray<float>& InSaisonAmpC);
+	// IL Y AVAIT ICI `AdoptChampsClimat`, qui transmettait a part la
+	// continentalite et l'amplitude saisonniere « parce qu'elles n'expliquent,
+	// elles ne generent rien ». L'argument etait bon tant que transmettre
+	// voulait dire COPIER : separer ce qui sert a mailler de ce qui sert a
+	// expliquer evitait une copie inutile, et disait la difference.
+	//
+	// Il n'a plus d'objet. Le monde arrive ENTIER et par reference, donc ces
+	// deux champs ne coutent plus rien a porter, et une seconde fonction ne
+	// ferait que laisser croire qu'ils viennent d'ailleurs. La distinction
+	// qu'elle portait reste vraie et vit maintenant a sa place : dans le
+	// commentaire des accesseurs.
 
 	/**
 	 * Le releve local sous le joueur, une chaine par ligne.
@@ -606,7 +605,17 @@ public:
 	 * vecu ici par commodite avant d'aller dans son propre sous-systeme.
 	 */
 	const FWorldseedGeometry& MondeGeometrie() const { return Geometry; }
-	const TArray<float>& MondeAltitudes() const { return HeightsM; }
+	const TArray<float>& MondeAltitudes() const { return HeightsM(); }
+
+	/**
+	 * Le monde partage lui-meme, pour qui veut son POIDS et ses PORTEURS.
+	 *
+	 * Le banc s'en sert, et c'est la seule raison de son existence : la
+	 * memoire du processus ne sait pas dire si le monde est recopie -- elle
+	 * derive de plus que ce qu'une copie couterait -- alors que le nombre de
+	 * references, lui, le dit exactement.
+	 */
+	FWorldseedMondePtr MondePartage() const { return Monde; }
 	const FWorldseedCaveNetwork& MondeGrottes() const { return CaveNetwork; }
 
 	/** Les sites de tables, rebatis au chargement et jamais serialises. */
@@ -643,7 +652,21 @@ public:
 
 	int32 NombreDeChunks() const { return Chunks.Num(); }
 	int32 TravauxEnVol() const;
-	const FWorldseedDensity& MondeChamp() const { return Density; }
+	/**
+	 * Le champ de densite du monde charge.
+	 *
+	 * IL REND UNE REFERENCE SUR UN CHAMP QUI PEUT NE PAS EXISTER ENCORE, d'ou
+	 * la garde : le champ n'est bati qu'a l'adoption du monde, et le banc comme
+	 * la tournee photo peuvent tomber sur l'acteur avant. Ils verifient tous
+	 * deux `MondeAltitudes().Num()` d'abord -- mais faire reposer l'absence de
+	 * dereferencement nul sur la discipline de l'appelant est exactement le
+	 * genre de pari que ce depot a deja paye.
+	 */
+	static const FWorldseedDensity& ChampVide();
+	const FWorldseedDensity& MondeChamp() const
+	{
+		return Density.IsValid() ? *Density : ChampVide();
+	}
 
 	/** Vrai quand le pion a ete rendu a la gravite sur un sol solide. */
 	bool JoueurPose() const { return bPlayerReleased; }
@@ -730,9 +753,30 @@ private:
 	TObjectPtr<USceneComponent> RootScene;
 
 	FWorldseedGeometry Geometry;
-	TArray<float> HeightsM;
-	FWorldseedBiomeMap Biomes;
 	int32 WorldSeed = 0;
+
+	/**
+	 * LE MONDE, TENU PAR REFERENCE. Il n'est plus copie depuis le terrain.
+	 *
+	 * `AdoptWorld` recopiait sept grands tableaux -- cent quatre-vingt-cinq
+	 * megaoctets sur la grille du jeu -- pour une donnee que personne ne
+	 * modifie apres sa generation. Les accesseurs ci-dessous gardent les noms
+	 * d'avant a la parenthese pres, donc le code appelant n'a pas change de
+	 * sens ; seule la propriete a change de main.
+	 */
+	FWorldseedMondePtr Monde;
+
+	static const TArray<float>& FloatsVides();
+
+	const TArray<float>& HeightsM() const
+	{
+		return Monde.IsValid() ? Monde->ElevationM : FloatsVides();
+	}
+	const FWorldseedBiomeMap& Biomes() const
+	{
+		static const FWorldseedBiomeMap Vide;
+		return Monde.IsValid() ? Monde->Biomes : Vide;
+	}
 
 	/** Le reseau de grottes du monde charge. */
 	FWorldseedCaveNetwork CaveNetwork;
@@ -744,10 +788,16 @@ private:
 	TArray<FWorldseedPlateauSite> Canyons;
 
 	/** Pluie annuelle, pour appliquer aux sites les gardes de la passe. */
-	TArray<float> PrecipMm;
+	const TArray<float>& PrecipMm() const
+	{
+		return Monde.IsValid() ? Monde->PrecipMm : FloatsVides();
+	}
 
 	/** La temperature moyenne annuelle, pour la garde de froid des plateaux. */
-	TArray<float> TempMeanC;
+	const TArray<float>& TempMeanC() const
+	{
+		return Monde.IsValid() ? Monde->TempC : FloatsVides();
+	}
 
 	/** La serie stratigraphique, lue une fois au chargement. */
 	FWorldseedStratRules StratRules;
@@ -791,11 +841,40 @@ private:
 	FVector2D DepartXYM = FVector2D::ZeroVector;
 
 	/** Champs continus du climat : ils n'expliquent, ils ne generent rien. */
-	TArray<float> Continentalite;
-	TArray<float> SaisonAmpC;
+	const TArray<float>& Continentalite() const
+	{
+		return Monde.IsValid() ? Monde->Continentality : FloatsVides();
+	}
+	const TArray<float>& SaisonAmpC() const
+	{
+		return Monde.IsValid() ? Monde->SeasonalAmpC : FloatsVides();
+	}
 
 	FWorldseedDensityRules DensityRules;
-	FWorldseedDensity Density;
+
+	/**
+	 * LE CHAMP DE DENSITE, PARTAGE LUI AUSSI -- ET C'EST LA LE VRAI DEFAUT.
+	 *
+	 * IL ETAIT UN MEMBRE PAR VALEUR, et chaque travail de maillage en capturait
+	 * l'ADRESSE. Le commentaire du lancement disait, a juste titre, « ce qui NE
+	 * serait pas sur, c'est de capturer l'acteur » -- mais on capturait un
+	 * pointeur DANS l'acteur, ce qui revient au meme des qu'il meurt.
+	 *
+	 * ET `EndPlay` ANNULE SANS ATTENDRE, ce qui est le bon choix : attendre
+	 * bloquerait le fil de jeu pendant la fermeture. Un travail deja entre dans
+	 * `Build` continue donc quelques millisecondes a lire une memoire que le
+	 * ramasse-miettes va reprendre. La fenetre est courte -- le GC ne passe pas
+	 * dans la meme trame -- mais c'est la forme exacte d'un plantage rare au
+	 * changement de niveau : celui qu'on ne reproduit jamais et qu'on ne sait
+	 * donc pas corriger.
+	 *
+	 * Une reference partagee ferme la question par CONSTRUCTION : le travail en
+	 * tient une, donc le champ lui survit, et l'acteur peut mourir quand il
+	 * veut. C'est exactement ce que le meme fichier fait deja pour les
+	 * primitives de grottes -- « le fil de maillage ne doit rien tenir qui
+	 * puisse mourir avant lui » -- et qu'il ne faisait pas pour le champ.
+	 */
+	TSharedPtr<const FWorldseedDensity, ESPMode::ThreadSafe> Density;
 
 	/**
 	 * Ou en est le balayage des masques perimes.

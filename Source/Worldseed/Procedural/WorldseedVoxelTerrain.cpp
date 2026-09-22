@@ -40,29 +40,52 @@ void AWorldseedVoxelTerrain::DemanderDepart(const FVector2D& XYMetres)
 	DepartXYM = XYMetres;
 }
 
-void AWorldseedVoxelTerrain::AdoptWorld(int32 InSeed,
-	const FWorldseedGeometry& InGeometry, const TArray<float>& InHeightsM,
-	const FWorldseedBiomeMap& InBiomes, float InHeightExaggeration,
-	const FWorldseedCaveNetwork& InCaves, const FWorldseedLithology& InLithology,
-	const TArray<float>& InPrecipMm, const TArray<float>& InTempMeanC)
+void AWorldseedVoxelTerrain::AdoptWorld(FWorldseedMondeRef InMonde,
+	float InHeightExaggeration, const FWorldseedCaveNetwork& InCaves,
+	const FWorldseedLithology& InLithology)
 {
+	// NEUF PARAMETRES SONT DEVENUS QUATRE, et ce n'est pas qu'une affaire de
+	// signature : les cinq qui ont disparu etaient les TABLEAUX DU MONDE, que
+	// cette fonction recopiait un a un. Ils arrivent maintenant ensemble, par
+	// reference, et le monde n'existe plus qu'en un exemplaire.
+	//
+	// Ce qui reste passe a part parce que ce n'est PAS le monde : le reseau de
+	// grottes se rebatit a chaque chargement, la lithologie porte un catalogue
+	// issu des regles, et l'exageration verticale est un reglage du terrain --
+	// elle doit etre la MEME des deux cotes, sans quoi le sol de fond et le
+	// relief proche decriraient deux echelles differentes.
+	Monde = InMonde;
+	WorldSeed = InMonde->Seed;
+	Geometry = InMonde->Geometry;
+
 	CaveNetwork = InCaves;
-	PrecipMm = InPrecipMm;
-	TempMeanC = InTempMeanC;
 	Lithology = InLithology;
-	WorldSeed = InSeed;
-	Geometry = InGeometry;
-	HeightsM = InHeightsM;
-	Biomes = InBiomes;
 	HeightExaggeration = InHeightExaggeration;
 	bWorldAdopted = true;
+}
+
+const TArray<float>& AWorldseedVoxelTerrain::FloatsVides()
+{
+	// Voir la note du meme nom dans AWorldseedTerrain : un tableau vide se
+	// teste comme avant, un pointeur nul fait tomber.
+	static const TArray<float> Vide;
+	return Vide;
+}
+
+const FWorldseedDensity& AWorldseedVoxelTerrain::ChampVide()
+{
+	// MEME RAISON, ET LE MEME PIEGE EVITE. Un champ par defaut n'a ni relief ni
+	// regles : il rend zero partout, ce qui se lit comme « pas de surface » et
+	// non comme du terrain. Ce qu'il ne fait PAS, c'est tomber.
+	static const FWorldseedDensity Vide;
+	return Vide;
 }
 
 bool AWorldseedVoxelTerrain::LoadWorld()
 {
 	// UN MONDE ADOPTE NE SE RECHARGE PAS. C'est celui de l'acteur qui a pose
 	// celui-ci, donc celui que le sol de fond et l'ocean decrivent deja.
-	if (bWorldAdopted && Geometry.NX >= 2 && HeightsM.Num() == Geometry.CellCount())
+	if (bWorldAdopted && Geometry.NX >= 2 && HeightsM().Num() == Geometry.CellCount())
 	{
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] voxel : monde repris du terrain, seed=%d  %dx%d"),
@@ -73,13 +96,11 @@ bool AWorldseedVoxelTerrain::LoadWorld()
 	if (const UWorldseedGameInstance* GI =
 		UWorldseedGameInstance::GetWorldseedGameInstance(this))
 	{
-		FWorldseedWorldData Loaded;
-		if (GI->TryGetWorld(Loaded))
+		if (FWorldseedMondePtr Partage = GI->MondePartage())
 		{
-			WorldSeed = Loaded.Seed;
-			Geometry = Loaded.Geometry;
-			HeightsM = MoveTemp(Loaded.ElevationM);
-			Biomes = MoveTemp(Loaded.Biomes);
+			Monde = Partage;
+			WorldSeed = Monde->Seed;
+			Geometry = Monde->Geometry;
 			// Le reseau n'est pas transporte par le menu : il se rebatit ici.
 			CaveNetwork.Reset();
 
@@ -89,8 +110,8 @@ bool AWorldseedVoxelTerrain::LoadWorld()
 			// toujours. Un clic sur un globe vise a une quinzaine de metres
 			// pres, et sans cette recherche on pourrait naitre sur une paroi a
 			// soixante degres ou au-dessus d'une galerie.
-			bDepartDemande = Loaded.bHasSpawn;
-			DepartXYM = Loaded.SpawnXYM;
+			bDepartDemande = Monde->bHasSpawn;
+			DepartXYM = Monde->SpawnXYM;
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : monde repris du menu, seed=%d  %dx%d%s"),
@@ -116,10 +137,22 @@ bool AWorldseedVoxelTerrain::LoadWorld()
 		return false;
 	}
 
+	// MEME CHEMIN QUE LE MENU : un monde partage, et non des membres remplis.
+	{
+		FWorldseedWorldData Bati;
+		Bati.Seed = FallbackSeed;
+		Bati.Geometry = World.Geometry;
+		Bati.ElevationM = MoveTemp(World.ElevationM);
+		Bati.TempC = MoveTemp(World.Climate.TempMeanC);
+		Bati.PrecipMm = MoveTemp(World.Climate.PrecipMm);
+		Bati.SeasonalAmpC = MoveTemp(World.Climate.SeasonalAmpC);
+		Bati.Continentality = MoveTemp(World.Climate.Continentality);
+		Bati.Biomes = MoveTemp(World.Biomes);
+		Monde = MakeShared<const FWorldseedWorldData, ESPMode::ThreadSafe>(MoveTemp(Bati));
+	}
+
 	WorldSeed = FallbackSeed;
 	Geometry = World.Geometry;
-	HeightsM = MoveTemp(World.ElevationM);
-	Biomes = MoveTemp(World.Biomes);
 	return true;
 }
 
@@ -451,7 +484,19 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			LoadRadiusM, LargeurTransition);
 	}
 
-	Density.Init(Geometry, HeightsM, HeightExaggeration, WorldSeed, DensityRules);
+	// ON LE BATIT MUTABLE, PUIS ON LE FIGE. Un champ se CONSTRUIT -- Init, puis
+	// eventuellement la lithologie -- et ne fait plus ensuite que se lire,
+	// depuis des dizaines de fils a la fois. La reference qui le publie est
+	// donc `const` : le type dit que la construction est finie, et le
+	// compilateur interdit qu'un fil modifie ce que les autres lisent.
+	TSharedRef<FWorldseedDensity, ESPMode::ThreadSafe> Champ =
+		MakeShared<FWorldseedDensity, ESPMode::ThreadSafe>();
+
+	// IL POINTE DANS LE MONDE PARTAGE, et c'est ce qui rend l'ensemble sur :
+	// `Init` ne copie ni la geometrie ni le relief, il les reference. Tant que
+	// le champ tient le monde en vie -- ce que fait le travail en tenant les
+	// deux -- ces references restent valides.
+	Champ->Init(Geometry, HeightsM(), HeightExaggeration, WorldSeed, DensityRules);
 
 	// LA LITHOLOGIE EST BRANCHEE APRES Init, ET SEULEMENT SI ELLE EXISTE. Sans
 	// elle le champ reste evaluable et ne creuse aucune diaclase : une donnee
@@ -469,7 +514,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		if (const UWorldseedRules* LithoRules = WorldseedPipeline::GetRules(LithoError))
 		{
 			const FWorldseedLithologyRules LR = FWorldseedLithologyRules::FromRules(*LithoRules);
-			Density.SetLithology(Lithology, LR);
+			Champ->SetLithology(Lithology, LR);
 
 			StratRules = FWorldseedStratRules::FromRules(*LithoRules, LR);
 			DureteParId.Reset();
@@ -499,7 +544,13 @@ void AWorldseedVoxelTerrain::BeginPlay()
 				CouleurParRoche.Num(), DensityRules.RockColourFadeM);
 		}
 	}
-	bWorldReady = Density.IsValid();
+
+	// LA CONSTRUCTION EST FINIE : on publie, et le champ devient `const`. Tout
+	// ce qui suit ne fera plus que le lire -- y compris depuis les fils de
+	// maillage, qui en tiendront chacun une reference.
+	Density = Champ;
+
+	bWorldReady = Density->IsValid();
 
 	if (!bWorldReady)
 	{
@@ -522,9 +573,9 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		FString Err;
 		if (const UWorldseedRules* const R = WorldseedPipeline::GetRules(Err))
 		{
-			WorldseedPlateau::Sites(Geometry, HeightsM,
+			WorldseedPlateau::Sites(Geometry, HeightsM(),
 				FWorldseedPlateauRules::FromRules(*R), Lithology,
-				FWorldseedLithologyRules::FromRules(*R), PrecipMm, TempMeanC,
+				FWorldseedLithologyRules::FromRules(*R), PrecipMm(), TempMeanC(),
 				WorldSeed, Tables, &Canyons);
 		}
 	}
@@ -691,7 +742,7 @@ void AWorldseedVoxelTerrain::PlageSurface(int32 CX, int32 CY, int32 Niveau,
 	}
 
 	const double Cote = CoteM(Niveau);
-	Density.SurfaceRangeM(CX * Cote, CY * Cote,
+	Density->SurfaceRangeM(CX * Cote, CY * Cote,
 		(CX + 1) * Cote, (CY + 1) * Cote, OutMinM, OutMaxM);
 
 	// LE CACHE SE VIDE PLUTOT QUE DE GONFLER SANS FIN. Un joueur qui traverse
@@ -1359,12 +1410,27 @@ void AWorldseedVoxelTerrain::LaunchJob(const FWorldseedChunkKey& Key)
 	Job->BoundsM = ChunkBoundsM(Key);
 	State.Job = Job;
 
-	// LE CHAMP EST CAPTURE PAR ADRESSE, ET C'EST SUR : il ne contient que des
-	// nombres et une reference sur le relief, tous deux immuables pendant la
-	// partie, et il n'a aucun etat mutable. Plusieurs fils l'interrogent donc
-	// en meme temps sans verrou. Ce qui NE serait pas sur, c'est de capturer
-	// l'acteur : il peut mourir avant la fin du travail.
-	const FWorldseedDensity* const Champ = &Density;
+	// LE CHAMP EST CAPTURE PAR REFERENCE PARTAGEE, ET C'EST UNE CORRECTION.
+	//
+	// IL ETAIT CAPTURE PAR ADRESSE -- `&Density` -- sous un commentaire qui
+	// affirmait que c'etait sur parce qu'on ne capturait pas l'acteur. On
+	// capturait un pointeur DANS l'acteur, ce qui revient au meme des qu'il
+	// meurt : `EndPlay` annule les travaux SANS LES ATTENDRE -- le bon choix,
+	// attendre bloquerait la fermeture -- donc un travail deja entre dans
+	// `Build` lisait encore une memoire que le ramasse-miettes allait
+	// reprendre. Fenetre courte, plantage rare au changement de niveau : celui
+	// qu'on ne reproduit jamais.
+	//
+	// Tenir une reference ferme la question par CONSTRUCTION. Le champ, et a
+	// travers lui le monde qu'il reference, survivent au travail par
+	// definition -- exactement ce que ce fichier fait deja pour les primitives
+	// de grottes, « le fil de maillage ne doit rien tenir qui puisse mourir
+	// avant lui », et qu'il ne faisait pas pour le champ.
+	//
+	// Ce qui restait vrai dans l'ancien commentaire le reste : le champ n'a
+	// aucun etat mutable, donc plusieurs fils l'interrogent sans verrou. Le
+	// type le dit maintenant -- il est `const`.
+	TSharedPtr<const FWorldseedDensity, ESPMode::ThreadSafe> Champ = Density;
 	const float VoxelSizeM = VoxelM(Key.Niveau);
 	const float Largeur = LargeurTransition;
 
@@ -1420,7 +1486,7 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 	const int32 CY = FMath::FloorToInt(LocalM.Y / Side);
 
 	float SurfMin = 0.0f, SurfMax = 0.0f;
-	Density.SurfaceRangeM(CX * Side, CY * Side, CX * Side + Side, CY * Side + Side,
+	Density->SurfaceRangeM(CX * Side, CY * Side, CX * Side + Side, CY * Side + Side,
 		SurfMin, SurfMax);
 	const int32 ZBas = FMath::FloorToInt((SurfMin - DensityRules.BandDepthM) / Side);
 	const int32 ZHaut = FMath::FloorToInt(SurfMax / Side);
@@ -1438,7 +1504,7 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 	R += FString::Printf(TEXT("\n  champ au centre, tous les 4 m :"));
 	for (double Z = ZBas * Side; Z <= (ZHaut + 1) * Side; Z += 4.0)
 	{
-		R += FString::Printf(TEXT(" %.0f:%+.1f"), Z, Density.At(FVector(MX, MY, Z)));
+		R += FString::Printf(TEXT(" %.0f:%+.1f"), Z, Density->At(FVector(MX, MY, Z)));
 	}
 
 	for (int32 CZ = ZBas; CZ <= ZHaut; ++CZ)
@@ -1485,7 +1551,7 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 					FMath::Min(B.Min.X + I * PasM, B.Max.X),
 					FMath::Min(B.Min.Y + J * PasM, B.Max.Y),
 					FMath::Min(B.Min.Z + K * PasM, B.Max.Z));
-				(Density.At(P, &Local) < 0.0 ? Dedans : Dehors)++;
+				(Density->At(P, &Local) < 0.0 ? Dedans : Dehors)++;
 			}
 			static const TCHAR* NomCause[] = {
 				TEXT("maille"), TEXT("sans traversee"), TEXT("annule"), TEXT("maillage vide") };
@@ -1507,8 +1573,15 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 	const int32 Count = Mesh.Positions.Num();
 	Mesh.Colours.SetNumUninitialized(Count);
 
-	const bool bHasBiomes = (Biomes.Index.Num() == Geometry.CellCount());
-	const bool bHasCover = (Biomes.Cover.Num() == Geometry.CellCount());
+	// LA CARTE EST PRISE UNE FOIS, PAS PAR SOMMET. L'accesseur passe par le
+	// monde partage : un test de validite et un dereferencement, donc presque
+	// rien -- mais cette boucle tourne sur 1,67 million de sommets, et la lier
+	// une fois dit aussi ce qui est vrai : la carte ne change pas pendant la
+	// peinture.
+	const FWorldseedBiomeMap& Carte = Biomes();
+
+	const bool bHasBiomes = (Carte.Index.Num() == Geometry.CellCount());
+	const bool bHasCover = (Carte.Cover.Num() == Geometry.CellCount());
 	const bool bAvecRoche = Lithology.IsValid(Geometry.CellCount())
 		&& CouleurParRoche.Num() > 0;
 	const FWorldseedDensityRules& Rules = DensityRules;
@@ -1543,8 +1616,8 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 		// meme sur une paroi : le lire seul peindrait la falaise en vert.
 		const int32 Cell = Row * Geometry.NX + Col;
 		const EWorldseedBiome Biome = bHasCover
-			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
-			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]);
+			? WorldseedBiomes::AppearanceBiome(Carte.Index[Cell], Carte.Cover[Cell])
+			: static_cast<EWorldseedBiome>(Carte.Index[Cell]);
 		FLinearColor Teinte = WorldseedBiomes::Colour(Biome);
 
 		// --- SOUS TERRE, C'EST LA ROCHE QUI HABILLE -------------------------
@@ -1561,7 +1634,7 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 		if (bAvecRoche && Rules.RockColourFadeM > 0.0f)
 		{
 			const double Z = Mesh.Positions[I].Z / WorldseedMetersToCm;
-			const double Profondeur = Density.SurfaceHeightM(X, Y) - Z;
+			const double Profondeur = Density->SurfaceHeightM(X, Y) - Z;
 			if (Profondeur > 0.0)
 			{
 				// --- LA ROCHE SE LIT EN TROIS DIMENSIONS --------------------
@@ -1697,7 +1770,7 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	// la mesure qui la soutenait, non.
 	//
 	// ET CETTE PASSE N'EST PAS GRATUITE : elle boucle sur CHAQUE sommet et
-	// appelle `Density.SurfaceHeightM`, c'est-a-dire un echantillonnage
+	// appelle `Density->SurfaceHeightM`, c'est-a-dire un echantillonnage
 	// BICUBIQUE -- seize lectures dispersees dans un tableau de plusieurs
 	// dizaines de megaoctets, donc hostiles au cache -- plus une descente dans
 	// la pile stratigraphique. Multiplie par les sommets de seize chunks par
@@ -1821,7 +1894,7 @@ bool AWorldseedVoxelTerrain::TrouverTerreEmergee(const FVector2D& AutourM,
 {
 	const int32 NX = Geometry.NX;
 	const int32 NY = Geometry.NY;
-	if (NX < 2 || NY < 2 || HeightsM.Num() != NX * NY)
+	if (NX < 2 || NY < 2 || HeightsM().Num() != NX * NY)
 	{
 		return false;
 	}
@@ -1872,7 +1945,7 @@ bool AWorldseedVoxelTerrain::TrouverTerreEmergee(const FVector2D& AutourM,
 	{
 		const int32 IW = ((I % NX) + NX) % NX;
 		const int32 JC = FMath::Clamp(J, 0, NY - 1);
-		return HeightsM[JC * NX + IW] > Seuil;
+		return HeightsM()[JC * NX + IW] > Seuil;
 	};
 
 	const double LargeurM = Geometry.WidthM();
@@ -1893,7 +1966,7 @@ bool AWorldseedVoxelTerrain::TrouverTerreEmergee(const FVector2D& AutourM,
 	{
 		for (int32 I = 0; I < NX; ++I)
 		{
-			if (HeightsM[J * NX + I] <= PlancherM)
+			if (HeightsM()[J * NX + I] <= PlancherM)
 			{
 				continue;
 			}
@@ -1944,7 +2017,7 @@ bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
 	auto Convient = [this, PenteMaxDeg, EcartAltitudeMaxM, AltitudeRefM]
 		(double X, double Y, float& Surface, float& PenteDeg) -> bool
 	{
-		Surface = Density.SurfaceHeightM(X, Y);
+		Surface = Density->SurfaceHeightM(X, Y);
 		if (Surface < 2.0f)
 		{
 			return false;   // sous la mer, ou tout juste au bord
@@ -1959,10 +2032,10 @@ bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
 			return false;
 		}
 
-		const float HX = Density.SurfaceHeightM(X + SondeM, Y)
-			- Density.SurfaceHeightM(X - SondeM, Y);
-		const float HY = Density.SurfaceHeightM(X, Y + SondeM)
-			- Density.SurfaceHeightM(X, Y - SondeM);
+		const float HX = Density->SurfaceHeightM(X + SondeM, Y)
+			- Density->SurfaceHeightM(X - SondeM, Y);
+		const float HY = Density->SurfaceHeightM(X, Y + SondeM)
+			- Density->SurfaceHeightM(X, Y - SondeM);
 		const float Pente = FMath::Sqrt(HX * HX + HY * HY) / (2.0f * SondeM);
 		PenteDeg = FMath::RadiansToDegrees(FMath::Atan(Pente));
 		if (PenteDeg > PenteMaxDeg)
@@ -1974,7 +2047,7 @@ bool AWorldseedVoxelTerrain::FindFlatGround(const FVector2D& AroundM,
 		// un plancher de deux metres au-dessus d'un vide ne tient pas.
 		for (double Profondeur = 1.0; Profondeur <= 12.0; Profondeur += 2.0)
 		{
-			if (Density.At(FVector(X, Y, Surface - Profondeur)) > 0.0)
+			if (Density->At(FVector(X, Y, Surface - Profondeur)) > 0.0)
 			{
 				return false;
 			}
@@ -2035,7 +2108,7 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	const FVector PosCm = Pawn->GetActorLocation() - GetActorLocation();
 	double X = PosCm.X / WorldseedMetersToCm;
 	double Y = PosCm.Y / WorldseedMetersToCm;
-	float SurfaceM = Density.SurfaceHeightM(X, Y);
+	float SurfaceM = Density->SurfaceHeightM(X, Y);
 
 	// --- LE FILET EST PERMANENT, IL NE JOUE PAS QU'UNE FOIS ------------------
 	//
@@ -2071,7 +2144,7 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		const FVector PosM(X, Y, PosCm.Z / WorldseedMetersToCm);
 		FWorldseedCaveLocal Local;
 		CaveNetwork.Query(FBox(PosM, PosM).ExpandBy(DensityRules.CaveBlendM + 4.0f), Local);
-		const bool bDansLaRoche = Density.At(PosM, &Local) <= 0.0;
+		const bool bDansLaRoche = Density->At(PosM, &Local) <= 0.0;
 
 		UE_LOG(LogTemp, Warning,
 			TEXT("[Worldseed] voxel : joueur a %.0f m SOUS la bande de terrain ")
@@ -2106,7 +2179,7 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		// metres un joueur venu voir UN sommet precis.
 		X = TeleportXYM.X;
 		Y = TeleportXYM.Y;
-		SurfaceM = Density.SurfaceHeightM(X, Y);
+		SurfaceM = Density->SurfaceHeightM(X, Y);
 	}
 	else if (!bPlayerHeld)
 	{
@@ -2131,7 +2204,7 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 			bDepartDemande = false;
 			X = DepartXYM.X;
 			Y = DepartXYM.Y;
-			SurfaceM = Density.SurfaceHeightM(X, Y);
+			SurfaceM = Density->SurfaceHeightM(X, Y);
 			SurfaceDemandeeM = SurfaceM;
 
 			UE_LOG(LogTemp, Log,
@@ -2165,7 +2238,7 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 				FVector2D::Distance(FVector2D(X, Y), FVector2D(TerreX, TerreY)) / 1000.0);
 			X = TerreX;
 			Y = TerreY;
-			SurfaceM = Density.SurfaceHeightM(X, Y);
+			SurfaceM = Density->SurfaceHeightM(X, Y);
 		}
 		else
 		{
@@ -2464,7 +2537,7 @@ void AWorldseedVoxelTerrain::TeleporterJoueur(double XMetres, double YMetres)
 	bPlayerHeld = false;
 	bPlayerReleased = false;
 
-	const float SurfaceM = Density.SurfaceHeightM(XMetres, YMetres);
+	const float SurfaceM = Density->SurfaceHeightM(XMetres, YMetres);
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] aller : (%.0f, %.0f) m, surface %.0f m -- ")
 		TEXT("le joueur est tenu en vol jusqu'a ce que le sol soit solide"),
@@ -2486,7 +2559,7 @@ FString AWorldseedVoxelTerrain::OuSuisJe() const
 	const double X = PosCm.X / WorldseedMetersToCm;
 	const double Y = PosCm.Y / WorldseedMetersToCm;
 	const double Z = PosCm.Z / WorldseedMetersToCm;
-	const float SurfaceM = Density.SurfaceHeightM(X, Y);
+	const float SurfaceM = Density->SurfaceHeightM(X, Y);
 
 	// La roche se lit au PLUS PROCHE VOISIN : un identifiant est une categorie,
 	// et interpoler entre du granite et du calcaire donnerait du gres.
@@ -2507,10 +2580,10 @@ FString AWorldseedVoxelTerrain::OuSuisJe() const
 	// La pente se mesure sur le champ lui-meme, pas sur la grille : c'est le
 	// relief qu'on a REELLEMENT sous les pieds, deplacement 3D compris.
 	const double Pas = 4.0;
-	const double DX = Density.SurfaceHeightM(X + Pas, Y)
-		- Density.SurfaceHeightM(X - Pas, Y);
-	const double DY = Density.SurfaceHeightM(X, Y + Pas)
-		- Density.SurfaceHeightM(X, Y - Pas);
+	const double DX = Density->SurfaceHeightM(X + Pas, Y)
+		- Density->SurfaceHeightM(X - Pas, Y);
+	const double DY = Density->SurfaceHeightM(X, Y + Pas)
+		- Density->SurfaceHeightM(X, Y - Pas);
 	const double PenteDeg = FMath::RadiansToDegrees(
 		FMath::Atan(FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas)));
 
@@ -2525,7 +2598,7 @@ FString AWorldseedVoxelTerrain::OuSuisJe() const
 
 FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 {
-	if (!bWorldReady || HeightsM.Num() != Geometry.CellCount())
+	if (!bWorldReady || HeightsM().Num() != Geometry.CellCount())
 	{
 		return TEXT("monde pas encore charge");
 	}
@@ -2540,9 +2613,9 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 	float ZTendre = 1e9f;
 	int32 Cote = INDEX_NONE;
 
-	for (int32 I = 0; I < HeightsM.Num(); ++I)
+	for (int32 I = 0; I < HeightsM().Num(); ++I)
 	{
-		const float Z = HeightsM[I];
+		const float Z = HeightsM()[I];
 		if (Z > ZMax) { ZMax = Z; Sommet = I; }
 		if (Z <= 0.0f) { continue; }
 		if (Cote == INDEX_NONE && Z > 2.0f && Z < 12.0f) { Cote = I; }
@@ -2575,7 +2648,7 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 			? NomParRoche[R] : FString(TEXT("?"));
 		const FString L = FString::Printf(
 			TEXT("Worldseed.Aller %.0f %.0f   %-18s %5.0f m, %-10s -- %s"),
-			X, Y, Nom, HeightsM[I], *Roche, Pourquoi);
+			X, Y, Nom, HeightsM()[I], *Roche, Pourquoi);
 		UE_LOG(LogTemp, Log, TEXT("[Worldseed] lieu : %s"), *L);
 		Sortie += L + LINE_TERMINATOR;
 	};
@@ -2630,13 +2703,6 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 
 
 // ------------------------------------------- le releve local, pour l'ecran
-
-void AWorldseedVoxelTerrain::AdoptChampsClimat(const TArray<float>& InContinentalite,
-	const TArray<float>& InSaisonAmpC)
-{
-	Continentalite = InContinentalite;
-	SaisonAmpC = InSaisonAmpC;
-}
 
 TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 {
@@ -2719,10 +2785,10 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 
 	// --- 2. CLIMAT, BIOME, ROCHE --------------------------------------------
 	FString Biome = TEXT("--");
-	if (Biomes.Index.IsValidIndex(Cellule) && Biomes.Cover.IsValidIndex(Cellule))
+	if (Biomes().Index.IsValidIndex(Cellule) && Biomes().Cover.IsValidIndex(Cellule))
 	{
 		Biome = WorldseedBiomes::Name(WorldseedBiomes::AppearanceBiome(
-			Biomes.Index[Cellule], Biomes.Cover[Cellule]));
+			Biomes().Index[Cellule], Biomes().Cover[Cellule]));
 	}
 
 	FString Roche = TEXT("--");
@@ -2735,8 +2801,8 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 
 	// Temperature MOYENNE ANNUELLE et pluie : les deux axes du diagramme de
 	// Whittaker, donc les deux grandeurs qui decident du biome affiche a cote.
-	const float TempC = TempMeanC.IsValidIndex(Cellule) ? TempMeanC[Cellule] : 0.0f;
-	const float PluieMm = PrecipMm.IsValidIndex(Cellule) ? PrecipMm[Cellule] : 0.0f;
+	const float TempC = TempMeanC().IsValidIndex(Cellule) ? TempMeanC()[Cellule] : 0.0f;
+	const float PluieMm = PrecipMm().IsValidIndex(Cellule) ? PrecipMm()[Cellule] : 0.0f;
 
 	Lignes.Add(FString::Printf(
 		TEXT("%-24s %5.1f C  %5.0f mm/an   %s"), *Biome, TempC, PluieMm, *Roche));
@@ -2755,13 +2821,13 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// voxel qui double a chaque cran.
 	const double MailleM = DensityRules.VoxelSizeM * FMath::Pow(2.0, Niveau);
 
-	const float SurfaceM = Density.SurfaceHeightM(X, Y);
+	const float SurfaceM = Density->SurfaceHeightM(X, Y);
 
 	// La pente se mesure sur le CHAMP, pas sur la grille : c'est le relief
 	// qu'on a reellement sous les pieds, deplacement 3D compris.
 	const double Pas = 4.0;
-	const double DX = Density.SurfaceHeightM(X + Pas, Y) - Density.SurfaceHeightM(X - Pas, Y);
-	const double DY = Density.SurfaceHeightM(X, Y + Pas) - Density.SurfaceHeightM(X, Y - Pas);
+	const double DX = Density->SurfaceHeightM(X + Pas, Y) - Density->SurfaceHeightM(X - Pas, Y);
+	const double DY = Density->SurfaceHeightM(X, Y + Pas) - Density->SurfaceHeightM(X, Y - Pas);
 	const double PenteDeg = FMath::RadiansToDegrees(
 		FMath::Atan(FMath::Sqrt(DX * DX + DY * DY) / (2.0 * Pas)));
 
@@ -2775,7 +2841,7 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// par construction : la ou la roche se dissout, chambres et galeries ; la
 	// ou elle ne se dissout pas, des fractures. Aucun reglage ne choisit entre
 	// les deux, c'est la ROCHE qui decide.
-	const float Karst = Density.KarstifiableAt(X, Y);
+	const float Karst = Density->KarstifiableAt(X, Y);
 
 	FString Banc = TEXT("pas de serie ici");
 	if (StratRules.IsActive())
@@ -2798,8 +2864,8 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// qu'un cache pose a cote pour lier des assets ; ce sont ces grandeurs-la
 	// qui la decident, et les lire evite de croire qu'un biome est « faux »
 	// alors qu'il est la consequence exacte de son climat.
-	const float Cont = Continentalite.IsValidIndex(Cellule) ? Continentalite[Cellule] : -1.0f;
-	const float Saison = SaisonAmpC.IsValidIndex(Cellule) ? SaisonAmpC[Cellule] : -1.0f;
+	const float Cont = Continentalite().IsValidIndex(Cellule) ? Continentalite()[Cellule] : -1.0f;
+	const float Saison = SaisonAmpC().IsValidIndex(Cellule) ? SaisonAmpC()[Cellule] : -1.0f;
 
 	Lignes.Add(FString::Printf(
 		TEXT("continentalite %.2f   amplitude saisonniere %.0f C"), Cont, Saison));

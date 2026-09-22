@@ -243,6 +243,30 @@ void UWorldseedBanc::Conclure()
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   memoire physique utilisee %.2f Go"),
 		Mem.UsedPhysical / (1024.0 * 1024.0 * 1024.0));
+
+	// --- LE MONDE, SON POIDS ET SES PORTEURS -------------------------------
+	//
+	// DEUX CHIFFRES PARCE QUE LA MEMOIRE DU PROCESSUS NE SAIT PAS REPONDRE.
+	// Elle derive de trois cents megaoctets d'un lancement a l'autre -- releve
+	// sur cinq passes identiques : 7,60 a 7,99 Go -- donc les deux cent vingt
+	// megaoctets qu'une duplication du monde ajouterait s'y noient. Ceux-ci
+	// sont DETERMINISTES : le poids ne depend que de la grille, et le nombre
+	// de porteurs dit combien de fois ce poids est paye.
+	//
+	// CE QUE LE COMPTE VAUT, ET IL FAUT SAVOIR LIRE LE TROIS. Deux porteurs
+	// sont les acteurs -- le terrain et l'acteur voxel -- et le TROISIEME est
+	// la variable ci-dessous, qui tient une reference le temps de la lire. Un
+	// jeu lance depuis le menu en ajoute un, l'instance de jeu, et chaque
+	// travail de maillage en vol un de plus. Ce que ce chiffre ne doit plus
+	// jamais faire, c'est monter avec le nombre d'acteurs qui LISENT le monde :
+	// c'etait le defaut, et il coutait une copie entiere par lecteur.
+	if (const FWorldseedMondePtr Monde = T->MondePartage())
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   monde partage : %.1f Mo de tableaux, %d porteurs"),
+			Monde->OctetsApprox() / (1024.0 * 1024.0),
+			Monde.GetSharedReferenceCount());
+	}
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   Lecture : le budget est 16,67 ms. La trame est mesuree ")
 		TEXT("PAR LE JEU sur son propre DeltaTime, donc a l'abri du bridage de ")

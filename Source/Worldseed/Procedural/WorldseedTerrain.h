@@ -11,6 +11,7 @@
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
 #include "Procedural/WorldseedTexturePack.h"
+#include "Procedural/WorldseedWorldData.h"
 #include "WorldseedTerrain.generated.h"
 
 class UProceduralMeshComponent;
@@ -607,12 +608,46 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<class AWorldseedHorizonProxy> HorizonProxy;
 
+	/**
+	 * LE MONDE, TENU PAR REFERENCE ET NON PAR VALEUR.
+	 *
+	 * IL ETAIT COPIE. Cet acteur en gardait son propre jeu de tableaux, et
+	 * `AdoptWorld` en recopiait un second dans l'acteur voxel : sur la grille
+	 * 4096x2048, cent quatre-vingt-cinq megaoctets en double, pour une donnee
+	 * que personne ne modifie jamais apres sa generation.
+	 *
+	 * Les accesseurs ci-dessous gardent les noms d'avant, a la parenthese
+	 * pres : ils rendent une reference sur le monde partage, donc rien n'est
+	 * copie a la lecture, et le code appelant n'a pas change de sens.
+	 */
+	FWorldseedMondePtr Monde;
+
+	/**
+	 * Le vide, rendu quand aucun monde n'est charge.
+	 *
+	 * POURQUOI IL EXISTE PLUTOT QU'UN DEREFERENCEMENT NU. Les accesseurs sont
+	 * appeles depuis des chemins qui tournent avant `AcquireWorld` -- le
+	 * releve, les gardes de validite. Rendre une reference sur un tableau vide
+	 * leur laisse leur test `Num() == CellCount()` habituel ; dereferencer un
+	 * pointeur nul les ferait tomber.
+	 */
+	static const TArray<float>& FloatsVides();
+
 	/** Heightfield en metres, 0 au niveau de la mer. Indexe J * NX + I. */
-	TArray<float> HeightsM;
+	const TArray<float>& HeightsM() const
+	{
+		return Monde.IsValid() ? Monde->ElevationM : FloatsVides();
+	}
 
 	/** Climat, meme indexation. Pilote les couleurs de biome. */
-	TArray<float> TempC;
-	TArray<float> PrecipMm;
+	const TArray<float>& TempC() const
+	{
+		return Monde.IsValid() ? Monde->TempC : FloatsVides();
+	}
+	const TArray<float>& PrecipMm() const
+	{
+		return Monde.IsValid() ? Monde->PrecipMm : FloatsVides();
+	}
 
 	/**
 	 * Ecart annuel froid/chaud, meme indexation.
@@ -621,7 +656,10 @@ protected:
 	 * latitude egale, un coeur de continent gele l'hiver la ou une cote reste
 	 * douce. C'est cette grille qui regle les saisons d'Ultra Dynamic Sky.
 	 */
-	TArray<float> SeasonalAmpC;
+	const TArray<float>& SeasonalAmpC() const
+	{
+		return Monde.IsValid() ? Monde->SeasonalAmpC : FloatsVides();
+	}
 
 	/**
 	 * Continentalite, meme indexation : 0 au bord de mer, 1 loin des cotes.
@@ -629,8 +667,18 @@ protected:
 	 * Elle ouvre l'ecart jour/nuit du prereglage climatique — un interieur de
 	 * continent perd la nuit ce qu'il a gagne le jour, une cote non.
 	 */
-	TArray<float> ContinentalityGrid;
+	const TArray<float>& ContinentalityGrid() const
+	{
+		return Monde.IsValid() ? Monde->Continentality : FloatsVides();
+	}
 
+	/**
+	 * La geometrie reste PAR VALEUR, et c'est deliberе.
+	 *
+	 * Elle pese une quarantaine d'octets et elle est lue cent trente et une
+	 * fois dans les deux acteurs : la partager n'economiserait rien et
+	 * couterait cent trente et une editions. On ne deplace que ce qui pese.
+	 */
 	FWorldseedGeometry Geometry;
 
 	/** Graine du monde charge. Ensemence aussi le signal meteo. */
@@ -646,8 +694,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Eau")
 	TObjectPtr<class UWorldseedWaterComponent> Water;
 
-	/** Les 19 biomes du monde charge. */
-	FWorldseedBiomeMap Biomes;
+	/** Les 19 biomes du monde charge. Partages, comme le reste. */
+	const FWorldseedBiomeMap& Biomes() const
+	{
+		static const FWorldseedBiomeMap Vide;
+		return Monde.IsValid() ? Monde->Biomes : Vide;
+	}
 
 	/**
 	 * Le reseau de grottes du monde charge.

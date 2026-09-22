@@ -17,22 +17,22 @@ UWorldseedGameInstance* UWorldseedGameInstance::GetWorldseedGameInstance(
 
 void UWorldseedGameInstance::StoreWorld(const FWorldseedWorldData& InWorld)
 {
-	World = InWorld;
-	bHasWorld = InWorld.IsValid();
-
-	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] monde mis en cache : seed=%d  %dx%d  %d valeurs  saisons=%d  (valide=%d)"),
-		World.Seed, World.Geometry.NX, World.Geometry.NY, World.ElevationM.Num(),
-		World.SeasonalAmpC.Num(), bHasWorld ? 1 : 0);
-}
-
-bool UWorldseedGameInstance::TryGetWorld(FWorldseedWorldData& OutWorld) const
-{
-	if (!bHasWorld || !World.IsValid())
+	if (!InWorld.IsValid())
 	{
-		return false;
+		Monde.Reset();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] monde refuse : il n'est pas valide"));
+		return;
 	}
 
-	OutWorld = World;
-	return true;
+	// L'UNIQUE COPIE DE TOUTE LA CHAINE, et elle a lieu ici parce que le menu
+	// tient encore son resultat. A partir de cet instant le monde est partage
+	// et immuable : le terrain, l'acteur voxel et chaque travail de maillage
+	// n'en prendront qu'une reference.
+	Monde = MakeShared<const FWorldseedWorldData, ESPMode::ThreadSafe>(InWorld);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] monde mis en cache : seed=%d  %dx%d  %d valeurs  saisons=%d"),
+		Monde->Seed, Monde->Geometry.NX, Monde->Geometry.NY,
+		Monde->ElevationM.Num(), Monde->SeasonalAmpC.Num());
 }

@@ -239,25 +239,30 @@ bool AWorldseedTerrain::AcquireWorld()
 	if (UWorldseedGameInstance* GI =
 		UWorldseedGameInstance::GetWorldseedGameInstance(this))
 	{
-		FWorldseedWorldData Loaded;
-		if (GI->TryGetWorld(Loaded))
+		// ON PREND UNE REFERENCE, ON NE COPIE PLUS. C'etait ici que le monde se
+		// dedoublait une premiere fois -- une copie pour sortir de l'instance
+		// de jeu, puis les `MoveTemp` vers les membres -- avant qu'`AdoptWorld`
+		// n'en fasse une seconde vers l'acteur voxel.
+		if (FWorldseedMondePtr Partage = GI->MondePartage())
 		{
-			WorldSeed = Loaded.Seed;
-			Geometry = Loaded.Geometry;
-			HeightsM = MoveTemp(Loaded.ElevationM);
-			TempC = MoveTemp(Loaded.TempC);
-			PrecipMm = MoveTemp(Loaded.PrecipMm);
-			SeasonalAmpC = MoveTemp(Loaded.SeasonalAmpC);
-			ContinentalityGrid = MoveTemp(Loaded.Continentality);
-			Biomes = MoveTemp(Loaded.Biomes);
-			Lithology.Id = MoveTemp(Loaded.LithologyId);
-			TexturePack = Loaded.TexturePack;
+			Monde = Partage;
+			WorldSeed = Monde->Seed;
+			Geometry = Monde->Geometry;
+
+			// LA LITHOLOGIE RESTE COPIEE, ET C'EST ASSUME. Son tableau
+			// d'identifiants pese huit megaoctets sur les cent
+			// quatre-vingt-treize du monde ; la partager demanderait de rendre
+			// `FWorldseedLithology::Id` non proprietaire, donc de toucher a
+			// une structure que la generation REMPLIT. On ne deplace que ce
+			// qui pese, et l'on dit ce qu'on laisse.
+			Lithology.Id = Monde->LithologyId;
+			TexturePack = Monde->TexturePack;
 
 			// Le point de depart choisi dans le menu. Ce terrain ne s'en sert
 			// pas lui-meme -- c'est l'acteur voxel qui place le joueur -- il
 			// ne fait que le convoyer jusqu'a lui.
-			bDepartDemande = Loaded.bHasSpawn;
-			DepartXYM = Loaded.SpawnXYM;
+			bDepartDemande = Monde->bHasSpawn;
+			DepartXYM = Monde->SpawnXYM;
 			Colouring = (TexturePack == EWorldseedTexturePack::BiomeColour)
 				? EWorldseedTerrainColouring::BiomeColour
 				: EWorldseedTerrainColouring::TexturePack;
@@ -272,7 +277,7 @@ bool AWorldseedTerrain::AcquireWorld()
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] monde repris du menu : seed=%d  %dx%d  saisons=%d"),
-				WorldSeed, Geometry.NX, Geometry.NY, SeasonalAmpC.Num());
+				WorldSeed, Geometry.NX, Geometry.NY, SeasonalAmpC().Num());
 			return true;
 		}
 	}
@@ -288,14 +293,25 @@ bool AWorldseedTerrain::AcquireWorld()
 		return false;
 	}
 
+	// MEME CHEMIN QUE LE MENU : on batit UN monde partage, et l'on s'y
+	// refere. Les `MoveTemp` vident le resultat de la chaine plutot que de le
+	// recopier -- il ne sert a rien apres.
+	{
+		FWorldseedWorldData Bati;
+		Bati.Seed = FallbackSeed;
+		Bati.Geometry = World.Geometry;
+		Bati.ElevationM = MoveTemp(World.ElevationM);
+		Bati.TempC = MoveTemp(World.Climate.TempMeanC);
+		Bati.PrecipMm = MoveTemp(World.Climate.PrecipMm);
+		Bati.SeasonalAmpC = MoveTemp(World.Climate.SeasonalAmpC);
+		Bati.Continentality = MoveTemp(World.Climate.Continentality);
+		Bati.Biomes = MoveTemp(World.Biomes);
+
+		Monde = MakeShared<const FWorldseedWorldData, ESPMode::ThreadSafe>(MoveTemp(Bati));
+	}
+
 	WorldSeed = FallbackSeed;
 	Geometry = World.Geometry;
-	HeightsM = MoveTemp(World.ElevationM);
-	TempC = MoveTemp(World.Climate.TempMeanC);
-	PrecipMm = MoveTemp(World.Climate.PrecipMm);
-	SeasonalAmpC = MoveTemp(World.Climate.SeasonalAmpC);
-	ContinentalityGrid = MoveTemp(World.Climate.Continentality);
-	Biomes = MoveTemp(World.Biomes);
 	Caves = MoveTemp(World.Caves);
 	Lithology = MoveTemp(World.Lithology);
 	return true;
@@ -335,7 +351,7 @@ void AWorldseedTerrain::RebuildCaveNetwork()
 			Lithology.Id.Num(), Geometry.CellCount());
 	}
 
-	WorldseedCaves::Build(Geometry, HeightsM, PrecipMm, Lithology,
+	WorldseedCaves::Build(Geometry, HeightsM(), PrecipMm(), Lithology,
 		FWorldseedLithologyRules::FromRules(*Rules),
 		FWorldseedCaveRules::FromRules(*Rules), HeightExaggeration, WorldSeed, Caves);
 }
@@ -351,7 +367,7 @@ void AWorldseedTerrain::Rebuild()
 	}
 	Chunks.Empty();
 
-	if (!AcquireWorld() || Geometry.NX < 2 || HeightsM.Num() != Geometry.CellCount())
+	if (!AcquireWorld() || Geometry.NX < 2 || HeightsM().Num() != Geometry.CellCount())
 	{
 		return;
 	}
@@ -386,7 +402,7 @@ void AWorldseedTerrain::Rebuild()
 	// n'a pas besoin d'etre refaite quand les chunks changent de resolution.
 	if (Water)
 	{
-		Water->Build(Geometry, HeightsM, HeightExaggeration);
+		Water->Build(Geometry, HeightsM(), HeightExaggeration);
 	}
 }
 
@@ -395,6 +411,19 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 	UWorld* World = GetWorld();
 	if (!World || VoxelTerrain)
 	{
+		return;
+	}
+
+	// SANS MONDE, PAS DE VOXEL -- ET ON LE DIT. `Rebuild` ne nous appelle
+	// qu'apres avoir verifie que le relief a la taille de la grille, donc le
+	// cas ne se presente pas aujourd'hui ; mais la garde qui le tient est deux
+	// fonctions plus haut, et `ToSharedRef` sur un pointeur nul n'echoue qu'en
+	// developpement -- en livraison elle dereferencerait zero. Une ligne de
+	// journal vaut mieux qu'un plantage dont personne ne saura la cause.
+	if (!Monde.IsValid())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Worldseed] voxel : pas de monde a adopter, acteur non pose"));
 		return;
 	}
 
@@ -419,14 +448,15 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 
 	if (VoxelTerrain)
 	{
-		VoxelTerrain->AdoptWorld(WorldSeed, Geometry, HeightsM, Biomes,
-			HeightExaggeration, Caves, Lithology, PrecipMm, TempC);
-
-		// LES DEUX CHAMPS QUI N'EXPLIQUENT, ET NE GENERENT RIEN. Ils passent a
-		// part parce qu'AdoptWorld transmet le MONDE -- ce qui sert a mailler
-		// -- alors que ceux-ci ne servent qu'au releve de jeu. Les melanger
-		// inviterait a croire que le champ de densite les lit.
-		VoxelTerrain->AdoptChampsClimat(ContinentalityGrid, SeasonalAmpC);
+		// LE MONDE PASSE ENTIER ET PAR REFERENCE. Il y avait ici neuf arguments
+		// puis un second appel pour deux champs de plus ; il en reste quatre,
+		// et plus une seule copie. Ce qui accompagne le monde ne lui appartient
+		// pas : les grottes se rebatissent, la lithologie porte un catalogue
+		// issu des regles, et l'exageration verticale est un reglage de CE
+		// terrain -- elle doit etre la meme des deux cotes, sans quoi le sol de
+		// fond et le relief proche decriraient deux echelles differentes.
+		VoxelTerrain->AdoptWorld(Monde.ToSharedRef(), HeightExaggeration,
+			Caves, Lithology);
 
 		// LE DEPART CHOISI DANS LE MENU PASSE PAR ICI, ET C'EST LE SEUL
 		// CHEMIN. Le voxel lit bien lui-meme l'instance de jeu, mais seulement
@@ -449,9 +479,9 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 		FWorldseedAppearance Mode;
 		Mode.bTexturePack = (Colouring == EWorldseedTerrainColouring::TexturePack)
 			&& (TexturePack != EWorldseedTexturePack::BiomeColour)
-			&& (Biomes.Index.Num() == Geometry.CellCount());
+			&& (Biomes().Index.Num() == Geometry.CellCount());
 		Mode.bColourByBiome = (Colouring == EWorldseedTerrainColouring::BiomeColour)
-			&& (Biomes.Index.Num() == Geometry.CellCount());
+			&& (Biomes().Index.Num() == Geometry.CellCount());
 
 		if (UMaterialInterface* Material = ChooseTerrainMaterial(Mode))
 		{
@@ -512,7 +542,7 @@ FVector2D AWorldseedTerrain::ChunkCenterCm(const FIntPoint& Key) const
 
 void AWorldseedTerrain::UpdateChunks()
 {
-	if (Geometry.NX < 2 || HeightsM.Num() != Geometry.CellCount())
+	if (Geometry.NX < 2 || HeightsM().Num() != Geometry.CellCount())
 	{
 		return;
 	}
@@ -626,7 +656,7 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 
 	auto SampleM = [this, &CellIndex](int32 SX, int32 SY) -> float
 	{
-		return HeightsM[CellIndex(SX, SY)];
+		return HeightsM()[CellIndex(SX, SY)];
 	};
 
 	// --- couches, decidees ICI et non dans le shader -----------------------
@@ -645,9 +675,9 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 	// poids de couches plutot que de peindre tout en noir.
 	const bool bColourByBiome =
 		(Colouring == EWorldseedTerrainColouring::BiomeColour)
-		&& (Biomes.Index.Num() == Geometry.CellCount());
+		&& (Biomes().Index.Num() == Geometry.CellCount());
 
-	const bool bHasCover = (Biomes.Cover.Num() == Geometry.CellCount());
+	const bool bHasCover = (Biomes().Cover.Num() == Geometry.CellCount());
 
 	// Le mode pack demande a la fois une carte de biomes et un materiau : sans
 	// l'un ou l'autre on retombe sur la couleur de biome, jamais sur du noir.
@@ -655,11 +685,11 @@ void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
 	const bool bTexturePack =
 		(Colouring == EWorldseedTerrainColouring::TexturePack)
 		&& (TexturePack != EWorldseedTexturePack::BiomeColour)
-		&& (Biomes.Index.Num() == Geometry.CellCount())
+		&& (Biomes().Index.Num() == Geometry.CellCount())
 		&& PackMaterial && PackMaterial->Get();
 
-	const bool bHasClimate = (TempC.Num() == Geometry.CellCount())
-		&& (PrecipMm.Num() == Geometry.CellCount());
+	const bool bHasClimate = (TempC().Num() == Geometry.CellCount())
+		&& (PrecipMm().Num() == Geometry.CellCount());
 
 	const float CosRockStart = FMath::Cos(FMath::DegreesToRadians(RockSlopeStartDeg));
 	const float CosRockFull = FMath::Cos(FMath::DegreesToRadians(RockSlopeFullDeg));
@@ -987,7 +1017,7 @@ bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,
 {
 
 	const int32 Count = Geometry.CellCount();
-	if (Geometry.NX < 2 || TempC.Num() != Count || PrecipMm.Num() != Count)
+	if (Geometry.NX < 2 || TempC().Num() != Count || PrecipMm().Num() != Count)
 	{
 		return false;
 	}
@@ -1002,21 +1032,21 @@ bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,
 	U -= FMath::FloorToFloat(U);
 	const float V = FMath::Clamp(static_cast<float>(Local.Y) / HeightCm + 0.5f, 0.0f, 1.0f);
 
-	OutSample.TempMeanC = WorldseedGrid::SampleUV(TempC, Geometry.NX, Geometry.NY, U, V);
-	OutSample.PrecipMm = WorldseedGrid::SampleUV(PrecipMm, Geometry.NX, Geometry.NY, U, V);
+	OutSample.TempMeanC = WorldseedGrid::SampleUV(TempC(), Geometry.NX, Geometry.NY, U, V);
+	OutSample.PrecipMm = WorldseedGrid::SampleUV(PrecipMm(), Geometry.NX, Geometry.NY, U, V);
 
 	// Amplitude et continentalite arrivent du modele climatique. Un monde
 	// d'avant leur transport n'en porte pas : on garde alors les valeurs par
 	// defaut de l'echantillon plutot que d'inventer des saisons.
-	if (SeasonalAmpC.Num() == Count)
+	if (SeasonalAmpC().Num() == Count)
 	{
 		OutSample.SeasonalAmpC = WorldseedGrid::SampleUV(
-			SeasonalAmpC, Geometry.NX, Geometry.NY, U, V);
+			SeasonalAmpC(), Geometry.NX, Geometry.NY, U, V);
 	}
-	if (ContinentalityGrid.Num() == Count)
+	if (ContinentalityGrid().Num() == Count)
 	{
 		OutSample.Continentality = WorldseedGrid::SampleUV(
-			ContinentalityGrid, Geometry.NX, Geometry.NY, U, V);
+			ContinentalityGrid(), Geometry.NX, Geometry.NY, U, V);
 	}
 	return true;
 }
@@ -1204,7 +1234,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 		return;
 	}
 
-	if (!bBuildGroundProxy || Geometry.NX < 2 || HeightsM.Num() != Geometry.CellCount())
+	if (!bBuildGroundProxy || Geometry.NX < 2 || HeightsM().Num() != Geometry.CellCount())
 	{
 		return;
 	}
@@ -1287,12 +1317,12 @@ void AWorldseedTerrain::BuildGroundProxy()
 	FWorldseedAppearance Mode;
 	Mode.bTexturePack = (Colouring == EWorldseedTerrainColouring::TexturePack)
 		&& (TexturePack != EWorldseedTexturePack::BiomeColour)
-		&& (Biomes.Index.Num() == Geometry.CellCount());
+		&& (Biomes().Index.Num() == Geometry.CellCount());
 	Mode.bColourByBiome = (Colouring == EWorldseedTerrainColouring::BiomeColour)
-		&& (Biomes.Index.Num() == Geometry.CellCount());
-	Mode.bHasClimate = (TempC.Num() == Geometry.CellCount())
-		&& (PrecipMm.Num() == Geometry.CellCount());
-	Mode.bHasCover = (Biomes.Cover.Num() == Geometry.CellCount());
+		&& (Biomes().Index.Num() == Geometry.CellCount());
+	Mode.bHasClimate = (TempC().Num() == Geometry.CellCount())
+		&& (PrecipMm().Num() == Geometry.CellCount());
+	Mode.bHasCover = (Biomes().Cover.Num() == Geometry.CellCount());
 
 	// LA MER DU DECOR EST OPAQUE, CELLE DES PIEDS NE L'EST PAS. Le seul
 	// endroit du projet ou ce drapeau s'arme : voir son commentaire dans
@@ -1376,7 +1406,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 			const int32 Base = Row * Geometry.NX;
 			for (int32 Col = X0; Col <= X1; ++Col)
 			{
-				Lowest = FMath::Min(Lowest, HeightsM[Base + Col]);
+				Lowest = FMath::Min(Lowest, HeightsM()[Base + Col]);
 			}
 		}
 		return Lowest;
@@ -1396,7 +1426,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 			const int32 Index = Y * CountX + X;
 			const int32 Cell = SY * Geometry.NX + SX;
 
-			const float HereM = HeightsM[Cell];
+			const float HereM = HeightsM()[Cell];
 
 			// La GEOMETRIE prend le plancher ; l'APPARENCE garde la hauteur du
 			// point, qui est celle du biome reellement present ici.
@@ -1421,9 +1451,9 @@ void AWorldseedTerrain::BuildGroundProxy()
 			const float SpanY = FMath::Max((PY - MY), 1) * Geometry.MetersPerPixel();
 
 			const float DZDX =
-				(HeightsM[SY * Geometry.NX + PX] - HeightsM[SY * Geometry.NX + MX]) / SpanX;
+				(HeightsM()[SY * Geometry.NX + PX] - HeightsM()[SY * Geometry.NX + MX]) / SpanX;
 			const float DZDY =
-				(HeightsM[PY * Geometry.NX + SX] - HeightsM[MY * Geometry.NX + SX]) / SpanY;
+				(HeightsM()[PY * Geometry.NX + SX] - HeightsM()[MY * Geometry.NX + SX]) / SpanY;
 
 			const FVector N = FVector(-DZDX, -DZDY, 1.0f).GetSafeNormal();
 			Normals[Index] = N;
@@ -1880,10 +1910,10 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 		// equatorial et une plaine polaire peuvent etre a la meme
 		// altitude sans avoir le meme climat.
 		Snow = FMath::GetMappedRangeValueClamped(
-			FVector2D(SnowTempC, SnowTempFullC), FVector2D(0.0f, 1.0f), TempC[Cell]);
+			FVector2D(SnowTempC, SnowTempFullC), FVector2D(0.0f, 1.0f), TempC()[Cell]);
 
 		Vegetation = FMath::GetMappedRangeValueClamped(
-			FVector2D(AridMm, LushMm), FVector2D(0.0f, 1.0f), PrecipMm[Cell]);
+			FVector2D(AridMm, LushMm), FVector2D(0.0f, 1.0f), PrecipMm()[Cell]);
 	}
 	else
 	{
@@ -1950,8 +1980,8 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 		// l'identifiant d'avant la separation des deux axes, donc cette
 		// ligne peint rigoureusement la meme chose qu'avant.
 		const EWorldseedBiome Biome = bHasCover
-			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
-			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]);
+			? WorldseedBiomes::AppearanceBiome(Biomes().Index[Cell], Biomes().Cover[Cell])
+			: static_cast<EWorldseedBiome>(Biomes().Index[Cell]);
 
 		// RGBA porte les POIDS DE MATIERE, jamais une couleur : c'est
 		// le materiau qui melange les quatre textures avec.
@@ -1960,7 +1990,7 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 		FLinearColor Tint = WorldseedBiomes::Colour(Biome);
 		if (bHasCover)
 		{
-			const EWorldseedCover C = static_cast<EWorldseedCover>(Biomes.Cover[Cell]);
+			const EWorldseedCover C = static_cast<EWorldseedCover>(Biomes().Cover[Cell]);
 			if (C != EWorldseedCover::None)
 			{
 				Tint = FMath::Lerp(Tint,
@@ -1996,15 +2026,15 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 		// materiau ne peut pas deviner lequel il recoit.
 		const int32 CI = Cell;
 		FLinearColor Tint = WorldseedBiomes::Colour(bHasCover
-			? WorldseedBiomes::AppearanceBiome(Biomes.Index[Cell], Biomes.Cover[Cell])
-			: static_cast<EWorldseedBiome>(Biomes.Index[Cell]));
+			? WorldseedBiomes::AppearanceBiome(Biomes().Index[Cell], Biomes().Cover[Cell])
+			: static_cast<EWorldseedBiome>(Biomes().Index[Cell]));
 
 		// L'eau se MELE au biome au lieu de l'effacer : c'est tout le
 		// benefice de la separation des deux axes.
 		if (bHasCover && CoverTint > 0.0f)
 		{
 			const EWorldseedCover Cover =
-				static_cast<EWorldseedCover>(Biomes.Cover[Cell]);
+				static_cast<EWorldseedCover>(Biomes().Cover[Cell]);
 			if (Cover != EWorldseedCover::None)
 			{
 				Tint = FMath::Lerp(Tint,
@@ -2076,7 +2106,7 @@ void AWorldseedTerrain::GetLonLatAtWorldXY(float WorldX, float WorldY,
 
 float AWorldseedTerrain::GetHeightAtWorldXY(float WorldX, float WorldY) const
 {
-	if (Geometry.NX < 2 || HeightsM.Num() != Geometry.CellCount())
+	if (Geometry.NX < 2 || HeightsM().Num() != Geometry.CellCount())
 	{
 		return GetActorLocation().Z;
 	}
@@ -2091,6 +2121,18 @@ float AWorldseedTerrain::GetHeightAtWorldXY(float WorldX, float WorldY) const
 	U -= FMath::FloorToFloat(U);
 	const float V = FMath::Clamp(static_cast<float>(Local.Y) / HeightCm + 0.5f, 0.0f, 1.0f);
 
-	const float HeightM = WorldseedGrid::SampleUV(HeightsM, Geometry.NX, Geometry.NY, U, V);
+	const float HeightM = WorldseedGrid::SampleUV(HeightsM(), Geometry.NX, Geometry.NY, U, V);
 	return GetActorLocation().Z + HeightM * WorldseedMetersToCm * HeightExaggeration;
+}
+
+const TArray<float>& AWorldseedTerrain::FloatsVides()
+{
+	// UN TABLEAU VIDE PARTAGE, PLUTOT QU'UN DEREFERENCEMENT NU. Les accesseurs
+	// du monde sont appeles depuis des chemins qui tournent AVANT qu'un monde
+	// soit charge -- le releve d'ecran, les gardes de validite -- et ceux-ci
+	// testent `Num() == CellCount()`. Leur rendre un tableau vide les laisse
+	// repondre « pas de monde » comme avant ; leur rendre un pointeur nul les
+	// ferait tomber.
+	static const TArray<float> Vide;
+	return Vide;
 }

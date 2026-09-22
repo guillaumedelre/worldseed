@@ -134,4 +134,61 @@ struct WORLDSEED_API FWorldseedWorldData
 	{
 		return Geometry.NX >= 2 && ElevationM.Num() == CellCount();
 	}
+
+	/**
+	 * Ce que pesent les grands tableaux, en octets.
+	 *
+	 * IL EXISTE POUR QU'UNE DUPLICATION SE VOIE. Le monde etait recopie deux
+	 * fois -- l'instance de jeu, le terrain, puis l'acteur voxel -- et rien ne
+	 * le disait : la memoire du processus derive de plusieurs centaines de
+	 * megaoctets d'un lancement a l'autre, donc deux cent vingt de trop s'y
+	 * noient. Ce chiffre-la, lui, est DETERMINISTE, et le releve le porte a
+	 * cote du nombre de porteurs.
+	 *
+	 * « Approximatif » parce qu'il ignore les petits champs et le bourrage :
+	 * ce qu'on veut savoir est l'ordre de grandeur des tableaux, pas le poids
+	 * exact de la structure.
+	 */
+	int64 OctetsApprox() const
+	{
+		auto Poids = [](const auto& A) -> int64
+		{
+			return static_cast<int64>(A.Num()) * sizeof(typename
+				TRemoveReference<decltype(A)>::Type::ElementType);
+		};
+		return Poids(ElevationM) + Poids(TempC) + Poids(PrecipMm)
+			+ Poids(SeasonalAmpC) + Poids(Continentality) + Poids(LithologyId)
+			+ Poids(Biomes.Index) + Poids(Biomes.Cover) + Poids(Biomes.SlopeDeg);
+	}
 };
+
+/**
+ * LE MONDE, PARTAGE ET IMMUABLE.
+ *
+ * POURQUOI. Le monde etait COPIE a chaque etape -- le menu le rangeait dans
+ * l'instance de jeu, le terrain l'en sortait, puis `AdoptWorld` le recopiait
+ * dans l'acteur voxel. Sur une grille 4096x2048, les sept grands tableaux
+ * pesent cent quatre-vingt-treize megaoctets, et deux acteurs en tenaient
+ * chacun un jeu complet.
+ *
+ * ET SURTOUT, IL N'AVAIT PAS DE PROPRIETAIRE CLAIR. Le champ de densite est un
+ * membre PAR VALEUR de l'acteur voxel, et chaque travail de maillage en
+ * capture l'ADRESSE. `EndPlay` annule les travaux sans les attendre -- ce qui
+ * est le bon choix, attendre bloquerait la fermeture -- donc un fil peut lire
+ * cette memoire pendant que le ramasse-miettes s'apprete a la liberer. La
+ * fenetre est courte, mais c'est la forme exacte d'un plantage rare au
+ * changement de niveau : celui qu'on ne reproduit jamais.
+ *
+ * UNE REFERENCE PARTAGEE REPOND AUX DEUX A LA FOIS. Le travail en tient une,
+ * donc la donnee lui survit par construction, et il n'y a plus qu'un seul
+ * exemplaire en memoire. C'est le meme raisonnement que pour les primitives de
+ * grottes, deja resolu ainsi : « le fil de maillage ne doit rien tenir qui
+ * puisse mourir avant lui ».
+ *
+ * IMMUABLE PAR LE TYPE, ET CE N'EST PAS DECORATIF. `const` interdit qu'un
+ * porteur modifie ce que les autres lisent -- ce qui, entre fils, serait une
+ * course. Un monde se CONSTRUIT une fois, puis ne fait plus que se lire ; le
+ * type le dit, et le compilateur le verifie.
+ */
+using FWorldseedMondeRef = TSharedRef<const FWorldseedWorldData, ESPMode::ThreadSafe>;
+using FWorldseedMondePtr = TSharedPtr<const FWorldseedWorldData, ESPMode::ThreadSafe>;
