@@ -7282,3 +7282,96 @@ n'a pas de surcharge, on AJOUTE la surcharge ; on ne touche pas au fichier » :
   sur n'importe quelle paroi, faute d'appeler la recherche -- or c'est le
   drapeau qu'on emploie pour inspecter des endroits impraticables. Il a servi
   de sonde pour trouver les points raides de ce chantier.
+
+### Le mailleur legataire est parti, et ce qu'il clouait avec lui (22 septembre 2026)
+
+**ARBITRAGE DU PROPRIETAIRE : supprimer.** Le voxel tenait le relief depuis le
+18 septembre ; l'ancien mailleur en carte d'altitude restait derriere un
+drapeau `bUseVoxelMesher`, comme repli si l'acteur voxel ne se posait pas.
+
+**CE QUE LA VERIFICATION A ETABLI, et c'est elle qui a decide :**
+
+- il n'etait joignable par **AUCUNE ligne de commande**. `-WorldseedVoxel=`
+  n'est pas un interrupteur, c'est une TAILLE DE VOXEL
+  (`WorldseedVoxelTerrain.cpp:452`) -- le registre laissait croire le
+  contraire. Restaient le drapeau bascule a la main dans l'editeur, et un echec
+  de `SpawnActorDeferred` en pratique inatteignable ;
+- **rien ne l'avait exerce depuis l'A/B du 18 septembre.** Il compilait ; qu'il
+  TOURNE encore n'etait pas etabli. Un filet qu'on n'eprouve pas n'est pas un
+  filet, c'est une dette ;
+- un argument qui le justifiait etait devenu **FAUX** : l'en-tete invoquait
+  « la grille d'altitudes existe en double -- huit megaoctets », ce qui n'est
+  plus vrai depuis le monde partage du matin meme.
+
+**ET LA TACHE ELLE-MEME ETAIT PERIMEE, comme celle du point de naissance.**
+Elle disait « garder ou non ce filet » ; en mesurant, le filet s'est revele
+inatteignable. **Deux taches perimees dans la meme journee : un carnet se
+remesure avant d'etre execute.**
+
+#### Ce qu'il clouait, et c'est la vraie raison de le retirer
+
+`ComputeVertexAppearance` avait **exactement DEUX consommateurs** -- lui et le
+sol de fond. L'en-tete de l'acteur disait pourquoi cela comptait : « deux
+versions de cette regle finiraient par diverger, et la difference se verrait
+exactement la ou les deux maillages se rencontrent ». C'etait juste, et cela le
+CLOUAIT : aucun des deux ne pouvait partir sans recopier la regle.
+
+Le legataire supprime, il n'en reste qu'un. Le calcul vit desormais dans
+`WorldseedApparence`, avec `FWorldseedAppearance` -- qui decrit precisement ce
+qu'il produit -- et `FWorldseedSurfaceRegles` pour les huit seuils qu'il lit.
+
+**ATTENTION : il existe un SECOND calcul d'apparence**,
+`AWorldseedVoxelTerrain::PaintVertices`. Il ne fait PAS la meme chose -- il
+peint en trois dimensions et connait la roche -- donc ce n'est pas une
+duplication a resorber. Mais les deux se rencontrent la ou le terrain proche
+rejoint l'horizon, et une divergence s'y verrait.
+
+#### Une fixture muette d'une forme NOUVELLE : le registre non charge
+
+Le premier test d'apparence comparait la sortie a
+`WorldseedBiomes::Colour(Ocean)`. Trois assertions negatives ont echoue -- un
+sommet a **dix metres d'altitude** sortait « de la mer ». Ce n'etait pas la
+regle qui debordait : **les couleurs de biome viennent du REGISTRE**, charge
+depuis `world_rules.json`, qu'un monde fictif ne charge pas. Toutes les teintes
+valaient la meme valeur par defaut, et l'egalite etait vraie partout.
+
+Le verdict se lit donc sur le **TEMOIN MAGENTA**, ecrit en dur dans le calcul :
+il ne doit rien au registre, donc il dit exactement quelle BRANCHE a ete prise.
+C'est la raison d'etre de ce temoin en jeu -- « une couleur franche ne se
+compare a rien, elle est la ou elle n'est pas » -- et elle vaut aussi dans un
+test.
+
+**QUATRIEME FORME DE LA MEME FAUTE DANS LA JOURNEE**, apres les biomes vides
+(deux `nullptr` egaux), le comblement sans cuvette, et la rampe uniforme sans
+plat. Celle-ci est la plus sournoise : la fixture etait garnie, le calcul
+juste, et c'est une DONNEE EXTERIEURE non chargee qui rendait la comparaison
+aveugle.
+
+#### Ce qui est mesure
+
+    WorldseedTerrain.cpp   2138 -> 1445 lignes   (-32 %)
+    en-tete                 730 ->  600
+    tests                     23 ->   25
+
+Non-regression relevee AVANT de toucher au fichier, identique au chiffre pres
+aux deux etapes -- elle ne figure meme pas dans le diff :
+
+    sol de fond : 5939134 sommets sur 8388608 sous zero (70,8 %)
+    sol de fond : section terre 628117 / 1238478, section mer 1484098 / 2949684
+    eau : hauteurs d'eau [-371 .. 371] m, texture d'info 4096x4096
+    voxel : 2390 chunks, 3140011 triangles
+
+#### CE QUI RESTE, ET POURQUOI JE M'ARRETE LA
+
+`BuildGroundProxy` (655 lignes) et `UpdateGroundProxyVisibility` (135)
+appartiennent a `AWorldseedGroundProxy`, qui existe deja et possede deja les
+composants. **Mais ce n'est PAS un deplacement mecanique** : le calcul de
+geometrie et le CYCLE DE VIE DES ACTEURS sont entrelaces sur les 655 lignes --
+`SpawnActor` aux lignes 1023 et 1121, `CreateMeshSection` aux lignes 1041 et
+1320, avec du calcul de grille entre les deux. Le faire proprement demande de
+decider qui possede quoi, pas de couper au bon endroit.
+
+C'est un chantier a part entiere, avec sa propre verification : le sol de fond
+nourrit la texture d'information du plugin Water, et le piege `[0 .. 0]` --
+l'ocean qui cesse de se dessiner SANS le moindre avertissement -- est le plus
+silencieux du depot.
