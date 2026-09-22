@@ -570,6 +570,14 @@ protected:
 	 */
 	UMaterialInterface* ChoisirMateriauMerDecor(UMaterialInterface* Repli) const;
 
+	/**
+	 * Coupe les nuages et fige l'horloge, sous `-WorldseedCielClair`.
+	 *
+	 * Sans drapeau, ne fait RIEN : le ciel du jeu n'est pas touche. C'est un
+	 * outil de mesure, pas un reglage de rendu.
+	 */
+	void CielDInspection();
+
 	UPROPERTY()
 	TObjectPtr<USceneComponent> RootScene;
 

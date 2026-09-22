@@ -10,6 +10,9 @@
 
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "HAL/IConsoleManager.h"
+#include "EngineUtils.h"
+#include "UObject/UnrealType.h"
 
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
@@ -33,6 +36,8 @@ AWorldseedTerrain::AWorldseedTerrain()
 void AWorldseedTerrain::BeginPlay()
 {
 	Super::BeginPlay();
+
+	CielDInspection();
 
 	Rebuild();
 
@@ -1011,6 +1016,92 @@ bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,
 			ContinentalityGrid, Geometry.NX, Geometry.NY, U, V);
 	}
 	return true;
+}
+
+void AWorldseedTerrain::CielDInspection()
+{
+	// --- UN CIEL QUI NE BOUGE PAS, POUR POUVOIR COMPARER -------------------
+	//
+	// SIGNALE : « trop de nuage pour confirmer, il faudrait faire des tests
+	// sans couverture nuageuse ». C'est juste, et cela repare DEUX defauts de
+	// methode a la fois.
+	//
+	// LES NUAGES CACHENT CE QU'ON VIENT REGARDER. La couture de l'eau se lit
+	// a la jonction de deux teintes ; un banc de nuages a hauteur d'oeil la
+	// coupe en morceaux et l'on conclut « aucune couture » faute de la voir.
+	//
+	// ET L'HORLOGE D'UDS REND TOUT A/B PAR LANCEMENTS SUCCESSIFS INUTILISABLE.
+	// `Animate Time of Day` tourne : trente secondes d'ecart au chargement
+	// font douze minutes de jeu. Mesure prise aujourd'hui sur un temoin hors
+	// d'atteinte du traitement -- une crete rocheuse au-dessus du niveau de la
+	// mer -- **101 sur 765** de derive entre les deux moities, quand la zone
+	// testee bougeait de 15. Le bruit valait sept fois le signal, et trois
+	// A/B de la journee sont partis a la poubelle pour cette seule raison.
+	//
+	// ON NE TOUCHE RIEN EN JEU NORMAL : tout est derriere un drapeau, et
+	// l'absence de drapeau laisse le ciel exactement comme avant.
+	if (!FParse::Param(FCommandLine::Get(), TEXT("WorldseedCielClair")))
+	{
+		return;
+	}
+
+	// LES NUAGES SE COUPENT PAR UNE VARIABLE DE CONSOLE DU MOTEUR, pas en
+	// pilotant UDS. `r.VolumetricCloud` est un interrupteur du RENDU : il ne
+	// touche ni a la meteo, ni a l'etat du ciel, ni au climat, donc il ne peut
+	// rien deregler qu'on aurait ensuite a remettre. Piloter la couverture
+	// nuageuse d'UDS demanderait d'atteindre un Blueprint par reflexion, et ce
+	// depot a deja fait tomber l'editeur en ecrivant dans ses collections de
+	// parametres.
+	if (IConsoleVariable* const Nuages = IConsoleManager::Get()
+			.FindConsoleVariable(TEXT("r.VolumetricCloud")))
+	{
+		Nuages->Set(0, ECVF_SetByCode);
+	}
+
+	// L'HORLOGE : on la fige par reflexion sur l'acteur d'UDS.
+	//
+	// LE NOM DE LA VARIABLE PORTE DES ESPACES -- c'est une variable Blueprint,
+	// et le depot a deja paye de les deviner (`AsUltra Dynamic Sky`). On
+	// cherche donc les deux ecritures et l'on JOURNALISE celle qui a pris :
+	// une reflexion qui echoue est silencieuse, et l'on croirait le ciel fige
+	// alors qu'il continue de tourner.
+	int32 Figes = 0;
+	if (UWorld* const World = GetWorld())
+	{
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* const Acteur = *It;
+			if (!Acteur || !Acteur->GetClass()->GetName().Contains(TEXT("Ultra_Dynamic_Sky")))
+			{
+				continue;
+			}
+
+			for (const TCHAR* Nom : { TEXT("Animate Time of Day"), TEXT("AnimateTimeOfDay") })
+			{
+				if (FBoolProperty* const Prop = CastField<FBoolProperty>(
+						Acteur->GetClass()->FindPropertyByName(FName(Nom))))
+				{
+					Prop->SetPropertyValue_InContainer(Acteur, false);
+					++Figes;
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] ciel d'inspection : nuages volumetriques coupes, ")
+		TEXT("horloge figee sur %d acteur(s) UDS"),
+		Figes);
+
+	if (Figes == 0)
+	{
+		// ON LE DIT PLUTOT QUE DE LAISSER CROIRE. Sans horloge figee, deux
+		// lancements n'ont pas la meme lumiere et l'A/B ne vaut rien.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] ciel d'inspection : AUCUNE horloge figee -- ")
+			TEXT("la lumiere derivera entre deux lancements, tout A/B est a lire avec ")
+			TEXT("un temoin hors traitement"));
+	}
 }
 
 UMaterialInterface* AWorldseedTerrain::ChoisirMateriauMerDecor(
