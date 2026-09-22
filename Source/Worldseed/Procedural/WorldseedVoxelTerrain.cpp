@@ -1,6 +1,7 @@
 // Worldseed - terrain voxel : diffusion des chunks autour du joueur.
 
 #include "Procedural/WorldseedVoxelTerrain.h"
+#include "Procedural/WorldseedPlacement.h"
 #include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedStrata.h"
 
@@ -2292,47 +2293,131 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 		}
 
 		bool bPose = false;
+		bool bTenuSurPlace = false;
+
 		if (bExact)
 		{
 			// On garde X, Y et SurfaceM tels quels : c'est tout l'objet.
 			bPose = true;
+			bTenuSurPlace = true;
+
+			// LA PENTE SE MESURE QUAND MEME. Ce chemin rapportait « pente
+			// 0,0 deg » sur n'importe quelle paroi, faute d'appeler la
+			// recherche -- or c'est le drapeau qu'on emploie justement pour
+			// aller inspecter des endroits impraticables, et savoir sur quoi
+			// l'on vient de se poser fait partie de l'inspection.
+			PenteDeg = WorldseedPlacement::PenteDeg(*Density, X, Y);
 		}
 		else if (bChoisi)
 		{
+			// LA BORNE SE SURCHARGE EN LIGNE DE COMMANDE, et c'est la regle du
+			// depot : « quand un A/B demande un reglage qui n'a pas de
+			// surcharge, on AJOUTE la surcharge ; on ne touche pas au
+			// fichier ». Ici elle sert surtout a EPROUVER le chemin d'echec --
+			// sur ce monde la spirale trouve presque toujours quelque chose
+			// dans ses 384 metres, si bien qu'une valeur basse est le seul
+			// moyen sur de faire jouer l'echec franc.
+			float Ecart = EcartAltitudeDepartM;
+			if (FParse::Value(FCommandLine::Get(),
+				TEXT("WorldseedEcartDepart="), Ecart))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] voxel : ecart d'altitude tolere force a ")
+					TEXT("%.1f m (defaut %.0f)"), Ecart, EcartAltitudeDepartM);
+			}
+
 			bPose = FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg,
-				PenteDepartMaxDeg, EcartAltitudeDepartM, SurfaceM);
+				PenteDepartMaxDeg, Ecart, SurfaceM);
 
 			if (!bPose)
 			{
-				// ON LE DIT AU LIEU DE LE TAIRE. Un repli silencieux
-				// redonnerait le comportement d'avant sans que personne ne
-				// sache pourquoi le joueur est en bas de la montagne.
+				// --- ECHEC FRANC : ON TIENT LE POINT VISE --------------------
+				//
+				// ARBITRAGE DU PROPRIETAIRE, 22 septembre 2026. Il y avait ici
+				// un repli vers la recherche LARGE -- douze degres, aucune
+				// borne d'altitude -- et c'etait une FALAISE DE POLITIQUE :
+				// quarante metres puis l'infini, en un cran. Mesure de
+				// l'epoque, 357 metres plus bas que le point vise ; une autre
+				// partie, 914 metres, au niveau de la mer. Qui visait un
+				// sommet naissait dans la plaine.
+				//
+				// Les deux autres voies ont ete presentees et ecartees :
+				// elargir par crans (40, 120, 360, sans borne) aurait garde un
+				// echec possible mais graduel ; retenir le MEILLEUR de toute la
+				// spirale aurait traite la cause nommee par le commentaire
+				// d'origine -- « elle retient le PREMIER point acceptable, pas
+				// le meilleur » -- mais au prix de la PROXIMITE, en naissant
+				// jusqu'a 380 m du point vise pour gagner trois metres.
+				//
+				// CE QUI EST ACCEPTE EN ECHANGE, ET IL FAUT LE DIRE : le pion
+				// peut naitre sur une paroi et glisser. Le sol n'est marchable
+				// que jusqu'a 45 degres, et ce depot a deja mesure 2,7 km de
+				// glissade depuis un depart a 22. Le filet de rattrapage reste
+				// en place -- il rearme la mise en place quand le joueur passe
+				// sous la bande -- mais il ne le ramenera pas ici : un depart
+				// n'est consomme qu'UNE fois, sans quoi ce n'est plus un filet
+				// mais une laisse.
+				bTenuSurPlace = true;
+				bPose = true;
+
+				// LA PENTE SE MESURE QUAND MEME, pour que le releve dise sur
+				// quoi on vient de poser le joueur. Sans elle, ce chemin
+				// rapportait « pente 0,0 deg » sur une paroi a soixante.
+				PenteDeg = WorldseedPlacement::PenteDeg(*Density, X, Y);
+
 				UE_LOG(LogTemp, Warning,
 					TEXT("[Worldseed] voxel : aucun sol tenable a moins de ")
-					TEXT("%.0f m d'altitude du point choisi -- on elargit"),
-					EcartAltitudeDepartM);
+					TEXT("%.0f m d'altitude du point choisi -- ON TIENT LE ")
+					TEXT("POINT VISE (pente %.1f deg)"),
+					Ecart, PenteDeg);
+
+				// LE VIDE SOUS LES PIEDS NE DEPLACE PLUS PERSONNE, MAIS IL SE
+				// DIT. Une colonne sur huit porte une galerie : tenir le point
+				// peut donc poser le joueur au-dessus d'un plafond mince. On
+				// ne corrige pas -- ce serait deplacer le point qu'on vient de
+				// decider de tenir -- on previent.
+				if (!WorldseedPlacement::SolPlein(*Density, X, Y, SurfaceM))
+				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[Worldseed] voxel : ET LA COLONNE EST CREUSE ")
+						TEXT("sous ce point -- le joueur peut tomber dans une ")
+						TEXT("cavite"));
+				}
 			}
 		}
-
-		if (!bPose)
+		else
 		{
+			// NAISSANCE LIBRE : l'endroit n'a aucune importance, donc la
+			// recherche large reste la bonne reponse. Elle n'a pas change.
 			bPose = FindFlatGround(FVector2D(X, Y), FX, FY, FSurface, PenteDeg);
 		}
 
-		if (bPose)
+		// TROIS ISSUES, ET ELLES NE SE RESSEMBLENT PAS. On a DEPLACE le joueur
+		// vers du plat, on a TENU son point, ou l'on n'a rien trouve du tout.
+		// Les deux dernieres se lisaient pareil avant -- « pose sur place » --
+		// alors que l'une est un choix et l'autre un echec.
+		if (bPose && !bTenuSurPlace)
 		{
 			X = FX;
 			Y = FY;
 			SurfaceM = FSurface;
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : %s a (%.0f, %.0f) m, ")
+				TEXT("[Worldseed] voxel : sol plat trouve a (%.0f, %.0f) m, ")
 				TEXT("altitude %.1f m, pente %.1f deg%s"),
-				bExact ? TEXT("depart EXACT tenu") : TEXT("sol plat trouve"),
 				X, Y, SurfaceM, PenteDeg,
 				bChoisi
 					? *FString::Printf(TEXT(" (%+.0f m du point choisi)"),
 						SurfaceM - SurfaceDemandeeM)
 					: TEXT(""));
+		}
+		else if (bPose)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : %s a (%.0f, %.0f) m, ")
+				TEXT("altitude %.1f m, pente %.1f deg (ecart nul, par ")
+				TEXT("construction)"),
+				bExact ? TEXT("depart EXACT tenu") : TEXT("point vise TENU"),
+				X, Y, SurfaceM, PenteDeg);
 		}
 		else
 		{
