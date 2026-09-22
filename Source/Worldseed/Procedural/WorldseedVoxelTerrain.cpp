@@ -639,6 +639,128 @@ void AWorldseedVoxelTerrain::BeginPlay()
 				NomParRoche.Add(E.Label.IsEmpty() ? E.Key : E.Label);
 			}
 
+			// --- LES TEINTES DE ROCHE SE SURCHARGENT, ET C'EST LE CATALOGUE
+			//     QU'ON SOUPCONNE MAINTENANT ------------------------------
+			//
+			// La pile enroulee raye enfin les parois, et le proprietaire a
+			// pose le bon diagnostic : « je ne vois rien de choquant en
+			// terme de geometrie, ce qui fait bizarre c'est le rendu des
+			// couleurs ». Le catalogue lui donne raison -- sur les CINQ
+			// roches de la serie, le schiste est a 108/106/116 quand les
+			// quatre autres sont entre 158 et 234 de clarte, et il pese
+			// 97 m sur 253. Une bande sur trois est donc presque noire au
+			// milieu de creme.
+			//
+			// L'A/B NE TOUCHE PAS `world_rules.json` : son empreinte
+			// regenererait le monde entre les deux moities, et ce depot a
+			// deja vide ce fichier en voulant l'editer pour une mesure.
+			//
+			// Deux leviers, et ils ne repondent PAS a la meme question :
+			//
+			//   -WorldseedRoche=<cle>:<R>,<G>,<B>[;<cle>:...]
+			//       remplace UNE teinte. C'est la question posee -- « si tu
+			//       remplaces le noir par une couleur plus approchante des
+			//       autres, ces imperfections s'estompent-elles ? »
+			//
+			//   -WorldseedContrasteRoches=<0..1>
+			//       rapproche TOUTES les teintes de la serie de leur moyenne
+			//       PONDEREE PAR L'EPAISSEUR des bancs -- c'est elle que la
+			//       paroi montre, pas la moyenne du catalogue. A zero la
+			//       serie est d'une seule couleur, donc AUCUNE bande : c'est
+			//       le TEMOIN qui prouve que la mesure voit les bandes et
+			//       non l'ombrage du versant, piege paye deux fois sur cette
+			//       tache.
+			{
+				float Contraste = -1.0f;
+				if (FParse::Value(FCommandLine::Get(),
+						TEXT("WorldseedContrasteRoches="), Contraste)
+					&& Contraste >= 0.0f && Contraste < 1.0f
+					&& StratRules.Serie.Num() > 0)
+				{
+					FLinearColor Moyenne(0.0f, 0.0f, 0.0f, 0.0f);
+					float Poids = 0.0f;
+					TSet<uint8> DansLaSerie;
+					for (const FWorldseedStratBanc& B : StratRules.Serie)
+					{
+						DansLaSerie.Add(B.RockId);
+						if (CouleurParRoche.IsValidIndex(B.RockId) && B.ThicknessM > 0.0f)
+						{
+							Moyenne += CouleurParRoche[B.RockId] * B.ThicknessM;
+							Poids += B.ThicknessM;
+						}
+					}
+					if (Poids > 0.0f)
+					{
+						Moyenne /= Poids;
+						Moyenne.A = 1.0f;
+						for (const uint8 Id : DansLaSerie)
+						{
+							if (CouleurParRoche.IsValidIndex(Id))
+							{
+								CouleurParRoche[Id] = FMath::Lerp(
+									Moyenne, CouleurParRoche[Id], Contraste);
+							}
+						}
+						const FColor M = Moyenne.ToFColor(true);
+						UE_LOG(LogTemp, Log,
+							TEXT("[Worldseed] voxel : contraste des roches ramene a %.2f, ")
+							TEXT("%d teintes rapprochees de la moyenne de serie %d/%d/%d"),
+							Contraste, DansLaSerie.Num(), M.R, M.G, M.B);
+					}
+				}
+
+				// FParse::Value S'ARRETE SUR UNE VIRGULE par defaut, et le
+				// depot l'a deja paye : « 0,90,180,270 » arrive comme « 0 »,
+				// sans un mot. D'ou le `false`.
+				FString Spec;
+				if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRoche="),
+						Spec, false) && !Spec.IsEmpty())
+				{
+					TArray<FString> Morceaux;
+					Spec.ParseIntoArray(Morceaux, TEXT(";"), true);
+					for (const FString& Morceau : Morceaux)
+					{
+						FString Cle, Canaux;
+						if (!Morceau.Split(TEXT(":"), &Cle, &Canaux)) { continue; }
+
+						TArray<FString> RGB;
+						Canaux.ParseIntoArray(RGB, TEXT(","), true);
+						if (RGB.Num() < 3) { continue; }
+
+						int32 Id = INDEX_NONE;
+						for (int32 K = 0; K < LR.Catalogue.Num(); ++K)
+						{
+							if (LR.Catalogue[K].Key.Equals(Cle.TrimStartAndEnd(),
+									ESearchCase::IgnoreCase))
+							{
+								Id = K;
+								break;
+							}
+						}
+						if (!CouleurParRoche.IsValidIndex(Id))
+						{
+							UE_LOG(LogTemp, Warning,
+								TEXT("[Worldseed] voxel : roche « %s » inconnue du ")
+								TEXT("catalogue, teinte ignoree"), *Cle);
+							continue;
+						}
+
+						const FColor Neuve(
+							static_cast<uint8>(FMath::Clamp(FCString::Atoi(*RGB[0]), 0, 255)),
+							static_cast<uint8>(FMath::Clamp(FCString::Atoi(*RGB[1]), 0, 255)),
+							static_cast<uint8>(FMath::Clamp(FCString::Atoi(*RGB[2]), 0, 255)),
+							255);
+						const FColor Avant = CouleurParRoche[Id].ToFColor(true);
+						CouleurParRoche[Id] = FLinearColor(Neuve);
+
+						UE_LOG(LogTemp, Log,
+							TEXT("[Worldseed] voxel : teinte de %s %d/%d/%d -> %d/%d/%d"),
+							*NomParRoche[Id], Avant.R, Avant.G, Avant.B,
+							Neuve.R, Neuve.G, Neuve.B);
+					}
+				}
+			}
+
 			// SANS CETTE LIGNE ON NE SAIT PAS SI LA ROCHE EST BRANCHEE, et la
 			// difference ne se voit pas : une paroi peut etre creme parce
 			// qu'elle est du calcaire, ou parce que le biome au-dessus est du

@@ -7957,3 +7957,83 @@ mesure est celui que ce depot s'impose : valider la methode sur un cas dont on
 connait la reponse -- deux etats reputes identiques doivent rendre zero. Ils ont
 rendu 0,0 %, et la comparaison refaite proprement a rendu les diaclases
 innocentes.
+
+#### Le noir des parois n'est PAS une couleur, et sept etats le disent
+
+Question du proprietaire apres l'enroulement de la pile : « je ne vois rien de
+choquant a la base en terme de geometrie, ce qui fait bizarre c'est le rendu
+des couleurs [...] si tu remplaces le noir par une couleur plus approchante de
+l'autre, ces imperfections s'estompent-elles ? »
+
+**LE SCHISTE ETAIT BIEN LE COUPABLE DESIGNE, ET IL LE MERITAIT A MOITIE.** Sur
+les CINQ roches de la serie -- gres, schiste, dolomie, craie, calcaire, le
+basalte n'y est pas -- il est a 108/106/116, le seul a la fois SOMBRE et
+BLEUTE quand les quatre autres sont chauds et clairs (158 a 234 de clarte), et
+il pese 97 m sur les 253 de la pile.
+
+**ET POURTANT LE CHANGER N'ESTOMPE RIEN.** Vue large du canyon, meme monde,
+horloge figee, ecart-type de la luminance sur les pixels de roche et de neige
+-- c'est l'amplitude du zebre :
+
+    A  actuel, schiste 108/106/116          53,5    11,8 % de pixels sombres
+    B  schiste 150/142/130                  52,4     9,6 %      45 % changes
+    C  schiste 175/166/152                  52,7    11,2 %      53 % changes
+    D  LES CINQ ROCHES A LA MEME TEINTE     54,2    14,4 %      92 % changes
+    E  lumieres coupees                     56,2    15,7 %      90 % changes
+    F  lumieres coupees + teinte unique     51,3    10,9 %      66 % changes
+    G  TEINTE DE ROCHE COUPEE               57,2    13,5 %      90 % changes
+    H  diaclases coupees                    aucune difference visible
+
+**L'ECART-TYPE NE QUITTE JAMAIS LA BANDE 51-57**, sur sept etats dont DEUX
+suppriment toute couleur de roche et un supprime l'eclairage. Et les deux
+suppressions les plus radicales -- D et G -- l'AUGMENTENT : la teinte de roche
+et l'eclairage ATTENUAIENT legerement le zebre.
+
+**LE 90 % DE PIXELS CHANGES EST CE QUI REND CES ZEROS CREDIBLES.** Une moitie
+d'A/B qui n'a pas pris rend elle aussi « aucun effet », et ce depot s'y est
+deja laisse prendre. Ici chaque levier DEPLACE massivement l'image ; ce qu'il
+ne deplace pas, c'est le contraste.
+
+**CE QUE LE CHIFFRE DESIGNE A LA PLACE : LA DISTANCE.** La meme paroi, au pied
+puis de loin :
+
+    au pied de la paroi    2,2 % de pixels sombres, ecart-type 24,6
+    de loin               11,8 %                              53,5
+
+Cinq fois plus de noir a distance, deux fois l'amplitude, sur la MEME geometrie
+et la MEME palette. Un defaut qui croit avec la distance n'est pas dans la
+matiere, il est dans l'ECHANTILLONNAGE -- les anneaux maillent a 2 puis 4 m de
+voxel. C'est exactement la note du 21 septembre sur les diaclases, dont le
+remede n'a jamais ete ecrit : un detail plus fin que la maille ne doit pas etre
+echantillonne, il doit etre ATTENUE, comme le fait un mip-map. La passe H dit
+que ce ne sont pas les diaclases ; le mecanisme, lui, vaut pour toute forme
+fine.
+
+**CONSEQUENCE POUR L'HABILLAGE, ET ELLE VA CONTRE L'INTUITION DU
+PROPRIETAIRE** : « ce sont des choses qui s'estomperont avec de vraies
+textures ». Pour le COTELE peut-etre ; pour le NOIR, non -- une texture ne
+change que l'albedo, et l'albedo est precisement ce que sept etats viennent
+d'innocenter. Il valait mieux le savoir avant de texturer.
+
+**LE SCHISTE MERITE QUAND MEME D'ETRE RETOUCHE**, pour l'autre raison : il est
+le seul bleute d'une serie de cinq roches chaudes, ce qui se voit. B ou C sont
+defendables et ne coutent qu'une ligne du fichier de regles. A arbitrer a part,
+sans en attendre le moindre gain sur le zebre.
+
+**LES SURCHARGES AJOUTEES, et elles ne touchent pas au fichier de regles** --
+son empreinte regenererait le monde entre les deux moities :
+
+    -WorldseedRoche=<cle>:<R>,<G>,<B>[;<cle>:...]   remplace UNE teinte
+    -WorldseedContrasteRoches=<0..1>                 rapproche TOUTES les
+        teintes de la serie de leur moyenne PONDEREE PAR L'EPAISSEUR des bancs.
+        A zero la serie est d'une seule couleur, donc aucune bande possible :
+        c'est le temoin D, et c'est lui qui a ferme la question.
+
+**PIEGE D'OUTILLAGE, paye deux fois dans l'heure** : un `-ExecCmds="ShowFlag.
+Lighting 0"` passe a un script PowerShell qui fait `$Extra.Split(" ")` arrive
+comme DEUX arguments, et le drapeau est silencieusement perdu. La premiere
+passe « sans lumieres » etait donc une copie de la passe temoin -- et elle
+ressemblait assez a l'originale pour qu'on la croie. Ce qui l'a trahie est le
+compte : 90,4 % de pixels changes la seconde fois contre presque rien la
+premiere. **Un harnais qui compose une ligne de commande doit passer un
+TABLEAU d'arguments, jamais une chaine a decouper.**
