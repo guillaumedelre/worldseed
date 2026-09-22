@@ -489,6 +489,23 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	// ET IL NE SE VOIT QUE SUR LES PAROIS, ce qui acheve de le designer : le
 	// detail est MODULE PAR LA PENTE (`detailPenteMin` 0,15 a plat, plein sur
 	// une falaise). Le sol plat n'en porte presque pas, donc il n'aliase pas.
+	// LES DIACLASES, PARCE QU'ELLES SONT UN SUSPECT LEGITIME POUR LE COTELE.
+	// Elles creusent des parois de Voronoi aplaties, donc de la GEOMETRIE, et
+	// le registre note depuis le 21 septembre qu'elles s'aliasent avec la
+	// taille de voxel. Les couper est le seul temoin qui les mette hors de
+	// cause -- ou les designe.
+	{
+		int32 Di = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDiaclases="), Di)
+			&& Di >= 0)
+		{
+			if (Di == 0) { DensityRules.JointApertureM = 0.0f; }
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : diaclases %s"),
+				(Di == 0) ? TEXT("COUPEES") : TEXT("actives"));
+		}
+	}
+
 	{
 		int32 Ng = -1;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNormales="), Ng)
@@ -598,12 +615,20 @@ void AWorldseedVoxelTerrain::BeginPlay()
 				{
 					StratRules.DatumM = Datum;
 				}
+
+				int32 Cyc = -1;
+				if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPileCyclique="), Cyc)
+					&& Cyc >= 0)
+				{
+					StratRules.bPileCyclique = (Cyc > 0);
+				}
 			}
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : strates -- %d bancs, %.0f m de serie, ")
-				TEXT("datum %.0f m, soit la pile de %.0f a %.0f m"),
+				TEXT("datum %.0f m, pile %s (%.0f a %.0f m si bornee)"),
 				StratRules.Serie.Num(), StratRules.TotalThicknessM, StratRules.DatumM,
+				StratRules.bPileCyclique ? TEXT("CYCLIQUE") : TEXT("bornee"),
 				StratRules.DatumM - StratRules.TotalThicknessM, StratRules.DatumM);
 
 			CouleurParRoche.Reset();

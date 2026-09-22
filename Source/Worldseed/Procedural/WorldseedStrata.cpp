@@ -274,19 +274,50 @@ namespace WorldseedStrata
 		if (!Rules.IsActive()) { return INDEX_NONE; }
 
 		const double Toit = DatumAt(X, Y, Rules, Seed);
-
-		// AU-DESSUS DE LA COUVERTURE, C'EST LE BANC SOMMITAL QUI AFFLEURE. Un
-		// relief plus haut que le datum est fait de la roche du sommet de la
-		// pile ; rendre INDEX_NONE y ferait apparaitre le socle en altitude,
-		// ce qui serait l'inverse de la realite.
-		if (ZM >= Toit) { return 0; }
-
 		double Profondeur = Toit - ZM;
+
+		if (Rules.bPileCyclique)
+		{
+			// --- LA PILE SE REPETE, ET C'EST LA FORME NORMALE --------------
+			//
+			// Un bassin sedimentaire empile des MILLIERS de metres de bancs
+			// alternes ; une tranche unique de 253 m est l'anomalie. En
+			// l'enroulant, les memes dix bancs se retrouvent a toutes les
+			// altitudes -- au-dessus du toit comme au-dessous -- et une paroi
+			// se raye ou qu'elle soit.
+			//
+			// L'ENROULEMENT VAUT AUSSI VERS LE HAUT. Au-dessus du toit la
+			// profondeur est NEGATIVE : le reste d'un modulo l'est aussi en
+			// C++, d'ou le rattrapage. Sans lui, tout ce qui depasse le datum
+			// -- c'est-a-dire l'essentiel du relief qui montre de la roche --
+			// retomberait sur le banc zero, ce qu'on cherche precisement a
+			// corriger.
+			const double Total = static_cast<double>(Rules.TotalThicknessM);
+			if (Total > 0.0)
+			{
+				Profondeur = FMath::Fmod(Profondeur, Total);
+				if (Profondeur < 0.0) { Profondeur += Total; }
+			}
+		}
+		else if (ZM >= Toit)
+		{
+			// AU-DESSUS DE LA COUVERTURE, C'EST LE BANC SOMMITAL QUI AFFLEURE.
+			// Un relief plus haut que le datum est fait de la roche du sommet
+			// de la pile ; rendre INDEX_NONE y ferait apparaitre le socle en
+			// altitude, ce qui serait l'inverse de la realite.
+			return 0;
+		}
+
 		for (int32 I = 0; I < Rules.Serie.Num(); ++I)
 		{
 			Profondeur -= Rules.Serie[I].ThicknessM;
 			if (Profondeur < 0.0) { return I; }
 		}
+
+		// Enroulee, la pile ne peut pas tomber ici -- la profondeur y est
+		// bornee par l'epaisseur totale. Le dernier banc est le seul repli
+		// juste si un arrondi flottant frole la borne.
+		if (Rules.bPileCyclique) { return Rules.Serie.Num() - 1; }
 
 		// Sous la serie : le socle, c'est-a-dire la roche de la carte 2D.
 		return INDEX_NONE;

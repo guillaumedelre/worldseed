@@ -7912,3 +7912,48 @@ revient au proprietaire.
 
 Outillage laisse en place : l'entonnoir au journal, et `-WorldseedDatum=` pour
 deplacer le toit sans rouvrir le fichier de regles.
+
+#### La pile est ENROULEE, et les diaclases sont hors de cause
+
+Demande du proprietaire : « rends la pile cyclique pour voir si c'est mieux »,
+puis « je pense que les rayures peuvent egalement etre a cause des diaclases,
+peux-tu tester ? ».
+
+**L'ENROULEMENT NE TOUCHE QUE LA COULEUR, et c'est ce qui le rend sur.**
+`BancAt` n'a que deux appelants, tous deux dans la peinture des sommets. Les
+corniches de mesa passent par `ToitDuChapiteau` et l'erosion par
+`FWorldseedStrataK`, qui parcourent la pile pour leur compte. Aucune geometrie
+ne bouge, donc aucune regeneration ni bump de version -- ce qui n'etait pas
+evident avant de compter les appelants.
+
+**LE RESULTAT, mesure sur la meme paroi :**
+
+    pile bornee -> cyclique          99,4 % des pixels changes, 61,6/765
+    diaclases coupees                 0,0 %                      1,0/765
+    temoin, deux etats identiques     0,0 %                      2,2/765
+    temoin, les deux mailleurs        0,9 %                      4,7/765
+
+**LES DIACLASES NE CREUSENT RIEN SUR CETTE PAROI.** Zero pour cent, contre un
+temoin a zero egalement -- donc la methode distingue, elle ne rend pas zero par
+construction. Elles ne sont pour rien dans les terrasses de #21, qui restent un
+defaut de NORMALES.
+
+**ET LES BANDES SONT PEUT-ETRE TROP FRANCHES.** Le schiste (108/106/116) contre
+la craie (236/234/226) donne un contraste de zebre, et les bandes epousent les
+courbes de niveau -- ce qui peut se lire comme une carte topographique plutot
+que comme de la roche. Cela se regle sans code, par les couleurs du catalogue.
+Arbitrage laisse au proprietaire.
+
+**L'INCOHERENCE ASSUMEE, ET IL FAUT LA SAVOIR** : au-dessus du toit, la COULEUR
+raye desormais alors que le CHAPITEAU d'une mesa se cale toujours sur le premier
+banc dur de la pile NON enroulee. La teinte d'une corniche peut donc ne pas etre
+celle du banc qui la porte. Aligner la geometrie demanderait une regeneration.
+
+**UN PIEGE DE MESURE PAYE ICI, ET C'EST LE PLUS COURANT DE TOUS.** J'ai d'abord
+compare une image prise AVANT l'enroulement a une image prise APRES avec les
+diaclases coupees, et conclu que les diaclases changeaient 99,5 % des pixels.
+Les deux moities differaient par DEUX changements. Le controle qui a sauve la
+mesure est celui que ce depot s'impose : valider la methode sur un cas dont on
+connait la reponse -- deux etats reputes identiques doivent rendre zero. Ils ont
+rendu 0,0 %, et la comparaison refaite proprement a rendu les diaclases
+innocentes.

@@ -112,6 +112,35 @@ struct WORLDSEED_API FWorldseedStratRules
 	/** Epaisseur totale de la serie, calculee a la lecture. */
 	float TotalThicknessM = 0.0f;
 
+	/**
+	 * La pile se REPETE-t-elle indefiniment, ou s'arrete-t-elle ?
+	 *
+	 * UNE TRANCHE UNIQUE EST L'ANOMALIE, PAS LA REPETITION. Un bassin
+	 * sedimentaire reel empile des MILLIERS de metres de bancs alternes ; nos
+	 * dix bancs n'en font que 253, poses sous un toit a 520 m. La pile couvre
+	 * donc 267 a 520 m dans un monde qui va de -351 a 1700, et tout le relief
+	 * qui montre vraiment de la roche est AU-DESSUS : les canyons a 556 et
+	 * 580 m, les massifs au-dela de 1000.
+	 *
+	 * MESURE QUI L'A ETABLI (22 septembre) : sur les sommets qui lisent la
+	 * pile, le banc sommital en rafle **92 %** -- parce qu'au-dessus du toit
+	 * `BancAt` rend le banc zero pour tout, ce qui est juste et ce qui rend
+	 * toute paroi UNIE. Les rayures que ce fichier promet n'atteignaient donc
+	 * l'ecran nulle part.
+	 *
+	 * L'ENROULEMENT NE TOUCHE QUE LA COULEUR, et c'est ce qui le rend sur :
+	 * `BancAt` n'est lu que par la peinture des sommets. Les corniches de mesa
+	 * passent par `ToitDuChapiteau` et l'erosion par `FWorldseedStrataK`, qui
+	 * ont chacun leur propre parcours de la pile. Aucune geometrie ne bouge,
+	 * donc aucune regeneration.
+	 *
+	 * CE QUE CELA LAISSE INCOHERENT, et il faut le savoir : au-dessus du toit,
+	 * la COULEUR se met a rayer alors que le CHAPITEAU, lui, continue de se
+	 * caler sur le premier banc dur de la pile non enroulee. Sur une mesa, la
+	 * teinte de la corniche peut donc ne pas etre celle du banc qui la porte.
+	 */
+	bool bPileCyclique = true;
+
 	bool IsActive() const { return Serie.Num() > 0 && TotalThicknessM > 0.0f; }
 
 	static FWorldseedStratRules FromRules(const UWorldseedRules& Rules,
