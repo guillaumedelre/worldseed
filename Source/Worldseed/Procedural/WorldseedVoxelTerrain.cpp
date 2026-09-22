@@ -579,9 +579,32 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			{
 				DureteParId.Add(E.Hardness);
 			}
+			// LE DATUM SE SURCHARGE, PARCE QUE C'EST LUI QU'ON SOUPCONNE.
+			//
+			// La serie ne fait que 253 m et son toit est a 520 : elle couvre
+			// donc 267 a 520 m dans un monde qui va de -351 a 1700. Au-dessus
+			// du toit, `BancAt` rend le banc SOMMITAL pour tout -- d'ou une
+			// paroi d'une seule couleur des qu'elle depasse 520 m, ce qui est
+			// le cas des canyons de ce monde (556 et 580 m). Mesure de
+			// l'entonnoir : le banc 0 rafle 92 % des sommets qui lisent la
+			// pile.
+			//
+			// L'A/B se fait donc en DESCENDANT le toit sous la paroi qu'on
+			// photographie -- et jamais en editant le fichier de regles, dont
+			// l'empreinte regenererait le monde entre les deux moities.
+			{
+				float Datum = 0.0f;
+				if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDatum="), Datum))
+				{
+					StratRules.DatumM = Datum;
+				}
+			}
+
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : strates -- %d bancs, %.0f m de serie, datum %.0f m"),
-				StratRules.Serie.Num(), StratRules.TotalThicknessM, StratRules.DatumM);
+				TEXT("[Worldseed] voxel : strates -- %d bancs, %.0f m de serie, ")
+				TEXT("datum %.0f m, soit la pile de %.0f a %.0f m"),
+				StratRules.Serie.Num(), StratRules.TotalThicknessM, StratRules.DatumM,
+				StratRules.DatumM - StratRules.TotalThicknessM, StratRules.DatumM);
 
 			CouleurParRoche.Reset();
 			NomParRoche.Reset();
@@ -1702,12 +1725,20 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 		// La couleur d'une paroi est celle de sa ROCHE, et la lithologie la
 		// porte deja : calcaire creme, granite gris rose, basalte sombre. Meme
 		// doctrine que partout ailleurs dans cette passe -- la roche decide.
+		++PeintureSommets;
+
 		if (bAvecRoche && Rules.RockColourFadeM > 0.0f)
 		{
 			const double Z = Mesh.Positions[I].Z / WorldseedMetersToCm;
 			const double Profondeur = Density->SurfaceHeightM(X, Y) - Z;
+
+			PeintureProfondeurSomme += Profondeur;
+			PeintureProfondeurMax = FMath::Max(PeintureProfondeurMax, Profondeur);
+			PeintureProfondeurMin = FMath::Min(PeintureProfondeurMin, Profondeur);
+
 			if (Profondeur > 0.0)
 			{
+				++PeintureSousLaSurface;
 				// --- LA ROCHE SE LIT EN TROIS DIMENSIONS --------------------
 				//
 				// C'ETAIT UNE ROCHE PAR COLONNE, donc une paroi d'une seule
@@ -1728,11 +1759,19 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 					if (DureteSocle >= StratRules.SocleHardnessMin
 						&& DureteSocle <= StratRules.SocleHardnessMax)
 					{
+						++PeintureSerieActive;
+
 						const int32 Banc = WorldseedStrata::BancAt(
 							X, Y, Z, StratRules, WorldSeed);
 						if (StratRules.Serie.IsValidIndex(Banc))
 						{
 							Id = StratRules.Serie[Banc].RockId;
+
+							if (PeintureParBanc.Num() < StratRules.Serie.Num())
+							{
+								PeintureParBanc.SetNumZeroed(StratRules.Serie.Num());
+							}
+							++PeintureParBanc[Banc];
 						}
 					}
 				}
@@ -1771,6 +1810,7 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 					const float T = FMath::Clamp(
 						static_cast<float>(Profondeur - Marge) / Rules.RockColourFadeM,
 						0.0f, 1.0f);
+					if (T > 0.01f) { ++PeintureTeintee; }
 					Teinte = FMath::Lerp(Teinte, CouleurParRoche[Id], T);
 				}
 			}
@@ -2647,6 +2687,36 @@ FString AWorldseedVoxelTerrain::ReportState() const
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] voxel : ombre portee des chunks %s"),
 		bOmbresChunks ? TEXT("ACTIVE") : TEXT("COUPEE"));
+
+	// --- L'ENTONNOIR DE LA TEINTE DE ROCHE ----------------------------------
+	//
+	// Il dit LAQUELLE des gardes mord, au lieu de laisser deviner. Sans lui, la
+	// question « pourquoi les parois ne sont pas rayees » a cinq reponses
+	// possibles et aucun moyen de les departager.
+	if (PeintureSommets > 0)
+	{
+		const double Inv = 100.0 / static_cast<double>(PeintureSommets);
+		FString Bancs;
+		for (int32 B = 0; B < PeintureParBanc.Num(); ++B)
+		{
+			if (PeintureParBanc[B] > 0)
+			{
+				Bancs += FString::Printf(TEXT(" %d:%d"), B, PeintureParBanc[B]);
+			}
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : teinte de roche -- %lld sommets, ")
+			TEXT("sous la surface %.1f %%, serie active %.1f %%, TEINTES %.1f %% ")
+			TEXT("| profondeur moyenne %.1f m, de %.1f a %.1f | bancs touches%s"),
+			PeintureSommets,
+			PeintureSousLaSurface * Inv,
+			PeintureSerieActive * Inv,
+			PeintureTeintee * Inv,
+			PeintureProfondeurSomme / static_cast<double>(PeintureSommets),
+			PeintureProfondeurMin, PeintureProfondeurMax,
+			Bancs.IsEmpty() ? TEXT(" AUCUN") : *Bancs);
+	}
 
 	// --- CE QUE LE TELEVERSEMENT NE DISAIT PAS ------------------------------
 	//

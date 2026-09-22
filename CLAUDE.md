@@ -7837,3 +7837,78 @@ dessous de surplomb.
 Le registre avait deja ecrit, le 19 septembre : « Rien n'a ete REGARDE depuis la
 stratigraphie. Les parois rayees sont branchees et compilent ; elles n'ont pas
 ete photographiees. » Elles le sont maintenant, et elles ne rayent rien.
+
+### La pile sedimentaire est SOUS le relief qui montre la roche (22 septembre 2026)
+
+Tache #24. La stratigraphie est calculee, elle coute dans l'erosion et dans le
+sapement, la peinture des sommets lit bien `WorldseedStrata::BancAt` et le code
+promet « exactement ce qui donne au Grand Canyon ses rayures ». **Les parois
+sont unies.**
+
+#### L'entonnoir, et il a fallu l'ecrire pour arreter de deviner
+
+Une couverture nulle peut venir de cinq gardes differentes, et sans le compte de
+chacune on regle au hasard la mauvaise -- ce que ce depot a deja paye sur le
+routage des galeries puis sur les mesas. Releve au banc, autour d'un canyon :
+
+    3 023 628 sommets
+    sous la surface   79,5 %
+    serie active      78,0 %
+    TEINTES           28,6 %
+    profondeur moyenne 13,0 m, de -35,3 a 181,0
+    bancs touches  0:2145872  1:46203  2:25958  3:37426  4:24914
+                   5:29451    6:28676  7:15720  8:2657   9:2019
+
+**LE BANC 0 RAFLE 92 % DES SOMMETS QUI LISENT LA PILE**, et c'est toute la
+reponse. `BancAt` rend le banc SOMMITAL pour tout ce qui se trouve au-dessus du
+toit de la couverture -- ce qui est juste, un relief plus haut que le datum est
+fait de la roche du sommet de la pile. Or la pile fait 253 m sous un datum a
+520, donc elle couvre **267 a 520 m** dans un monde qui va de -351 a 1700. Les
+canyons de ce monde sont a **556 et 580 m**, les massifs au-dessus de 1000 : ils
+sont TOUS au-dessus du toit, donc tous d'un seul banc, donc unis.
+
+La regle le disait d'ailleurs d'elle-meme : « ARBITRAIRE. A regler contre
+l'altitude des terres -- ce monde va de -351 a 1700 m. » Elle n'a jamais ete
+reglee contre.
+
+#### Ce qui a ete ELIMINE, chiffre par chiffre
+
+    la teinte de roche n'atteindrait pas la paroi
+        -> FAUX : la couper change 99,5 % des pixels DE LA PAROI
+
+    les bancs ne seraient pas lus
+        -> FAUX : deplacer le datum de 520 a 620 change 99,0 % des pixels
+
+    `BancAt` serait casse
+        -> FAUX : oracle `Worldseed.Strates.LaPileChangeDeBanc` -- la pile
+           traverse ses quatre etats en descendant, ne recule jamais, et deux
+           altitudes d'une meme paroi rendent des bancs differents
+
+    on verrait deja des bandes dans la vue large
+        -> FAUX, et c'est le temoin qui l'a dit : SANS la teinte de roche la
+           variation de teinte le long d'une colonne est PLUS FORTE qu'avec
+           (ecart-type 12,1 contre 10,0). Ce que je prenais pour des bandes
+           etait l'ombrage du versant.
+
+#### Deux pieges de mesure payes sur cette seule tache
+
+- **MESURER UNE FORME RARE AU MAUVAIS ENDROIT.** Le premier releve de
+  l'entonnoir donnait « bancs touches AUCUN » -- et il etait pris au banc, qui
+  nait sur une plaine cotiere a 4,9 m d'altitude. La pile s'arrete a 267 m :
+  elle n'y arrive jamais. Le depot a exactement cette note depuis le
+  19 septembre, pour les diaclases. Refaite.
+- **UNE COLONNE DE PIXELS QUI VARIE N'EST PAS UNE BANDE DE ROCHE.** J'ai
+  mesure R-B le long d'une paroi, vu osciller de 6 a 40, et conclu aux bancs.
+  Le temoin -- la meme colonne, teinte coupee -- oscillait DAVANTAGE. Une
+  variation n'a de sens que contre l'etat ou la cause supposee est absente.
+
+#### CE QUI N'EST PAS FAIT, ET POURQUOI
+
+**Aucun correctif.** Ou doit se trouver la pile, et doit-elle se REPETER en
+profondeur plutot que s'arreter, est un arbitrage qui engage le rendu de tout
+le monde -- et `ToitDuChapiteau` lit la meme pile pour poser les sommets de
+mesa, donc y toucher deplace de la GEOMETRIE, pas seulement de la couleur. Cela
+revient au proprietaire.
+
+Outillage laisse en place : l'entonnoir au journal, et `-WorldseedDatum=` pour
+deplacer le toit sans rouvrir le fichier de regles.

@@ -1024,6 +1024,30 @@ private:
 	double WorstPaintMs = 0.0;
 	int64 TotalPaintVerts = 0;
 
+	/**
+	 * L'ENTONNOIR DE LA TEINTE DE ROCHE, et pourquoi il fallait le compter.
+	 *
+	 * La stratigraphie est calculee, elle coute dans l'erosion et dans le
+	 * sapement, la peinture des sommets lit bien `WorldseedStrata::BancAt` --
+	 * et sans eclairage une paroi de canyon est d'UNE SEULE COULEUR. Les
+	 * rayures que le code promet n'atteignent pas l'ecran.
+	 *
+	 * Une couverture trop faible peut venir de cinq gardes differentes, et sans
+	 * le compte de chacune on regle au hasard la mauvaise -- ce que ce depot a
+	 * deja paye quatre fois de suite sur le routage des galeries, puis sur les
+	 * mesas. L'entonnoir dit LAQUELLE mord.
+	 */
+	mutable int64 PeintureSommets = 0;
+	mutable int64 PeintureSousLaSurface = 0;
+	mutable int64 PeintureSerieActive = 0;
+	mutable int64 PeintureTeintee = 0;
+	mutable double PeintureProfondeurSomme = 0.0;
+	mutable double PeintureProfondeurMax = -1e30;
+	mutable double PeintureProfondeurMin = 1e30;
+
+	/** Combien de sommets par banc de la serie, pour voir si elle RAYE. */
+	mutable TArray<int32> PeintureParBanc;
+
 	double FirstFillSeconds = 0.0;
 	double StartSeconds = 0.0;
 };
