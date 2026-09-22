@@ -7459,3 +7459,83 @@ rapport 1,75 -- et elle produit a l'ecran une surface qui ne ressemble pas a de
 la roche. Aucune des sondes ne pouvait le dire : elles mesurent des PENTES et
 des PARTS, pas l'allure. La regle du depot -- « une forme qui n'a pas ete vue
 n'est pas validee » -- vient de se payer sur quatre formes d'un coup.
+
+### Serialiser ne suffit pas : il faut TRANSVASER (22 septembre 2026)
+
+Les tables et les canyons entrent dans le cache, comme le reseau de cavites la
+veille et pour la meme raison : `WorldseedPlateau::Sites` coute **2,8 s** sur la
+grille du jeu, et ce prix etait paye au chargement ET a chaque retour au menu
+pour quelques centaines d'octets de resultat. Trois choses apprises en chemin,
+et la premiere est la plus utile.
+
+**LE DEFAUT : L'ECRITURE ETAIT JUSTE, LA LECTURE AUSSI, ET RIEN N'ARRIVAIT.**
+Le fichier portait bel et bien les sites -- `Save` les ecrivait, `Load` les
+relisait dans son `FWorldseedWorldData` -- mais la branche de cache du pipeline
+ne les TRANSVASAIT pas de ce monde relu vers son `FResult`. Elle transvase
+pourtant tout le reste, ligne a ligne, et j'avais ajoute les lignes de
+l'altitude a la lithologie sans voir que deux manquaient au bout. Symptome :
+aucun. L'acteur voxel retombait sur son recalcul et les 2,8 secondes restaient
+payees, sans un avertissement.
+
+**C'EST LE COMPTE QUI L'A VU, ET LE CHRONOMETRE AURAIT DECLARE LA VICTOIRE.**
+Le releve du retour au cache portait une colonne `sites %.0f ms`. Une fois la
+passe sortie de cette branche, ce temps vaut zero **que le transvasement
+marche ou non** : la colonne ne pouvait plus rien dire. Remplacee par
+`sites relus %d tables / %d canyons`, elle a affiche `0 tables / 0 canyons` au
+premier essai et tout etait dit. C'est exactement la lecon deja ecrite pour les
+cavites -- « le controle qui tranche n'est pas le temps, c'est le compte » --
+et elle vaut une seconde fois : **quand une optimisation consiste a ne plus
+faire quelque chose, son temps tend vers zero par construction et cesse d'etre
+un temoin.**
+
+**DEUXIEME DEFAUT, TROUVE EN CHERCHANT OU SERIALISER : LES DEUX CHEMINS NE
+CALCULAIENT PAS LA MEME CHOSE.** `Sites` etait appele depuis `Build`, a
+l'etape 4c -- donc AVANT le littoral, AVANT le sapement des corniches et
+surtout avant le DOME DE GLACE, qui ajoute jusqu'a 479 m au centre d'une
+calotte. Les sites d'un monde fraichement genere decrivaient un relief
+intermediaire, quand ceux d'un monde repris du cache -- rejoues en fin de
+chaine -- decrivaient le bon. **Personne ne pouvait le voir parce que les deux
+chemins n'etaient jamais compares** : on est toujours dans l'un ou dans
+l'autre. La passe est desormais appelee UNE fois, en fin de chaine, sur le
+relief final. Corollaire general : **deux chemins qui produisent la meme
+grandeur doivent partager leur point d'appel, pas seulement leur fonction.**
+
+**LE TEMOIN DU TEST, ET IL FAUT LE MONTER.** `Worldseed.Cache.AllerRetour`
+compare desormais les quatre champs de chaque site. Pour prouver qu'il
+DISCRIMINE, on a simule la faute du 22 septembre -- `EcrireSites` ecrivant un
+compte de zero, c'est-a-dire une section presente mais vide, qui se relit sans
+erreur : le test tombe sur « Expected 'table : nombre de sites' to be 5, but it
+was 0 ». Puis on remet. Une assertion posee apres coup n'a pas de temoin
+d'avant le defaut qu'elle doit voir ; celui-la coute une compilation.
+Le monde fictif garnit ses sites **avec des valeurs distinctes champ par
+champ** : altitude et escarpement egaux laisseraient passer une inversion des
+deux.
+
+**MESURE, deux lancements sur le meme binaire, meme graine, meme monde :**
+
+    appels a Sites au second lancement    1  ->  0
+    cache lu -> premiere trame jouee      6,10 s  ->  3,39 s
+    sites relus                           0 tables / 0 canyons -> 1 / 16
+    geometrie                             2390 chunks, 3 140 011 triangles, inchangee
+
+Les 2,71 s gagnees sont exactement la passe : dans le lancement temoin elle
+tenait 2,74 s entre l'adoption du monde par le voxel et sa disponibilite.
+
+**COUT DISQUE : 688 octets avant compression** -- 17 sites de deux `FVector2D`
+(donc deux fois seize octets, `FVector2D` etant en double) et deux flottants,
+plus deux comptes. A cote de 78,6 Mo de cache. Version de chaine portee a
+**25** : un cache anterieur relirait les sites vides, exactement le cas qu'on
+vient de corriger.
+
+**PIEGE D'OUTILLAGE, ET IL EST SILENCIEUX : Git Bash reecrit les chemins de
+carte.** Lancer le jeu depuis bash avec `/Game/Worldseed/Maps/L_Worldseed_Proc`
+donne dans le journal :
+
+    LoadMap: C:/Program Files/Git/Game/Worldseed/Maps/L_Worldseed_Proc
+    Error: Failed to load package
+
+MSYS prend tout argument commencant par `/` pour un chemin POSIX et le prefixe
+de sa racine d'installation. Le jeu demarre, ne charge rien, et QUITTE -- le
+journal ne porte alors **aucune ligne `[Worldseed]`**, ce qui ressemble trait
+pour trait a un module qui ne s'initialise pas. **Tout lancement du jeu passe
+par PowerShell**, ou le chemin arrive intact.

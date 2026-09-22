@@ -124,19 +124,27 @@ struct WORLDSEED_API FWorldseedWorldData
 	bool bHasSpawn = false;
 
 	/**
-	 * Les tables et les canyons, PORTES et non recalcules.
+	 * Les tables et les canyons, SERIALISES.
 	 *
-	 * ILS NE SE SERIALISENT PAS -- le cache n'en ecrit pas un octet -- mais ils
-	 * voyagent avec le monde en memoire, et c'est tout l'objet. `Sites` est une
-	 * fonction pure du relief fini : la rejouer donne exactement le meme
-	 * resultat, et elle coute **2,8 secondes** sur la grille du jeu.
+	 * `WorldseedPlateau::Sites` coute **2,8 secondes** sur la grille du jeu, et
+	 * ce prix etait paye TROIS fois : par la chaine -- qui en a besoin pour la
+	 * liste des lieux du menu --, par l'acteur voxel qui les recalculait pour
+	 * son compte, puis de nouveau a chaque retour au menu. Le journal montrait
+	 * les deux premiers blocs identiques a la suite.
 	 *
-	 * ELLE ETAIT JOUEE DEUX FOIS, et c'est ce qui a fait ecrire ces deux
-	 * champs : une fois par la chaine -- qui en a besoin pour la liste des
-	 * lieux du menu -- et une fois par l'acteur voxel, qui les recalculait pour
-	 * son propre compte. Le journal montrait les deux blocs identiques a la
-	 * suite. Les porter coute quelques centaines d'octets en memoire et rend
-	 * ces 2,8 secondes au chargement.
+	 * PORTER LES A SUPPRIME LE DOUBLON ; LES ECRIRE SUPPRIME LE TROISIEME.
+	 * L'argument qui les gardait hors du cache -- « fonction pure du relief
+	 * fini, la rejouer donne exactement le meme resultat » -- est celui qui
+	 * gardait aussi le reseau de cavites dehors, et il est tombe pour la meme
+	 * raison : on ne rejoue pas des secondes de calcul pour economiser
+	 * quelques centaines d'octets. Dix-sept sites de six flottants contre
+	 * dix-huit megaoctets de cache.
+	 *
+	 * ET ILS SE CALCULENT SUR LE RELIEF FINAL. La passe les designait a
+	 * l'etape 4c, donc avant le littoral, le sapement et le dome de glace :
+	 * elle decrivait un relief intermediaire, et seul le chemin du cache --
+	 * qui les rejouait en fin de chaine -- rendait la bonne reponse. Les deux
+	 * chemins sont alignes depuis la version 25.
 	 */
 	TArray<FWorldseedPlateauSite> Tables;
 	TArray<FWorldseedPlateauSite> Canyons;

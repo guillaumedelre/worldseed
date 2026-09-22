@@ -148,7 +148,7 @@ namespace WorldseedPipeline
 		// 12 982 ms, et le mot « cache » laissait croire a un simple chargement.
 		// Cette branche REJOUE quatre passes derivees, et sans chrono par passe
 		// on ne peut que supposer laquelle coute -- ce que ce depot s'interdit.
-		double TLoad = 0.0, TBiomes = 0.0, TChamps = 0.0, TGrottes = 0.0, TSites = 0.0;
+		double TLoad = 0.0, TBiomes = 0.0, TChamps = 0.0, TGrottes = 0.0;
 		const double TAvantLoad = FPlatformTime::Seconds();
 
 		FWorldseedWorldData Cached;
@@ -163,6 +163,21 @@ namespace WorldseedPipeline
 			Out.Climate.SeasonalAmpC = MoveTemp(Cached.SeasonalAmpC);
 			Out.Climate.Continentality = MoveTemp(Cached.Continentality);
 			Out.Lithology.Id = MoveTemp(Cached.LithologyId);
+
+			// LES SITES ARRIVENT ICI, AVEC LE RESTE.
+			//
+			// OUBLIES A LA PREMIERE VERSION, et le defaut merite d'etre note :
+			// le fichier les portait bel et bien -- l'ecriture etait juste --
+			// mais personne ne les transvasait du monde RELU vers le resultat.
+			// Le journal disait « sites relus 0 tables / 0 canyons » et
+			// l'acteur voxel les recalculait sans broncher : les 2,8 secondes
+			// restaient payees.
+			//
+			// C'EST LE COMPTE QUI L'A VU, PAS LE CHRONOMETRE. Le temps de la
+			// passe valait zero des les deux cotes -- puisqu'elle ne tournait
+			// plus ICI -- et aurait donc declare la victoire.
+			Out.Tables = MoveTemp(Cached.Tables);
+			Out.Canyons = MoveTemp(Cached.Canyons);
 			Out.bHasClimate = (Out.Climate.TempMeanC.Num() == Geometry.CellCount());
 			Out.bFromCache = true;
 
@@ -240,32 +255,23 @@ namespace WorldseedPipeline
 					}
 					TGrottes = (FPlatformTime::Seconds() - TC) * 1000.0;
 
-					// --- LES TABLES ET LES CANYONS, QUI MANQUAIENT ICI ------
+					// LES TABLES ET LES CANYONS NE SE RECALCULENT PLUS ICI :
+					// ils viennent du FICHIER, comme le reseau de cavites.
 					//
-					// DEFAUT TROUVE EN VOULANT LES OFFRIR AU MENU : `Sites`
-					// n'etait appele que depuis `Build`, donc sur le seul
-					// chemin de GENERATION. Des la seconde partie -- c'est-a-
-					// dire presque toujours -- le monde venait du cache et la
-					// liste des lieux perdait ses tables, sans que rien ne le
-					// dise. Le journal l'avouait pourtant : « 0 tables
-					// produits ».
+					// ILS ETAIENT REJOUES A CHAQUE RETOUR AU MENU, pour 2,8
+					// secondes -- le chiffre que cette ligne mesurait, et qui
+					// a servi a trancher. L'argument qui les gardait dehors
+					// (« fonction pure du relief, on sait la refaire ») valait
+					// tant qu'on ne payait ce prix qu'une fois ; il ne vaut
+					// plus des qu'on fait des allers-retours.
 					//
-					// ELLES NE SE SERIALISENT PAS, ET C'EST LE BON CHOIX.
-					// `Sites` est une fonction PURE du relief fini, des regles
-					// et de la graine ; la transporter doublerait une donnee
-					// qu'on sait refaire. C'est le meme raisonnement qui vaut
-					// pour le reseau de cavites -- sauf que celui-ci coutait
-					// onze secondes, ce qui a fini par le faire serialiser.
-					// Le cout de celle-ci est mesure et journalise ci-dessous
-					// pour qu'on puisse trancher pareil le jour ou il gene.
-					const double TS = FPlatformTime::Seconds();
-					WorldseedPlateau::Sites(Geometry, Out.ElevationM,
-						FWorldseedPlateauRules::FromRules(*BioRules),
-						Out.Lithology,
-						FWorldseedLithologyRules::FromRules(*BioRules),
-						Out.Climate.PrecipMm, Out.Climate.TempMeanC,
-						Seed, Out.Tables, &Out.Canyons);
-					TSites = (FPlatformTime::Seconds() - TS) * 1000.0;
+					// ET IL N'Y A PAS DE GARDE « si le tableau est vide ». Un
+					// cache lu est AUTORITAIRE, y compris quand il ne porte
+					// aucun site -- un monde sans mesa est un resultat, pas une
+					// donnee manquante. Une garde sur le nombre confondrait les
+					// deux et rejouerait 2,8 s a chaque fois sur ces
+					// mondes-la. Les caches anterieurs, eux, ne passent pas
+					// l'en-tete : la version de chaine est montee a 25.
 
 					// LE RELEVE VIENT ICI ET NULLE PART AILLEURS : c'est la seule
 					// place ou TOUTES les cles ont ete demandees. Pose plus haut,
@@ -282,11 +288,20 @@ namespace WorldseedPipeline
 
 			// LE DETAIL AVANT LE TOTAL, et le mot « cache » cesse de mentir :
 			// ce qui est LU tient dans `lecture`, tout le reste est RECALCULE.
+			//
+			// LES SITES SE COMPTENT ET NE SE CHRONOMETRENT PLUS. Leur temps
+			// vaudrait zero par construction maintenant qu'ils sont lus, donc
+			// la colonne ne pourrait plus rien dire -- alors qu'un COMPTE,
+			// lui, distingue « relu du fichier » de « relu vide ». C'est la
+			// lecon de la serialisation des cavites : le controle qui tranche
+			// est le compte, pas le chronometre.
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] monde repris du cache : seed=%d  %dx%d  (%.0f ms) ")
-				TEXT("-- lecture %.0f, biomes %.0f, champs %.0f, GROTTES %.0f, sites %.0f ms"),
+				TEXT("-- lecture %.0f, biomes %.0f, champs %.0f, GROTTES %.0f ms, ")
+				TEXT("sites relus %d tables / %d canyons"),
 				Seed, Geometry.NX, Geometry.NY, TTotal,
-				TLoad, TBiomes, TChamps, TGrottes, TSites);
+				TLoad, TBiomes, TChamps, TGrottes,
+				Out.Tables.Num(), Out.Canyons.Num());
 			return true;
 		}
 
@@ -532,8 +547,22 @@ namespace WorldseedPipeline
 				FWorldseedFinRules::FromRules(*Rules),
 				FWorldseedStratRules::FromRules(*Rules,
 					FWorldseedLithologyRules::FromRules(*Rules)), Seed,
-				Out.ElevationM, &Out.Tables, &Out.Canyons);
+				Out.ElevationM);
 		}
+		// ELLE NE REND PLUS SES SITES ICI, ET C'EST UNE CORRECTION.
+		//
+		// `Build` les designait au passage, ce qui paraissait gratuit -- elle
+		// vient de calculer tout ce qu'il faut. Mais TROIS passes remanient le
+		// relief APRES elle : le littoral (4b, juste au-dessus dans le temps
+		// mais pas dans l'ordre d'ecriture), le sapement des corniches (4d) et
+		// surtout le DOME DE GLACE, qui ajoute jusqu'a 479 m au centre d'une
+		// calotte. Un site designe a l'etape 4c decrit donc un relief qui
+		// n'existe plus a l'arrivee.
+		//
+		// Personne ne l'avait vu parce que les deux chemins ne se comparaient
+		// pas : au retour du cache, `Sites` tournait deja apres tout le reste.
+		// La passe est donc appelee une fois, en fin de chaine, sur le relief
+		// FINAL -- ce qui aligne du meme coup la generation sur le cache.
 
 		// --- etape 4d : le sapement des corniches ------------------------------
 		//
@@ -629,6 +658,29 @@ namespace WorldseedPipeline
 					Out.Lithology, FWorldseedLithologyRules::FromRules(*BioRules),
 					FWorldseedCaveRules::FromRules(*BioRules), 1.0f, Seed, Out.Caves);
 
+				// --- LES TABLES ET LES CANYONS, SUR LE RELIEF FINAL ---------
+				//
+				// ICI ET NULLE PART AILLEURS, pour la meme raison qui met
+				// l'ecriture du cache en dernier : une grandeur se calcule
+				// APRES tout ce dont elle depend. `Sites` lit `ElevationM`,
+				// que le littoral, le sapement et le dome de glace ont tous
+				// les trois retouche depuis l'etape 4c.
+				//
+				// ET LE CACHE LES EMPORTE DESORMAIS. Le journal du 22 septembre
+				// mesurait 2,8 secondes pour cette passe -- payees au
+				// chargement ET a chaque retour au menu. L'argument qui la
+				// laissait hors du cache (« fonction pure du relief, la rejouer
+				// donne le meme resultat ») etait le meme que pour le reseau de
+				// cavites, et il est tombe pour la meme raison : on ne rejoue
+				// pas trois secondes de calcul pour economiser quelques
+				// centaines d'octets.
+				WorldseedPlateau::Sites(Geometry, Out.ElevationM,
+					FWorldseedPlateauRules::FromRules(*BioRules),
+					Out.Lithology,
+					FWorldseedLithologyRules::FromRules(*BioRules),
+					Out.Climate.PrecipMm, Out.Climate.TempMeanC,
+					Seed, Out.Tables, &Out.Canyons);
+
 				BioRules->ReportMissingKeys();
 			}
 		}
@@ -666,6 +718,12 @@ namespace WorldseedPipeline
 			// memes regles, meme reseau -- donc le rebatir a chaque chargement
 			// etait du travail refait a l'identique, onze secondes durant.
 			ToCache.Caves = Out.Caves;
+
+			// LES SITES PARTENT AVEC, pour la meme raison et au meme prix : ils
+			// sont deterministes, et les rejouer coutait 2,8 s a chaque retour
+			// au menu. Quelques centaines d'octets contre trois secondes.
+			ToCache.Tables = Out.Tables;
+			ToCache.Canyons = Out.Canyons;
 
 			WorldseedCache::Save(CacheKey, Rules->SourceHash, ToCache);
 		}

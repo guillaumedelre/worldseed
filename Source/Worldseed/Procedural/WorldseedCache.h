@@ -47,8 +47,15 @@
  *       sommet du talus tendre qui le porte -- or ce talus se desagrege, et
  *       la marche est portee par la corniche D'EN DESSOUS. Correction du
  *       relief partout ou une corniche recule.
+ *  25 - les TABLES et les CANYONS entrent dans le cache, et la passe qui les
+ *       designe change de PLACE : elle tournait a l'etape 4c, donc AVANT le
+ *       littoral, le sapement et le dome de glace, qui remanient tous les
+ *       trois le relief. Les sites decrivaient un relief intermediaire. Ils
+ *       sont desormais designes sur le relief FINAL, comme le chemin de
+ *       cache le faisait deja -- donc les deux chemins rendent enfin la meme
+ *       chose, et un cache d'une version anterieure les relirait vides.
  */
-#define WORLDSEED_PIPELINE_VERSION 24
+#define WORLDSEED_PIPELINE_VERSION 25
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

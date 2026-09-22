@@ -184,6 +184,57 @@ namespace WorldseedCache
 			return !Ar.IsError();
 		}
 
+		/**
+		 * Les tables et les canyons.
+		 *
+		 * MEME REGLE QUE LES CAVITES, ET POUR LA MEME RAISON : champ par champ,
+		 * jamais la structure en bloc. `FWorldseedPlateauSite` porte deux
+		 * `FVector2D` et deux flottants ; un `Serialize(&S, sizeof(S))` graverait
+		 * le bourrage du compilateur, et le jour ou un cinquieme champ arrive,
+		 * le cache se relirait SANS ERREUR en posant les mesas ailleurs.
+		 *
+		 * ILS TIENNENT DANS QUELQUES CENTAINES D'OCTETS -- dix-sept sites de
+		 * six flottants sur le monde de reference -- pour 2,8 secondes rendues
+		 * a chaque chargement ET a chaque retour au menu. C'est le meme marche
+		 * que les cavites la veille, en cent fois plus petit.
+		 */
+		void EcrireSites(FArchive& Ar, const TArray<FWorldseedPlateauSite>& Sites)
+		{
+			int32 Nb = Sites.Num();
+			Ar << Nb;
+			for (const FWorldseedPlateauSite& S : Sites)
+			{
+				FVector2D C = S.CentreM, V = S.VersLeBas;
+				float A = S.AltitudeM, E = S.EscarpementM;
+				Ar << C; Ar << A; Ar << E; Ar << V;
+			}
+		}
+
+		bool LireSites(FArchive& Ar, TArray<FWorldseedPlateauSite>& Sites)
+		{
+			Sites.Reset();
+
+			int32 Nb = 0;
+			Ar << Nb;
+
+			// BORNE DE SURETE, comme pour les cavites : un fichier tronque
+			// donnerait sinon une reservation absurde avant que la lecture
+			// n'echoue. Un monde en porte quelques dizaines.
+			if (Nb < 0 || Nb > 1000000)
+			{
+				return false;
+			}
+
+			Sites.SetNum(Nb);
+			for (FWorldseedPlateauSite& S : Sites)
+			{
+				FVector2D C, V; float A, E;
+				Ar << C; Ar << A; Ar << E; Ar << V;
+				S.CentreM = C; S.AltitudeM = A; S.EscarpementM = E; S.VersLeBas = V;
+			}
+			return !Ar.IsError();
+		}
+
 		bool ReadBytes(FArchive& Ar, TArray<uint8>& Data)
 		{
 			int32 Num = 0;
@@ -308,7 +359,8 @@ namespace WorldseedCache
 			|| !ReadFloats(Ar, Out.PrecipMm) || !ReadFloats(Ar, Out.SeasonalAmpC)
 			|| !ReadFloats(Ar, Out.Continentality)
 			|| !ReadBytes(Ar, Out.LithologyId)
-			|| !LireGrottes(Ar, Out.Caves))
+			|| !LireGrottes(Ar, Out.Caves)
+			|| !LireSites(Ar, Out.Tables) || !LireSites(Ar, Out.Canyons))
 		{
 			return false;
 		}
@@ -348,6 +400,8 @@ namespace WorldseedCache
 		WriteFloats(Raw, World.Continentality);
 		WriteBytes(Raw, World.LithologyId);
 		EcrireGrottes(Raw, World.Caves);
+		EcrireSites(Raw, World.Tables);
+		EcrireSites(Raw, World.Canyons);
 
 		// Trois champs tres correles spatialement : zlib les reduit d'un facteur
 		// 2 a 3. Sans compression, un monde de reference pese une centaine de Mo.

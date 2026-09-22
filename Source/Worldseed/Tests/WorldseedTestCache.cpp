@@ -154,6 +154,49 @@ bool FWorldseedTestCacheAllerRetour::RunTest(const FString& Parameters)
 	TestEqual(TEXT("cavites : nombre de puits"),
 		Apres.Caves.Puits.Num(), Avant.Caves.Puits.Num());
 
+	// --- 3 bis. LES TABLES ET LES CANYONS -----------------------------------
+	//
+	// MEME FAMILLE DE DEFAUT QUE LE RESEAU DE CAVITES, et c'est pourquoi le
+	// controle est le meme : des sites absents se relisent VIDES, sans erreur,
+	// et le seul symptome est une liste de lieux amputee au menu plus 2,8
+	// secondes rendues a chaque retour. Rien de tout cela ne leve un
+	// avertissement.
+	//
+	// ON COMPARE LES QUATRE CHAMPS, pas seulement le compte. Un compte juste
+	// avec des altitudes decalees d'un cran decrirait des mesas ailleurs, et
+	// le nombre ne le dirait pas.
+	auto ComparerSites = [this](const TCHAR* Nom,
+		const TArray<FWorldseedPlateauSite>& A,
+		const TArray<FWorldseedPlateauSite>& B)
+	{
+		if (!TestEqual(*FString::Printf(TEXT("%s : nombre de sites"), Nom),
+			B.Num(), A.Num()))
+		{
+			return;
+		}
+		for (int32 I = 0; I < A.Num(); ++I)
+		{
+			TestEqual(*FString::Printf(TEXT("%s %d : centre"), Nom, I),
+				B[I].CentreM, A[I].CentreM);
+			TestEqual(*FString::Printf(TEXT("%s %d : altitude"), Nom, I),
+				B[I].AltitudeM, A[I].AltitudeM);
+			TestEqual(*FString::Printf(TEXT("%s %d : escarpement"), Nom, I),
+				B[I].EscarpementM, A[I].EscarpementM);
+			TestEqual(*FString::Printf(TEXT("%s %d : direction de chute"), Nom, I),
+				B[I].VersLeBas, A[I].VersLeBas);
+		}
+	};
+
+	ComparerSites(TEXT("table"), Avant.Tables, Apres.Tables);
+	ComparerSites(TEXT("canyon"), Avant.Canyons, Apres.Canyons);
+
+	// ET LA FIXTURE DOIT PORTER DES SITES, sans quoi tout ce qui precede
+	// compare deux tableaux vides et passe quoi qu'il arrive. Le depot a deja
+	// paye une assertion muette de cette forme -- deux `nullptr` compares dans
+	// le test de partage du monde.
+	TestTrue(TEXT("le monde fictif porte des tables"), Avant.Tables.Num() > 0);
+	TestTrue(TEXT("le monde fictif porte des canyons"), Avant.Canyons.Num() > 0);
+
 	// --- 4. L'INDEX SPATIAL EST DERIVE, DONC REBATI ET NON RELU -------------
 	//
 	// Les CASES ne sont pas serialisees -- elles pesent plus que ce qu'elles

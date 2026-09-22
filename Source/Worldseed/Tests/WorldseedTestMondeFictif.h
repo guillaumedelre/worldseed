@@ -179,6 +179,37 @@ namespace WorldseedTest
 		}
 
 		W.Caves = Reseau();
+
+		// LES TABLES ET LES CANYONS, GARNIS POUR LA MEME RAISON QUE LES
+		// BIOMES. Un tableau vide se serialise et se relit vide : l'aller-
+		// retour passerait donc que la serialisation existe ou non. C'est
+		// exactement le defaut du 22 septembre -- un reseau de cavites ecrit
+		// avant d'exister se relisait sans erreur, et personne ne voyait
+		// pourquoi l'attente persistait.
+		//
+		// LES VALEURS SONT DISTINCTES CHAMP PAR CHAMP, et c'est voulu : si
+		// `AltitudeM` et `EscarpementM` portaient le meme nombre, une
+		// serialisation qui les intervertit passerait sans rien dire. Meme
+		// chose pour les deux composantes de chaque vecteur.
+		for (int32 I = 0; I < 5; ++I)
+		{
+			FWorldseedPlateauSite T;
+			T.CentreM = FVector2D(100.0 * I + 1.0, -200.0 * I - 3.0);
+			T.AltitudeM = 410.0f + I;
+			T.EscarpementM = 137.0f + 2.0f * I;
+			T.VersLeBas = FVector2D(0.6, -0.8);
+			W.Tables.Add(T);
+		}
+		for (int32 I = 0; I < 3; ++I)
+		{
+			FWorldseedPlateauSite C;
+			C.CentreM = FVector2D(-50.0 * I - 7.0, 300.0 * I + 11.0);
+			C.AltitudeM = -12.0f - I;
+			C.EscarpementM = 88.0f + 3.0f * I;
+			C.VersLeBas = FVector2D(-0.28, 0.96);
+			W.Canyons.Add(C);
+		}
+
 		return W;
 	}
 }
