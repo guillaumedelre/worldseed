@@ -225,6 +225,17 @@ public:
 	TObjectPtr<UMaterialInterface> BiomeMaterial;
 
 	/**
+	 * Materiau de la mer du DECOR, au-dela de la fenetre du plugin Water.
+	 *
+	 * Laisse a nul, le code prend celui du plugin
+	 * (`/Water/Materials/WaterSurface/Water_FarMesh`) : il est versionne avec
+	 * le moteur, alors qu'un asset pose dans `Content/` serait exclu du depot.
+	 * Le renseigner ici permet d'en essayer un autre sans recompiler.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches")
+	TObjectPtr<UMaterialInterface> HorizonSeaMaterial;
+
+	/**
 	 * Un materiau par pack de textures.
 	 *
 	 * Ce sont des INSTANCES d'un meme materiau maitre, chacune avec ses quatre
@@ -549,6 +560,15 @@ protected:
 
 	/** Le materiau correspondant au mode d'apparence courant. */
 	UMaterialInterface* ChooseTerrainMaterial(const FWorldseedAppearance& Mode) const;
+
+	/**
+	 * Le materiau de la MER DU DECOR, section 1 de la nappe vue.
+	 *
+	 * `Repli` est rendu quand aucun materiau de mer n'est disponible ou que la
+	 * ligne de commande le coupe : le decor reprend alors l'aspect de terrain
+	 * qu'il avait, plutot que de se retrouver sans materiau du tout.
+	 */
+	UMaterialInterface* ChoisirMateriauMerDecor(UMaterialInterface* Repli) const;
 
 	UPROPERTY()
 	TObjectPtr<USceneComponent> RootScene;

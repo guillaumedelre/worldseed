@@ -183,7 +183,13 @@ void AWorldseedTerrain::UpdateGroundProxyVisibility()
 	// a-coup de 520 ms et un ocean coupe.
 	const double Depart = FPlatformTime::Seconds();
 
+	// LES DEUX SECTIONS BASCULENT ENSEMBLE. La mer du decor vit en section 1
+	// depuis qu'elle a son propre materiau ; n'en basculer qu'une laisserait
+	// l'horizon marin visible depuis l'interieur d'une grotte -- exactement le
+	// defaut que cette bascule existe pour empecher, et il ne se signalerait
+	// pas puisque la section terre, elle, disparaitrait bien.
 	Vue->SetMeshSectionVisible(0, !bSousPlafond);
+	Vue->SetMeshSectionVisible(1, !bSousPlafond);
 
 	const double BasculeMs = (FPlatformTime::Seconds() - Depart) * 1000.0;
 
@@ -1007,6 +1013,60 @@ bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,
 	return true;
 }
 
+UMaterialInterface* AWorldseedTerrain::ChoisirMateriauMerDecor(
+	UMaterialInterface* Repli) const
+{
+	// UN MATERIAU MAISON POURRAIT VIVRE DANS LE DEPOT, contrairement a ce que
+	// j'ai d'abord ecrit ici. `.gitignore` exclut `Content/*` mais ROUVRE
+	// `!Content/Worldseed/` : soixante-dix-sept fichiers y sont versionnes,
+	// dont `Content/Worldseed/Materials/`. C'est d'ailleurs la que vivent
+	// `BP_WorldseedClimat` et `CAL_Worldseed`, et le registre le dit.
+	// **Ce qui n'est PAS versionne, c'est `Content/__ExternalActors__/`** --
+	// d'ou les reglages perdus (PlayerStart, acteurs d'eclairage, les 40 km de
+	// nappe lointaine) : ils etaient poses sur des ACTEURS de niveau, pas dans
+	// un asset.
+	//
+	// On prend quand meme celui du PLUGIN Water pour commencer : il existe,
+	// il est fait pour ce role exact, et il n'exige pas d'ouvrir l'editeur.
+	// Un materiau maison sous `Content/Worldseed/Materials/` reste la bonne
+	// reponse le jour ou celui-ci ne suffira pas.
+	//
+	// CE QU'ON LUI DEMANDE N'EST PAS DE LA VAGUE. A six kilometres et au-dela,
+	// vu de 930 m, l'angle d'incidence vaut huit degres : une vraie mer y est
+	// un MIROIR, elle prend la couleur du ciel. Ce qui manque au decor n'est
+	// donc pas du relief de surface mais une reponse speculaire et un fresnel.
+	//
+	// ET SI CE MATERIAU NE CONVIENT PAS, LE JOURNAL LE DIRA. Un materiau du
+	// domaine de l'eau peut refuser de se compiler pour le facteur de sommets
+	// d'un maillage procedural ; le moteur retombe alors sur son materiau par
+	// defaut, en gris, sans erreur bloquante. On journalise donc ce qui est
+	// REELLEMENT pose, et `-WorldseedMerMateriau=0` rend le materiau de
+	// terrain pour comparer sur le meme binaire.
+	int32 Actif = 1;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedMerMateriau="), Actif)
+		&& Actif == 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] sol de fond : materiau de mer COUPE par la ligne de commande"));
+		return Repli;
+	}
+
+	if (HorizonSeaMaterial)
+	{
+		return HorizonSeaMaterial.Get();
+	}
+
+	if (UMaterialInterface* const Lointain = LoadObject<UMaterialInterface>(
+			nullptr, TEXT("/Water/Materials/WaterSurface/Water_FarMesh.Water_FarMesh")))
+	{
+		return Lointain;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] sol de fond : aucun materiau de mer, on garde celui du terrain"));
+	return Repli;
+}
+
 UMaterialInterface* AWorldseedTerrain::ChooseTerrainMaterial(
 	const FWorldseedAppearance& Mode) const
 {
@@ -1165,6 +1225,14 @@ void AWorldseedTerrain::BuildGroundProxy()
 	// separe les deux avant meme de regarder l'image.
 	int32 SommetsSousZero = 0;
 
+	// LE MARQUAGE VOYAGE AVEC LE SOMMET, il ne se rededuit pas. La nappe vue
+	// est ENFONCEE sous le niveau de la mer, donc son Z ne dit plus rien de
+	// l'altitude reelle du terrain : relire « ce sommet est-il submerge » sur
+	// la geometrie decimee donnerait « tout est submerge ». On retient donc le
+	// verdict ici, ou `HereM` est l'altitude vraie.
+	TArray<uint8> SousZero;
+	SousZero.SetNumUninitialized(Verts);
+
 	// LE PAS SE PREND EN REEL, ET LE DERNIER SOMMET TOMBE SUR LA DERNIERE
 	// CELLULE.
 	//
@@ -1273,6 +1341,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 			ComputeVertexAppearance(Cell, HereM, N, Mode,
 				Colors[Index], TintRG[Index], TintB[Index]);
 
+			SousZero[Index] = (HereM < 0.0f) ? 1 : 0;
 			if (HereM < 0.0f) { ++SommetsSousZero; }
 		}
 	}
@@ -1498,6 +1567,9 @@ void AWorldseedTerrain::BuildGroundProxy()
 		HTangents.SetNumUninitialized(HVerts);
 		HColors.SetNumUninitialized(HVerts);
 
+		TArray<uint8> HSousZero;
+		HSousZero.SetNumUninitialized(HVerts);
+
 		for (int32 Y = 0; Y < HY; ++Y)
 		{
 			// LE DERNIER SOMMET TOMBE SUR LE DERNIER, et pas sur un multiple
@@ -1519,6 +1591,7 @@ void AWorldseedTerrain::BuildGroundProxy()
 				HTintB[Dst] = TintB[Src];
 				HTangents[Dst] = Tangents[Src];
 				HColors[Dst] = Colors[Src];
+				HSousZero[Dst] = SousZero[Src];
 			}
 		}
 
@@ -1543,21 +1616,105 @@ void AWorldseedTerrain::BuildGroundProxy()
 			}
 		}
 
-		Vue->ClearAllMeshSections();
-		Vue->CreateMeshSection_LinearColor(
-			0, HVertices, HTriangles, HNormals, HUVs, HTintRG, HTintB,
-			TArray<FVector2D>(), HColors, HTangents, false);
-
-		if (UMaterialInterface* Material = ChooseTerrainMaterial(Mode))
+		// --- LA MER DU DECOR PREND SA PROPRE SECTION ------------------------
+		//
+		// SIGNALE EN JEU DEPUIS 930 M : « on voit le shader de la mer detaille
+		// sur la moitie gauche, une coupure nette, puis du bleu plat a
+		// droite ». Le bleu plat est CE maillage-ci : il joue deja le role du
+		// `Water_FarMesh` du plugin -- dont la jupe, elle, s'accroche aux
+		// bornes de la ZONE (64 x 32 km) et reste donc hors d'atteinte depuis
+		// l'interieur du monde. Il porte simplement le materiau de TERRAIN,
+		// mat, sans speculaire ni reflet de ciel.
+		//
+		// POURQUOI CELA NE SE VOYAIT PAS PLUS TOT, et c'est de la geometrie
+		// pure : le bord de la fenetre est a 6 144 m, donc son angle sous
+		// l'horizontale vaut `atan(altitude / 6144)` -- 0,6 degre a 69 m,
+		// 2,9 a 307, mais 8,6 a 930. Mes trois points de vue etaient sous
+		// l'horizon. **Une couture a distance fixe se juge a l'ALTITUDE, pas
+		// a la distance.**
+		//
+		// LE PARTAGE EST CONSERVATEUR : un triangle ne passe a la mer que si
+		// ses TROIS sommets sont submerges. La bande du rivage reste donc avec
+		// la terre, et aucun materiau de mer ne deborde sur une plage.
+		//
+		// ET LES SOMMETS SONT REMAPPES, PAS DUPLIQUES. Donner le tableau
+		// complet aux deux sections doublerait deux millions de sommets pour
+		// n'en dessiner qu'une part dans chacune.
+		TArray<int32> TriTerre;
+		TArray<int32> TriMer;
+		TriTerre.Reserve(HTriangles.Num());
+		TriMer.Reserve(HTriangles.Num());
+		for (int32 I = 0; I + 2 < HTriangles.Num(); I += 3)
 		{
-			Vue->SetMaterial(0, Material);
+			const int32 A = HTriangles[I];
+			const int32 B = HTriangles[I + 1];
+			const int32 C = HTriangles[I + 2];
+			TArray<int32>& Cible =
+				(HSousZero[A] && HSousZero[B] && HSousZero[C]) ? TriMer : TriTerre;
+			Cible.Add(A); Cible.Add(B); Cible.Add(C);
 		}
+
+		Vue->ClearAllMeshSections();
+
+		int32 SommetsTerre = 0;
+		int32 SommetsMer = 0;
+
+		auto PoserSection =
+			[&](int32 Index, const TArray<int32>& Source, UMaterialInterface* Mat) -> int32
+		{
+			if (Source.Num() == 0)
+			{
+				return 0;
+			}
+
+			TArray<int32> Remap;
+			Remap.Init(INDEX_NONE, HVerts);
+
+			TArray<FVector> SV; TArray<FVector> SN; TArray<FVector2D> SU;
+			TArray<FVector2D> S2; TArray<FVector2D> S3;
+			TArray<FProcMeshTangent> ST; TArray<FLinearColor> SC;
+			TArray<int32> SI;
+			SI.Reserve(Source.Num());
+
+			for (int32 Ind : Source)
+			{
+				if (Remap[Ind] == INDEX_NONE)
+				{
+					Remap[Ind] = SV.Num();
+					SV.Add(HVertices[Ind]); SN.Add(HNormals[Ind]);
+					SU.Add(HUVs[Ind]); S2.Add(HTintRG[Ind]); S3.Add(HTintB[Ind]);
+					ST.Add(HTangents[Ind]); SC.Add(HColors[Ind]);
+				}
+				SI.Add(Remap[Ind]);
+			}
+
+			Vue->CreateMeshSection_LinearColor(
+				Index, SV, SI, SN, SU, S2, S3, TArray<FVector2D>(), SC, ST, false);
+			if (Mat)
+			{
+				Vue->SetMaterial(Index, Mat);
+			}
+			Vue->SetMeshSectionVisible(Index, true);
+			return SV.Num();
+		};
+
+		UMaterialInterface* const MatTerre = ChooseTerrainMaterial(Mode);
+		UMaterialInterface* const MatMer = ChoisirMateriauMerDecor(MatTerre);
+
+		SommetsTerre = PoserSection(0, TriTerre, MatTerre);
+		SommetsMer = PoserSection(1, TriMer, MatMer);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] sol de fond : section terre %d sommets / %d triangles, ")
+			TEXT("section mer %d sommets / %d triangles, materiau de mer %s"),
+			SommetsTerre, TriTerre.Num() / 3,
+			SommetsMer, TriMer.Num() / 3,
+			MatMer ? *MatMer->GetName() : TEXT("AUCUN"));
 
 		// Meme argument que pour la nappe : un decor de fond n'a rien a faire
 		// dans les reflets ni dans les ombres tracees, et le budget de ray
 		// tracing se degrade en SILENCE une fois depasse.
 		Vue->SetVisibleInRayTracing(false);
-		Vue->SetMeshSectionVisible(0, true);
 
 		ProxyVueSommets = HVerts;
 
