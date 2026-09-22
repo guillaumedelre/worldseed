@@ -8061,3 +8061,102 @@ voxel sur 1200 m de vue, le monde met une dizaine de minutes a se batir, et ce
 registre note qu'on y photographie parfois une FILE D'ATTENTE plutot qu'un
 monde. Controle fait avant de conclure : le terrain est complet jusqu'a
 l'horizon, sans trou ni reprise par le sol de fond. La vue est valide.
+
+#### La peinture n'ecrit JAMAIS de noir, et c'est la carte des causes qui l'a dit
+
+Question du proprietaire, et c'est elle qui a debloque le diagnostic : « as-tu
+la possibilite de savoir a partir de quel moment tu affiches du noir ou du
+brun ? car si tu savais quand est-ce que tu mets du noir on pourrait remonter
+la piste ».
+
+**ELLE EN CONTENAIT UNE PLUS FONDAMENTALE, QUE HUIT ETATS N'AVAIENT JAMAIS
+POSEE : la peinture ECRIT-elle seulement du noir ?** Tant qu'on ne le sait
+pas, on cherche la cause d'une couleur dont on n'a jamais verifie qu'elle
+vient de nous -- et c'est exactement ce que la journee avait fait, en
+eliminant une a une des hypotheses qui portaient toutes sur l'albedo.
+
+**LE RELEVE, sur 9,26 millions de sommets :**
+
+    luminance ECRITE   66 a 234 sur 255
+    SOMBRES (< 70)     0,05 %
+      biome    70,9 %  dont 0,00 % sombres
+      banc     28,5 %  dont 0,00 % sombres
+      roche 2D  0,6 %  dont 7,73 %   <- le basalte, a 66 : tout le 0,05 %
+
+Les captures comptent **11,8 % de pixels noirs**. La peinture en ecrit 0,05.
+Facteur 236.
+
+**LA CARTE DES CAUSES (`-WorldseedCarteCauses=1`) rend la reponse visuelle.**
+Chaque sommet est peint par la BRANCHE qui a decide sa couleur, en aplats
+francs et TOUS CLAIRS -- magenta pour le repli, vert pour le biome, bleu pour
+la roche 2D, une teinte vive par banc. Aucun aplat n'etant sombre, **tout
+pixel noir sur cette image serait par construction quelque chose que nous ne
+peignons pas**. C'est le temoin de couleur du depot applique a un diagnostic :
+« une couleur franche ne se compare a rien, elle est la ou elle n'est pas ».
+
+Resultat : **AUCUN pixel noir sur le terrain**, et chaque paroi qui etait noire
+est un arc-en-ciel de bancs. Les dix bancs sont tous a l'ecran, de 486 000 a
+946 000 sommets chacun. **Les rayures SONT les strates, et elles sont peintes
+juste.**
+
+**LA CARTE SERT ENSUITE DE MASQUE SUR LE RENDU NORMAL**, les deux passes ayant
+la meme camera et le meme monde donc des images alignees au pixel :
+
+    branche        part    ecrit noir    lum. moy.  minimum   noir a l'ecran
+    biome          62,9 %     0,00 %       151,2        3         8,7 %
+    banc           16,0 %     0,00 %       134,4        3        19,1 %
+    roche 2D        3,2 %     7,73 %        85,7        6        37,8 %
+    hors terrain   17,2 %        --        153,9        3         4,6 %
+
+**LA BRANCHE BIOME N'ECRIT JAMAIS SOUS 70 ET 8,7 % DE SES PIXELS ARRIVENT SOUS
+70, JUSQU'A 3.** C'est la preuve, et elle ne souffre pas de discussion :
+l'assombrissement se produit APRES la couleur de sommet, et il touche toutes
+les branches -- y compris celles qui n'ecrivent rien de sombre.
+
+**ET CE N'EST PAS QUE L'OMBRE.** Lumieres coupees, le meme croisement donne
+13,6 % pour le biome et 23,6 % pour les bancs -- PLUS, pas moins. C'est la
+chaine exposition + tonemapping, dans une scene dont la neige est a 236
+d'albedo : un banc a 108 n'a pas de place dans la meme image.
+
+**LES BANCS ENCAISSENT DEUX FOIS PLUS QUE LE BIOME** -- 19,1 contre 8,7 % --
+parce qu'ils habillent les CONTREMARCHES des gradins, des faces raides qui
+prennent mal la lumiere et que le maillage dentelle.
+
+**D'OU LA PISTE, ET ELLE DONNE RAISON AU PROPRIETAIRE SUR LA FORME** : il
+demandait « se peut-il que ce soit les 300 passes d'erosion ? ». Oui, pour la
+GEOMETRIE : l'erosion stratifiee et le sapement des corniches taillent une
+banquette par banc, et la carte des causes montre qu'elles coincident
+exactement avec les bandes de couleur. Ce n'est donc plus la matiere qu'il
+faut regarder mais LA MARCHE : des contremarches moins raides, ou moins
+nombreuses, et le zebre tombe des deux cotes a la fois -- moins d'ombre
+portee, moins de dentelure a mailler.
+
+**TROIS INSTRUMENTS POSES, ET ILS RESSERVIRONT :**
+
+    -WorldseedCarteCauses=1   la carte, a regarder avec ShowFlag.Lighting 0
+    -WorldseedArrets=canyon   ne photographier que ce qu'on juge
+    (toujours)                l'histogramme des couleurs ecrites, au journal
+
+**ET LA TOURNEE DIT DESORMAIS CE QU'ELLE A PHOTOGRAPHIE.** Le releve du
+terrain n'existait que dans le BANC -- et c'est exactement ce qui avait fait
+mesurer l'entonnoir de la teinte de roche au mauvais endroit, au point
+d'apparition du banc, une plaine cotiere a 4,9 m ou la serie (267 a 520 m) ne
+monte jamais. Le releve annoncait « bancs touches AUCUN » pour un monde qui en
+touche dix.
+
+**UN ARRET NE COUTE PAS UNE CAPTURE, IL COUTE UN REMPLISSAGE.** Le diffuseur
+relache tout ce qui sort du rayon, donc onze arrets sont onze remplissages
+complets -- une dizaine de minutes a resolution uniforme. Quatre arrets
+rendent l'A/B REPETABLE, et c'est ce qui compte : ce depot a deja conclu sur
+des moities d'A/B qu'il n'avait pas les moyens de refaire.
+
+**PIEGE POWERSHELL, PAYE DEUX FOIS DE SUITE ET IL EST VICIEUX : LES VARIABLES
+Y SONT INSENSIBLES A LA CASSE.** Un parametre `[string]$Rendu` et une variable
+locale `$rendu` sont LA MEME VARIABLE, et le typage du parametre gagne :
+affecter un bitmap a `$rendu` le CONVERTIT silencieusement en la chaine
+« System.Collections.Hashtable ». La boucle a ensuite indexe un tableau nul
+deux millions de fois et rendu **192 Mo d'erreurs identiques** a la place
+d'une mesure. Deux regles : ne jamais reutiliser le nom d'un parametre pour
+autre chose, et **faire tomber un script de mesure TOUT DE SUITE et FORT** --
+un `Test-Path` avec `throw` en tete de script aurait coute une ligne et rendu
+l'erreur en une seconde.
