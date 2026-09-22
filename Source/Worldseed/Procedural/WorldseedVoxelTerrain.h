@@ -269,10 +269,37 @@ public:
 	// tombait exactement sur l'ancien rayon. Ne pas le remettre : si la cuisson
 	// coute trop cher, la reponse est de la faire de facon asynchrone.
 
-	/** Travaux simultanes sur le pool de fils. */
+	/**
+	 * Travaux simultanes sur le pool de fils.
+	 *
+	 * PORTE DE 24 A 64 LE 22 SEPTEMBRE, SUR MESURE, ET C'EST UN LEVIER DE
+	 * LATENCE, PAS DE TRAME. Un travail de maillage dure 8 a 9 ms quand la
+	 * passe de diffusion revient toutes les 100 : au plus `MaxJobsInFlight`
+	 * d'entre eux peuvent donc etre lances ET recoltes par passe, ce qui borne
+	 * le debit de pose a `MaxJobsInFlight / UpdatePeriod`, quel que soit le
+	 * budget de televersement.
+	 *
+	 * LE MODELE A ETE VALIDE PAR DEUX PREDICTIONS ANNONCEES AVANT LECTURE :
+	 *
+	 *   poses 16, travaux  24  ->  160/s  ->  20 s de remplissage
+	 *   poses 32, travaux  24  ->  240/s  ->  15 s   (les travaux bornent)
+	 *   poses 64, travaux  24  ->  240/s  ->  15 s   <- predit, verifie
+	 *   poses 32, travaux  64  ->  320/s  ->  12 s   (les poses bornent)
+	 *   poses 32, travaux 128  ->  320/s  ->  12 s   <- predit, verifie
+	 *
+	 * Les deux robinets se passent le relais : ouvrir celui qui ne borde pas
+	 * ne donne RIEN, et c'est ce qu'il faut savoir avant de regler l'un ou
+	 * l'autre au jugé.
+	 *
+	 * CE QUE CA COUTE : rien. La trame s'ameliore meme -- 4,84 a 4,30 ms, 207
+	 * a 233 images par seconde, pire trame 8,15 a 6,12 -- parce que le
+	 * transitoire de remplissage dure moins longtemps. Le maillage ralentit un
+	 * peu par travail (8,4 a 9,3 ms, contention sur le pool), mais le debit
+	 * total monte.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
-		meta = (ClampMin = "1", ClampMax = "64"))
-	int32 MaxJobsInFlight = 24;
+		meta = (ClampMin = "1", ClampMax = "256"))
+	int32 MaxJobsInFlight = 64;
 
 	/**
 	 * Chunks televerses par passe.
@@ -293,10 +320,16 @@ public:
 	 * deja sur le pool de fils, et la cuisson de collision est asynchrone
 	 * depuis longtemps -- la note du depot qui affirme le contraire est
 	 * perimee.
+	 *
+	 * PORTE DE 16 A 32 LE 22 SEPTEMBRE, avec `MaxJobsInFlight` a 64. Les deux
+	 * vont ENSEMBLE : ouvrir l'un sans l'autre ne donne rien, l'autre bornant
+	 * aussitot (voir la table de `MaxJobsInFlight`). A trente-deux poses par
+	 * passe, le fil de jeu paie 32 x 0,16 = 5 ms toutes les 100 -- cinq pour
+	 * cent -- et seulement pendant le remplissage.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
-		meta = (ClampMin = "1", ClampMax = "64"))
-	int32 UploadsPerPass = 16;
+		meta = (ClampMin = "1", ClampMax = "256"))
+	int32 UploadsPerPass = 32;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
 		meta = (ClampMin = "0.05"))
@@ -446,18 +479,39 @@ private:
 	}
 
 	/**
-	 * Le niveau REELLEMENT emis en un point, obtenu par la MEME descente que la
-	 * diffusion.
+	 * Le niveau REELLEMENT emis en un point, LU dans l'ensemble des feuilles.
+	 * INDEX_NONE si aucune feuille ne couvre ce point.
 	 *
-	 * IL NE SUFFIT PAS DE LIRE UNE DISTANCE. Deux chunks de niveaux differents
-	 * n'ont pas le meme centre, donc un critere pose sur la distance seule peut
-	 * faire emettre les deux -- geometrie en double -- ou aucun des deux -- trou.
-	 * La seule definition sure est celle que la diffusion applique : on descend
-	 * depuis le niveau le plus grossier en subdivisant tant que le noeud qui
-	 * contient le point est assez proche. Meme predicat, donc resultat coherent
-	 * par construction.
+	 * IL Y AVAIT ICI UNE DESCENTE, et son commentaire promettait « meme
+	 * predicat, donc resultat coherent par construction ». C'etait vrai tant
+	 * que la partition etait une FONCTION DU POINT. Elle a cesse de l'etre le
+	 * jour ou le 2:1 a du etre equilibre : l'equilibrage regarde les voisins,
+	 * donc le niveau d'une feuille depend de ses voisines et non plus d'elle
+	 * seule. Aucune descente ponctuelle ne peut plus la reproduire, si fidele
+	 * soit-elle au predicat.
+	 *
+	 * On LIT donc l'ensemble emis. Une source de verite au lieu de deux
+	 * calculs qu'on espere d'accord -- et le desaccord, ici, serait une
+	 * fissure que rien ne signale.
 	 */
-	int32 NiveauEn(const FVector& PointM, const FVector& OrigineM) const;
+	int32 NiveauEmis(const FVector& PointM) const;
+
+	/**
+	 * Le niveau d'un point, MEME s'il n'est pas maille.
+	 *
+	 * Ne sert qu'a DECRIRE -- le filet du joueur pendant la mise en place, et
+	 * le releve d'ecran -- jamais a decider d'une face de transition. Hors de
+	 * l'ensemble emis il retombe sur la distance seule, qui est le critere
+	 * principal et ne depend d'aucun voisin.
+	 */
+	int32 NiveauEstime(const FVector& PointM, const FVector& OrigineM) const;
+
+	/**
+	 * Equilibre l'ensemble emis pour que deux feuilles voisines ne different
+	 * jamais de plus d'un niveau, et retient cet ensemble.
+	 */
+	void Equilibrer(TArray<TPair<FWorldseedChunkKey, double>>& Feuilles,
+		const FVector& OrigineM);
 
 	/**
 	 * Les faces de ce chunk qui bordent un voisin PLUS FIN.
@@ -466,11 +520,18 @@ private:
 	 * place dans le bloc GROSSIER, parce que c'est lui qui a trop peu
 	 * d'echantillons. Le niveau le plus fin n'en a donc jamais.
 	 */
-	uint8 MasqueDe(const FWorldseedChunkKey& Key, const FVector& OrigineM) const;
+	uint8 MasqueDe(const FWorldseedChunkKey& Key) const;
 
-	/** Descend un noeud jusqu'aux feuilles de la partition, et les collecte. */
+	/**
+	 * Descend un noeud jusqu'aux feuilles de la partition, et les collecte.
+	 *
+	 * `bEmissionForcee` leve le filtre de rayon pour CE noeud seulement : il
+	 * sert a l'equilibrage, qui ouvre un noeud deja charge et dont certains
+	 * enfants tombent hors du rayon.
+	 */
 	void Enumerer(const FWorldseedChunkKey& Key, const FVector& OrigineM,
-		TArray<TPair<FWorldseedChunkKey, double>>& Sortie) const;
+		TArray<TPair<FWorldseedChunkKey, double>>& Sortie,
+		bool bEmissionForcee = false) const;
 
 	/** Lance le maillage d'un chunk sur le pool de fils. */
 	/** Bornes d-altitude d-une colonne de chunks, par le cache. */
@@ -754,6 +815,27 @@ private:
 	int32 UpdateCount = 0;
 
 	/**
+	 * L'ensemble des feuilles REELLEMENT emises a la derniere passe.
+	 *
+	 * C'EST LA SOURCE DE VERITE DE LA PARTITION, et elle a remplace une
+	 * descente ponctuelle. Tant que le niveau d'un noeud ne dependait que de sa
+	 * position, deux calculs separes -- l'un pour emettre, l'autre pour savoir
+	 * quel niveau porte un voisin -- pouvaient rester d'accord a condition de
+	 * partager leur predicat. L'equilibrage 2:1 a supprime cette condition : le
+	 * niveau d'une feuille depend desormais de ses VOISINES, donc aucune
+	 * fonction du point seul ne peut le redonner.
+	 *
+	 * Le masque de transition lit donc cet ensemble. Une fissure ne se signale
+	 * pas -- le masque s'arme quand meme, la geometrie reste combinatoirement
+	 * close, et le trou ne se voit qu'a l'oeil sur une jointure precise --
+	 * c'est pourquoi on ne peut pas se permettre deux reponses possibles.
+	 */
+	TSet<FWorldseedChunkKey> FeuillesCourantes;
+
+	/** Feuilles ajoutees par l'equilibrage a la derniere passe. Diagnostic. */
+	int32 EquilibrageAjouts = 0;
+
+	/**
 	 * Les chunks portent-ils leur ombre ? OUI, sauf pendant une mesure.
 	 *
 	 * ELLE N-EST PAS UN REGLAGE, C-EST UN INSTRUMENT. Le moteur signale a
@@ -790,8 +872,21 @@ private:
 
 	int32 CurseurMasque = 0;
 
-	/** Une seule alerte par partie : l ecart 2:1 est une propriete, pas un compteur. */
-	mutable bool bEcart2a1Signale = false;
+	/**
+	 * Dernier compte d ecarts 2:1 JOURNALISE, pour ne parler qu au changement.
+	 *
+	 * IL Y AVAIT ICI UN VERROU -- « une seule alerte par partie : l ecart 2:1
+	 * est une propriete, pas un compteur ». L intention etait bonne, la
+	 * consequence non : le 22 septembre l alerte est sortie a la TRAME 3,
+	 * pendant le premier remplissage, quand la partition n a pas encore de
+	 * forme stable -- puis le controle s est tu pour toujours. Il etait alors
+	 * impossible de savoir si le defaut PERSISTAIT ou s il etait transitoire,
+	 * et c est pourtant la seule question qui compte.
+	 *
+	 * Une propriete de surete doit repondre a « est-ce vrai MAINTENANT », pas
+	 * a « est-ce arrive une fois ». -1 signifie « jamais rien dit ».
+	 */
+	int32 DernierEcart2a1Dit = -1;
 
 	TMap<FWorldseedChunkKey, FWorldseedVoxelChunkState> Chunks;
 

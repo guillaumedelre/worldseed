@@ -6735,3 +6735,145 @@ moitie il est (« ombre portee des chunks ACTIVE / COUPEE »). Un releve qui ne
 porte pas sa configuration ne se compare a rien six mois plus tard -- ce depot a
 deja compare deux releves pris dans deux etats differents du code en croyant
 qu'ils etaient comparables.
+
+### La latence est un ROBINET, et le terrain n'est pas le cout (22 septembre 2026)
+
+Suite de la session d'instrumentation, et elle REFUTE le chantier qu'elle avait
+elle-meme recommande. A lire avant de rouvrir la question du nombre de chunks.
+
+#### Le terrain voxel ne coute presque rien, et c'est mesure
+
+Balayage croise `NiveauMax` x `rugositeMin`, monde 4096x2048, vue 1200 m,
+banc en jeu avec `-WorldseedCielClair` :
+
+| configuration | chunks | triangles | trame | GPU |
+|---|---|---|---|---|
+| 3 anneaux, rugosite 0 | **2346** | 3 049 232 | 4,44 ms | 3,46 |
+| 3 anneaux, rugosite 0,20 | 2314 | 2 985 964 | 4,47 | 3,46 |
+| 3 anneaux, rugosite 0,35 | 2033 | 2 495 611 | 4,44 | 3,46 |
+| 4 anneaux, rugosite 0,35 | **30** | 62 360 | **4,09** | **3,38** |
+
+**TRENTE CHUNKS AU LIEU DE DEUX MILLE TROIS CENT QUARANTE-SIX -- soixante-dix-huit
+fois moins -- POUR HUIT POUR CENT DE TRAME.** Et le GPU ne bouge que de 3,46 a
+3,38 entre trois millions et soixante-deux mille triangles : ce qu'il fait n'est
+pas de la geometrie, c'est du travail plein ecran. Il existe un PLANCHER d'environ
+quatre millisecondes qui ne vient pas du terrain.
+
+**CONSEQUENCE : on n'arme PAS `rugositeMin`.** Elle rend 13 % de chunks en moins
+pour 0 % de trame, et l'equilibrage 2:1 qu'elle exige coute 3 ms de passe. Le
+levier existe, il est correct, il ne sert a rien ici.
+
+#### « Limite par le fil de RENDU » N'EST PAS ETABLI
+
+Le banc rapporte les quatre fils depuis les globales du moteur, et son verdict
+designe le fil de rendu. **Ce verdict est douteux, et le signe est celui que ce
+depot connait par coeur** : `rendu` vaut `trame` au centieme dans TOUTES les
+mesures -- 4,43/4,44, 4,46/4,47, 4,08/4,09, 4,29/4,30 -- sur des charges qui
+vont de 30 a 2390 chunks. Deux nombres qui restent colles sur des charges sans
+rapport ne mesurent pas une charge.
+
+**`GRenderThreadTime` inclut les ATTENTES du fil de rendu.** Un fil qui attend le
+GPU ou le fil de jeu voit son temps egaler la trame sans en etre la cause. Meme
+famille que le `frame_ms == gpu_ms` du bridage d'editeur. Le banc garde le
+verdict parce qu'il reste une indication, mais il ne faut pas en tirer de
+conclusion sans un profil qui separe le travail de l'attente.
+
+#### Le remplissage est borne par DEUX robinets qui se passent le relais
+
+C'EST LA REPONSE A « peut-on multithreader pour ne plus voir la generation ».
+Non : le maillage est DEJA hors du fil de jeu, et il tourne tres en dessous de
+ses moyens. Ce qui borne est une paire de constantes.
+
+    debit = min( UploadsPerPass / UpdatePeriod ,  MaxJobsInFlight / UpdatePeriod )
+
+Un travail de maillage dure 8 a 9 ms quand la passe revient toutes les 100 : au
+plus `MaxJobsInFlight` d'entre eux peuvent etre lances ET recoltes par passe.
+
+**LE MODELE A ETE VALIDE PAR DEUX PREDICTIONS ANNONCEES AVANT LECTURE**, ce qui
+vaut mieux qu'un ajustement apres coup :
+
+    poses 16, travaux  24  ->  160/s  ->  20 s de remplissage
+    poses 32, travaux  24  ->  240/s  ->  15 s   (les TRAVAUX bornent)
+    poses 64, travaux  24  ->  240/s  ->  15 s   <- predit, verifie
+    poses 32, travaux  64  ->  320/s  ->  12 s   (les POSES bornent de nouveau)
+    poses 32, travaux 128  ->  320/s  ->  12 s   <- predit, verifie
+
+**Retenu : 32 poses et 64 travaux. Remplissage 20 -> 12 s, soit -40 %, ET LA
+TRAME S'AMELIORE** -- 4,84 a 4,30 ms, 207 a 233 images par seconde, pire trame
+8,15 a 6,12 -- parce que le transitoire dure moins longtemps. Le maillage
+ralentit un peu par travail (8,4 a 9,3 ms, contention sur le pool) et le debit
+total monte quand meme.
+
+**OUVRIR UN SEUL DES DEUX NE DONNE RIEN.** C'est le piege de ce reglage, et il
+explique pourquoi le passage de 6 a 16 du 19 septembre n'avait pas rendu tout ce
+qu'on en attendait : les travaux bornaient deja.
+
+#### L'equilibrage 2:1 : une preuve du depot etait fausse
+
+`NoeudAccidente` portait cette preuve : « si un noeud A se subdivise, son emprise
+elargie est accidentee ; cette emprise contient ses voisins, donc chaque voisin
+se subdivise aussi ». Elle est JUSTE A UN NIVEAU DONNE et FAUSSE d'un niveau a
+l'autre, parce que le seuil est une PENTE -- donc divise par deux a chaque cran :
+
+    C (niveau L-1) descend si  etendue >= R x 3 x Cote(L) / 2
+    A (niveau L)   descend si  etendue >= R x 3 x Cote(L)
+
+Entre les deux seuils, C descend et A reste : deux crans d'ecart. **Une grandeur
+sans dimension ne peut pas etre monotone contre un seuil qui change d'echelle** :
+aucune retouche locale ne ferme cela en gardant l'invariance d'echelle.
+
+D'ou une passe `Equilibrer` sur l'ENSEMBLE EMIS, et sa consequence : `NiveauEn`
+a disparu. Tant que la partition etait une fonction du POINT, une descente
+ponctuelle pouvait la reproduire ; l'equilibrage regarde les VOISINS, donc le
+niveau d'une feuille depend de ses voisines. Le masque de transition LIT
+desormais `FeuillesCourantes` -- une source de verite au lieu de deux calculs
+qu'on espere d'accord.
+
+**TROIS DEFAUTS DE MA PROPRE PASSE, tous trouves par la mesure suivante :**
+
+- *je sondais depuis le mauvais cote.* Chaque feuille GROSSIERE sondait ses six
+  faces en leur centre. Or la face d'un chunk de niveau 3 touche jusqu'a
+  SOIXANTE-QUATRE chunks de niveau 0 : un point par face n'en voit qu'un. Mesure
+  du defaut : « 87 sur 512 feuilles » en regime etabli, apres equilibrage.
+  **Sonder depuis le cote FIN est complet par construction** -- le point juste
+  au-dela d'une face tombe forcement DANS la feuille qui couvre cette position,
+  puisqu'un voisin plus grossier est plus GRAND que le point sonde. On marque
+  alors le VOISIN, pas soi-meme. Apres : zero violation sur 2113 feuilles ;
+- *mon controle se verrouillait.* « Une seule alerte par partie » : il a crie a
+  la TRAME 3, pendant le premier remplissage, puis s'est tu pour toujours --
+  impossible de savoir si le defaut persistait, ce qui est la seule question qui
+  compte ;
+- *puis il a compte sur une FENETRE TOURNANTE.* Le balayage des masques
+  n'examine que 512 feuilles par passe, avec un curseur qui tourne : le compte
+  sautait de 87 a 0 et revenait. **Un controle dont la valeur depend de la
+  fenetre qu'on regarde mesure la fenetre, pas la propriete.** Il vit desormais
+  dans la passe d'equilibrage, qui parcourt TOUT, et il y est gratuit.
+
+#### Trois pieges de methode, payes le meme jour
+
+- **EXPLIQUER N'EST PAS VERIFIER.** Devant deux releves identiques a 0,00 et
+  0,10, j'ai produit une explication plausible -- « le seuil ne coupe rien a
+  0,10 » -- qui n'a pas survecu a la TROISIEME passe identique. La vraie cause
+  etait que les anneaux vont a 300/600/1200 pour une vue de 1200 : le dernier
+  touche deja le rayon, donc la rugosite n'avait AUCUNE COURSE. Le chiffre du
+  registre (2165 -> 255) tournait a QUATRE niveaux, pas trois : un releve ne se
+  compare qu'a configuration egale.
+- **LE PIEGE DES DEUX CHIFFRES IDENTIQUES, rencontre deux fois de plus** -- une
+  fois a tort (trois rugosites identiques : le reglage etait bien lu, il etait
+  sans effet) et une fois a raison (`rendu` colle a `trame`). Le signe merite
+  toujours une verification, jamais une conclusion.
+- **UN A/B PAR LANCEMENTS SUCCESSIFS SE FAIT AVEC `-WorldseedCielClair`.** J'ai
+  lance le premier sans, alors que ce fichier porte deja la note. Mesure jetee,
+  montage refait. Le journal doit montrer « horloge figee sur N acteur(s) UDS ».
+
+#### Ce qui reste ouvert
+
+- **Le plancher de 4 ms n'est pas explique.** A 30 chunks et 62 000 triangles,
+  la trame vaut encore 4,09 ms dont 3,38 de GPU. C'est du travail plein ecran --
+  atmosphere, post-traitement, eclairage -- ou le sol de fond. C'est LA qu'il
+  faut chercher si l'on veut vraiment gagner, et non dans le terrain.
+- **La pire passe de diffusion monte a 40 ms** avec 64 travaux, pendant le
+  remplissage. Hors de la fenetre de mesure stabilisee, donc sans effet sur la
+  pire TRAME relevee (6,12 ms), mais a surveiller.
+- **Les jointures n'ont pas ete regardees** depuis l'equilibrage corrige. Une
+  forme qui n'a pas ete vue n'est pas validee.
