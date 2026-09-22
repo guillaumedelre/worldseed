@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedClimatePreset.h"
+#include "Procedural/WorldseedApparence.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
@@ -49,49 +50,6 @@ enum class EWorldseedTerrainColouring : uint8
 	TexturePack		UMETA(DisplayName = "Pack de textures"),
 };
 
-
-/** Ce que le terrain doit ecrire dans chaque sommet, selon le mode courant. */
-struct FWorldseedAppearance
-{
-	bool bTexturePack = false;
-	bool bColourByBiome = false;
-	bool bHasClimate = false;
-	bool bHasCover = false;
-
-	/**
-	 * Peindre en MER tout ce qui est sous le niveau zero.
-	 *
-	 * RESERVE AU SOL DE FOND, et il ne faut surtout pas l'armer ailleurs.
-	 * Sous les pieds du joueur, on VOIT le fond a travers l'eau -- c'est le
-	 * degrade turquoise du rivage -- et peindre ce fond en bleu opaque
-	 * detruirait precisement ce que la nappe du plugin rend bien.
-	 *
-	 * Le sol de fond, lui, n'est jamais sous de l'eau RENDUE : la nappe
-	 * glissante du plugin ne couvre qu'une fenetre autour du joueur, et
-	 * au-dela il n'y a rien. Le plateau cotier s'y dessinait donc A SEC,
-	 * peint en plage par son biome -- d'ou un trait DROIT en travers du
-	 * paysage la ou la fenetre s'arrete. Peint en mer, ce qui est derriere
-	 * la couture a la couleur de ce qui est devant, et la couture cesse de
-	 * se voir.
-	 */
-	bool bMerOpaque = false;
-
-	/**
-	 * Peindre cette meme zone en MAGENTA, pour la voir.
-	 *
-	 * POURQUOI UN TEMOIN DE COULEUR PLUTOT QU'UN A/B. Deux lancements de ce
-	 * jeu n'ont PAS le meme eclairage -- l'horloge d'UDS tourne, et trente
-	 * secondes d'ecart au chargement font douze minutes de jeu. Mesure : sur
-	 * un A/B au meme point et au meme cap, la crete rocheuse temoin, que le
-	 * traitement ne peut pas toucher, a bouge de 101 sur 765 quand la zone
-	 * testee bougeait de 15. Le bruit depassait le signal d'un facteur sept.
-	 *
-	 * Une couleur franche ne se compare a rien : elle est la ou elle n'est
-	 * pas. C'est le seul controle qui dise, sans temoin et sans A/B, si le
-	 * chemin s'execute ET si son resultat atteint l'ecran.
-	 */
-	bool bMerTemoin = false;
-};
 
 /**
  * Terrain procedural construit au runtime, decoupe en chunks.
@@ -430,9 +388,28 @@ protected:
 	 * cette regle finiraient par diverger, et la difference se verrait
 	 * exactement la ou les deux maillages se rencontrent.
 	 */
-	void ComputeVertexAppearance(int32 Cell, float HeightM, const FVector& Normal,
-		const FWorldseedAppearance& Mode, FLinearColor& OutColour,
-		FVector2D& OutTintRG, FVector2D& OutTintB) const;
+	/**
+	 * Les seuils de surface, rassembles pour etre passes d'un bloc.
+	 *
+	 * Ils restent editables sur l'acteur -- c'est la ou un auteur les regle --
+	 * mais le CALCUL qui les consomme a quitte cette classe. Les recopier dans
+	 * une structure a chaque appel coute huit flottants ; les laisser se lire
+	 * un par un depuis le calcul aurait rendu celui-ci dependant de l'acteur,
+	 * donc intestable.
+	 */
+	FWorldseedSurfaceRegles ReglesSurface() const
+	{
+		FWorldseedSurfaceRegles R;
+		R.RockSlopeStartDeg = RockSlopeStartDeg;
+		R.RockSlopeFullDeg = RockSlopeFullDeg;
+		R.BeachTopM = BeachTopM;
+		R.SnowTempC = SnowTempC;
+		R.SnowTempFullC = SnowTempFullC;
+		R.AridMm = AridMm;
+		R.LushMm = LushMm;
+		R.CoverTint = CoverTint;
+		return R;
+	}
 
 	/**
 	 * Construit le SOL DE FOND : tout le monde, en basse resolution.
