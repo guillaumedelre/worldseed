@@ -754,6 +754,20 @@ private:
 	int32 UpdateCount = 0;
 
 	/**
+	 * Les chunks portent-ils leur ombre ? OUI, sauf pendant une mesure.
+	 *
+	 * ELLE N-EST PAS UN REGLAGE, C-EST UN INSTRUMENT. Le moteur signale a
+	 * l-ecran un debordement de la file de marquage du VSM, cause par le
+	 * nombre de nos chunks non-Nanite qui couvrent beaucoup de pages d-ombre.
+	 * Le repli du shader est CORRECT mais plus lent ; personne ne sait
+	 * combien. Cette bascule sert a le chiffrer par un A/B sur la meme
+	 * binaire -- `-WorldseedOmbres=0` -- et non a livrer un monde sans ombre
+	 * portee. Elle n-est donc PAS une UPROPERTY : il ne faut pas pouvoir la
+	 * poser par megarde dans un Blueprint.
+	 */
+	bool bOmbresChunks = true;
+
+	/**
 	 * Bornes d-altitude par colonne et par niveau, calculees UNE FOIS.
 	 *
 	 * MESURE : la passe de diffusion coutait 13,65 ms a 2400 m -- soit le pic de
@@ -815,6 +829,27 @@ private:
 	double TotalUploadMs = 0.0;
 	double WorstUploadMs = 0.0;
 	int32 UploadCount = 0;
+
+	/**
+	 * Temps passe sur le FIL DE JEU a peindre les sommets, et le nombre peint.
+	 *
+	 * IL EXISTE PARCE QUE LA MESURE D'A COTE L'EXCLUAIT. Le chrono du
+	 * televersement demarrait APRES `PaintVertices` : le « 0,21 ms par chunk »
+	 * qui a justifie de porter `UploadsPerPass` de 6 a 16 ne mesurait pas
+	 * cette passe, qui echantillonne le relief en BICUBIQUE pour chaque
+	 * sommet -- seize lectures dispersees -- plus une descente dans la pile
+	 * stratigraphique.
+	 *
+	 * ON COMPTE AUSSI LES SOMMETS, et ce n'est pas du luxe : un temps par
+	 * CHUNK ne se compare a rien, puisqu'un chunk plat et une paroi n'en
+	 * portent pas le meme nombre. Le cout par SOMMET, lui, est la grandeur
+	 * qui dit si le traitement est cher ou si c'est la geometrie qui est
+	 * abondante -- et ce sont deux remedes opposes.
+	 */
+	double TotalPaintMs = 0.0;
+	double WorstPaintMs = 0.0;
+	int64 TotalPaintVerts = 0;
+
 	double FirstFillSeconds = 0.0;
 	double StartSeconds = 0.0;
 };

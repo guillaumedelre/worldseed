@@ -4,6 +4,7 @@
 
 #include "Procedural/WorldseedFlow.h"
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
 
@@ -49,6 +50,8 @@ void WorldseedFields::Compute(const FWorldseedGeometry& Geometry,
 	const TArray<float>& ElevationM, const TArray<float>& PrecipMm,
 	const FWorldseedGroundRules& Rules, FWorldseedGroundFields& Out)
 {
+	WORLDSEED_TRACE(ChampsDuSol);
+
 	const double StartTime = FPlatformTime::Seconds();
 
 	const int32 NX = Geometry.NX;

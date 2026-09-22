@@ -9,6 +9,7 @@
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedStrata.h"
+#include "Procedural/WorldseedTrace.h"
 
 FWorldseedPlateauRules FWorldseedPlateauRules::FromRules(const UWorldseedRules& Rules)
 {
@@ -435,6 +436,8 @@ void WorldseedPlateau::Build(const FWorldseedGeometry& Geometry,
 	TArray<float>& ElevationM,
 	TArray<FWorldseedPlateauSite>* OutSites)
 {
+	WORLDSEED_TRACE(Plateaux);
+
 	using namespace WorldseedPlateauDetail;
 
 	const double Debut = FPlatformTime::Seconds();

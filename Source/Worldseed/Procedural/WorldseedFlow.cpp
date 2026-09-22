@@ -1,6 +1,7 @@
 // Worldseed - drainage : comblement, directions D8, accumulation.
 
 #include "Procedural/WorldseedFlow.h"
+#include "Procedural/WorldseedTrace.h"
 #include "Async/ParallelFor.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -48,6 +49,8 @@ namespace WorldseedFlow
 	void Compute(const TArray<float>& DemM, const TArray<float>& Weight,
 		int32 NX, int32 NY, float SeaLevelM, float EpsilonM, FWorldseedFlow& Out)
 	{
+		WORLDSEED_TRACE(Drainage);
+
 		const int32 Count = NX * NY;
 		if (NX < 2 || NY < 2 || DemM.Num() != Count)
 		{

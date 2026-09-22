@@ -6583,3 +6583,155 @@ gagnee**. Arbitrage non tranche.
 que l'EROSION appelle a chaque passe, trois cents fois par generation. Le
 gain devrait s'y retrouver ; il faudrait une regeneration complete pour le
 chiffrer.
+
+### Le projet etait INVISIBLE dans Insights, et le message jaune ne coute rien (22 septembre 2026)
+
+Trois questions posees le meme jour -- le message jaune du moteur, le
+multithreading, et « est-ce que des tests existent » -- et la reponse aux trois
+a commence par la meme chose : instrumenter, puis mesurer.
+
+**ZERO MARQUEUR DE PROFILAGE DANS QUARANTE MILLE LIGNES.**
+`grep -rn "TRACE_CPUPROFILER_EVENT_SCOPE" Source/Worldseed/` ne rendait RIEN.
+Quand on ouvrait une trace Unreal Insights, tout Worldseed etait invisible : on
+ne voyait que les marqueurs du moteur, et la seule mesure disponible etait un
+agregat. C'est exactement ce qui a rendu possible le piege du bridage de
+l'editeur -- « une journee entiere de conclusions de performance batie
+dessus ». Corrige : `WorldseedTrace.h` et sa macro `WORLDSEED_TRACE(Nom)`, qui
+impose le prefixe `Worldseed_` pour qu'une passe se filtre d'un mot dans une
+trace. Dix-huit marqueurs poses. **Cout nul** : la macro d'Epic se reduit a du
+vide en build final, et ne coute en developpement que si une trace tourne.
+
+**ET LE BANC NE SAVAIT PAS DIRE « LIMITE PAR QUOI ».** Il ne rapportait que la
+trame entiere. Or c'est la PREMIERE question de toute mesure de performance, et
+sans elle on optimise au hasard. Ajoute : les quatre fils, lus sur les globales
+du moteur (`GGameThreadTime`, `GRenderThreadTime`, `GRHIThreadTime`,
+`RHIGetGPUFrameCycles`) et **non** via `FStatUnitData`, qui n'est rempli que par
+son propre affichage (`UnrealClient.cpp:361`) et rendrait zero quand `stat unit`
+est eteint.
+
+**LE GOULOT EST LE FIL DE RENDU, ET CE N'ETAIT PAS SU.**
+
+    trame 4,69 ms (213 img/s)
+    jeu 2,07  |  rendu 4,68  |  RHI 2,60  |  GPU 3,59
+
+Avec 2390 chunks, soit autant de `ProceduralMeshComponent` a soumettre. Ni le
+GPU ni le fil de jeu ne limitent. **Tout gain GPU est donc largement perdu**, et
+le levier utile est le nombre de PRIMITIVES, pas les triangles ni les pixels.
+
+#### Le message jaune : diagnostic exact, et son prix
+
+    [VSM] Non-Nanite Marking Job Queue overflow. Performance may be affected.
+
+- texte : `VirtualShadowMapCacheManager.cpp:1081` ;
+- mecanique : une instance dont le rectangle depasse HUIT pages
+  (`MAX_SINGLE_THREAD_MARKING_AREA`) devient un « gros travail » et prend une
+  place dans une file de 128 (`MARKING_JOB_QUEUE_SIZE = NUM_THREADS_PER_GROUP * 2`,
+  avec `NumThreadsPerGroup = 64`). Cette file est une constante de **COMPILATION
+  du shader** : **AUCUNE variable de console ne la leve**, ne pas la chercher ;
+- au debordement, le shader retombe sur un marquage MONO-THREAD. Le resultat
+  reste JUSTE : c'est un avertissement de PERFORMANCE, jamais un artefact -- le
+  meme `switch` du moteur annonce explicitement « will produce visual artifacts »
+  pour `PagePool` et `VisibleInstances`, et **ne le dit pas** pour celui-ci ;
+- chez nous : des milliers de `ProceduralMeshComponent` de 32 m, qui ne peuvent
+  pas etre Nanite, tous en `SetCastShadow(true)`. Le sol de fond est HORS DE
+  CAUSE, il est deja en `SetCastShadow(false)`.
+
+**MESURE, A/B sur la MEME binaire** (`-WorldseedOmbres=0`), meme monde --
+2390 chunks, 3 142 750 triangles et 1 675 321 sommets des deux cotes, donc la
+comparaison porte bien sur la meme geometrie :
+
+| | ombres ON | ombres OFF | ecart |
+|---|---|---|---|
+| trame | 4,69 ms | 4,40 ms | **+0,29 ms** |
+| images/s | 213 | 227 | -14 |
+| fil de rendu | 4,68 | 4,39 | +0,29 |
+| GPU | 3,59 | 3,34 | +0,25 |
+| pire trame | 9,37 | 7,66 | +1,71 |
+
+**TOUTE l'ombre portee du terrain coute 0,29 ms sur un budget de 16,67, soit
+1,7 %. Et le debordement n'en est qu'une PART** -- le reste est le rendu de
+profondeur des ombres, qu'on veut garder. **0,29 ms est donc le PLAFOND du cout
+du debordement, pas sa valeur.** Couper les ombres du relief pour faire taire
+l'avertissement serait un tres mauvais marche.
+
+**ATTENTION SI L'ON VEUT MASQUER LE MESSAGE** :
+`r.Shadow.Virtual.AllowScreenOverflowMessages=0` masque les QUATRE messages de
+debordement du VSM, dont deux -- `PagePool` et `VisibleInstances` -- signalent
+de VRAIS artefacts. On perdrait un avertissement utile pour en cacher un
+inoffensif.
+
+#### Une mesure fausse dont la conclusion etait juste
+
+Le chrono du televersement demarrait APRES `PaintVertices` : le « 0,21 ms par
+chunk » qui a justifie de porter `UploadsPerPass` de 6 a 16 **n'incluait pas la
+peinture des sommets**, laquelle echantillonne le relief en BICUBIQUE -- seize
+lectures dispersees -- pour chaque sommet.
+
+**J'EN AI CONCLU QUE C'ETAIT CHER. LA MESURE M'A REFUTE** : 0,08 ms par chunk
+contre 0,17 pour le televersement, soit **0,075 us par sommet**. La bicubique ne
+coute rien parce que des sommets voisins retombent dans les memes lignes de
+cache. Il ne faut donc PAS deplacer cette passe sur le fil de travail -- ce que
+j'allais recommander. La mesure etait bien faussee, d'un tiers ; la conclusion
+qu'elle soutenait tenait quand meme.
+
+**LE COUT PAR SOMMET EST LA GRANDEUR QUI TRANCHE**, pas le cout par chunk : un
+chunk plat et une paroi ne portent pas le meme nombre de sommets, donc un temps
+par chunk ne se compare a rien. S'il est eleve, c'est le traitement qu'il faut
+deplacer ; s'il est faible, c'est qu'il y a beaucoup de geometrie et le remede
+est ailleurs.
+
+#### Le threading etait DEJA bon, et le conseil courant ne s'applique pas ici
+
+Trace dans la source d'UE 5.8 plutot que suppose :
+
+    LaunchEngineLoop.cpp:2621   GLargeThreadPool = new FQueuedLowLevelThreadPool();
+    LaunchEngineLoop.cpp:2630   GThreadPool = new FQueuedThreadPoolWrapper(GLargeThreadPool, N);
+    QueuedThreadPool.h:18       EQueuedWorkPriority::Normal = 3
+    QueuedThreadPoolWrapper.h:490  TaskPriorityMapper[3] -> ETaskPriority::BackgroundNormal
+
+**`Async(EAsyncExecution::ThreadPool)` tourne DEJA en priorite d'arriere-plan,
+sur le meme ordonnanceur bas niveau que `UE::Tasks` et `ParallelFor`.** Ce n'est
+pas un pool de threads OS separe, il ne vole rien au rendu. Migrer vers
+`UE::Tasks::Launch` ne donnerait donc AUCUN gain de performance -- seulement de
+l'ergonomie (`TryCancel`, priorite ecrite dans le code, `Pipe`, `Wait`). Le
+conseil qu'on lit partout ne s'applique pas a ce cas.
+
+**ET « NE PLUS VOIR LA GENERATION SE FAIRE » N'EST PAS UN PROBLEME DE THREADS.**
+Le maillage est hors du fil de jeu, le fil de jeu est a 2,07 ms pour un budget
+de 16,67 : ajouter des fils ne changerait rien. Ce qui se voit est de la
+LATENCE. Les leviers sont la prediction par la vitesse du joueur, le tri des
+candidats par le champ de vision et non par la seule distance, et les anneaux --
+deja en place, et mesures ici a 1277 / 637 / 476 chunks pour 1200 m de vue.
+
+#### AUCUN test automatique n'existe, et les commits `test(...)` n'en sont pas
+
+`grep -rl "IMPLEMENT_SIMPLE_AUTOMATION_TEST" Source/` ne rend RIEN. Les vingt
+commits `test(...)` de l'historique sont des SONDES : elles mesurent, un humain
+lit le journal, et **aucune ne peut echouer toute seule**. La distinction n'est
+pas de vocabulaire -- le registre ci-dessus est litteralement la liste des
+defauts qui sont passes inapercus faute d'un oracle automatique.
+
+Rien a installer pour y remedier : `#if WITH_DEV_AUTOMATION_TESTS` dans le
+module de jeu, et `-ExecCmds="Automation RunTests Worldseed;Quit"` en
+commandlet. Les six qui auraient attrape de VRAIS defauts de ce depot, dont
+trois ont deja leur oracle ecrit : l'enroulement Transvoxel contre le gradient
+(`ProbeVoisins`), l'aller-retour du cache, les 23 climats reels contre
+`WorldseedBiomes::FromClimate`, l'empreinte du drainage (somme et pic, deja
+journalisee), les invariants de bout en bout (terres 29,2 %, pluie 715 mm,
+connexite des reseaux), et la continuite C1 de `SampleUVCubic`.
+
+#### PIEGE DE PROTOCOLE REFAIT, alors qu'il est ecrit plus haut
+
+J'ai lance le premier A/B **sans `-WorldseedCielClair`**, alors que ce fichier
+porte deja la note : l'horloge d'UDS tourne, trente secondes d'ecart au
+chargement font douze minutes de jeu, et « trois A/B de la journee sont partis
+a la poubelle pour cette seule raison ». Mesure jetee, montage refait. **Tout
+A/B par lancements successifs dans ce projet se fait avec ce drapeau**, et le
+journal doit montrer « horloge figee sur N acteur(s) UDS » -- sans quoi le
+releve ne vaut rien.
+
+**Corollaire pose dans le code** : le releve du banc DIT desormais de quelle
+moitie il est (« ombre portee des chunks ACTIVE / COUPEE »). Un releve qui ne
+porte pas sa configuration ne se compare a rien six mois plus tard -- ce depot a
+deja compare deux releves pris dans deux etats differents du code en croyant
+qu'ils etaient comparables.

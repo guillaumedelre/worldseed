@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedGroundProxy.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPipeline.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -75,6 +76,8 @@ void AWorldseedTerrain::BeginPlay()
 
 void AWorldseedTerrain::UpdateGroundProxyVisibility()
 {
+	WORLDSEED_TRACE(VisibiliteSolDeFond);
+
 	if (!GroundProxy)
 	{
 		return;
@@ -1191,6 +1194,8 @@ UMaterialInterface* AWorldseedTerrain::ChooseTerrainMaterial(
 // une session, le temps d-un A/B a l-image.
 void AWorldseedTerrain::BuildGroundProxy()
 {
+	WORLDSEED_TRACE(SolDeFond);
+
 	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedSansNappe")))
 	{
 		UE_LOG(LogTemp, Warning,

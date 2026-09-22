@@ -29,7 +29,16 @@ public class Worldseed : ModuleRules
 			// du monde depuis le retrait de l'hydrologie, le 18 septembre 2026.
 			"Water",
 			"SlateCore",
-			"Json"
+			"Json",
+			// Chronometrage des quatre fils, pour le banc. GGameThreadTime,
+			// GRenderThreadTime et GRHIThreadTime vivent dans RenderCore
+			// (RenderTimer.h), RHIGetGPUFrameCycles dans RHI (DynamicRHI.h).
+			// Les deux sont deja des dependances PUBLIQUES d'Engine, donc elles
+			// arrivaient par transitivite -- on les nomme quand meme : un module
+			// dont on inclut les en-tetes se declare, sans quoi le jour ou Epic
+			// les passe en prive la compilation casse sans raison visible.
+			"RenderCore",
+			"RHI"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

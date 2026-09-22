@@ -6,6 +6,7 @@
 
 #include "Procedural/WorldseedGameInstance.h"
 #include "Procedural/WorldseedPipeline.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/Async.h"
 #include "Components/SceneComponent.h"
@@ -244,6 +245,47 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		{
 			RugositeMin = Rugosite;
 			bRugositeForcee = true;
+		}
+	}
+
+	// --- L'OMBRE DES CHUNKS SE COUPE POUR LA MESURER -----------------------
+	//
+	// POURQUOI CETTE SURCHARGE EXISTE. Le moteur affiche a l'ecran :
+	//
+	//   [VSM] Non-Nanite Marking Job Queue overflow. Performance may be
+	//   affected. This occurs when many non-nanite meshes cover a large area
+	//   of the shadow map.
+	//
+	// Le mecanisme, lu dans le shader (VirtualShadowMapBuildPerPageDrawCommands.usf) :
+	// une instance dont le rectangle depasse huit pages (MAX_SINGLE_THREAD_MARKING_AREA)
+	// devient un « gros travail » et prend une place dans une file de 128
+	// (MARKING_JOB_QUEUE_SIZE = NUM_THREADS_PER_GROUP * 2). Quand la file
+	// deborde, le shader retombe sur un marquage MONO-THREAD : le resultat
+	// reste JUSTE -- ce n'est pas un artefact, contrairement aux debordements
+	// de PagePool et de VisibleInstances que le meme switch signale comme
+	// « will produce visual artifacts » -- mais il est plus lent.
+	//
+	// Cette file est une constante de COMPILATION du shader : aucune variable
+	// de console ne la leve. Les seuls leviers sont donc de reduire le nombre
+	// d'instances non-Nanite qui couvrent beaucoup de pages, ou la surface de
+	// pages elle-meme. Nos chunks sont exactement ce cas : des milliers de
+	// ProceduralMeshComponent de trente-deux metres, qui ne peuvent pas etre
+	// Nanite, tous en `SetCastShadow(true)`. Le sol de fond, lui, est hors de
+	// cause : il est deja en `SetCastShadow(false)`.
+	//
+	// AVANT DE SACRIFIER QUOI QUE CE SOIT, ON CHIFFRE. A 198 images par
+	// seconde ce n'est pas le goulot, et couper des ombres a l'aveugle pour
+	// faire taire un avertissement serait exactement ce que ce depot
+	// s'interdit. Cette bascule sert a UNE chose : mesurer l'ecart de temps
+	// GPU avec et sans, sur la MEME binaire et le MEME monde.
+	{
+		int32 Ombres = 1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedOmbres="), Ombres))
+		{
+			bOmbresChunks = (Ombres != 0);
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] voxel : ombre portee des chunks %s (mesure du VSM)"),
+				bOmbresChunks ? TEXT("ACTIVE") : TEXT("COUPEE"));
 		}
 	}
 
@@ -787,6 +829,8 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 
 void AWorldseedVoxelTerrain::UpdateChunksInterne()
 {
+	WORLDSEED_TRACE(Diffusion);
+
 	if (!bWorldReady)
 	{
 		return;
@@ -1034,6 +1078,8 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 
 void AWorldseedVoxelTerrain::LaunchJob(const FWorldseedChunkKey& Key)
 {
+	WORLDSEED_TRACE(LancerTravail);
+
 	FWorldseedVoxelChunkState& State = Chunks.FindOrAdd(Key);
 
 	FWorldseedVoxelJobPtr Job = MakeShared<FWorldseedVoxelJob, ESPMode::ThreadSafe>();
@@ -1184,6 +1230,8 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 
 void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 {
+	WORLDSEED_TRACE(PeindreSommets);
+
 	const int32 Count = Mesh.Positions.Num();
 	Mesh.Colours.SetNumUninitialized(Count);
 
@@ -1319,6 +1367,8 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	FWorldseedVoxelChunkState& State)
 {
+	WORLDSEED_TRACE(TeleverserChunk);
+
 	FWorldseedVoxelJobPtr Job = State.Job;
 	State.Job.Reset();
 
@@ -1366,7 +1416,33 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 		return;
 	}
 
+	// --- LA PEINTURE SE CHRONOMETRE A PART, ET C'EST UNE CORRECTION ---------
+	//
+	// LE CHRONO DU TELEVERSEMENT DEMARRAIT APRES CET APPEL, donc il excluait
+	// cette passe-ci. C'est sur ce chiffre ampute -- « 0,21 ms par chunk,
+	// 1,17 au pire » -- qu'on a conclu que le televersement « ne coute rien »
+	// et porte `UploadsPerPass` de 6 a 16. La conclusion est peut-etre juste ;
+	// la mesure qui la soutenait, non.
+	//
+	// ET CETTE PASSE N'EST PAS GRATUITE : elle boucle sur CHAQUE sommet et
+	// appelle `Density.SurfaceHeightM`, c'est-a-dire un echantillonnage
+	// BICUBIQUE -- seize lectures dispersees dans un tableau de plusieurs
+	// dizaines de megaoctets, donc hostiles au cache -- plus une descente dans
+	// la pile stratigraphique. Multiplie par les sommets de seize chunks par
+	// passe, sur le fil de jeu.
+	//
+	// C'est la signature que ce depot denonce ailleurs : « une mesure
+	// identique au chiffre pres sur dix cas mesure le mesureur ». Ici, un
+	// chrono place APRES le traitement mesure tout sauf le traitement. On ne
+	// DEPLACE rien tant qu'on n'a pas le chiffre : la peinture ne touche aucun
+	// UObject et aurait sa place dans le travail, mais cette decision se prend
+	// sur une mesure, pas sur une intuition.
+	const double DebutPeinture = FPlatformTime::Seconds();
 	PaintVertices(Job->Mesh);
+	const double PeintureMs = (FPlatformTime::Seconds() - DebutPeinture) * 1000.0;
+	TotalPaintMs += PeintureMs;
+	WorstPaintMs = FMath::Max(WorstPaintMs, PeintureMs);
+	TotalPaintVerts += Job->Mesh.Positions.Num();
 
 	const double DebutUpload = FPlatformTime::Seconds();
 
@@ -1379,7 +1455,10 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 		State.Mesh = NewObject<UProceduralMeshComponent>(this, Nom);
 		State.Mesh->SetupAttachment(RootScene);
 		State.Mesh->bUseAsyncCooking = true;
-		State.Mesh->SetCastShadow(true);
+		// VRAI PAR DEFAUT, ET SEULE LA LIGNE DE COMMANDE LE COUPE : le relief
+		// doit porter son ombre. La bascule n'existe que pour chiffrer le
+		// repli du VSM (voir `-WorldseedOmbres=` dans BeginPlay).
+		State.Mesh->SetCastShadow(bOmbresChunks);
 		State.Mesh->bAffectDistanceFieldLighting = false;
 		State.Mesh->RegisterComponent();
 
@@ -2058,6 +2137,36 @@ FString AWorldseedVoxelTerrain::ReportState() const
 		TotalUploadMs / 1000.0, FirstFillSeconds);
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] voxel : %s"), *Resume);
+
+	// LA MOITIE DE L'A/B SE DIT DANS LE RELEVE, ELLE NE SE DEDUIT PAS DE LA
+	// LIGNE DE COMMANDE. Ce depot a deja compare deux releves pris dans deux
+	// etats differents du code en croyant qu'ils etaient comparables -- « les
+	// regles n'avaient pourtant pas bouge entre les deux ». Un releve qui ne
+	// porte pas sa configuration ne se compare a rien six mois plus tard.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] voxel : ombre portee des chunks %s"),
+		bOmbresChunks ? TEXT("ACTIVE") : TEXT("COUPEE"));
+
+	// --- CE QUE LE TELEVERSEMENT NE DISAIT PAS ------------------------------
+	//
+	// La peinture des sommets est sur le MEME fil de jeu et dans le MEME appel
+	// que le televersement ; elle etait simplement hors du chrono. Elle se lit
+	// donc a cote de lui, et non dans une ligne separee : les deux se
+	// comparent, et c'est leur SOMME qui est le vrai cout d'un chunk pose.
+	//
+	// Le cout par SOMMET est la colonne qui tranche : s'il est eleve, c'est le
+	// traitement qu'il faut deplacer sur le fil de travail ; s'il est faible,
+	// c'est qu'il y a simplement beaucoup de geometrie, et le remede est
+	// ailleurs -- la densite de maillage, pas le fil.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] voxel : PEINTURE sur le fil de jeu %.2f ms/chunk, ")
+		TEXT("%.2f au pire, %.1f s cumulees  |  %lld sommets, %.3f us/sommet  |  ")
+		TEXT("fil de jeu par chunk pose : peinture + televersement = %.2f ms"),
+		(UploadCount > 0) ? TotalPaintMs / UploadCount : 0.0, WorstPaintMs,
+		TotalPaintMs / 1000.0, TotalPaintVerts,
+		(TotalPaintVerts > 0) ? (TotalPaintMs * 1000.0) / TotalPaintVerts : 0.0,
+		(UploadCount > 0) ? (TotalPaintMs + TotalUploadMs) / UploadCount : 0.0);
+
 	return Resume;
 }
 

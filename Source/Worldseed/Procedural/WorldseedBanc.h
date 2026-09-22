@@ -79,4 +79,33 @@ private:
 
 	/** Trames mesurees, en millisecondes. */
 	TArray<float> Trames;
+
+	/**
+	 * Les QUATRE fils, en millisecondes, accumules sur la duree de mesure.
+	 *
+	 * POURQUOI LE TOTAL NE SUFFISAIT PAS. Le banc ne rapportait que la trame
+	 * entiere. Or une trame de 6,4 ms ne dit pas ce qui la remplit, et la
+	 * premiere question de toute mesure de performance est justement celle-la :
+	 * limite par le PROCESSEUR ou par le GPU ? Optimiser le GPU sur une trame
+	 * limitee par le fil de jeu ne fait rien, et l-inverse non plus.
+	 *
+	 * ET C-EST CE QUI MANQUAIT POUR TRANCHER LA QUESTION DU VSM. Le moteur
+	 * signale un debordement de sa file de marquage d-ombres et previent que
+	 * « performance may be affected » -- sans dire de combien. La reponse est
+	 * un ecart de temps GPU entre deux passes du banc, ombres actives puis
+	 * coupees (`-WorldseedOmbres=0`). Sans cette colonne, on ne pouvait que
+	 * supposer, ou faire taire l-avertissement sans savoir.
+	 *
+	 * ON LIT LES GLOBALES DU MOTEUR, PAS `stat unit`. FStatUnitData n-est
+	 * rempli que par son propre affichage (UnrealClient.cpp:361) : s-appuyer
+	 * dessus rendrait la mesure dependante d-un affichage a l-ecran, et
+	 * rendrait zero quand il est eteint. Les globales, elles, sont mises a
+	 * jour par le moteur a chaque trame, qu-on les regarde ou non -- c-est
+	 * d-ailleurs ce que `stat unit` lit lui-meme.
+	 */
+	double SommeJeuMs = 0.0;
+	double SommeRenduMs = 0.0;
+	double SommeRhiMs = 0.0;
+	double SommeGpuMs = 0.0;
+	int32 Echantillons = 0;
 };

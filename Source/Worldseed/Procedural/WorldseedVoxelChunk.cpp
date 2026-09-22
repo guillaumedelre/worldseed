@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedDensity.h"
 
 #include "Procedural/WorldseedTransvoxel.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Generators/MarchingCubes.h"
 
@@ -26,6 +27,8 @@ namespace WorldseedVoxelChunk
 		TFunction<bool()> ShouldStop, bool bTransvoxel,
 		uint8 MasqueTransition, float LargeurTransition)
 	{
+		WORLDSEED_TRACE(MaillerChunk);
+
 		using namespace UE::Geometry;
 
 		// AIGUILLAGE, ET UN SEUL POINT D.ENTREE. Les deux mailleurs sont

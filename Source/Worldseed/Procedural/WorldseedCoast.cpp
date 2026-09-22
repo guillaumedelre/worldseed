@@ -5,6 +5,7 @@
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedRules.h"
+#include "Procedural/WorldseedTrace.h"
 
 FWorldseedCoastRules FWorldseedCoastRules::FromRules(const UWorldseedRules& Rules)
 {
@@ -33,6 +34,8 @@ void WorldseedCoast::Build(const FWorldseedGeometry& Geometry,
 	const FWorldseedCoastRules& Rules, int32 Seed,
 	TArray<float>& ElevationM)
 {
+	WORLDSEED_TRACE(Littoral);
+
 	const double Debut = FPlatformTime::Seconds();
 
 	const int32 NX = Geometry.NX;

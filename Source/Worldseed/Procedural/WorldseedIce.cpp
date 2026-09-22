@@ -5,6 +5,7 @@
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedRules.h"
+#include "Procedural/WorldseedTrace.h"
 
 namespace WorldseedIce
 {
@@ -26,6 +27,8 @@ namespace WorldseedIce
 	float Apply(TArray<float>& ElevationM, const TArray<uint8>& BiomeIndex,
 		const FWorldseedGeometry& Geo, const FRules& Rules)
 	{
+		WORLDSEED_TRACE(Glace);
+
 		const int32 Count = ElevationM.Num();
 		if (Rules.MaxThicknessM <= 0.0f || BiomeIndex.Num() != Count)
 		{

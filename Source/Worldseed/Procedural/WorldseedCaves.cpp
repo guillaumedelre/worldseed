@@ -9,6 +9,7 @@
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedLithology.h"
+#include "Procedural/WorldseedTrace.h"
 
 namespace
 {
@@ -2114,6 +2115,8 @@ void WorldseedCaves::Build(const FWorldseedGeometry& Geometry,
 	const FWorldseedCaveRules& Rules, float HeightExaggeration, int32 Seed,
 	FWorldseedCaveNetwork& Out)
 {
+	WORLDSEED_TRACE(Cavites);
+
 	const double StartTime = FPlatformTime::Seconds();
 
 	Out.Reset();

@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedWind.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
 
@@ -484,6 +485,8 @@ namespace WorldseedBiomes
 		const TArray<bool>& RiverMask, const FWorldseedBiomeRules& Rules,
 		FWorldseedBiomeMap& Out)
 	{
+		WORLDSEED_TRACE(Biomes);
+
 		const int32 NX = Geometry.NX;
 		const int32 NY = Geometry.NY;
 		const int32 Count = Geometry.CellCount();

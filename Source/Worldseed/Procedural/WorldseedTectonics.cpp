@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedTectonics.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
 #include "Misc/CommandLine.h"
@@ -230,6 +231,8 @@ const int32 Count = NX * NY;
 		int32 Seed, FWorldseedTectonicResult& Out,
 		const FWorldseedProgressScope& Progress)
 	{
+		WORLDSEED_TRACE(Tectonique);
+
 		if (Progress.Step(0.0f)) { return false; }
 		const int32 NX = Geo.NX;
 		const int32 NY = Geo.NY;

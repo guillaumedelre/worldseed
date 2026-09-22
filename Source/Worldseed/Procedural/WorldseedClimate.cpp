@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
 #include "Misc/CommandLine.h"
@@ -108,6 +109,8 @@ namespace WorldseedClimate
 		int32 Seed, const TArray<float>& ElevationM, FWorldseedClimateResult& Out,
 		const FWorldseedProgressScope& Progress)
 	{
+		WORLDSEED_TRACE(Climat);
+
 		const int32 NX = Geo.NX;
 		const int32 NY = Geo.NY;
 		const int32 Count = NX * NY;

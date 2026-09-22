@@ -4,6 +4,7 @@
 
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedPerlin.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
 #include "Dom/JsonObject.h"
@@ -229,6 +230,8 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 	const TArray<float>& Convergence, const FWorldseedLithologyRules& Rules,
 	int32 Seed, FWorldseedLithology& Out)
 {
+	WORLDSEED_TRACE(Lithologie);
+
 	const double StartTime = FPlatformTime::Seconds();
 
 	const int32 Count = Geometry.CellCount();

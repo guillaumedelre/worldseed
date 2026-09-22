@@ -9,6 +9,7 @@
 #include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedFlow.h"
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
 
@@ -150,6 +151,8 @@ namespace WorldseedErosion
 		TArray<float>& Dem,
 		FWorldseedErosionReport& OutReport, const FWorldseedProgressScope& Progress)
 	{
+		WORLDSEED_TRACE(Erosion);
+
 		const int32 NX = Geo.NX;
 		const int32 NY = Geo.NY;
 		const int32 Count = NX * NY;

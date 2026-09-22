@@ -12,6 +12,12 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
+// Les quatre fils. GGameThreadTime / GRenderThreadTime / GRHIThreadTime sont
+// des globales de RenderCore ; RHIGetGPUFrameCycles vient du RHI. C'est la
+// meme source que `stat unit`, sans dependre de son affichage.
+#include "RenderTimer.h"
+#include "DynamicRHI.h"
+
 void UWorldseedBanc::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
@@ -91,6 +97,8 @@ void UWorldseedBanc::Tick(float DeltaTime)
 		DebutMesure = Horloge;
 		Trames.Reset();
 		Trames.Reserve(2048);
+		SommeJeuMs = SommeRenduMs = SommeRhiMs = SommeGpuMs = 0.0;
+		Echantillons = 0;
 
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] banc : rayon %.0f m -- %d chunks stabilises en %.0f s, ")
@@ -106,6 +114,22 @@ void UWorldseedBanc::Tick(float DeltaTime)
 	// qui a coute au depot une journee entiere de conclusions fausses, avec des
 	// chiffres plausibles, stables et reproductibles.
 	Trames.Add(DeltaTime * 1000.0f);
+
+	// --- ET LE DETAIL PAR FIL, PARCE QU'UN TOTAL NE SE CORRIGE PAS ---------
+	//
+	// Un agregat ne designe pas de coupable : ce depot l'a paye quatre fois de
+	// suite sur le routage des galeries, ou aucune des quatre corrections n'a
+	// bouge le chiffre parce qu'il melangeait deux populations. La trame
+	// entiere est le meme genre de nombre. Ces quatre-la disent OU elle passe.
+	//
+	// Les globales sont en cycles ; `ToMilliseconds` les convertit. C'est
+	// exactement ce que fait `FStatUnitData::DrawStat` (UnrealClient.cpp:384
+	// et suivantes), sans dependre de l'affichage d'un stat a l'ecran.
+	SommeJeuMs += FPlatformTime::ToMilliseconds(GGameThreadTime);
+	SommeRenduMs += FPlatformTime::ToMilliseconds(GRenderThreadTime);
+	SommeRhiMs += FPlatformTime::ToMilliseconds(GRHIThreadTime);
+	SommeGpuMs += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
+	++Echantillons;
 
 	if (Horloge - DebutMesure >= MesureS)
 	{
@@ -152,6 +176,48 @@ void UWorldseedBanc::Conclure()
 		TEXT("[Worldseed]   trame : moyenne %.2f ms (%.0f images/s), p95 %.2f ms, ")
 		TEXT("pire %.2f ms, sur %d trames"),
 		Moyenne, (Moyenne > 0.0f) ? 1000.0f / Moyenne : 0.0f, P95, Pire, Trames.Num());
+	// --- OU PASSE LA TRAME ---------------------------------------------------
+	//
+	// LA PREMIERE QUESTION D'UNE MESURE DE PERFORMANCE EST « LIMITE PAR QUOI »,
+	// et le banc ne savait pas y repondre : il ne rapportait que le total.
+	// Optimiser le GPU d'une trame limitee par le fil de jeu ne change rien, et
+	// l'inverse non plus.
+	if (Echantillons > 0)
+	{
+		const double Jeu = SommeJeuMs / Echantillons;
+		const double Rendu = SommeRenduMs / Echantillons;
+		const double Rhi = SommeRhiMs / Echantillons;
+		const double Gpu = SommeGpuMs / Echantillons;
+
+		const double Max = FMath::Max3(FMath::Max(Jeu, Rendu), Rhi, Gpu);
+		const TCHAR* Limite =
+			(Max == Gpu) ? TEXT("le GPU") :
+			(Max == Rendu) ? TEXT("le fil de RENDU") :
+			(Max == Rhi) ? TEXT("le fil RHI") : TEXT("le fil de JEU");
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   fils : jeu %.2f ms | rendu %.2f | RHI %.2f | ")
+			TEXT("GPU %.2f  ->  limite par %s"),
+			Jeu, Rendu, Rhi, Gpu, Limite);
+
+		// LE SIGNE QUI TRAHIT UNE MESURE BRIDEE, ET IL A DEJA COUTE UNE JOURNEE
+		// A CE DEPOT. Quand la trame vaut EXACTEMENT le temps GPU, elle n'est
+		// pas limitee par le GPU : elle est plafonnee par autre chose -- le
+		// bridage de l'editeur en arriere-plan, ou une limite d'images par
+		// seconde. Sur une scene reellement limitee par le GPU, la trame
+		// depasse toujours un peu le temps GPU. Le banc tourne en jeu, donc il
+		// ne devrait jamais voir ce cas ; s'il le voit, il le DIT plutot que de
+		// laisser tirer une conclusion fausse sur des chiffres plausibles.
+		if (Moyenne > 0.0f && FMath::Abs(Moyenne - Gpu) < 0.01)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed]   ATTENTION : trame et GPU identiques au ")
+				TEXT("centieme (%.2f ms). La trame est PLAFONNEE, pas limitee ")
+				TEXT("par le GPU -- ne rien conclure de ce releve."),
+				Moyenne);
+		}
+	}
+
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   memoire physique utilisee %.2f Go"),
 		Mem.UsedPhysical / (1024.0 * 1024.0 * 1024.0));
