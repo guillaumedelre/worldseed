@@ -93,19 +93,6 @@ struct FWorldseedAppearance
 	bool bMerTemoin = false;
 };
 
-/** Un morceau de terrain construit, avec le niveau de detail employe. */
-USTRUCT()
-struct FWorldseedChunk
-{
-	GENERATED_BODY()
-
-	UPROPERTY()
-	TObjectPtr<UProceduralMeshComponent> Mesh = nullptr;
-
-	/** Pas d'echantillonnage du heightfield. 1 = pleine resolution. */
-	int32 Stride = 0;
-};
-
 /**
  * Terrain procedural construit au runtime, decoupe en chunks.
  *
@@ -291,59 +278,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches")
 	float LushMm = 900.0f;
 
-	// ------------------------------------------------------------ chunks
-
-	/** Cote d'un chunk, en cellules du heightfield. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "16", ClampMax = "512"))
-	int32 ChunkCells = 64;
-
-	/** Rayon de construction autour du joueur, en metres. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "100.0"))
-	float LoadRadiusM = 2500.0f;
-
-	/**
-	 * Rayon de destruction. Volontairement plus grand que le chargement :
-	 * sans cette hysteresis, un joueur qui fait un pas en avant et en arriere
-	 * sur la frontiere ferait construire et detruire le meme chunk en boucle.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "100.0"))
-	float UnloadRadiusM = 3500.0f;
-
-	/**
-	 * Distances de bascule de niveau de detail, en metres. Le pas double a
-	 * chaque palier : 1, 2, 4, 8 cellules.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks")
-	TArray<float> LodDistancesM = { 400.0f, 900.0f, 1800.0f };
-
-	/**
-	 * Chunks construits par passe. Batir tout d'un coup ferait un gel de
-	 * plusieurs secondes a l'entree dans le monde.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "1", ClampMax = "64"))
-	int32 ChunkBuildBudget = 4;
-
-	/** Periode de reevaluation de la liste des chunks, en secondes. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "0.05"))
-	float UpdatePeriod = 0.25f;
-
-	/**
-	 * Profondeur de la jupe de bordure, en metres. Deux chunks voisins de
-	 * niveaux differents ne partagent pas leurs sommets de bord : une fissure
-	 * apparait. Une jupe verticale la bouche sans avoir a raccorder les
-	 * maillages, ce qui couterait bien plus cher.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks",
-		meta = (ClampMin = "0.0"))
-	float SkirtDepthM = 40.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks")
-	bool bCreateCollision = true;
+	// ------------------------------------------------------- sol de fond
 
 	/** Construit le sol de fond couvrant tout le monde. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks")
@@ -425,47 +360,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Chunks")
 	bool bFlipWinding = false;
 
-	// ------------------------------------------------------------ joueur
+	// ------------------------------------------------------------- voxel
 
 	/**
-	 * Confier le relief proche au mailleur VOXEL plutot qu'a la carte d'altitude.
+	 * LE VOXEL EST LE SEUL MAILLEUR, DEPUIS LE 22 SEPTEMBRE 2026.
 	 *
-	 * POURQUOI LA BASCULE PREND CETTE FORME. Cet acteur ne fait pas que mailler :
-	 * il batit le sol de fond — qui remplit l'horizon ET nourrit la texture
-	 * d'information du plugin Water —, nourrit le ciel en climat, repond aux
-	 * questions de latitude et d'altitude, et pose l'ocean. Le mailleur n'est
-	 * qu'une de ses fonctions, et c'est la SEULE que le voxel remplace.
+	 * Il y avait ici un drapeau `bUseVoxelMesher` et, derriere lui, un mailleur
+	 * en carte d'altitude de 456 lignes garde comme REPLI. Il n'etait joignable
+	 * par aucune ligne de commande -- seulement en basculant ce drapeau dans
+	 * l'editeur -- rien ne l'avait exerce depuis le 18 septembre, et l'on ne
+	 * savait donc pas s'il fonctionnait encore. Un filet qu'on n'eprouve pas
+	 * n'est pas un filet, c'est une dette. L'historique git le garde intact.
 	 *
-	 * Deplacer ces services vers l'acteur voxel aurait demande de deplacer sept
-	 * cents lignes et tout l'etat qui va avec, d'un coup, sans filet. Les laisser
-	 * ici et n'echanger que le mailleur tient en trente lignes, se verifie a
-	 * l'image, et se defait en posant ce drapeau a faux.
-	 *
-	 * Ce qui est ASSUME le temps de la bascule : les deux acteurs lisent le monde
-	 * chacun de leur cote, donc la grille d'altitudes existe en double — environ
-	 * huit megaoctets a 2048 x 1024. A supprimer quand l'ancien mailleur partira.
+	 * Ce qu'il bloquait : `ComputeVertexAppearance` avait DEUX consommateurs --
+	 * lui et le sol de fond -- donc aucun des deux ne pouvait quitter cet
+	 * acteur sans recopier la regle, ce que le depot interdit.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
-	bool bUseVoxelMesher = true;
 
 	/** Classe de l'acteur voxel a poser. Vide : la classe native. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
 	TSubclassOf<AWorldseedVoxelTerrain> VoxelTerrainClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Joueur")
-	bool bPlacePlayerAfterGenerate = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Joueur")
-	float PlayerClearanceCm = 150.0f;
 
 	// ------------------------------------------------------------- API
 
 	/** Recharge le monde et repart de zero. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Worldseed")
 	void Rebuild();
-
-	UFUNCTION(BlueprintCallable, Category = "Worldseed")
-	void PlacePlayerOnTerrain();
 
 	UFUNCTION(BlueprintPure, Category = "Worldseed")
 	float GetHeightAtWorldXY(float WorldX, float WorldY) const;
@@ -484,19 +404,12 @@ public:
 	bool SampleClimateAtWorldXY(float WorldX, float WorldY,
 		FWorldseedClimateSample& OutSample) const;
 
-	/** Nombre de chunks actuellement construits. */
-	UFUNCTION(BlueprintPure, Category = "Worldseed")
-	int32 GetLoadedChunkCount() const { return Chunks.Num(); }
-
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 	/** Recupere le monde du GameInstance, ou le genere en secours. */
 	bool AcquireWorld();
-
-	/** Reevalue quels chunks doivent exister, et a quel niveau. */
-	void UpdateChunks();
 
 	/** Pose l'acteur voxel qui prend le relief proche en charge. */
 	void SpawnVoxelTerrain();
@@ -507,20 +420,8 @@ protected:
 	/** Echantillonne le climat sous le joueur et le pousse au ciel. */
 	void FeedSky(float DeltaSeconds);
 
-	/** Construit ou reconstruit un chunk au niveau demande. */
-	void BuildChunk(const FIntPoint& Key, int32 Stride);
-
-	/** Detruit un chunk et libere son composant. */
-	void ReleaseChunk(const FIntPoint& Key);
-
 	/** Position de reference pour le chargement : le joueur, sinon l'acteur. */
 	FVector GetStreamingOrigin() const;
-
-	/** Pas d'echantillonnage pour une distance donnee. */
-	int32 StrideForDistance(float DistanceM) const;
-
-	/** Centre monde d'un chunk, en centimetres. */
-	FVector2D ChunkCenterCm(const FIntPoint& Key) const;
 
 	/**
 	 * Apparence d'un sommet : poids de matiere ou couleur, plus la teinte.
@@ -581,9 +482,6 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<USceneComponent> RootScene;
-
-	UPROPERTY()
-	TMap<FIntPoint, FWorldseedChunk> Chunks;
 
 	/**
 	 * Le sol de fond, sur son propre acteur.
@@ -684,8 +582,6 @@ protected:
 	/** Graine du monde charge. Ensemence aussi le signal meteo. */
 	int32 WorldSeed = 0;
 
-	FTimerHandle UpdateTimer;
-
 	/** Le pilotage du ciel, qui ne sait rien du terrain. */
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Ciel")
 	TObjectPtr<class UWorldseedSkyDriverComponent> SkyDriver;
@@ -720,11 +616,8 @@ protected:
 	 */
 	FWorldseedLithology Lithology;
 
-	/** L'acteur voxel pose par cet acteur, quand bUseVoxelMesher est vrai. */
+	/** L'acteur voxel pose par cet acteur : c'est lui qui tient le relief. */
 	UPROPERTY()
 	TObjectPtr<AWorldseedVoxelTerrain> VoxelTerrain;
-
-	int32 ChunksX = 0;
-	int32 ChunksY = 0;
 };
 

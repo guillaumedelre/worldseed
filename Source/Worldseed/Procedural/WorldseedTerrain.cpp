@@ -42,28 +42,13 @@ void AWorldseedTerrain::BeginPlay()
 
 	Rebuild();
 
-	// LE MINUTEUR ET LE PLACEMENT APPARTIENNENT AU MAILLEUR, donc au voxel
-	// quand c'est lui qui tient le relief. Les laisser tourner ferait defiler
-	// des chunks de carte d'altitude sous ceux du voxel, et poserait le joueur
-	// sur une surface qui n'est plus celle qu'il voit -- "surface + 150 cm" n'a
+	// LE MINUTEUR DE MAILLAGE ET LE PLACEMENT DU JOUEUR SONT PARTIS AVEC LE
+	// MAILLEUR LEGATAIRE. Ils appartenaient au mailleur, donc au voxel depuis
+	// qu'il tient le relief : `AWorldseedVoxelTerrain` a son propre minuteur de
+	// diffusion, et c'est lui qui pose le joueur -- « surface + 150 cm » n'a
 	// d'ailleurs aucun sens dans une grotte.
-	if (!bUseVoxelMesher)
-	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimer(UpdateTimer, this,
-				&AWorldseedTerrain::UpdateChunks, FMath::Max(UpdatePeriod, 0.05f), true);
-		}
 
-		if (bPlacePlayerAfterGenerate)
-		{
-			GetWorldTimerManager().SetTimerForNextTick(
-				this, &AWorldseedTerrain::PlacePlayerOnTerrain);
-		}
-	}
-
-	// LE SOL DE FOND SE SURVEILLE SUR LES DEUX CHEMINS, voxel comme carte
-	// d'altitude : il traverse les cavites dans les deux cas.
+	// LE SOL DE FOND SE SURVEILLE TOUJOURS : il traverse les cavites.
 	if (bHideGroundProxyUnderground)
 	{
 		if (UWorld* World = GetWorld())
@@ -214,7 +199,6 @@ void AWorldseedTerrain::EndPlay(const EEndPlayReason::Type Reason)
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ProxyTimer);
-		World->GetTimerManager().ClearTimer(UpdateTimer);
 	}
 
 	// Le sol de fond est un acteur a part : il ne part pas avec le terrain.
@@ -358,48 +342,31 @@ void AWorldseedTerrain::RebuildCaveNetwork()
 
 void AWorldseedTerrain::Rebuild()
 {
-	for (const TPair<FIntPoint, FWorldseedChunk>& Pair : Chunks)
-	{
-		if (Pair.Value.Mesh)
-		{
-			Pair.Value.Mesh->DestroyComponent();
-		}
-	}
-	Chunks.Empty();
-
 	if (!AcquireWorld() || Geometry.NX < 2 || HeightsM().Num() != Geometry.CellCount())
 	{
 		return;
 	}
 
-	const int32 Cells = FMath::Max(ChunkCells, 16);
-	ChunksX = FMath::DivideAndRoundUp(Geometry.NX, Cells);
-	ChunksY = FMath::DivideAndRoundUp(Geometry.NY, Cells);
-
+	// LE DECOUPAGE EN CHUNKS DE CELLULES A DISPARU AVEC LE MAILLEUR QUI S'EN
+	// SERVAIT. Il decrivait une grille de chunks calee sur la grille 2D ; le
+	// voxel, lui, decoupe l'espace en cubes de trente-deux metres et n'a que
+	// faire du pas de simulation. Le journal l'annoncait encore.
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] terrain %.1f x %.1f km  grille %dx%d  decoupe %dx%d chunks de %d cellules"),
+		TEXT("[Worldseed] terrain %.1f x %.1f km  grille %dx%d"),
 		Geometry.WidthM() / 1000.0f, Geometry.HeightM / 1000.0f,
-		Geometry.NX, Geometry.NY, ChunksX, ChunksY, Cells);
+		Geometry.NX, Geometry.NY);
 
-	// LE SOL DE FOND AVANT LES CHUNKS ET AVANT L'EAU : c'est lui qui donne au
-	// systeme d'eau un sol sur TOUTE la carte, la ou les chunks n'en couvrent
+	// LE SOL DE FOND AVANT LE VOXEL ET AVANT L'EAU : c'est lui qui donne au
+	// systeme d'eau un sol sur TOUTE la carte, la ou le voxel n'en couvre
 	// qu'un rayon autour du joueur.
 	BuildGroundProxy();
 
-	if (bUseVoxelMesher)
-	{
-		// LE VOXEL NE REMPLACE QUE LE MAILLAGE. Le sol de fond vient d'etre
-		// bati, l'ocean suit, le ciel et les questions de climat restent ici :
-		// seule la geometrie proche change de main.
-		SpawnVoxelTerrain();
-	}
-	else
-	{
-		UpdateChunks();
-	}
+	// LE VOXEL NE REMPLACE QUE LE MAILLAGE. Le sol de fond vient d'etre bati,
+	// l'ocean suit, le ciel et les questions de climat restent ici : seule la
+	// geometrie proche change de main.
+	SpawnVoxelTerrain();
 
-	// L'ocean vient APRES les chunks : il se pose sur un relief deja connu, et
-	// n'a pas besoin d'etre refaite quand les chunks changent de resolution.
+	// L'ocean vient APRES le relief : il se pose sur un terrain deja connu.
 	if (Water)
 	{
 		Water->Build(Geometry, HeightsM(), HeightExaggeration);
@@ -493,11 +460,15 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 
 	if (!VoxelTerrain)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Worldseed] terrain : le mailleur voxel n'a pas pu etre pose, "
-				 "retour a la carte d'altitude"));
-		bUseVoxelMesher = false;
-		UpdateChunks();
+		// IL N'Y A PLUS DE REPLI, ET C'EST UN CHOIX. Le mailleur en carte
+		// d'altitude vivait ici pour ce cas ; il n'etait joignable par aucune
+		// ligne de commande, rien ne l'avait exerce depuis le 18 septembre, et
+		// un filet qu'on n'eprouve pas n'est pas un filet. L'echec se dit donc
+		// franchement au lieu de se rattraper en silence sur un chemin dont on
+		// ignorait s'il fonctionnait encore.
+		UE_LOG(LogTemp, Error,
+			TEXT("[Worldseed] terrain : le mailleur voxel n'a pas pu etre pose "
+				 "-- il n'y aura AUCUN relief proche"));
 		return;
 	}
 
@@ -512,474 +483,6 @@ FVector AWorldseedTerrain::GetStreamingOrigin() const
 		return Pawn->GetActorLocation();
 	}
 	return GetActorLocation();
-}
-
-int32 AWorldseedTerrain::StrideForDistance(float DistanceM) const
-{
-	int32 Stride = 1;
-	for (const float Threshold : LodDistancesM)
-	{
-		if (DistanceM > Threshold)
-		{
-			Stride *= 2;
-		}
-	}
-	// Au-dela du cote du chunk, le maillage n'aurait plus de quoi former un quad.
-	return FMath::Clamp(Stride, 1, FMath::Max(ChunkCells / 2, 1));
-}
-
-FVector2D AWorldseedTerrain::ChunkCenterCm(const FIntPoint& Key) const
-{
-	const float CellCm = Geometry.MetersPerPixel() * WorldseedMetersToCm;
-	const float OriginX = -Geometry.WidthM() * WorldseedMetersToCm * 0.5f;
-	const float OriginY = -Geometry.HeightM * WorldseedMetersToCm * 0.5f;
-	const int32 Cells = FMath::Max(ChunkCells, 16);
-
-	return FVector2D(
-		OriginX + (Key.X * Cells + Cells * 0.5f) * CellCm,
-		OriginY + (Key.Y * Cells + Cells * 0.5f) * CellCm);
-}
-
-void AWorldseedTerrain::UpdateChunks()
-{
-	if (Geometry.NX < 2 || HeightsM().Num() != Geometry.CellCount())
-	{
-		return;
-	}
-
-	FeedSky(FMath::Max(UpdatePeriod, 0.05f));
-
-	const FVector Origin = GetStreamingOrigin();
-	const FVector2D OriginXY(Origin.X, Origin.Y);
-
-	// --- ce qui doit disparaitre -------------------------------------------
-	// L'hysteresis entre les deux rayons evite qu'un pas en avant puis en
-	// arriere sur la frontiere fasse construire et detruire en boucle.
-	TArray<FIntPoint> ToRelease;
-	for (const TPair<FIntPoint, FWorldseedChunk>& Pair : Chunks)
-	{
-		const float DistM = FVector2D::Distance(OriginXY, ChunkCenterCm(Pair.Key)) / WorldseedMetersToCm;
-		if (DistM > UnloadRadiusM)
-		{
-			ToRelease.Add(Pair.Key);
-		}
-	}
-	for (const FIntPoint& Key : ToRelease)
-	{
-		ReleaseChunk(Key);
-	}
-
-	// --- ce qui doit exister ------------------------------------------------
-	struct FCandidate { FIntPoint Key; int32 Stride; float DistM; };
-	TArray<FCandidate> Candidates;
-
-	for (int32 CY = 0; CY < ChunksY; ++CY)
-	{
-		for (int32 CX = 0; CX < ChunksX; ++CX)
-		{
-			const FIntPoint Key(CX, CY);
-			const float DistM = FVector2D::Distance(OriginXY, ChunkCenterCm(Key)) / WorldseedMetersToCm;
-			if (DistM > LoadRadiusM)
-			{
-				continue;
-			}
-
-			const int32 Stride = StrideForDistance(DistM);
-			const FWorldseedChunk* Existing = Chunks.Find(Key);
-			if (!Existing || Existing->Stride != Stride)
-			{
-				Candidates.Add({ Key, Stride, DistM });
-			}
-		}
-	}
-
-	// Les plus proches d'abord : le joueur voit d'abord ce qui l'entoure.
-	Candidates.Sort([](const FCandidate& A, const FCandidate& B) { return A.DistM < B.DistM; });
-
-	const int32 Budget = FMath::Max(ChunkBuildBudget, 1);
-	const int32 Built = FMath::Min(Candidates.Num(), Budget);
-	for (int32 I = 0; I < Built; ++I)
-	{
-		BuildChunk(Candidates[I].Key, Candidates[I].Stride);
-	}
-
-	// ON NE REDEMANDE PLUS LA TEXTURE D'INFORMATION A CHAQUE CHUNK.
-	//
-	// C'etait la cause du clignotement : l'eau disparaissait le temps du
-	// redessin, une fois par chunk traverse. Deux changements l'ont rendue
-	// inutile — le sol de fond donne desormais un sol sur toute la carte des la
-	// generation, et la zone d'eau est passee en fenetre glissante, que le
-	// MOTEUR regenere lui-meme quand la camera avance.
-}
-
-void AWorldseedTerrain::ReleaseChunk(const FIntPoint& Key)
-{
-	if (FWorldseedChunk* Chunk = Chunks.Find(Key))
-	{
-		if (Chunk->Mesh)
-		{
-			Chunk->Mesh->DestroyComponent();
-		}
-		Chunks.Remove(Key);
-	}
-}
-
-void AWorldseedTerrain::BuildChunk(const FIntPoint& Key, int32 Stride)
-{
-	const int32 Cells = FMath::Max(ChunkCells, 16);
-	const int32 StartI = Key.X * Cells;
-	const int32 StartJ = Key.Y * Cells;
-
-	// Un sommet de plus sur chaque bord : les chunks voisins partagent ainsi
-	// leur rangee frontiere quand ils sont au meme niveau de detail.
-	const int32 CountX = Cells / Stride + 1;
-	const int32 CountY = Cells / Stride + 1;
-	if (CountX < 2 || CountY < 2)
-	{
-		return;
-	}
-
-	const float CellCm = Geometry.MetersPerPixel() * WorldseedMetersToCm;
-	const float StepCm = CellCm * Stride;
-	const float OriginX = -Geometry.WidthM() * WorldseedMetersToCm * 0.5f;
-	const float OriginY = -Geometry.HeightM * WorldseedMetersToCm * 0.5f;
-
-	// X s'enroule : la carte fait le tour de la sphere, le chunk du bord est
-	// est voisin de celui du bord ouest. Y se borne, un pole n ayant pas de
-	// voisin au-dela.
-	auto CellIndex = [this](int32 SX, int32 SY) -> int32
-	{
-		const int32 CX = ((SX % Geometry.NX) + Geometry.NX) % Geometry.NX;
-		const int32 CY = FMath::Clamp(SY, 0, Geometry.NY - 1);
-		return CY * Geometry.NX + CX;
-	};
-
-	auto SampleM = [this, &CellIndex](int32 SX, int32 SY) -> float
-	{
-		return HeightsM()[CellIndex(SX, SY)];
-	};
-
-	// --- couches, decidees ICI et non dans le shader -----------------------
-	//
-	// Le materiau ne connait ni le climat ni la carte : il ne verrait que la
-	// position et la normale. Or un desert et une prairie peuvent partager
-	// exactement la meme altitude et la meme pente — seule la pluie les
-	// separe. On calcule donc les poids au sommet, ou toutes les donnees sont
-	// disponibles, et on les transporte en COULEUR DE SOMMET :
-	//
-	//     R = roche      G = vegetation      B = sable      A = neige
-	//
-	// Le shader n a plus qu a melanger quatre teintes, ce qui le garde lisible
-	// et permet de lui substituer des textures sans rien recalculer.
-	// Le mode biome demande une carte de biomes : sans elle on retombe sur les
-	// poids de couches plutot que de peindre tout en noir.
-	const bool bColourByBiome =
-		(Colouring == EWorldseedTerrainColouring::BiomeColour)
-		&& (Biomes().Index.Num() == Geometry.CellCount());
-
-	const bool bHasCover = (Biomes().Cover.Num() == Geometry.CellCount());
-
-	// Le mode pack demande a la fois une carte de biomes et un materiau : sans
-	// l'un ou l'autre on retombe sur la couleur de biome, jamais sur du noir.
-	const TObjectPtr<UMaterialInterface>* PackMaterial = PackMaterials.Find(TexturePack);
-	const bool bTexturePack =
-		(Colouring == EWorldseedTerrainColouring::TexturePack)
-		&& (TexturePack != EWorldseedTexturePack::BiomeColour)
-		&& (Biomes().Index.Num() == Geometry.CellCount())
-		&& PackMaterial && PackMaterial->Get();
-
-	const bool bHasClimate = (TempC().Num() == Geometry.CellCount())
-		&& (PrecipMm().Num() == Geometry.CellCount());
-
-	const float CosRockStart = FMath::Cos(FMath::DegreesToRadians(RockSlopeStartDeg));
-	const float CosRockFull = FMath::Cos(FMath::DegreesToRadians(RockSlopeFullDeg));
-
-	const int32 GridVerts = CountX * CountY;
-	const int32 SkirtVerts = (SkirtDepthM > 0.0f) ? 2 * (CountX + CountY) : 0;
-
-	TArray<FVector> Vertices;
-	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
-
-	// Canaux supplementaires : la teinte du biome, que RGBA ne peut plus porter
-	// des lors qu'il transporte les poids de matiere.
-	TArray<FVector2D> TintRG;
-	TArray<FVector2D> TintB;
-
-	TArray<FProcMeshTangent> Tangents;
-	TArray<FLinearColor> Colors;
-	TArray<int32> Triangles;
-
-	Vertices.Reserve(GridVerts + SkirtVerts);
-	Normals.Reserve(GridVerts + SkirtVerts);
-	UVs.Reserve(GridVerts + SkirtVerts);
-	Tangents.Reserve(GridVerts + SkirtVerts);
-	Triangles.Reserve((CountX - 1) * (CountY - 1) * 6 + SkirtVerts * 3);
-
-	Vertices.SetNumUninitialized(GridVerts);
-	Normals.SetNumUninitialized(GridVerts);
-	UVs.SetNumUninitialized(GridVerts);
-	TintRG.SetNumUninitialized(GridVerts);
-	TintB.SetNumUninitialized(GridVerts);
-	Tangents.SetNumUninitialized(GridVerts);
-	Colors.SetNumUninitialized(GridVerts);
-
-	for (int32 Y = 0; Y < CountY; ++Y)
-	{
-		const int32 SY = StartJ + Y * Stride;
-		for (int32 X = 0; X < CountX; ++X)
-		{
-			const int32 SX = StartI + X * Stride;
-			const int32 Index = Y * CountX + X;
-
-			Vertices[Index] = FVector(
-				OriginX + SX * CellCm,
-				OriginY + SY * CellCm,
-				SampleM(SX, SY) * WorldseedMetersToCm * HeightExaggeration);
-
-			UVs[Index] = FVector2D(
-				static_cast<float>(SX) / static_cast<float>(Geometry.NX),
-				static_cast<float>(SY) / static_cast<float>(Geometry.NY));
-
-			// Normales par differences centrees, au PAS DU CHUNK : les prendre a
-			// la resolution pleine ferait apparaitre un eclairage different entre
-			// deux niveaux de detail voisins, plus visible que la fissure.
-			const float HL = SampleM(SX - Stride, SY);
-			const float HR = SampleM(SX + Stride, SY);
-			const float HD = SampleM(SX, SY - Stride);
-			const float HU = SampleM(SX, SY + Stride);
-
-			const float DZDX = (HR - HL) * WorldseedMetersToCm * HeightExaggeration / (2.0f * StepCm);
-			const float DZDY = (HU - HD) * WorldseedMetersToCm * HeightExaggeration / (2.0f * StepCm);
-
-			const FVector N = FVector(-DZDX, -DZDY, 1.0f).GetSafeNormal();
-			Normals[Index] = N;
-			Tangents[Index] = FProcMeshTangent(
-				FVector(1.0f, 0.0f, DZDX).GetSafeNormal(), false);
-
-			FWorldseedAppearance Mode;
-			Mode.bTexturePack = bTexturePack;
-			Mode.bColourByBiome = bColourByBiome;
-			Mode.bHasClimate = bHasClimate;
-			Mode.bHasCover = bHasCover;
-
-			ComputeVertexAppearance(CellIndex(SX, SY), SampleM(SX, SY), N, Mode,
-				Colors[Index], TintRG[Index], TintB[Index]);
-		}
-	}
-
-	for (int32 Y = 0; Y < CountY - 1; ++Y)
-	{
-		for (int32 X = 0; X < CountX - 1; ++X)
-		{
-			const int32 I = Y * CountX + X;
-			if (bFlipWinding)
-			{
-				Triangles.Add(I); Triangles.Add(I + 1);          Triangles.Add(I + CountX + 1);
-				Triangles.Add(I); Triangles.Add(I + CountX + 1); Triangles.Add(I + CountX);
-			}
-			else
-			{
-				Triangles.Add(I); Triangles.Add(I + CountX);     Triangles.Add(I + CountX + 1);
-				Triangles.Add(I); Triangles.Add(I + CountX + 1); Triangles.Add(I + 1);
-			}
-		}
-	}
-
-	// --- jupe de bordure ----------------------------------------------------
-	// Deux chunks de niveaux differents ne partagent pas leurs sommets de bord :
-	// une fissure apparait, et on voit le ciel au travers. Une jupe verticale la
-	// bouche sans avoir a raccorder les maillages entre eux.
-	if (SkirtDepthM > 0.0f)
-	{
-		const float Drop = SkirtDepthM * WorldseedMetersToCm;
-
-		auto AddSkirt = [&](int32 EdgeIndex)
-		{
-			// ON COPIE D ABORD, ON AJOUTE ENSUITE. Passer Array[i] a Array.Add()
-			// remet a la fonction une reference INTERNE au tableau qu elle
-			// modifie : une reallocation la ferait pendre en pleine copie. UE le
-			// verifie systematiquement, meme quand la capacite suffirait.
-			const FVector EdgeVertex = Vertices[EdgeIndex];
-			const FVector EdgeNormal = Normals[EdgeIndex];
-			const FVector2D EdgeUV = UVs[EdgeIndex];
-			const FVector2D EdgeTintRG = TintRG[EdgeIndex];
-			const FVector2D EdgeTintB = TintB[EdgeIndex];
-			const FProcMeshTangent EdgeTangent = Tangents[EdgeIndex];
-			const FLinearColor EdgeColor = Colors[EdgeIndex];
-
-			const int32 New = Vertices.Num();
-			Vertices.Add(EdgeVertex - FVector(0.0f, 0.0f, Drop));
-			Normals.Add(EdgeNormal);
-			UVs.Add(EdgeUV);
-			TintRG.Add(EdgeTintRG);
-			TintB.Add(EdgeTintB);
-			Tangents.Add(EdgeTangent);
-			Colors.Add(EdgeColor);
-			return New;
-		};
-
-		auto Quad = [&](int32 A, int32 B, int32 LowA, int32 LowB)
-		{
-			if (bFlipWinding)
-			{
-				Triangles.Add(A); Triangles.Add(LowA); Triangles.Add(LowB);
-				Triangles.Add(A); Triangles.Add(LowB); Triangles.Add(B);
-			}
-			else
-			{
-				Triangles.Add(A); Triangles.Add(LowB); Triangles.Add(LowA);
-				Triangles.Add(A); Triangles.Add(B);    Triangles.Add(LowB);
-			}
-		};
-
-		// Bord sud puis nord.
-		for (int32 X = 0; X < CountX - 1; ++X)
-		{
-			const int32 A = X;
-			const int32 B = X + 1;
-			Quad(A, B, AddSkirt(A), AddSkirt(B));
-
-			const int32 C = (CountY - 1) * CountX + X;
-			const int32 D = C + 1;
-			Quad(D, C, AddSkirt(D), AddSkirt(C));
-		}
-		// Bord ouest puis est.
-		for (int32 Y = 0; Y < CountY - 1; ++Y)
-		{
-			const int32 A = Y * CountX;
-			const int32 B = (Y + 1) * CountX;
-			Quad(B, A, AddSkirt(B), AddSkirt(A));
-
-			const int32 C = Y * CountX + (CountX - 1);
-			const int32 D = (Y + 1) * CountX + (CountX - 1);
-			Quad(C, D, AddSkirt(C), AddSkirt(D));
-		}
-	}
-
-	// --- composant ----------------------------------------------------------
-	FWorldseedChunk& Chunk = Chunks.FindOrAdd(Key);
-	if (!Chunk.Mesh)
-	{
-		Chunk.Mesh = NewObject<UProceduralMeshComponent>(this,
-			*FString::Printf(TEXT("Chunk_%d_%d"), Key.X, Key.Y));
-		Chunk.Mesh->SetupAttachment(RootScene);
-		Chunk.Mesh->bUseAsyncCooking = false;
-		Chunk.Mesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
-
-		// --- ombres ---------------------------------------------------------
-		// LE RELIEF LOINTAIN DOIT PORTER SON OMBRE. Sans bCastFarShadow, une
-		// primitive est ecartee des cascades lointaines du soleil : sur un
-		// monde de 16 km, les massifs de l'horizon n'assombrissent plus rien
-		// et le paysage s'aplatit des que le soleil rase. C'est le reglage qui
-		// se voit le plus une fois UDS en place.
-		Chunk.Mesh->SetCastShadow(true);
-		Chunk.Mesh->bCastFarShadow = true;
-
-		// Un maillage procedural n'a PAS de champ de distance : celui-ci se
-		// construit a la cuisson, et rien ne le calcule au runtime. L'occlusion
-		// ambiante et les ombres par champ de distance ne peuvent donc pas
-		// prendre le terrain en compte ; le declarer ferait porter le cout sans
-		// le benefice. Les ombres viennent des Virtual Shadow Maps, qui
-		// travaillent, elles, sur la geometrie reelle.
-		Chunk.Mesh->bAffectDistanceFieldLighting = false;
-
-		Chunk.Mesh->RegisterComponent();
-	}
-
-	Chunk.Stride = Stride;
-
-	// La collision ne sert que de pres : la cuire pour les chunks lointains
-	// couterait plus cher que tout le reste du maillage.
-	const bool bCollide = bCreateCollision && (Stride == 1);
-
-	// Releve sur le premier chunk seulement : de quoi savoir si le probleme est
-	// dans le calcul des poids ou dans leur transport jusqu au shader.
-	if (Chunks.Num() <= 1)
-	{
-		FLinearColor Sum(0.0f, 0.0f, 0.0f, 0.0f);
-		FLinearColor Peak(0.0f, 0.0f, 0.0f, 0.0f);
-		for (const FLinearColor& C : Colors)
-		{
-			Sum += C;
-			Peak.R = FMath::Max(Peak.R, C.R);
-			Peak.G = FMath::Max(Peak.G, C.G);
-			Peak.B = FMath::Max(Peak.B, C.B);
-			Peak.A = FMath::Max(Peak.A, C.A);
-		}
-		const float Inv = 1.0f / FMath::Max(Colors.Num(), 1);
-
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] couches chunk %d,%d : climat=%d  %d couleurs pour %d sommets"),
-			Key.X, Key.Y, bHasClimate ? 1 : 0, Colors.Num(), Vertices.Num());
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed]   moyennes  roche %.2f  vegetation %.2f  sable %.2f  neige %.2f"),
-			Sum.R * Inv, Sum.G * Inv, Sum.B * Inv, Sum.A * Inv);
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed]   maxima    roche %.2f  vegetation %.2f  sable %.2f  neige %.2f"),
-			Peak.R, Peak.G, Peak.B, Peak.A);
-	}
-
-	Chunk.Mesh->ClearAllMeshSections();
-
-	// UV1 et UV2 transportent la teinte du biome. Ils restent a zero hors du
-	// mode pack : le materiau ne les lit pas dans les autres modes.
-	// LA REPETITION DU SOL NE PASSE PAS PAR UN CANAL UV : le materiau la tire de
-	// la position monde. Un canal de sommet n'en porterait pas la valeur — le
-	// maillage procedural stocke ses UV en demi-precision, ou le pas atteint
-	// seize metres a l'echelle d'une carte de seize kilometres.
-	static const TArray<FVector2D> NoUV;
-	Chunk.Mesh->CreateMeshSection_LinearColor(
-		0, Vertices, Triangles, Normals, UVs, TintRG, TintB, NoUV,
-		Colors, Tangents, bCollide);
-
-	FWorldseedAppearance MaterialMode;
-	MaterialMode.bTexturePack = bTexturePack;
-	MaterialMode.bColourByBiome = bColourByBiome;
-	UMaterialInterface* Material = ChooseTerrainMaterial(MaterialMode);
-	if (Material)
-	{
-		Chunk.Mesh->SetMaterial(0, Material);
-	}
-
-	// Les canaux de teinte doivent avoir EXACTEMENT autant d'entrees que de
-	// sommets : ProceduralMesh rejette en silence un canal UV de la mauvaise
-	// taille, et le materiau recoit alors des zeros — donc une teinte noire.
-	if (Chunks.Num() <= 1 && bTexturePack)
-	{
-		FLinearColor SumW(0.0f, 0.0f, 0.0f, 0.0f);
-		FVector2D SumRG = FVector2D::ZeroVector;
-		float SumB = 0.0f;
-		for (int32 I = 0; I < Vertices.Num(); ++I)
-		{
-			SumW += Colors[I];
-			SumRG += TintRG[I];
-			SumB += static_cast<float>(TintB[I].X);
-		}
-		const float Inv = 1.0f / FMath::Max(Vertices.Num(), 1);
-
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] canaux : %d sommets, %d couleurs, %d TintRG, %d TintB"),
-			Vertices.Num(), Colors.Num(), TintRG.Num(), TintB.Num());
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed]   poids moyens  herbe %.2f  aride %.2f  roche %.2f  mousse %.2f"),
-			SumW.R * Inv, SumW.G * Inv, SumW.B * Inv, SumW.A * Inv);
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed]   teinte moyenne  R %.2f  G %.2f  B %.2f"),
-			SumRG.X * Inv, SumRG.Y * Inv, SumB * Inv);
-	}
-
-	// UN MATERIAU ABSENT NE SE VOIT PAS COMME UNE ERREUR : le maillage tombe sur
-	// le WorldGridMaterial du moteur, un damier gris qu'on prend facilement pour
-	// une texture mal reglee. On dit donc a voix haute ce qui a ete pose.
-	if (Chunks.Num() <= 1)
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] habillage : mode=%s  pack=%s  materiau=%s"),
-			bTexturePack ? TEXT("pack") : (bColourByBiome ? TEXT("biome") : TEXT("couches")),
-			*UEnum::GetDisplayValueAsText(TexturePack).ToString(),
-			Material ? *Material->GetName() : TEXT("AUCUN (damier du moteur)"));
-	}
 }
 
 void AWorldseedTerrain::FeedSky(float DeltaSeconds)
@@ -2048,29 +1551,6 @@ void AWorldseedTerrain::ComputeVertexAppearance(int32 Cell, float HeightM,
 	{
 		OutColour = FLinearColor(Rock, Vegetation, Beach, Snow);
 	}
-}
-
-void AWorldseedTerrain::PlacePlayerOnTerrain()
-{
-	APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
-	if (!Pawn)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Worldseed] aucun pion a reposer"));
-		return;
-	}
-
-	const FVector Current = Pawn->GetActorLocation();
-	const float GroundZ = GetHeightAtWorldXY(Current.X, Current.Y);
-	Pawn->SetActorLocation(FVector(Current.X, Current.Y, GroundZ + PlayerClearanceCm),
-		false, nullptr, ETeleportType::TeleportPhysics);
-
-	float Lon = 0.0f;
-	float Lat = 0.0f;
-	GetLonLatAtWorldXY(Current.X, Current.Y, Lon, Lat);
-
-	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] joueur repose : z %.0f -> %.0f  lon %.1f  lat %.1f  (%d chunks)"),
-		Current.Z, GroundZ + PlayerClearanceCm, Lon, Lat, Chunks.Num());
 }
 
 void AWorldseedTerrain::GetLonLatAtWorldXY(float WorldX, float WorldY,
