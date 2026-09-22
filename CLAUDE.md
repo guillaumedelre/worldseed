@@ -7375,3 +7375,87 @@ C'est un chantier a part entiere, avec sa propre verification : le sol de fond
 nourrit la texture d'information du plugin Water, et le piege `[0 .. 0]` --
 l'ocean qui cesse de se dessiner SANS le moindre avertissement -- est le plus
 silencieux du depot.
+
+### On a REGARDE le monde, et la dette de regard etait justifiee (22 septembre 2026)
+
+Quatre formes etaient mesurees mais jamais vues -- la stratigraphie, l'escalier
+de sapement, la silhouette d'une mesa, et la vue depuis un vrai sommet. La
+tournee photo les a enfin cadrees. **Elle a rendu une forme excellente et
+quatre defauts, dont un que la mesure seule ne pouvait pas trouver.**
+
+#### Ce qui est BON
+
+**L'arche marine est impeccable** : roche massive et lisse, ouverture franche,
+eau qui la traverse, terre verte des deux cotes. C'est la forme la mieux
+reussie du monde, et elle est en BASALTE -- donc sans serie stratigraphique.
+Retenir cet indice, il sert au diagnostic ci-dessous.
+
+#### LE DEFAUT PRINCIPAL : les parois sont COTELEES
+
+Les parois de canyon portent une striation horizontale tres reguliere, avec des
+cavites sombres, visible de pres comme de loin. De loin, avec les anneaux, elle
+se lit comme un TREILLIS PERFORE -- des centaines de petits trous alignes sur
+les axes. **Ce n'est pas de la geologie, cela lit comme une surface corrompue.**
+
+**A/B PROPRE, et il a fallu s'y reprendre a deux fois :**
+
+    1200 m, 3 anneaux    striation + treillis perfore
+    1200 m, anneaux OFF  striation + cavites, aspect moins perfore
+    170 m (gros plan)    IDENTIQUE des deux cotes
+
+**Le defaut est present dans les DEUX.** Les anneaux changent son ASPECT, pas
+son existence : ce n'est donc pas de l'aliasing d'anneau, contrairement a ce
+que la note du 21 septembre laissait attendre.
+
+**ET MON PREMIER TEMOIN ETAIT CONFONDU.** Je l'avais lance a
+`-WorldseedRayon=300` : au-dela de 300 m, ce n'est plus du voxel mais le SOL DE
+FOND, lisse par construction. La vue large ne comparait donc rien -- seul le
+gros plan, a 170 m, tombait au niveau 0 des deux cotes et restait valide.
+**C'est exactement « pousser un defaut hors de portee du traitement qu'on veut
+juger », deja consigne pour la fenetre d'eau ramenee a 0,5 km.** Un temoin de
+rayon doit couvrir la distance qu'on photographie.
+
+**TROIS PISTES, AUCUNE MESUREE**, a discriminer avant de corriger :
+- les **dix bancs** de la serie stratigraphique -- 253 m, soit 25 m par banc --
+  rendus en marches dures plutot qu'en nuances ;
+- le **sapement des corniches**, dont les banquettes sont precisement des
+  marches ;
+- le **champ de densite**, qui mesure une distance VERTICALE a la surface et
+  est donc mal conditionne sur une paroi. Le depot a deja rencontre ce point
+  exact pour les formes de paroi, et le corrige en divisant par la norme du
+  gradient -- le terrain lui-meme n'a jamais recu ce traitement.
+
+L'arche en basalte, SANS serie stratigraphique et parfaitement lisse, oriente
+fortement vers la premiere ou la deuxieme.
+
+#### TROIS AUTRES DEFAUTS VUS
+
+- **Des fragments detaches** flottent sur la falaise cotiere : quatre blobs
+  sombres nettement separes de la surface, plus des eclats disperses sur la
+  neige dans les vues larges.
+- **La tournee ne cadre PAS les mesas.** Cible annoncee « sommet 222 m, paroi
+  200 m », image obtenue : une pente de dune lisse, aucune paroi. La remontee
+  de camera sort de la roche en MONTANT tant que le champ est plein ; sur une
+  table, elle aboutit donc au sommet du plateau. **Le registre attribuait ce
+  manque a la distance de vue ; c'etait le CADRAGE.**
+- **Une tache verte carree** apparait au meme endroit dans toutes les vues
+  larges, sur la neige. Non diagnostiquee.
+
+#### UNE CORRECTION A UN COMMIT DE LA VEILLE
+
+Le `BREAKING CHANGE` de `feat(voxel)!: tenir le point de naissance vise`
+annonce que « les tournees photo et les bancs qui visent un point precis
+peuvent desormais poser la camera sur une paroi ». **C'est FAUX pour la
+tournee** : elle passe par `TeleporterJoueur`, et ce chemin est un `else if`
+qui n'atteint JAMAIS le bloc modifie. L'avertissement ne vaut que pour les
+lancements en `-WorldseedDepartX/Y`. Les onze vues sont sorties normalement,
+ce qui le confirme a l'execution.
+
+#### CE QUE CETTE SEANCE APPREND SUR LA METHODE
+
+**Une forme mesuree n'est pas une forme validee, et l'ecart peut etre enorme.**
+La stratigraphie etait mesuree juste -- ecart de pente dur/tendre +8,17 degres,
+rapport 1,75 -- et elle produit a l'ecran une surface qui ne ressemble pas a de
+la roche. Aucune des sondes ne pouvait le dire : elles mesurent des PENTES et
+des PARTS, pas l'allure. La regle du depot -- « une forme qui n'a pas ete vue
+n'est pas validee » -- vient de se payer sur quatre formes d'un coup.
