@@ -7090,3 +7090,116 @@ indulgent, elle le rend MUET sur ce qu'il pretend verifier.**
 **CE QUI RESTE COPIE, ET C'EST ASSUME** : `FWorldseedLithology::Id` (8 Mio), que
 la generation REMPLIT -- la partager demanderait de rendre la structure non
 proprietaire. On deplace ce qui pese, et l'on dit ce qu'on laisse.
+
+### Quatre oracles automatiques, et quatre facons d'ecrire un test qui ne teste rien (22 septembre 2026)
+
+Les quatre controles que le registre designait comme « ceux qui auraient
+attrape de VRAIS defauts » sont desormais des tests d'automation : le mailleur
+Transvoxel, le drainage, le bulletin des vingt-trois climats reels, et les
+cavites. Vingt tests au vert. **Mais les quatre ont d'abord ete ecrits FAUX, et
+c'est cette partie qui vaut d'etre gardee** -- chaque fois la meme famille de
+faute, et chaque fois une faute que ce fichier documentait deja.
+
+#### 1. Un enroulement ne se deduit JAMAIS -- troisieme fois
+
+Le premier jet du test de face avant posait
+`dot(cross(B-A, C-A), gradient) > 0` : le gradient croit vers l'air, donc vers
+le dehors, donc un triangle a l'endroit devrait s'y accorder. La chaine de
+raisonnement est complete, et elle est FAUSSE -- Unreal travaille en repere
+INDIRECT, si bien que l'enroulement visible donne un produit vectoriel dirige
+vers l'INTERIEUR du solide.
+
+    maillage tel qu'il est rendu    0,05 %      le meme, retourne   99,95 %
+
+La mesure est BINAIRE, elle l'a toujours ete dans ce depot, et elle concorde
+avec ce que `ProbeVoisins` avait releve sur le mailleur du MOTEUR -- 0,2 et
+0,3 % -- lequel s'affiche correctement. **Le fichier portait deja la regle.**
+Elle est maintenant ecrite dans le test, avec les deux chiffres, pour qu'un
+quatrieme passage coute moins cher.
+
+#### 2. Une fixture sans cuvette ne mesure pas un comblement
+
+Le test du comblement tournait sur le relief de la fixture -- une somme
+d'harmoniques lisses, donc **sans aucun bassin ferme**. Releve : « plus forte
+hauteur comblee **0,00 m** », `FilledM` valant `Relief` partout. Les deux
+assertions passaient trivialement : j'avais ecrit un test de remplissage de
+cuvette sur un relief sans cuvette.
+
+Corrige par un relief FABRIQUE pour la question -- un versant qui descend vers
+la ligne polaire, et dedans un trou que rien ne relie au bas du versant sans
+franchir une levre. Apres : **cuvette de 42 m, 39 m effectivement combles**, et
+le test EXIGE desormais cette remontee, sans quoi il se tait de nouveau.
+
+**REGLE GENERALISEE : tout test doit porter une assertion qui echoue quand la
+matiere manque.** C'est la troisieme forme de ce defaut apres les biomes vides
+(deux `nullptr` qui se comparent egaux) et le comptage de composants d'herbe
+qui rendait zero sur le cas TEMOIN comme sur le notre.
+
+#### 3. `Segments` melange QUATRE familles, et le depot s'y etait deja fait prendre
+
+J'exigeais que tout troncon de cavite tienne dans les bornes de galerie :
+**2526 violations sur 7578**. C'etait la mesure qui etait fausse. Le tableau
+melange galeries, bouches de falaise, capsules des puits -- qui s'evasent par
+construction -- et percement des arches ; 504 puits d'environ cinq capsules
+font justement ces deux mille cinq cents troncons. Le releve le confirme :
+rayons de **1,50 a 28,73 m** quand les galeries sont reglees a 1,5-4,0.
+
+C'est trait pour trait « le controle de percement courait jusqu'a la fin du
+tableau des segments, donc il avalait les entrees -- qui percent le sol A
+DESSEIN », referme a l'epoque par une borne `FinDesGaleries`. **Cette borne est
+LOCALE a la passe** : le reseau ne la porte pas, donc les familles sont
+indiscernables de l'exterieur. L'exposer serait la bonne reponse -- les sondes
+en profiteraient -- mais le reseau est SERIALISE dans le cache depuis la veille,
+et ajouter un champ oblige a bumper `WORLDSEED_PIPELINE_VERSION`, donc a faire
+regenerer leur monde a tout le monde.
+
+**L'assertion a donc ete RETIREE plutot qu'affaiblie**, la limite ecrite dans
+le fichier, et il ne reste que ce qui vaut pour les quatre familles.
+
+#### 4. Extraire avant de tester, jamais recopier
+
+La lecture des vingt-trois releves, la table des attendus et le seuil de part
+estivale propre aux releves vivaient dans un namespace **ANONYME** de
+`WorldseedProbeTerre.cpp` : inatteignables depuis un test. Les recopier aurait
+valide une COPIE de la lecture plutot que la lecture elle-meme -- exactement le
+defaut que le portage de `terre.py` avait corrige un cran plus bas.
+
+Extraits dans **`WorldseedClimatsReels`**, que la sonde et le test appellent
+tous deux. Non-regression relevee AVANT de toucher au fichier et comparee
+apres : **les vingt-trois lignes sont identiques au caractere pres**, 20 sur 23.
+La sonde perd 79 lignes et ne change pas d'un chiffre.
+
+#### 5. Un test de CALAGE a le droit de dependre de `world_rules.json`
+
+La regle de la fixture veut qu'un test echoue quand le CODE casse, pas quand
+une valeur physique bouge. `Worldseed.Terre.ClimatsReels` et
+`Worldseed.Cavites.BornesDuToit` font exception **a dessein** : le bulletin EST
+une mesure de calage, et la borne du toit porte sur le fichier de reglages
+lui-meme. Un recalibrage DOIT rouvrir ces questions.
+
+**MAIS LE VERDICT SE LIT STATION PAR STATION, JAMAIS SUR UN COMPTE.** Un
+« au moins vingt sur vingt-trois » laisserait passer un ECHANGE, et le depot a
+vu exactement cela : l'ajout de la foret subtropicale humide a fait PASSER deux
+releves et BASCULER deux autres, pour un score inchange de 19 sur 23. Le compte
+n'avait rien vu. Le test compare donc deux ENSEMBLES de cles et signale les
+deux sens -- une regression nomme la station et sa nouvelle case, un progres
+demande de retirer la station de la liste des echecs connus.
+
+#### Ce que ces tests protegent, et qui n'etait garde par rien
+
+| test | le defaut qu'il aurait attrape |
+|---|---|
+| `Transvoxel.FaceAvant` | le terrain rendu en faces arriere, donc invisible -- signale comme « des trous », trouve a l'oeil |
+| `Transvoxel.Couture` | la fissure entre deux resolutions, que seul un releve lu a la main verifiait |
+| `Transvoxel.Cloture` | un maillage troue ou non manifold, et les aretes plus longues qu'une cellule |
+| `Drainage.OrdreTopologique` | le tri supprime la veille -- un ordre faux verse l'eau dans le mauvais sens SANS un message, et supprimer un tri ameliore le temps meme quand le resultat est faux |
+| `Drainage.Conservation` | un receveur qui pointe sur lui-meme a tort, une cellule oubliee |
+| `Drainage.Enroulement` | une ligne de partage des eaux ARTIFICIELLE sur l'antimeridien, invisible sur une carte vue de face |
+| `Terre.ClimatsReels` | tout recalibrage de biome qui deplace une station reelle sans qu'on le remarque |
+| `Cavites.BornesDuToit` | la chambre dont le toit creve le sol -- defaut reel, qu'aucune sonde ne voyait |
+| `Cavites.IndexSpatial` | une primitive perdue a la reconstruction : le chunk se maille plein, sans erreur |
+| `Cavites.Semis` | des salles qui se recouvrent, ou creusees sous la mer |
+
+**CE QUI RESTE SANS ORACLE** : l'erosion et le sapement (leurs invariants sont
+des ecarts de PENTE, donc statistiques et lies au calage), la passe littorale,
+les mesas et canyons, et tout le rendu -- qui ne se juge qu'a l'image.
