@@ -141,9 +141,20 @@ namespace WorldseedPipeline
 		const FString CacheKey = WorldseedCache::MakeKey(
 			Seed, Geometry.HeightM, Geometry.NY, Rules->SourceHash);
 
+		// LE CHRONO PAR PASSE, PARCE QUE « REPRIS DU CACHE » N'EST PAS UNE
+		// LECTURE. Signale en jeu : « malgre que la carte soit dans le cache,
+		// elle met beaucoup de temps a s'afficher sur le globe, pourtant aucun
+		// calcul de re-generation n'est effectue ». Le releve disait bien
+		// 12 982 ms, et le mot « cache » laissait croire a un simple chargement.
+		// Cette branche REJOUE quatre passes derivees, et sans chrono par passe
+		// on ne peut que supposer laquelle coute -- ce que ce depot s'interdit.
+		double TLoad = 0.0, TBiomes = 0.0, TChamps = 0.0, TGrottes = 0.0;
+		const double TAvantLoad = FPlatformTime::Seconds();
+
 		FWorldseedWorldData Cached;
 		if (WorldseedCache::Load(CacheKey, Cached))
 		{
+			TLoad = (FPlatformTime::Seconds() - TAvantLoad) * 1000.0;
 			Geometry = Cached.Geometry;
 			Out.Geometry = Geometry;
 			Out.ElevationM = MoveTemp(Cached.ElevationM);
@@ -190,23 +201,44 @@ namespace WorldseedPipeline
 				FString BioError;
 				if (const UWorldseedRules* BioRules = GetRules(BioError))
 				{
+					const double TA = FPlatformTime::Seconds();
 					WorldseedBiomes::Classify(Geometry, Out.ElevationM,
 						Out.Climate.TempMeanC, TempMaxC, Out.Climate.PrecipMm,
 						NoWaterMask, NoWaterMask,
 						FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
 
 					EpaissirLaGlace(Out, Geometry, *BioRules);
+					const double TB = FPlatformTime::Seconds();
+					TBiomes = (TB - TA) * 1000.0;
 
 					WorldseedFields::Compute(Geometry, Out.ElevationM,
 						Out.Climate.PrecipMm,
 						FWorldseedGroundRules::FromRules(*BioRules), Out.Ground);
+					const double TC = FPlatformTime::Seconds();
+					TChamps = (TC - TB) * 1000.0;
 
-					// LE RESEAU VIENT APRES LA LITHOLOGIE ET LE CLIMAT, et c'est
-					// l'ordre qui compte : c'est la ROCHE qui dit ou un karst peut
-					// se creuser, et la PLUIE qui dit s'il y a de quoi dissoudre.
-					WorldseedCaves::Build(Geometry, Out.ElevationM, Out.Climate.PrecipMm,
-						Out.Lithology, FWorldseedLithologyRules::FromRules(*BioRules),
-						FWorldseedCaveRules::FromRules(*BioRules), 1.0f, Seed, Out.Caves);
+					// LE RESEAU EST DESORMAIS DANS LE CACHE, et c'est ce qui
+					// rend le retour au menu supportable : sa reconstruction
+					// pesait 11,2 s sur les 14,9 d'une reprise, contre 456 ms
+					// pour la lecture du fichier. On ne le rebatit donc que
+					// s'il manque -- cas d'un cache ecrit par une version
+					// anterieure, que l'empreinte de chaine refuse de toute
+					// facon, ou d'un monde dont les regles coupent les cavites.
+					//
+					// L'ORDRE RESTE CELUI DE LA GENERATION quand il faut
+					// rebatir : la ROCHE dit ou un karst peut se creuser, la
+					// PLUIE s'il y a de quoi dissoudre.
+					if (Cached.Caves.IsValid())
+					{
+						Out.Caves = MoveTemp(Cached.Caves);
+					}
+					else
+					{
+						WorldseedCaves::Build(Geometry, Out.ElevationM, Out.Climate.PrecipMm,
+							Out.Lithology, FWorldseedLithologyRules::FromRules(*BioRules),
+							FWorldseedCaveRules::FromRules(*BioRules), 1.0f, Seed, Out.Caves);
+					}
+					TGrottes = (FPlatformTime::Seconds() - TC) * 1000.0;
 
 					// LE RELEVE VIENT ICI ET NULLE PART AILLEURS : c'est la seule
 					// place ou TOUTES les cles ont ete demandees. Pose plus haut,
@@ -219,10 +251,15 @@ namespace WorldseedPipeline
 
 			if (Job) { Job->Report(1.0f, EWorldseedStage::Done); }
 
+			const double TTotal = (FPlatformTime::Seconds() - StartTime) * 1000.0;
+
+			// LE DETAIL AVANT LE TOTAL, et le mot « cache » cesse de mentir :
+			// ce qui est LU tient dans `lecture`, tout le reste est RECALCULE.
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] monde repris du cache : seed=%d  %dx%d  (%.0f ms)"),
-				Seed, Geometry.NX, Geometry.NY,
-				(FPlatformTime::Seconds() - StartTime) * 1000.0);
+				TEXT("[Worldseed] monde repris du cache : seed=%d  %dx%d  (%.0f ms) ")
+				TEXT("-- lecture %.0f, biomes %.0f, champs %.0f, GROTTES %.0f ms"),
+				Seed, Geometry.NX, Geometry.NY, TTotal,
+				TLoad, TBiomes, TChamps, TGrottes);
 			return true;
 		}
 
@@ -524,17 +561,6 @@ namespace WorldseedPipeline
 			Out.MinElevationM, Out.MaxElevationM, Out.LandRatio * 100.0f,
 			(FPlatformTime::Seconds() - StartTime) * 1000.0);
 
-		FWorldseedWorldData ToCache;
-		ToCache.Geometry = Geometry;
-		ToCache.Seed = Seed;
-		ToCache.ElevationM = Out.ElevationM;
-		ToCache.TempC = Out.Climate.TempMeanC;
-		ToCache.PrecipMm = Out.Climate.PrecipMm;
-		ToCache.SeasonalAmpC = Out.Climate.SeasonalAmpC;
-		ToCache.Continentality = Out.Climate.Continentality;
-		ToCache.LithologyId = Out.Lithology.Id;
-		WorldseedCache::Save(CacheKey, Rules->SourceHash, ToCache);
-
 		// --- biomes ---------------------------------------------------------
 		// La temperature du mois le plus chaud n'est pas transportee : elle se
 		// RECONSTITUE exactement, le modele climatique la definissant comme la
@@ -580,6 +606,42 @@ namespace WorldseedPipeline
 			}
 		}
 
+		// --- l'ecriture du cache, ET ELLE VIENT EN DERNIER ------------------
+		//
+		// ELLE ETAIT PLACEE AVANT LA PASSE DES BIOMES, DONC AVANT LES GROTTES,
+		// et cela s'est vu a la premiere mesure : le reseau partait au fichier
+		// alors qu'il n'existait pas encore, le cache le relisait vide, et le
+		// chargement suivant le rebatissait -- 10 682 ms, exactement comme
+		// avant la serialisation. Le symptome etait « la serialisation ne sert
+		// a rien » ; la cause etait un ORDRE.
+		//
+		// Ce qui l'a trahi n'est pas le chronometre mais l'ORDRE DES LIGNES du
+		// journal : « monde genere » precedait « grottes : 155 chambres ».
+		// Tant que le cache ne portait que le relief et le climat -- tous deux
+		// prets a ce moment-la -- la place n'avait aucune importance. Elle en a
+		// des qu'on y ajoute une grandeur calculee plus tard.
+		//
+		// REGLE : une ecriture de cache se place APRES tout ce qu'elle
+		// pretend contenir, jamais a l'endroit ou la derniere grandeur ajoutee
+		// se trouvait prete.
+		{
+			FWorldseedWorldData ToCache;
+			ToCache.Geometry = Geometry;
+			ToCache.Seed = Seed;
+			ToCache.ElevationM = Out.ElevationM;
+			ToCache.TempC = Out.Climate.TempMeanC;
+			ToCache.PrecipMm = Out.Climate.PrecipMm;
+			ToCache.SeasonalAmpC = Out.Climate.SeasonalAmpC;
+			ToCache.Continentality = Out.Climate.Continentality;
+			ToCache.LithologyId = Out.Lithology.Id;
+
+			// LE RESEAU PART AVEC LE RESTE. Il est deterministe -- meme graine,
+			// memes regles, meme reseau -- donc le rebatir a chaque chargement
+			// etait du travail refait a l'identique, onze secondes durant.
+			ToCache.Caves = Out.Caves;
+
+			WorldseedCache::Save(CacheKey, Rules->SourceHash, ToCache);
+		}
 
 		return true;
 	}

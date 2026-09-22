@@ -65,6 +65,125 @@ namespace WorldseedCache
 			}
 		}
 
+		/**
+		 * Le reseau de cavites : les PRIMITIVES, jamais l'index.
+		 *
+		 * ON ECRIT CHAMP PAR CHAMP ET NON LA STRUCTURE EN BLOC. Un
+		 * `Serialize(&S, sizeof(S))` sur un tableau de structures grave dans le
+		 * fichier le bourrage du compilateur et l'ordre des membres : ajouter un
+		 * champ, ou changer l'alignement, produirait alors un cache qui se relit
+		 * SANS ERREUR et rend des chambres au mauvais endroit. Champ par champ,
+		 * un decalage ne passe pas inapercu -- et l'empreinte de version le
+		 * rattrape de toute facon.
+		 *
+		 * L'INDEX SPATIAL N'EST PAS ECRIT : il est derive, il pese plus que ce
+		 * qu'il indexe -- une entree par case TOUCHEE, donc un long tunnel
+		 * figure dans des dizaines de cases -- et `ReconstruireIndex` le refait
+		 * en quelques millisecondes a partir de ce qui suit.
+		 */
+		void EcrireGrottes(FArchive& Ar, const FWorldseedCaveNetwork& N)
+		{
+			int32 NbChambres = N.Chambers.Num();
+			int32 NbSegments = N.Segments.Num();
+			int32 NbArches = N.Arches.Num();
+			int32 NbPuits = N.Puits.Num();
+			float CellM = N.CellM;
+			FIntPoint Min = N.Min;
+			FIntPoint Size = N.Size;
+			Ar << NbChambres; Ar << NbSegments; Ar << NbArches; Ar << NbPuits;
+			Ar << CellM; Ar << Min; Ar << Size;
+
+			for (const FWorldseedCaveChamber& C : N.Chambers)
+			{
+				FVector P = C.CentreM; float R = C.RadiusM;
+				Ar << P; Ar << R;
+			}
+			for (const FWorldseedCaveSegment& S : N.Segments)
+			{
+				FVector A = S.AM, B = S.BM; float RA = S.RadiusAM, RB = S.RadiusBM;
+				Ar << A; Ar << B; Ar << RA; Ar << RB;
+			}
+			for (const FWorldseedCaveArch& A : N.Arches)
+			{
+				FVector P = A.CentreM; FVector2D T = A.TraversM;
+				float E = A.EpaisseurM, R = A.RayonM, Pont = A.PontM;
+				Ar << P; Ar << T; Ar << E; Ar << R; Ar << Pont;
+			}
+			for (const FWorldseedCavePuits& P : N.Puits)
+			{
+				FVector C = P.CentreM;
+				float Sol = P.SolM, H = P.HautM, B = P.BasM;
+				float RH = P.RayonHautM, RB = P.RayonBasM;
+				bool bDoline = P.bDoline;
+				Ar << C; Ar << Sol; Ar << H; Ar << B; Ar << RH; Ar << RB; Ar << bDoline;
+			}
+		}
+
+		bool LireGrottes(FArchive& Ar, FWorldseedCaveNetwork& N)
+		{
+			N.Reset();
+
+			int32 NbChambres = 0, NbSegments = 0, NbArches = 0, NbPuits = 0;
+			float CellM = 64.0f;
+			FIntPoint Min = FIntPoint::ZeroValue;
+			FIntPoint Size = FIntPoint::ZeroValue;
+			Ar << NbChambres; Ar << NbSegments; Ar << NbArches; Ar << NbPuits;
+			Ar << CellM; Ar << Min; Ar << Size;
+
+			// BORNES DE SURETE : un fichier tronque ou corrompu donnerait sinon
+			// une reservation absurde avant que la lecture n'echoue.
+			if (NbChambres < 0 || NbChambres > 1000000
+				|| NbSegments < 0 || NbSegments > 10000000
+				|| NbArches < 0 || NbArches > 1000000
+				|| NbPuits < 0 || NbPuits > 1000000
+				|| Size.X < 0 || Size.Y < 0
+				|| static_cast<int64>(Size.X) * Size.Y > 100000000)
+			{
+				return false;
+			}
+
+			N.CellM = CellM;
+			N.Min = Min;
+			N.Size = Size;
+
+			N.Chambers.SetNum(NbChambres);
+			for (FWorldseedCaveChamber& C : N.Chambers)
+			{
+				FVector P; float R;
+				Ar << P; Ar << R;
+				C.CentreM = P; C.RadiusM = R;
+			}
+			N.Segments.SetNum(NbSegments);
+			for (FWorldseedCaveSegment& S : N.Segments)
+			{
+				FVector A, B; float RA, RB;
+				Ar << A; Ar << B; Ar << RA; Ar << RB;
+				S.AM = A; S.BM = B; S.RadiusAM = RA; S.RadiusBM = RB;
+			}
+			N.Arches.SetNum(NbArches);
+			for (FWorldseedCaveArch& A : N.Arches)
+			{
+				FVector P; FVector2D T; float E, R, Pont;
+				Ar << P; Ar << T; Ar << E; Ar << R; Ar << Pont;
+				A.CentreM = P; A.TraversM = T;
+				A.EpaisseurM = E; A.RayonM = R; A.PontM = Pont;
+			}
+			N.Puits.SetNum(NbPuits);
+			for (FWorldseedCavePuits& P : N.Puits)
+			{
+				FVector C; float Sol, H, B, RH, RB; bool bDoline;
+				Ar << C; Ar << Sol; Ar << H; Ar << B; Ar << RH; Ar << RB; Ar << bDoline;
+				P.CentreM = C; P.SolM = Sol; P.HautM = H; P.BasM = B;
+				P.RayonHautM = RH; P.RayonBasM = RB; P.bDoline = bDoline;
+			}
+
+			// L'INDEX SE REFAIT ICI, et c'est la seule chose que la lecture
+			// calcule. Sans lui, `Query` rendrait zero primitive par chunk et le
+			// terrain serait plein -- sans la moindre erreur.
+			N.ReconstruireIndex();
+			return !Ar.IsError();
+		}
+
 		bool ReadBytes(FArchive& Ar, TArray<uint8>& Data)
 		{
 			int32 Num = 0;
@@ -188,7 +307,8 @@ namespace WorldseedCache
 		if (!ReadFloats(Ar, Out.ElevationM) || !ReadFloats(Ar, Out.TempC)
 			|| !ReadFloats(Ar, Out.PrecipMm) || !ReadFloats(Ar, Out.SeasonalAmpC)
 			|| !ReadFloats(Ar, Out.Continentality)
-			|| !ReadBytes(Ar, Out.LithologyId))
+			|| !ReadBytes(Ar, Out.LithologyId)
+			|| !LireGrottes(Ar, Out.Caves))
 		{
 			return false;
 		}
@@ -227,6 +347,7 @@ namespace WorldseedCache
 		WriteFloats(Raw, World.SeasonalAmpC);
 		WriteFloats(Raw, World.Continentality);
 		WriteBytes(Raw, World.LithologyId);
+		EcrireGrottes(Raw, World.Caves);
 
 		// Trois champs tres correles spatialement : zlib les reduit d'un facteur
 		// 2 a 3. Sans compression, un monde de reference pese une centaine de Mo.

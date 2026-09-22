@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedTexturePack.h"
 
@@ -63,6 +64,30 @@ struct WORLDSEED_API FWorldseedWorldData
 
 	/** Les biomes. Recalcules a chaque chargement plutot que serialises. */
 	FWorldseedBiomeMap Biomes;
+
+	/**
+	 * Le reseau de cavites, SERIALISE.
+	 *
+	 * SIGNALE EN JEU : « malgre que la carte soit dans le cache, elle met
+	 * beaucoup de temps a s'afficher sur le globe ». Chronometre par passe, le
+	 * retour au menu coutait 14,9 s dont **11,2 rien que pour rebatir ce
+	 * reseau** -- soit soixante-quinze pour cent d'une attente que le mot
+	 * « cache » laissait croire nulle. La lecture du fichier, elle, prend
+	 * 456 ms.
+	 *
+	 * POURQUOI IL NE L'ETAIT PAS, ET POURQUOI L'ARGUMENT NE TIENT PLUS. Le
+	 * registre justifiait de le rebatir par « il est reconstruit a chaque
+	 * chargement, donc aucun impact sur le cache ». C'etait vrai quand on ne
+	 * payait ce prix qu'une fois au lancement ; cela ne l'est plus des qu'on
+	 * fait des allers-retours entre le menu et la partie.
+	 *
+	 * ET IL EST MINUSCULE : 155 chambres, 177 liaisons, 8 413 troncons,
+	 * 24 arches sur le monde de reference -- quelques centaines de kilo-octets
+	 * a cote des dix-huit megaoctets du cache. L'index spatial, lui, n'est PAS
+	 * ecrit : il est derive, il pese plus que ce qu'il indexe, et il se refait
+	 * en quelques millisecondes par `ReconstruireIndex`.
+	 */
+	FWorldseedCaveNetwork Caves;
 
 	/**
 	 * Pack de textures choisi dans le menu.

@@ -175,6 +175,49 @@ FWorldseedCaveRules FWorldseedCaveRules::FromRules(const UWorldseedRules& Rules)
 
 // --------------------------------------------------------------------------
 
+void FWorldseedCaveNetwork::ReconstruireIndex()
+{
+	const int32 Cases = Size.X * Size.Y;
+	ChamberBuckets.Reset();
+	SegmentBuckets.Reset();
+	if (Cases <= 0)
+	{
+		return;
+	}
+	ChamberBuckets.SetNum(Cases);
+	SegmentBuckets.SetNum(Cases);
+
+	auto Ranger = [this](TArray<TArray<int32>>& Buckets, const FBox& B, int32 Index)
+	{
+		const int32 I0 = FMath::Clamp(FMath::FloorToInt(B.Min.X / CellM) - Min.X, 0, Size.X - 1);
+		const int32 I1 = FMath::Clamp(FMath::FloorToInt(B.Max.X / CellM) - Min.X, 0, Size.X - 1);
+		const int32 J0 = FMath::Clamp(FMath::FloorToInt(B.Min.Y / CellM) - Min.Y, 0, Size.Y - 1);
+		const int32 J1 = FMath::Clamp(FMath::FloorToInt(B.Max.Y / CellM) - Min.Y, 0, Size.Y - 1);
+		for (int32 J = J0; J <= J1; ++J)
+		{
+			for (int32 I = I0; I <= I1; ++I)
+			{
+				Buckets[J * Size.X + I].Add(Index);
+			}
+		}
+	};
+
+	for (int32 I = 0; I < Chambers.Num(); ++I)
+	{
+		const FWorldseedCaveChamber& C = Chambers[I];
+		Ranger(ChamberBuckets,
+			FBox(C.CentreM - FVector(C.RadiusM), C.CentreM + FVector(C.RadiusM)), I);
+	}
+	for (int32 I = 0; I < Segments.Num(); ++I)
+	{
+		const FWorldseedCaveSegment& S = Segments[I];
+		const float R = FMath::Max(S.RadiusAM, S.RadiusBM);
+		FBox B(ForceInit);
+		B += S.AM; B += S.BM;
+		Ranger(SegmentBuckets, B.ExpandBy(R), I);
+	}
+}
+
 void FWorldseedCaveNetwork::Reset()
 {
 	Chambers.Reset();
@@ -2014,38 +2057,13 @@ void FChantierGrottes::Percer()
 void FChantierGrottes::Indexer()
 {
 	// --- 6. l'index spatial ---------------------------------------------------
-	Out.ChamberBuckets.SetNum(Cases);
-	Out.SegmentBuckets.SetNum(Cases);
-
-	auto Ranger = [this](TArray<TArray<int32>>& Buckets, const FBox& B, int32 Index)
-	{
-		const int32 I0 = FMath::Clamp(FMath::FloorToInt(B.Min.X / Out.CellM) - Out.Min.X, 0, Out.Size.X - 1);
-		const int32 I1 = FMath::Clamp(FMath::FloorToInt(B.Max.X / Out.CellM) - Out.Min.X, 0, Out.Size.X - 1);
-		const int32 J0 = FMath::Clamp(FMath::FloorToInt(B.Min.Y / Out.CellM) - Out.Min.Y, 0, Out.Size.Y - 1);
-		const int32 J1 = FMath::Clamp(FMath::FloorToInt(B.Max.Y / Out.CellM) - Out.Min.Y, 0, Out.Size.Y - 1);
-		for (int32 J = J0; J <= J1; ++J)
-		{
-			for (int32 I = I0; I <= I1; ++I)
-			{
-				Buckets[J * Out.Size.X + I].Add(Index);
-			}
-		}
-	};
-
-	for (int32 I = 0; I < Out.Chambers.Num(); ++I)
-	{
-		const FWorldseedCaveChamber& C = Out.Chambers[I];
-		Ranger(Out.ChamberBuckets,
-			FBox(C.CentreM - FVector(C.RadiusM), C.CentreM + FVector(C.RadiusM)), I);
-	}
-	for (int32 I = 0; I < Out.Segments.Num(); ++I)
-	{
-		const FWorldseedCaveSegment& S = Out.Segments[I];
-		const float R = FMath::Max(S.RadiusAM, S.RadiusBM);
-		FBox B(ForceInit);
-		B += S.AM; B += S.BM;
-		Ranger(Out.SegmentBuckets, B.ExpandBy(R), I);
-	}
+	//
+	// LE RESEAU SAIT S'INDEXER LUI-MEME, et c'est ce qui permet au cache de le
+	// relire sans le reconstruire : il ecrit les primitives, pose la grille,
+	// puis appelle la meme fonction que ce temps-ci. Ecrite deux fois, elle
+	// aurait diverge a la premiere retouche -- le depot a une regle contre les
+	// formules recopiees dans deux fichiers.
+	Out.ReconstruireIndex();
 }
 
 void FChantierGrottes::Verifier()

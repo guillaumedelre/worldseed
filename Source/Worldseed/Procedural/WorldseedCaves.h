@@ -138,6 +138,20 @@ struct WORLDSEED_API FWorldseedCaveNetwork
 	/** Les primitives dont l'emprise touche cette boite. */
 	void Query(const FBox& BoxM, FWorldseedCaveLocal& Out) const;
 
+	/**
+	 * Rebatit l'index spatial depuis les chambres et les segments.
+	 *
+	 * L'INDEX EST DERIVE, DONC IL NE SE SERIALISE PAS. Il pese bien plus que
+	 * ce qu'il indexe -- une entree par case TOUCHEE et par primitive, donc un
+	 * long tunnel figure dans des dizaines de cases -- alors qu'il se refait
+	 * en quelques millisecondes. Le cache n'ecrit que les primitives, et
+	 * appelle ceci au chargement.
+	 *
+	 * `CellM`, `Min` et `Size` doivent etre poses AVANT : ce sont eux qui
+	 * definissent la grille, et ils viennent du semis, pas des primitives.
+	 */
+	void ReconstruireIndex();
+
 	void Reset();
 };
 

@@ -927,7 +927,18 @@ void UWorldseedMenuWidget::NativeConstruct()
 		bAutoJouer = true;
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] menu : parcours automatique, graine %d"), Params.Seed);
-		StartGeneration();
+
+		// ON NE LANCE PAS ICI : la construction appelle deja `StartGeneration`
+		// plus bas, sans condition. Le faire des deux endroits generait le
+		// monde DEUX FOIS, en parallele -- deux reconstructions completes du
+		// reseau de cavites, onze secondes chacune, pour un resultat identique
+		// (155 chambres et 177 liaisons des deux cotes, a 34 ms d'intervalle).
+		// Vu au journal en instrumentant le temps de retour au menu ; rien ne
+		// le signalait, les deux lignes etant separees par mille autres.
+		//
+		// Et cela montrait au passage que l'annulation n'interrompt PAS une
+		// passe de grottes en cours : la premiere generation est allee au bout
+		// malgre la seconde.
 	}
 
 	if (PackCombo)
