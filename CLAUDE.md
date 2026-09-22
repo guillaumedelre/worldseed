@@ -8037,3 +8037,27 @@ ressemblait assez a l'originale pour qu'on la croie. Ce qui l'a trahie est le
 compte : 90,4 % de pixels changes la seconde fois contre presque rien la
 premiere. **Un harnais qui compose une ligne de commande doit passer un
 TABLEAU d'arguments, jamais une chaine a decouper.**
+
+**ET LE HUITIEME ETAT A TRANCHE : CE SONT LES ANNEAUX.** Terrain maille a 1 m
+de voxel PARTOUT (`-WorldseedNiveaux=0`), meme camera, meme monde, meme
+palette -- donc un A/B propre, contrairement a la comparaison pres/loin :
+
+    I  anneaux coupes, 1 m partout           48,8     9,1 % de sombres
+
+A l'oeil c'est net, les parois passent du NOIR PERFORE AU GRIS et la structure
+en gradins reste -- elle, c'est de la vraie geometrie. Au chiffre c'est plus
+modeste : **-23 % de pixels sombres et -9 % d'amplitude**. Les anneaux sont
+donc bien une cause, la seule que huit etats aient fait bouger, et ils
+n'expliquent pas tout le noir.
+
+**LA COMPARAISON PRES/LOIN N'EST PAS UN A/B, et je l'avais d'abord presentee
+comme tel.** 2,2 % de pixels sombres au pied contre 11,8 en vue large, sur la
+meme geometrie et la meme palette -- mais pas sur le meme CADRAGE : le gros
+plan porte bien plus de ciel et de neige, donc l'ecart melange le defaut et la
+composition. Il reste indicatif ; seul A contre I compare a camera egale.
+
+**RESERVE SUR LA VUE I, dite parce qu'elle a failli l'invalider** : a 1 m de
+voxel sur 1200 m de vue, le monde met une dizaine de minutes a se batir, et ce
+registre note qu'on y photographie parfois une FILE D'ATTENTE plutot qu'un
+monde. Controle fait avant de conclure : le terrain est complet jusqu'a
+l'horizon, sans trou ni reprise par le sol de fond. La vue est valide.
