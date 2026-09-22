@@ -1048,6 +1048,44 @@ private:
 	/** Combien de sommets par banc de la serie, pour voir si elle RAYE. */
 	mutable TArray<int32> PeintureParBanc;
 
+	/**
+	 * CE QUE LA PEINTURE ECRIT VRAIMENT, ET POURQUOI IL FALLAIT LE COMPTER.
+	 *
+	 * Huit etats ont innocente la palette : teinte unique, teinte coupee,
+	 * lumieres coupees, diaclases coupees -- rien ne deplace le noir des
+	 * parois. Reste une question qu'aucun de ces huit ne pose : la peinture
+	 * ECRIT-ELLE seulement du noir ? Tant qu'on ne le sait pas, on cherche la
+	 * cause d'une couleur dont on n'a jamais verifie qu'elle vient de nous.
+	 *
+	 * Ces compteurs portent sur la couleur FINALE de chaque sommet, apres
+	 * toutes les branches. Le seuil est celui de la mesure a l'image -- 70 sur
+	 * 255 en sRGB -- converti par la MEME table que le catalogue, donc
+	 * exactement comparable a ce qu'on compte sur une capture.
+	 */
+	mutable int64 PeintureSombresEcrits = 0;
+	mutable double PeintureLumMin = 1e30;
+	mutable double PeintureLumMax = -1e30;
+
+	/** Les sombres ecrits, ventiles par BRANCHE : c'est la piste a remonter. */
+	mutable int64 PeintureSombresParCause[4] = {};
+	mutable int64 PeintureParCause[4] = {};
+
+	/**
+	 * LA CARTE DES CAUSES : chaque sommet peint par la branche qui l'a decide,
+	 * en aplats francs et TOUS CLAIRS.
+	 *
+	 * C'est le temoin de couleur du depot applique a un diagnostic : « une
+	 * couleur franche ne se compare a rien, elle est la ou elle n'est pas ».
+	 * Toutes les teintes de la carte sont au-dessus du seuil de noir, donc
+	 * TOUT PIXEL NOIR SUR UNE CAPTURE EN CARTE DES CAUSES N'EST PAS UN SOMMET
+	 * PEINT PAR NOUS -- c'est un trou, une face arriere, ou un autre acteur.
+	 * La reponse est binaire, et c'est ce qu'on cherche.
+	 *
+	 * A regarder avec `ShowFlag.Lighting 0`, sans quoi l'eclairage assombrit
+	 * les aplats et l'on ne sait plus si le noir est peint ou ombre.
+	 */
+	bool bCarteDesCauses = false;
+
 	double FirstFillSeconds = 0.0;
 	double StartSeconds = 0.0;
 };

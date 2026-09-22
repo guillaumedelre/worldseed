@@ -551,6 +551,54 @@ void UWorldseedPhotographe::Demarrer()
 {
 	if (Tournee.Num() == 0 || EnCours()) { return; }
 
+	// --- ON NE PHOTOGRAPHIE QUE CE QU'ON JUGE -------------------------------
+	//
+	// Demande du proprietaire pendant le diagnostic du noir des parois : « ce
+	// n'est pas la peine pendant les tests de refaire une seance photos de
+	// tout, sur les canyons ca se voit tellement qu'ils sont suffisants ».
+	//
+	// ET LE COUT N'EST PAS CELUI QU'ON CROIT. Un arret ne coute pas une
+	// capture : il coute un REMPLISSAGE COMPLET du monde autour de sa
+	// position, puisque le diffuseur relache tout ce qui sort du rayon. Onze
+	// arrets, c'est onze remplissages -- une dizaine de minutes a resolution
+	// uniforme. Deux arrets rendent l'A/B abordable, donc REPETABLE, et c'est
+	// ce qui compte : ce depot a deja conclu sur des moities d'A/B qu'il
+	// n'avait pas les moyens de refaire.
+	{
+		FString Filtre;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedArrets="),
+				Filtre, false) && !Filtre.IsEmpty())
+		{
+			TArray<FString> Motifs;
+			Filtre.ParseIntoArray(Motifs, TEXT(","), true);
+
+			const int32 Avant = Tournee.Num();
+			Tournee.RemoveAll([&Motifs](const FWorldseedPhotoStop& S)
+			{
+				for (const FString& M : Motifs)
+				{
+					if (S.Nom.Contains(M.TrimStartAndEnd())) { return false; }
+				}
+				return true;
+			});
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] photo : %d arrets retenus sur %d par « %s »"),
+				Tournee.Num(), Avant, *Filtre);
+		}
+	}
+
+	// UN FILTRE QUI NE GARDE RIEN DOIT LE DIRE. Sans cette ligne, une faute de
+	// frappe dans le motif rendrait une tournee vide et un journal muet -- et
+	// l'on chercherait le defaut dans la generation.
+	if (Tournee.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] photo : aucun arret ne correspond au filtre, ")
+			TEXT("tournee annulee"));
+		return;
+	}
+
 	Etape = 0;
 	Attente = 0;
 	Horloge = 0.0f;
@@ -762,6 +810,23 @@ void UWorldseedPhotographe::Avancer(float DeltaTime)
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : tournee terminee"));
+
+	// --- ET LA TOURNEE DIT CE QU'ELLE A PHOTOGRAPHIE ------------------------
+	//
+	// Le releve du terrain n'existait que dans le BANC, jamais ici -- et c'est
+	// exactement ce qui a fait mesurer l'entonnoir de la teinte de roche au
+	// mauvais endroit : au point d'apparition du banc, une plaine cotiere a
+	// 4,9 m ou la serie stratigraphique (267 a 520 m) ne monte jamais. Le
+	// releve annoncait « bancs touches AUCUN » pour un monde qui en touche
+	// dix, et c'est la sonde qui avait tort.
+	//
+	// Une tournee qui ne dit pas ce qu'elle a peint n'est qu'une moitie de
+	// mesure : les captures montrent, le releve chiffre, et l'un sans l'autre
+	// laisse deviner.
+	if (const AWorldseedVoxelTerrain* const Sol = Terrain())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] photo : %s"), *Sol->ReportState());
+	}
 	Etape = INDEX_NONE;
 	if (bQuitterEnsuite)
 	{

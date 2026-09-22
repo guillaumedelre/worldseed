@@ -709,6 +709,23 @@ void AWorldseedVoxelTerrain::BeginPlay()
 					}
 				}
 
+				// LA CARTE DES CAUSES S'ARME ICI, une fois par monde et non
+				// par chunk : la peinture tourne sur 1,67 million de sommets,
+				// et relire la ligne de commande dedans serait une depense
+				// pure.
+				int32 Carte = 0;
+				if (FParse::Value(FCommandLine::Get(),
+						TEXT("WorldseedCarteCauses="), Carte) && Carte > 0)
+				{
+					bCarteDesCauses = true;
+					UE_LOG(LogTemp, Warning,
+						TEXT("[Worldseed] voxel : CARTE DES CAUSES armee -- les ")
+						TEXT("sommets sont peints par BRANCHE, pas par matiere. ")
+						TEXT("Magenta = repli, vert = biome, bleu = roche 2D, ")
+						TEXT("teinte vive = banc. A regarder avec ")
+						TEXT("ShowFlag.Lighting 0."));
+				}
+
 				// FParse::Value S'ARRETE SUR UNE VIRGULE par defaut, et le
 				// depot l'a deja paye : « 0,90,180,270 » arrive comme « 0 »,
 				// sans un mot. D'ou le `false`.
@@ -1807,12 +1824,69 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 	return R;
 }
 
+/**
+ * LES BRANCHES DE LA PEINTURE, NOMMEES.
+ *
+ * NAMESPACE NOMME A DESSEIN : UBT concatene les `.cpp` en une seule unite de
+ * traduction, et deux namespaces ANONYMES n'y font qu'un. Ce depot a deja
+ * casse deux fois sur cette collision -- `WorldseedMetersToCm`, puis `SUB` --
+ * sur des fichiers que personne n'avait touches.
+ */
+namespace WorldseedPeinture
+{
+	enum class ECause : uint8
+	{
+		Repli   = 0,   // pas de carte de biomes : le gris de secours
+		Biome   = 1,   // au-dessus du sol, ou la roche ne mord pas encore
+		Roche2D = 2,   // sous terre, hors de la fenetre de la serie
+		Banc    = 3,   // sous terre, dans la serie stratigraphique
+	};
+
+	static const TCHAR* NomDeCause(ECause C)
+	{
+		switch (C)
+		{
+		case ECause::Repli:   return TEXT("repli");
+		case ECause::Biome:   return TEXT("biome");
+		case ECause::Roche2D: return TEXT("roche 2D");
+		default:              return TEXT("banc");
+		}
+	}
+
+	/**
+	 * L'aplat qui NOMME la branche. Toutes ces teintes sont franches et
+	 * claires : aucune ne peut se confondre avec le noir qu'on traque.
+	 */
+	static FLinearColor Aplat(ECause C, int32 Banc, int32 NbBancs)
+	{
+		switch (C)
+		{
+		case ECause::Repli:   return FLinearColor(1.0f, 0.0f, 1.0f);   // magenta
+		case ECause::Biome:   return FLinearColor(0.10f, 0.85f, 0.20f); // vert
+		case ECause::Roche2D: return FLinearColor(0.15f, 0.45f, 1.00f); // bleu
+		default:
+			// Une teinte par banc, saturees et a pleine valeur : on doit
+			// pouvoir compter les bandes a l'oeil sur la capture.
+			return FLinearColor::MakeFromHSV8(
+				static_cast<uint8>((Banc * 255) / FMath::Max(1, NbBancs)),
+				200, 255);
+		}
+	}
+}
+
 void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 {
 	WORLDSEED_TRACE(PeindreSommets);
 
 	const int32 Count = Mesh.Positions.Num();
 	Mesh.Colours.SetNumUninitialized(Count);
+
+	// LE SEUIL DE NOIR VIENT DE LA MESURE A L'IMAGE, PAS D'UNE INTUITION.
+	// Soixante-dix sur 255 en sRGB est le seuil que le script de comparaison
+	// emploie sur les captures ; le convertir par la table sRGB -- la meme que
+	// le catalogue de roches -- le rend exactement comparable.
+	static const float SeuilSombre =
+		FLinearColor(FColor(70, 70, 70, 255)).GetLuminance();
 
 	// LA CARTE EST PRISE UNE FOIS, PAS PAR SOMMET. L'accesseur passe par le
 	// monde partage : un test de validite et un dereferencement, donc presque
@@ -1832,9 +1906,23 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 
 	for (int32 I = 0; I < Count; ++I)
 	{
+		// LA BRANCHE QUI DECIDE EST SUIVIE JUSQU'AU BOUT. Sans elle, un sommet
+		// sombre ne dit pas D'OU il vient, et l'on remonte la piste a l'envers.
+		WorldseedPeinture::ECause Cause = WorldseedPeinture::ECause::Biome;
+		int32 BancPeint = 0;
+
 		if (!bHasBiomes)
 		{
-			Mesh.Colours[I] = FLinearColor::Gray;
+			Cause = WorldseedPeinture::ECause::Repli;
+			const FLinearColor Repli = bCarteDesCauses
+				? WorldseedPeinture::Aplat(Cause, 0, 1) : FLinearColor::Gray;
+			Mesh.Colours[I] = Repli;
+			++PeintureParCause[static_cast<int32>(Cause)];
+			if (Repli.GetLuminance() < SeuilSombre)
+			{
+				++PeintureSombresEcrits;
+				++PeintureSombresParCause[static_cast<int32>(Cause)];
+			}
 			continue;
 		}
 
@@ -1886,6 +1974,7 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 			if (Profondeur > 0.0)
 			{
 				++PeintureSousLaSurface;
+				Cause = WorldseedPeinture::ECause::Roche2D;
 				// --- LA ROCHE SE LIT EN TROIS DIMENSIONS --------------------
 				//
 				// C'ETAIT UNE ROCHE PAR COLONNE, donc une paroi d'une seule
@@ -1913,6 +2002,8 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 						if (StratRules.Serie.IsValidIndex(Banc))
 						{
 							Id = StratRules.Serie[Banc].RockId;
+							BancPeint = Banc;
+							Cause = WorldseedPeinture::ECause::Banc;
 
 							if (PeintureParBanc.Num() < StratRules.Serie.Num())
 							{
@@ -1958,9 +2049,39 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 						static_cast<float>(Profondeur - Marge) / Rules.RockColourFadeM,
 						0.0f, 1.0f);
 					if (T > 0.01f) { ++PeintureTeintee; }
+					else
+					{
+						// LE FONDU NE MORD PAS ENCORE : ce sommet est peint en
+						// BIOME, quoi qu'en dise la branche qu'on a traversee.
+						// Compter la branche PARCOURUE plutot que celle qui a
+						// ECRIT donnerait un entonnoir juste et une carte des
+						// causes fausse.
+						Cause = WorldseedPeinture::ECause::Biome;
+					}
 					Teinte = FMath::Lerp(Teinte, CouleurParRoche[Id], T);
 				}
 			}
+		}
+
+		// --- L'HISTOGRAMME PORTE SUR CE QUI EST ECRIT --------------------
+		//
+		// On mesure la couleur FINALE, apres toutes les branches, et jamais
+		// ce qu'on croit avoir mis. C'est la seule facon de repondre a la
+		// question posee : la peinture ecrit-elle du noir, oui ou non ?
+		const double Lum = static_cast<double>(Teinte.GetLuminance());
+		PeintureLumMin = FMath::Min(PeintureLumMin, Lum);
+		PeintureLumMax = FMath::Max(PeintureLumMax, Lum);
+		++PeintureParCause[static_cast<int32>(Cause)];
+		if (Lum < SeuilSombre)
+		{
+			++PeintureSombresEcrits;
+			++PeintureSombresParCause[static_cast<int32>(Cause)];
+		}
+
+		if (bCarteDesCauses)
+		{
+			Teinte = WorldseedPeinture::Aplat(
+				Cause, BancPeint, FMath::Max(1, StratRules.Serie.Num()));
 		}
 
 		Mesh.Colours[I] = Teinte;
@@ -2863,6 +2984,47 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			PeintureProfondeurSomme / static_cast<double>(PeintureSommets),
 			PeintureProfondeurMin, PeintureProfondeurMax,
 			Bancs.IsEmpty() ? TEXT(" AUCUN") : *Bancs);
+
+		// --- ET CE QUE LA PEINTURE A REELLEMENT ECRIT --------------------
+		//
+		// LA LIGNE QUI TRANCHE LE DIAGNOSTIC DU NOIR. Huit etats ont
+		// innocente la palette sans jamais poser la question prealable :
+		// ecrivons-nous seulement du noir ? Si `sombres ecrits` vaut zero
+		// alors que les captures en comptent douze pour cent, le noir n'est
+		// pas une couleur de sommet -- et toute recherche du cote du
+		// catalogue, des strates ou de l'erosion est perdue d'avance.
+		//
+		// Les luminances sont rendues en sRGB, l'echelle des captures, pour
+		// que les deux chiffres se comparent sans conversion mentale.
+		const auto EnSRGB = [](double Lineaire) -> int32
+		{
+			return FLinearColor(static_cast<float>(Lineaire),
+				static_cast<float>(Lineaire),
+				static_cast<float>(Lineaire)).ToFColor(true).R;
+		};
+
+		FString ParCause;
+		for (int32 C = 0; C < 4; ++C)
+		{
+			if (PeintureParCause[C] > 0)
+			{
+				ParCause += FString::Printf(TEXT(" %s %.1f %% (dont %.2f %% sombres)"),
+					WorldseedPeinture::NomDeCause(
+						static_cast<WorldseedPeinture::ECause>(C)),
+					PeintureParCause[C] * Inv,
+					PeintureParCause[C] > 0
+						? 100.0 * PeintureSombresParCause[C]
+							/ static_cast<double>(PeintureParCause[C])
+						: 0.0);
+			}
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : couleurs ECRITES -- luminance %d a %d sur 255, ")
+			TEXT("SOMBRES %.2f %% (seuil 70) | par branche :%s"),
+			EnSRGB(PeintureLumMin), EnSRGB(PeintureLumMax),
+			PeintureSombresEcrits * Inv,
+			ParCause.IsEmpty() ? TEXT(" aucune") : *ParCause);
 	}
 
 	// --- CE QUE LE TELEVERSEMENT NE DISAIT PAS ------------------------------
