@@ -7203,3 +7203,82 @@ demande de retirer la station de la liste des echecs connus.
 **CE QUI RESTE SANS ORACLE** : l'erosion et le sapement (leurs invariants sont
 des ecarts de PENTE, donc statistiques et lies au calage), la passe littorale,
 les mesas et canyons, et tout le rendu -- qui ne se juge qu'a l'image.
+
+### Le point de naissance : ce n'etait pas la borne qui manquait (22 septembre 2026)
+
+Qui visait un sommet naissait a son pied -- 89 et 92 metres plus bas sur deux
+parties independantes, puis 357, puis 914, au niveau de la mer.
+
+**LA BORNE EXISTAIT ET S'APPLIQUAIT.** `EcartAltitudeDepartM` valait quarante
+metres et le chemin du point choisi l'employait. Le defaut etait une **FALAISE
+DE POLITIQUE** : quarante metres, puis l'infini, en un cran. Quand la passe
+bornee echouait, le repli repartait a douze degres SANS contrainte d'altitude
+et prenait la plaine. **J'ai failli ajouter ce qui existait deja** -- la tache
+etait notee « borner l'ecart d'altitude » et elle etait periemee.
+
+**ARBITRAGE DU PROPRIETAIRE : echec franc.** Si rien de tenable n'existe dans
+la borne, on TIENT le point vise. Ecartees apres presentation : l'elargissement
+par crans (40, 120, 360, sans borne), qui gardait un echec graduel ; et le
+MEILLEUR de toute la spirale, qui traitait la cause nommee par le commentaire
+d'origine -- « elle retient le PREMIER point acceptable, pas le meilleur » --
+mais au prix de la PROXIMITE, en naissant jusqu'a 380 m du point vise pour
+gagner trois metres. **Ce qui est accepte : le pion peut naitre sur une paroi
+et glisser.** La naissance LIBRE ne change pas -- l'endroit n'y a aucune
+importance.
+
+#### Le releve de reference du registre etait PERIME
+
+Le cas documente -- (-3641, 6516), surface 661,4 m -- pointe aujourd'hui
+**339 metres SOUS LA MER**. Le monde a ete regenere plusieurs fois depuis
+(bumps de version, deplacement des plaques). **Un releve en coordonnees
+absolues ne survit pas a une regeneration**, et c'est exactement pourquoi la
+preuve de ce chantier est un TEST sur relief fabrique et non un releve : le
+test, lui, dit la meme chose dans six mois.
+
+#### Une rampe uniforme ne contient pas le cas -- troisieme fois du jour
+
+Le premier test de borne tournait sur une rampe a 31 degres partout. La
+recherche NON bornee n'y trouve rien non plus -- « rien trouve dans les 384 m »
+-- donc **le temoin ne s'executait pas et le test passait sans rien comparer**.
+
+Le defaut reel demande TROIS choses a la fois : un versant trop raide pour
+qu'on y naisse, du PLAT plus bas, et le tout dans les 384 metres que la spirale
+fouille. D'ou une COLLINE -- plaine a 20 m, versant a 31 degres, sommet a 260 --
+et une maille de quinze metres, contre cent vingt-cinq pour la grille de la
+rampe : un versant de deux cents metres n'y tiendrait pas, la bicubique
+l'arrondirait en pente douce. Apres correction, le test reproduit le defaut :
+
+    sans borne   (-208, -208) m, altitude 19,4 m, soit -121 m
+    avec borne   rien trouve -- c'est l'echec franc
+    sur la plaine  ecart 0,0 m, pente 0,0 deg   <- la meme borne laisse passer
+
+Le troisieme cas compte autant que les deux autres : sans lui, « la borne
+refuse » ne se distinguerait pas de « la borne refuse toujours ».
+
+#### Un chemin d'echec ne s'eprouve pas en esperant qu'il arrive
+
+**SIX ESSAIS EN JEU N'ONT PAS DECLENCHE L'ECHEC FRANC.** La spirale de 384 m
+trouve presque toujours quelque chose dans les quarante metres -- ce qui est
+une bonne propriete, et rendait le nouveau chemin non execute, donc une dette.
+Releves au passage, tous sur des parois cotieres (la terre emergee la plus
+proche d'un point en mer est une falaise) : pentes de 56 a 80 degres, et dans
+le cas le plus serre la borne a mordu juste -- **-38 m retenus au lieu de -46**.
+
+Remede conforme a la regle du depot -- « quand un A/B demande un reglage qui
+n'a pas de surcharge, on AJOUTE la surcharge ; on ne touche pas au fichier » :
+**`-WorldseedEcartDepart=`**. A 1 m, l'echec est certain et le chemin s'eprouve :
+
+    aucun sol tenable a moins de 1 m d'altitude -- ON TIENT LE POINT VISE (pente 80,0 deg)
+    point vise TENU a (-16445, 4008) m, altitude 46,2 m, ecart nul
+
+#### Deux acquis annexes
+
+- **`WorldseedPlacement`** : `PenteDeg`, `SolPlein` et `SolPlat` ont quitte
+  l'acteur. Elles ne lisaient que le champ de densite -- ni l'acteur, ni le
+  monde, ni le pion -- et les garder dans un fichier de deux mille neuf cents
+  lignes les rendait intestables, alors qu'elles decident de la premiere chose
+  que le joueur voit.
+- **`-WorldseedDepartExact=` rapporte enfin la PENTE.** Il annoncait « 0,0 deg »
+  sur n'importe quelle paroi, faute d'appeler la recherche -- or c'est le
+  drapeau qu'on emploie pour inspecter des endroits impraticables. Il a servi
+  de sonde pour trouver les points raides de ce chantier.
