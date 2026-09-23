@@ -1,6 +1,7 @@
 // Worldseed - terrain voxel : diffusion des chunks autour du joueur.
 
 #include "Procedural/WorldseedVoxelTerrain.h"
+#include "Procedural/WorldseedPeinture.h"
 #include "Procedural/WorldseedPlacement.h"
 #include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedStrata.h"
@@ -1028,267 +1029,58 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 	return R;
 }
 
-/**
- * LES BRANCHES DE LA PEINTURE, NOMMEES.
- *
- * NAMESPACE NOMME A DESSEIN : UBT concatene les `.cpp` en une seule unite de
- * traduction, et deux namespaces ANONYMES n'y font qu'un. Ce depot a deja
- * casse deux fois sur cette collision -- `WorldseedMetersToCm`, puis `SUB` --
- * sur des fichiers que personne n'avait touches.
- */
-namespace WorldseedPeinture
-{
-	enum class ECause : uint8
-	{
-		Repli   = 0,   // pas de carte de biomes : le gris de secours
-		Biome   = 1,   // au-dessus du sol, ou la roche ne mord pas encore
-		Roche2D = 2,   // sous terre, hors de la fenetre de la serie
-		Banc    = 3,   // sous terre, dans la serie stratigraphique
-	};
-
-	static const TCHAR* NomDeCause(ECause C)
-	{
-		switch (C)
-		{
-		case ECause::Repli:   return TEXT("repli");
-		case ECause::Biome:   return TEXT("biome");
-		case ECause::Roche2D: return TEXT("roche 2D");
-		default:              return TEXT("banc");
-		}
-	}
-
-	/**
-	 * L'aplat qui NOMME la branche. Toutes ces teintes sont franches et
-	 * claires : aucune ne peut se confondre avec le noir qu'on traque.
-	 */
-	static FLinearColor Aplat(ECause C, int32 Banc, int32 NbBancs)
-	{
-		switch (C)
-		{
-		case ECause::Repli:   return FLinearColor(1.0f, 0.0f, 1.0f);   // magenta
-		case ECause::Biome:   return FLinearColor(0.10f, 0.85f, 0.20f); // vert
-		case ECause::Roche2D: return FLinearColor(0.15f, 0.45f, 1.00f); // bleu
-		default:
-			// Une teinte par banc, saturees et a pleine valeur : on doit
-			// pouvoir compter les bandes a l'oeil sur la capture.
-			return FLinearColor::MakeFromHSV8(
-				static_cast<uint8>((Banc * 255) / FMath::Max(1, NbBancs)),
-				200, 255);
-		}
-	}
-}
-
 void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 {
-	WORLDSEED_TRACE(PeindreSommets);
+	// TOUT LE CALCUL EST AILLEURS, ET IL N'A BESOIN DE RIEN DE CET ACTEUR : une
+	// carte de biomes, une geometrie, un champ, une lithologie, une serie et
+	// quatre nombres. Ce qui reste ici est de DETENIR ces donnees et de cumuler
+	// le releve entre les chunks -- le travail d'un acteur.
+	const FWorldseedPeintureContexte Contexte{
+		Biomes(),
+		Geometry,
+		*Density,
+		Lithology,
+		CouleurParRoche,
+		DureteParId,
+		StratRules,
+		DensityRules.RockColourFadeM,
+		DensityRules.OverhangAmplitudeM + DensityRules.DetailAmplitudeM,
+		WorldSeed,
+		bCarteDesCauses
+	};
 
-	const int32 Count = Mesh.Positions.Num();
-	Mesh.Colours.SetNumUninitialized(Count);
+	FWorldseedPeintureReleve Releve;
+	WorldseedPeinture::Sommets(Mesh, Contexte, Releve);
 
-	// LE SEUIL DE NOIR VIENT DE LA MESURE A L'IMAGE, PAS D'UNE INTUITION.
-	// Soixante-dix sur 255 en sRGB est le seuil que le script de comparaison
-	// emploie sur les captures ; le convertir par la table sRGB -- la meme que
-	// le catalogue de roches -- le rend exactement comparable.
-	static const float SeuilSombre =
-		FLinearColor(FColor(70, 70, 70, 255)).GetLuminance();
+	// LE CUMUL EST LA RESPONSABILITE DE L'APPELANT, et c'est ce qui permet a la
+	// peinture d'etre une fonction : elle mesure UN maillage, l'acteur ajoute
+	// les chunks les uns aux autres. Une passe qui cumulerait elle-meme ne
+	// pourrait plus etre appelee deux fois sans etre remise a zero, et le
+	// depot a deja paye ce genre d'etat cache.
+	PeintureSommets += Releve.Sommets;
+	PeintureSousLaSurface += Releve.SousLaSurface;
+	PeintureSerieActive += Releve.SerieActive;
+	PeintureTeintee += Releve.Teintee;
+	PeintureProfondeurSomme += Releve.ProfondeurSomme;
+	PeintureProfondeurMax = FMath::Max(PeintureProfondeurMax, Releve.ProfondeurMax);
+	PeintureProfondeurMin = FMath::Min(PeintureProfondeurMin, Releve.ProfondeurMin);
+	PeintureSombresEcrits += Releve.SombresEcrits;
+	PeintureLumMin = FMath::Min(PeintureLumMin, Releve.LumMin);
+	PeintureLumMax = FMath::Max(PeintureLumMax, Releve.LumMax);
 
-	// LA CARTE EST PRISE UNE FOIS, PAS PAR SOMMET. L'accesseur passe par le
-	// monde partage : un test de validite et un dereferencement, donc presque
-	// rien -- mais cette boucle tourne sur 1,67 million de sommets, et la lier
-	// une fois dit aussi ce qui est vrai : la carte ne change pas pendant la
-	// peinture.
-	const FWorldseedBiomeMap& Carte = Biomes();
-
-	const bool bHasBiomes = (Carte.Index.Num() == Geometry.CellCount());
-	const bool bHasCover = (Carte.Cover.Num() == Geometry.CellCount());
-	const bool bAvecRoche = Lithology.IsValid(Geometry.CellCount())
-		&& CouleurParRoche.Num() > 0;
-	const FWorldseedDensityRules& Rules = DensityRules;
-
-	const double WidthM = Geometry.WidthM();
-	const double HeightM = Geometry.HeightM;
-
-	for (int32 I = 0; I < Count; ++I)
+	for (int32 K = 0; K < WorldseedPeinture::NbCauses; ++K)
 	{
-		// LA BRANCHE QUI DECIDE EST SUIVIE JUSQU'AU BOUT. Sans elle, un sommet
-		// sombre ne dit pas D'OU il vient, et l'on remonte la piste a l'envers.
-		WorldseedPeinture::ECause Cause = WorldseedPeinture::ECause::Biome;
-		int32 BancPeint = 0;
+		PeintureParCause[K] += Releve.ParCause[K];
+		PeintureSombresParCause[K] += Releve.SombresParCause[K];
+	}
 
-		if (!bHasBiomes)
-		{
-			Cause = WorldseedPeinture::ECause::Repli;
-			const FLinearColor Repli = bCarteDesCauses
-				? WorldseedPeinture::Aplat(Cause, 0, 1) : FLinearColor::Gray;
-			Mesh.Colours[I] = Repli;
-			++PeintureParCause[static_cast<int32>(Cause)];
-			if (Repli.GetLuminance() < SeuilSombre)
-			{
-				++PeintureSombresEcrits;
-				++PeintureSombresParCause[static_cast<int32>(Cause)];
-			}
-			continue;
-		}
-
-		// Le sommet est en centimetres dans le repere de l'acteur ; la carte
-		// des biomes est une grille 2D en longitude/latitude.
-		const double X = Mesh.Positions[I].X / WorldseedMetersToCm;
-		const double Y = Mesh.Positions[I].Y / WorldseedMetersToCm;
-
-		double U = X / WidthM + 0.5;
-		U -= FMath::FloorToDouble(U);
-		const double V = FMath::Clamp(Y / HeightM + 0.5, 0.0, 1.0);
-
-		const int32 Col = FMath::Clamp(
-			FMath::FloorToInt(U * Geometry.NX), 0, Geometry.NX - 1);
-		const int32 Row = FMath::Clamp(
-			FMath::FloorToInt(V * Geometry.NY), 0, Geometry.NY - 1);
-
-		// LA COULEUR SUIT LE SUBSTRAT QUAND IL Y EN A UN. Depuis que la roche
-		// a nu et l'estran ont quitte l'axe des biomes, l'index porte le climat
-		// meme sur une paroi : le lire seul peindrait la falaise en vert.
-		const int32 Cell = Row * Geometry.NX + Col;
-		const EWorldseedBiome Biome = bHasCover
-			? WorldseedBiomes::AppearanceBiome(Carte.Index[Cell], Carte.Cover[Cell])
-			: static_cast<EWorldseedBiome>(Carte.Index[Cell]);
-		FLinearColor Teinte = WorldseedBiomes::Colour(Biome);
-
-		// --- SOUS TERRE, C'EST LA ROCHE QUI HABILLE -------------------------
-		//
-		// Ce calcul etait purement 2D : on lisait le biome de la colonne et on
-		// peignait, sans aucune notion de profondeur. Une paroi de grotte a
-		// quarante metres sous une prairie rendait donc VERTE -- constate a
-		// l'image dans la salle sous le gouffre, et c'est ce qui rendait les
-		// cavites illisibles meme une fois eclairees.
-		//
-		// La couleur d'une paroi est celle de sa ROCHE, et la lithologie la
-		// porte deja : calcaire creme, granite gris rose, basalte sombre. Meme
-		// doctrine que partout ailleurs dans cette passe -- la roche decide.
-		++PeintureSommets;
-
-		if (bAvecRoche && Rules.RockColourFadeM > 0.0f)
-		{
-			const double Z = Mesh.Positions[I].Z / WorldseedMetersToCm;
-			const double Profondeur = Density->SurfaceHeightM(X, Y) - Z;
-
-			PeintureProfondeurSomme += Profondeur;
-			PeintureProfondeurMax = FMath::Max(PeintureProfondeurMax, Profondeur);
-			PeintureProfondeurMin = FMath::Min(PeintureProfondeurMin, Profondeur);
-
-			if (Profondeur > 0.0)
-			{
-				++PeintureSousLaSurface;
-				Cause = WorldseedPeinture::ECause::Roche2D;
-				// --- LA ROCHE SE LIT EN TROIS DIMENSIONS --------------------
-				//
-				// C'ETAIT UNE ROCHE PAR COLONNE, donc une paroi d'une seule
-				// teinte du sommet au pied. Or un vrai sous-sol est FEUILLETE,
-				// et c'est exactement ce qui donne au Grand Canyon ses rayures :
-				// les bancs durs font les corniches, les tendres les talus, et
-				// chacun a sa couleur.
-				//
-				// La serie ne recouvre que le SEDIMENTAIRE : sur du granite ou
-				// du basalte, la garde de durete ne passe pas et l'on retombe
-				// sur la roche 2D, c'est-a-dire le comportement d'avant a
-				// l'identique. Une donnee absente doit rester sans effet.
-				uint8 Id = Lithology.Id[Cell];
-				if (StratRules.IsActive())
-				{
-					const float DureteSocle = DureteParId.IsValidIndex(Id)
-						? DureteParId[Id] : 1.0f;
-					if (DureteSocle >= StratRules.SocleHardnessMin
-						&& DureteSocle <= StratRules.SocleHardnessMax)
-					{
-						++PeintureSerieActive;
-
-						const int32 Banc = WorldseedStrata::BancAt(
-							X, Y, Z, StratRules, WorldSeed);
-						if (StratRules.Serie.IsValidIndex(Banc))
-						{
-							Id = StratRules.Serie[Banc].RockId;
-							BancPeint = Banc;
-							Cause = WorldseedPeinture::ECause::Banc;
-
-							if (PeintureParBanc.Num() < StratRules.Serie.Num())
-							{
-								PeintureParBanc.SetNumZeroed(StratRules.Serie.Num());
-							}
-							++PeintureParBanc[Banc];
-						}
-					}
-				}
-				if (CouleurParRoche.IsValidIndex(Id))
-				{
-					// --- LA PROFONDEUR SE COMPTE SOUS LE BRUIT, PAS SOUS LE
-					//     RELIEF MACRO ---------------------------------------
-					//
-					// LE COTELE DU MONDE VENAIT D'ICI, et il a fallu trois
-					// mesures pour y arriver : la geometrie est lisse -- le
-					// profil d'un versant est une courbe en S sans une marche --
-					// et le cotele SURVIT a `ShowFlag.Lighting 0`, donc ce
-					// n'est ni la forme ni les normales, c'est la COULEUR. Le
-					// temoin qui l'a nomme est cette teinte coupee : le monde
-					// redevient d'un coup en aplats de biome.
-					//
-					// LE MECANISME. `Profondeur` se mesure contre la surface
-					// MACRO, alors que le champ deplace la vraie surface de
-					// plus ou moins dix metres -- surplombs et detail. Sur
-					// chaque BOSSE la profondeur est donc negative et l'on
-					// peint le biome ; dans chaque CREUX elle est positive et
-					// l'on peint la roche. Le fondu valait douze metres et le
-					// detail a la meme echelle : la couleur se mettait a suivre
-					// le micro-relief, d'ou des rubans qui epousent les courbes
-					// de niveau sur tout le monde.
-					//
-					// LA MARGE N'EST PAS UN REGLAGE, ELLE EST L'AMPLITUDE DU
-					// DEPLACEMENT. Sous elle, on ne peut pas savoir si l'on est
-					// dessus ou dessous ; au-dela, on est vraiment sous terre --
-					// ce que cette teinte a toujours voulu dire : « une paroi
-					// de grotte a quarante metres sous une prairie ne doit pas
-					// rendre VERTE ».
-					const double Marge = static_cast<double>(Rules.OverhangAmplitudeM)
-						+ static_cast<double>(Rules.DetailAmplitudeM);
-
-					const float T = FMath::Clamp(
-						static_cast<float>(Profondeur - Marge) / Rules.RockColourFadeM,
-						0.0f, 1.0f);
-					if (T > 0.01f) { ++PeintureTeintee; }
-					else
-					{
-						// LE FONDU NE MORD PAS ENCORE : ce sommet est peint en
-						// BIOME, quoi qu'en dise la branche qu'on a traversee.
-						// Compter la branche PARCOURUE plutot que celle qui a
-						// ECRIT donnerait un entonnoir juste et une carte des
-						// causes fausse.
-						Cause = WorldseedPeinture::ECause::Biome;
-					}
-					Teinte = FMath::Lerp(Teinte, CouleurParRoche[Id], T);
-				}
-			}
-		}
-
-		// --- L'HISTOGRAMME PORTE SUR CE QUI EST ECRIT --------------------
-		//
-		// On mesure la couleur FINALE, apres toutes les branches, et jamais
-		// ce qu'on croit avoir mis. C'est la seule facon de repondre a la
-		// question posee : la peinture ecrit-elle du noir, oui ou non ?
-		const double Lum = static_cast<double>(Teinte.GetLuminance());
-		PeintureLumMin = FMath::Min(PeintureLumMin, Lum);
-		PeintureLumMax = FMath::Max(PeintureLumMax, Lum);
-		++PeintureParCause[static_cast<int32>(Cause)];
-		if (Lum < SeuilSombre)
-		{
-			++PeintureSombresEcrits;
-			++PeintureSombresParCause[static_cast<int32>(Cause)];
-		}
-
-		if (bCarteDesCauses)
-		{
-			Teinte = WorldseedPeinture::Aplat(
-				Cause, BancPeint, FMath::Max(1, StratRules.Serie.Num()));
-		}
-
-		Mesh.Colours[I] = Teinte;
+	if (PeintureParBanc.Num() < Releve.ParBanc.Num())
+	{
+		PeintureParBanc.SetNumZeroed(Releve.ParBanc.Num());
+	}
+	for (int32 K = 0; K < Releve.ParBanc.Num(); ++K)
+	{
+		PeintureParBanc[K] += Releve.ParBanc[K];
 	}
 }
 
