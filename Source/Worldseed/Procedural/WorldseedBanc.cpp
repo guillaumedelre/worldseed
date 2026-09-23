@@ -8,6 +8,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMemory.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -36,6 +38,7 @@ void UWorldseedBanc::OnWorldBeginPlay(UWorld& InWorld)
 	// LA MARCHE EST OPTIONNELLE, ET SON ABSENCE REND LE BANC D'AVANT.
 	FParse::Value(FCommandLine::Get(), TEXT("WorldseedMarche="), MarcheS);
 	FParse::Value(FCommandLine::Get(), TEXT("WorldseedMarcheCap="), MarcheCapDeg);
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedVol="), VolMs);
 
 	// ON ARME ICI, ON NE MESURE PAS. Le sous-systeme recoit son OnWorldBeginPlay
 	// AVANT les acteurs : le terrain n'existe pas encore, et surtout son monde
@@ -235,6 +238,29 @@ void UWorldseedBanc::MesurerLaMarche(AWorldseedVoxelTerrain* T)
 	// personnage qui marche, avec sa vitesse, ses pentes et ses collisions.
 	APawn* const P = UGameplayStatics::GetPlayerPawn(W, 0);
 	if (!P) { return; }
+
+	// LE VOL EST UN CAS D'USAGE DU JEU, PAS UNE COMMODITE DE MESURE.
+	//
+	// Le proprietaire l'a confirme, et il change tout : a cinquante metres par
+	// seconde le streaming demande cent quatre-vingt-quinze chunks par seconde
+	// contre vingt-trois a la marche. Une mesure faite au pas ne dit donc rien
+	// du cas qui compte -- et un vol pilote A LA MAIN ne se rejoue pas, donc
+	// ne peut pas servir d'A/B. Celui-ci est fixe : meme cap, meme vitesse,
+	// meme duree des deux cotes.
+	if (VolMs > 0.0f)
+	{
+		if (ACharacter* const C = Cast<ACharacter>(P))
+		{
+			if (UCharacterMovementComponent* const M = C->GetCharacterMovement())
+			{
+				if (M->MovementMode != MOVE_Flying)
+				{
+					M->SetMovementMode(MOVE_Flying);
+				}
+				M->MaxFlySpeed = VolMs * 100.0f;
+			}
+		}
+	}
 
 	const FVector Dir = FRotator(0.0f, MarcheCapDeg, 0.0f).Vector();
 	P->AddMovementInput(Dir, 1.0f);

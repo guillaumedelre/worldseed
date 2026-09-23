@@ -273,6 +273,27 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			RayonAnneau0M = Anneau0;
 			bAnneau0Force = true;
 		}
+
+		// --- LES DEUX ROBINETS, ET LEUR CADENCE -----------------------------
+		//
+		// ILS ETAIENT REGLES A LA MARCHE, et c'est ce qui les rend suspects des
+		// que le vol entre dans le jeu. Le debit vaut
+		// `min(poses, travaux) / periode` : a 32 / 64 / 0,1 s, trois cent
+		// vingt chunks par seconde. La marche en demande vingt-trois --
+		// quatorze fois de marge -- et un vol a cinquante metres par seconde
+		// en demande cent quatre-vingt-quinze : la marge tombe a 1,6, et une
+		// file qui ne se vide jamais laisse la peripherie en retard en
+		// permanence.
+		//
+		// ILS SONT SURCHARGEABLES PARCE QU'UN A/B QUI DEMANDE DE RECOMPILER
+		// ENTRE SES DEUX MOITIES N'EN EST PAS UN -- regle du depot, et c'est
+		// pour cela que les anneaux, le rayon et le mailleur le sont deja.
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedPoses="), UploadsPerPass);
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedTravaux="), MaxJobsInFlight);
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedPeriode="), UpdatePeriod);
+		UploadsPerPass = FMath::Clamp(UploadsPerPass, 1, 256);
+		MaxJobsInFlight = FMath::Clamp(MaxJobsInFlight, 1, 256);
+		UpdatePeriod = FMath::Clamp(UpdatePeriod, 0.01f, 1.0f);
 	}
 
 

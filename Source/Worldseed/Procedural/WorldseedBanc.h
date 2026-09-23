@@ -169,6 +169,9 @@ private:
 	 */
 	float MarcheS = 0.0f;
 	float MarcheCapDeg = 0.0f;
+
+	/** Vitesse de vol en m/s. A zero, on marche -- le comportement d.avant. */
+	float VolMs = 0.0f;
 	bool bEnMarche = false;
 	double DebutMarche = 0.0;
 	FVector DepartMarcheCm = FVector::ZeroVector;

@@ -386,9 +386,55 @@ public:
 		meta = (ClampMin = "1", ClampMax = "256"))
 	int32 UploadsPerPass = 32;
 
+	/**
+	 * LA CADENCE DE LA PASSE, ET C'EST ELLE LE LEVIER -- PAS LES LOTS.
+	 *
+	 * PORTEE DE 0,1 A 0,05 s LE 23 SEPTEMBRE, quand le proprietaire a confirme
+	 * que le VOL serait un cas d'usage du jeu. A cinquante metres par seconde
+	 * le streaming demande cent quatre-vingt-quinze chunks par seconde contre
+	 * vingt-trois a la marche : la marge tombe de quatorze fois a 1,6, et la
+	 * file ne se vide plus.
+	 *
+	 * J'AI ANNONCE UN MODELE, ET LA MESURE L'A REFUTE. Je predisais que seul
+	 * comptait le debit, `min(poses, travaux) / periode`, donc que doubler les
+	 * lots ou halver la periode reviendrait au meme. Mesure en vol a 50 m/s,
+	 * 1850 m parcourus, cinq passes sur le MEME binaire -- beants moyens, ce
+	 * que rien ne recouvre :
+	 *
+	 *     A  32 / 64  / 0,10     32,7      (en vigueur jusque-la)
+	 *     B  64 / 128 / 0,10      8,4      debit double par les LOTS
+	 *     C  32 / 64  / 0,05      4,3      debit double par la PERIODE
+	 *     D  64 / 128 / 0,05      4,3      les deux
+	 *     E  32 / 64  / 0,033     4,2      periode encore plus courte
+	 *
+	 * B ET C ONT LE MEME DEBIT NOMINAL ET C FAIT DEUX FOIS MIEUX. Ce n'est
+	 * donc pas un debit, c'est une LATENCE : la periode separe « ce chunk
+	 * devient necessaire » de « il est lance », puis « il est pret » de « il
+	 * est pose ». A cinquante metres par seconde, cinquante millisecondes
+	 * valent deux metres et demi de terrain.
+	 *
+	 * ET C, D, E SONT EQUIVALENTS : passe 0,05 s les lots ne comptent plus, et
+	 * raccourcir encore ne donne rien. Le plancher de 4,2 est la latence de
+	 * maillage elle-meme -- 9,3 ms par chunk -- et aucun robinet ne l'atteint.
+	 * On retient donc C : la periode seule, les lots inchanges, donc un cout
+	 * par passe qui reste a 32 x 0,16 = 5 ms au lieu de dix.
+	 *
+	 * CE QUE CA COUTE, ET IL FAUT LE DIRE : la trame moyenne ne bouge pas
+	 * (5,11 -> 5,25 ms) mais le p95 monte de 6,50 a 9,42 -- des passes plus
+	 * frequentes, donc un petit cout plus souvent. En echange la PIRE trame
+	 * tombe de 34,2 a 21,6 ms. On echange un a-coup visible contre un cout
+	 * regulier invisible, et c'est le bon sens du marche.
+	 *
+	 * CE QUE LA MESURE NE DIT PAS, et je ne le revendique pas : le sondage de
+	 * vue -- l'arbitre tiers, celui qui interroge le champ et le rendu -- ne
+	 * bouge pas (0,05 / 0,05 / 0,10 / 0,08 / 0,04 rayon sur 32). Avec une
+	 * dizaine d'evenements par passe ces ecarts ne sont pas resolubles. Notre
+	 * comptabilite s'ameliore d'un facteur huit ; que le JOUEUR voie moins de
+	 * trous reste a etablir.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel",
-		meta = (ClampMin = "0.05"))
-	float UpdatePeriod = 0.1f;
+		meta = (ClampMin = "0.01"))
+	float UpdatePeriod = 0.05f;
 
 	/** Materiau des chunks. Il lit la couleur de sommet telle quelle. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
