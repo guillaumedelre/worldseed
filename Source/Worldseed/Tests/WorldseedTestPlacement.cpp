@@ -342,4 +342,150 @@ bool FWorldseedTestPlacementRefus::RunTest(const FString& Parameters)
 	return true;
 }
 
+namespace
+{
+	/**
+	 * Un monde a la geographie CHOISIE, pas tiree d'un bruit.
+	 *
+	 * Une bande de terre a l'est, un RECIF isole a l'ouest, de l'ocean partout
+	 * ailleurs. Les deux formes sont la pour une raison : la bande doit etre
+	 * trouvee, le recif doit etre REFUSE -- c'est le critere que la fonction
+	 * annonce, « un voisinage emerge, pas seulement une cellule », et rien
+	 * d'autre ne le verifierait.
+	 */
+	struct FGeographieChoisie
+	{
+		FWorldseedGeometry G;
+		TArray<float> Heights;
+
+		int32 BandeDebut = 0;
+		int32 RecifI = 0;
+		int32 RecifJ = 0;
+
+		FGeographieChoisie()
+		{
+			G = WorldseedTest::Geometrie(32);          // 64 x 32
+			Heights.Init(-500.0f, G.CellCount());
+
+			// La bande de terre : le tiers EST de la carte, toute la hauteur.
+			BandeDebut = (G.NX * 2) / 3;
+			for (int32 J = 0; J < G.NY; ++J)
+			{
+				for (int32 I = BandeDebut; I < G.NX; ++I)
+				{
+					Heights[J * G.NX + I] = 400.0f;
+				}
+			}
+
+			// Le recif : UNE seule cellule emergee, loin de la bande.
+			RecifI = 4;
+			RecifJ = G.NY / 2;
+			Heights[RecifJ * G.NX + RecifI] = 400.0f;
+		}
+
+		/** L'indice de colonne d'une abscisse en metres. */
+		int32 ColonneDe(double XM) const
+		{
+			return FMath::Clamp(
+				FMath::FloorToInt((XM / G.WidthM() + 0.5) * G.NX), 0, G.NX - 1);
+		}
+	};
+}
+
+/**
+ * ELLE TROUVE LA TERRE, ET ELLE REFUSE LE RECIF.
+ *
+ * ELLE PRECEDE `SolPlat`, ELLE NE LE REMPLACE PAS. Les deux portees n'ont rien
+ * a voir -- 384 metres de fouille fine contre des dizaines de kilometres de
+ * balayage -- et ce monde est de l'ocean a 70,8 %. Poser un joueur en pleine
+ * mer et laisser la fouille fine se debrouiller ne le ramenerait jamais a
+ * terre.
+ *
+ * ET LE REFUS DU RECIF EST LE CRITERE QUI COMPTE. Une cellule emergee isolee
+ * est une pointe de sable ou un ecueil : rien n'y tient, et le pion y
+ * tomberait a l'eau au premier pas. La fonction exige les quatre voisins
+ * emerges ; sans ce test, ce critere pourrait disparaitre a la premiere
+ * retouche sans que rien ne le dise.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestPlacementTerreEmergee,
+	"Worldseed.Placement.TrouveLaTerreEtRefuseLeRecif",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestPlacementTerreEmergee::RunTest(const FString& Parameters)
+{
+	const FGeographieChoisie B;
+
+	// La marge de deplacement du champ : le plancher vaut deux fois cette
+	// valeur, donc 400 m de terre passe et -500 d'ocean non, largement.
+	constexpr float Marge = 12.0f;
+
+	// --- depuis le large, on trouve la BANDE, jamais le recif ---------------
+	{
+		// Un point en pleine mer, plus proche du RECIF que de la bande : c'est
+		// le cas qui separe les deux reponses possibles.
+		const double XM = (static_cast<double>(B.RecifI) / B.G.NX - 0.5)
+			* B.G.WidthM() + 3.0 * B.G.MetersPerPixel();
+		const double YM = 0.0;
+
+		double TX = 0.0, TY = 0.0;
+		const bool bTrouve = WorldseedPlacement::TerreEmergeeLaPlusProche(
+			B.G, B.Heights, FVector2D(XM, YM), Marge, TX, TY);
+
+		if (!TestTrue(TEXT("elle trouve de la terre"), bTrouve))
+		{
+			return false;
+		}
+
+		const int32 Colonne = B.ColonneDe(TX);
+		AddInfo(FString::Printf(
+			TEXT("depuis (%.0f, %.0f) m -- terre a (%.0f, %.0f) m, colonne %d ")
+			TEXT("(bande a partir de %d, recif en %d)"),
+			XM, YM, TX, TY, Colonne, B.BandeDebut, B.RecifI));
+
+		// LE CONTROLE QUI TRANCHE : le point rendu est dans la BANDE, pas sur
+		// le recif -- alors meme que le recif etait plus proche.
+		TestTrue(TEXT("le point rendu est dans la bande de terre"),
+			Colonne >= B.BandeDebut);
+		TestTrue(TEXT("et pas sur le recif, pourtant plus proche"),
+			Colonne != B.RecifI);
+	}
+
+	// --- le point rendu est vraiment emerge, et son voisinage aussi ---------
+	{
+		double TX = 0.0, TY = 0.0;
+		const bool bTrouve = WorldseedPlacement::TerreEmergeeLaPlusProche(
+			B.G, B.Heights, FVector2D(0.0, 0.0), Marge, TX, TY);
+		TestTrue(TEXT("elle trouve depuis le centre"), bTrouve);
+
+		const int32 I = B.ColonneDe(TX);
+		const int32 J = FMath::Clamp(
+			FMath::FloorToInt((TY / B.G.HeightM + 0.5) * B.G.NY), 0, B.G.NY - 1);
+
+		TestTrue(TEXT("le point rendu est emerge"),
+			B.Heights[J * B.G.NX + I] > 0.0f);
+
+		int32 VoisinsNoyes = 0;
+		for (const FIntPoint D : { FIntPoint(1, 0), FIntPoint(-1, 0),
+			FIntPoint(0, 1), FIntPoint(0, -1) })
+		{
+			const int32 IW = ((I + D.X) % B.G.NX + B.G.NX) % B.G.NX;
+			const int32 JC = FMath::Clamp(J + D.Y, 0, B.G.NY - 1);
+			if (B.Heights[JC * B.G.NX + IW] <= 0.0f) { ++VoisinsNoyes; }
+		}
+		TestEqual(TEXT("et ses quatre voisins aussi"), VoisinsNoyes, 0);
+	}
+
+	// --- un monde entierement noye ne rend rien ------------------------------
+	{
+		FGeographieChoisie Noye;
+		Noye.Heights.Init(-500.0f, Noye.G.CellCount());
+
+		double TX = 0.0, TY = 0.0;
+		TestFalse(TEXT("un monde sans terre ne rend aucun point"),
+			WorldseedPlacement::TerreEmergeeLaPlusProche(
+				Noye.G, Noye.Heights, FVector2D(0.0, 0.0), Marge, TX, TY));
+	}
+
+	return true;
+}
 #endif // WITH_DEV_AUTOMATION_TESTS

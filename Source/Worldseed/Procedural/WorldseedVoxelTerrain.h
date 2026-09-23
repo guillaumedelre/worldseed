@@ -568,17 +568,6 @@ private:
 	 * Faux si rien ne convient dans le rayon fouille.
 	 */
 	/**
-	 * La terre emergee la plus proche, CHERCHEE DANS LA GRILLE 2D.
-	 *
-	 * `FindFlatGround` choisit ou se poser une fois qu-on est sur la bonne
-	 * terre ; celle-ci trouve la terre. Les deux portees n-ont rien a voir --
-	 * 384 metres contre des dizaines de kilometres -- et ce monde est de
-	 * l-ocean a 70,8 %.
-	 */
-	bool TrouverTerreEmergee(const FVector2D& AutourM,
-		double& OutX, double& OutY) const;
-
-	/**
 	 * Pente toleree quand le joueur a CHOISI son point de depart.
 	 *
 	 * Plus permissive que les douze degres d'une naissance libre, et c'est
@@ -591,7 +580,7 @@ private:
 	/**
 	 * Ecart d'ALTITUDE tolere autour du point choisi, en metres.
 	 *
-	 * POURQUOI CETTE BORNE EXISTE. `FindFlatGround` retient le PREMIER point
+	 * POURQUOI CETTE BORNE EXISTE. `WorldseedPlacement::SolPlat` retient le PREMIER point
 	 * acceptable de sa spirale : sur un versant raide, le premier sol a moins
 	 * de douze degres est la plaine d'en bas. Mesure sur deux parties
 	 * independantes, latitudes 73,1 et 15,3 degres -- donc sans rapport de
@@ -603,17 +592,6 @@ private:
 	 * relief, pas vous faire descendre une falaise.
 	 */
 	static constexpr float EcartAltitudeDepartM = 40.0f;
-
-	/**
-	 * PenteMaxDeg et la borne d'altitude ont une valeur par defaut qui rend
-	 * EXACTEMENT le comportement d'avant : une naissance libre ne doit rien
-	 * changer, l'endroit n'y a aucune importance. Un EcartAltitudeMaxM nul
-	 * signifie « pas de borne ».
-	 */
-	bool FindFlatGround(const FVector2D& AroundM, double& OutX, double& OutY,
-		float& OutSurfaceM, float& OutSlopeDeg,
-		float PenteMaxDeg = 12.0f, float EcartAltitudeMaxM = 0.0f,
-		float AltitudeRefM = 0.0f) const;
 
 	UPROPERTY()
 	TObjectPtr<USceneComponent> RootScene;

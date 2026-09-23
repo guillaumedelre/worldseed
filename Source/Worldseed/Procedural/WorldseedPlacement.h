@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 class FWorldseedDensity;
+struct FWorldseedGeometry;
 
 /**
  * OU POSER QUELQU'UN SUR UN TERRAIN VOXEL.
@@ -60,4 +61,20 @@ namespace WorldseedPlacement
 		const FVector2D& AutourM, float PenteMaxDeg,
 		float EcartAltitudeMaxM, float AltitudeRefM,
 		double& OutX, double& OutY, float& OutSurfaceM, float& OutPenteDeg);
+
+	/**
+	 * La cellule de TERRE EMERGEE la plus proche, sur la grille 2D.
+	 *
+	 * ELLE PRECEDE `SolPlat`, ELLE NE LE REMPLACE PAS, et les deux repondent a
+	 * deux questions differentes : celle-ci cherche le bon CONTINENT sur la
+	 * grille du monde, celle-la le bon PIED sur le champ de densite. Poser un
+	 * joueur en pleine mer et laisser `SolPlat` fouiller un voisinage de
+	 * trois cent quatre-vingts metres ne le ramenerait pas a terre.
+	 *
+	 * ELLE EXIGE UN VOISINAGE EMERGE, pas seulement une cellule : sinon elle
+	 * retient volontiers un recif ou une pointe de sable, ou rien ne tient.
+	 */
+	WORLDSEED_API bool TerreEmergeeLaPlusProche(const FWorldseedGeometry& Geo,
+		const TArray<float>& Heights, const FVector2D& AutourM,
+		float MargeDeplacementM, double& OutX, double& OutY);
 }
