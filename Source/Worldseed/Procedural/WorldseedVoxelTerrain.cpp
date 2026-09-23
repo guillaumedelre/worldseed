@@ -215,7 +215,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	bool bRayonForce = false;
 	bool bNiveauxForce = false;
 	bool bAnneau0Force = false;
-	bool bRugositeForcee = false;
 
 	// LE RAYON SE PILOTE DEPUIS LA LIGNE DE COMMANDE, pour le banc.
 	// Sans ce levier, comparer deux rayons demanderait de recompiler entre
@@ -272,13 +271,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		{
 			RayonAnneau0M = Anneau0;
 			bAnneau0Force = true;
-		}
-		float Rugosite = -1.0f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRugosite="), Rugosite)
-			&& Rugosite >= 0.0f)
-		{
-			RugositeMin = Rugosite;
-			bRugositeForcee = true;
 		}
 	}
 
@@ -415,10 +407,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	if (!bAnneau0Force)
 	{
 		RayonAnneau0M = DensityRules.RayonAnneau0M;
-	}
-	if (!bRugositeForcee)
-	{
-		RugositeMin = DensityRules.RugositeMin;
 	}
 	LargeurTransition = DensityRules.LargeurTransition;
 
@@ -1021,31 +1009,17 @@ bool AWorldseedVoxelTerrain::DoitSubdiviser(const FWorldseedChunkKey& Key,
 		return false;
 	}
 
-	// --- 1. LA DISTANCE ----------------------------------------------------
-	// C'est le critere d'origine, et il reste PREMIER : un terrain lointain ne
-	// merite pas de finesse, si accidente soit-il.
+	// LA DISTANCE, ET ELLE SEULE : un terrain lointain ne merite pas de
+	// finesse. Un second critere a existe ici -- la densite de maillage suivant
+	// le relief, « dans une plaine nous n'avons pas besoin d'un maillage aussi
+	// dense que sur une montagne rocheuse » -- et il a ete RETIRE le
+	// 23 septembre 2026. Il etait livre eteint parce qu'il CASSE la contrainte
+	// 2:1 de Transvoxel : le seuil est une pente, donc il se divise par deux a
+	// chaque niveau, et un noeud peut descendre de deux crans pendant que son
+	// voisin reste en haut. Le raisonnement et la mesure sont dans CLAUDE.md ;
+	// git le rend en une commande le jour ou un vrai equilibrage 2:1 existera.
 	const FVector Centre = ChunkBoundsM(Key).GetCenter();
 	if (FVector::Dist(Centre, OrigineM) >= RayonAnneauM(Key.Niveau - 1))
-	{
-		return false;
-	}
-
-	// --- 2. LE RELIEF ------------------------------------------------------
-	//
-	// « Dans une plaine nous n'avons pas besoin d'un maillage aussi dense que
-	// sur une montagne rocheuse. » C'est juste, et la raison est geometrique :
-	// le marching cubes depense environ deux triangles par metre carre de
-	// SURFACE, que cette surface soit plate ou non. Sur un terrain quasi
-	// horizontal, doubler la resolution quadruple les triangles pour decrire
-	// la MEME nappe -- on paie quatre fois la meme forme.
-	//
-	// LA GRANDEUR EST UNE PENTE, PAS UNE AMPLITUDE. Rapporter l'etendue
-	// d'altitude au cote du noeud donne un nombre sans dimension, donc
-	// comparable d'un niveau a l'autre : un noeud de 256 m qui varie de 25 m
-	// et un noeud de 32 m qui varie de 3,2 m decrivent le meme terrain et
-	// doivent recevoir la meme reponse. Une amplitude en metres aurait
-	// repondu differemment aux deux.
-	if (RugositeMin > 0.0f && !NoeudAccidente(Key))
 	{
 		return false;
 	}
@@ -1053,89 +1027,6 @@ bool AWorldseedVoxelTerrain::DoitSubdiviser(const FWorldseedChunkKey& Key,
 	return true;
 }
 
-bool AWorldseedVoxelTerrain::NoeudAccidente(const FWorldseedChunkKey& Key) const
-{
-	const FIntVector Cle(Key.C.X, Key.C.Y, Key.Niveau);
-	if (const uint8* Deja = CacheRugosite.Find(Cle))
-	{
-		return *Deja != 0;
-	}
-
-	const double Cote = CoteM(Key.Niveau);
-
-	// --- L'EMPRISE EST ELARGIE D'UNE CELLULE, ET C'EST CE QUI GARANTIT LE 2:1
-	//
-	// Transvoxel ne sait coudre QU'UN niveau d'ecart. Deux feuilles voisines a
-	// deux niveaux d'ecart rouvrent une fissure que rien ne fermerait, et rien
-	// ne le signalerait. Or un critere purement LOCAL produit exactement cela :
-	// une plaine collee a une falaise: la plaine reste grossiere, la falaise
-	// descend deux fois.
-	//
-	// Prendre le maximum du relief sur l'emprise ELARGIE le resout par
-	// construction, et la preuve tient en une recurrence. Si un noeud A se
-	// subdivise, c'est que son emprise elargie est accidentee ; or cette
-	// emprise contient ses voisins immediats, donc chaque voisin B voit lui
-	// aussi ce relief dans SA propre emprise elargie, donc B se subdivise
-	// aussi. A chaque niveau, « A descend » implique « les voisins de A
-	// descendent » : deux feuilles voisines ne peuvent donc pas differer de
-	// plus d'un cran.
-	//
-	// Cela coute huit lectures de plus, toutes servies par le cache de
-	// `PlageSurface` -- qui est lui-meme deja peuple par la diffusion.
-	float Min = TNumericLimits<float>::Max();
-	float Max = TNumericLimits<float>::Lowest();
-	for (int32 DY = -1; DY <= 1; ++DY)
-	{
-		for (int32 DX = -1; DX <= 1; ++DX)
-		{
-			float M = 0.0f;
-			float X = 0.0f;
-			PlageSurface(Key.C.X + DX, Key.C.Y + DY, Key.Niveau, M, X);
-			Min = FMath::Min(Min, M);
-			Max = FMath::Max(Max, X);
-		}
-	}
-
-	// ON RAPPORTE L'ETENDUE A L'EMPRISE REELLEMENT OBSERVEE, ET CE N'EST PAS
-	// UN DETAIL. La premiere version divisait par le cote du NOEUD alors que
-	// l'etendue etait relevee sur les NEUF -- soit une pente sous-estimee d'un
-	// facteur trois, et un critere qui laissait tout passer. Le signe etait
-	// sans appel : a 0,15 comme a 0, le banc rendait 2165 chunks, 1162/615/388
-	// par niveau et 2 809 559 triangles, AU CHIFFRE PRES. Ce depot a maintenant
-	// rencontre six fois ce meme signe -- deux mesures identiques pour deux
-	// reglages differents ne sont jamais un hasard.
-	const float Emprise = 3.0f * static_cast<float>(Cote);
-	bool bAccidente = (Max - Min) >= RugositeMin * Emprise;
-
-	// --- ET LA SURFACE NE DIT PAS TOUT ------------------------------------
-	//
-	// UN AVEN S'OUVRE SUR UN PLATEAU : c'est sa definition meme, et le depot
-	// l'a ecrit en toutes lettres en distinguant les trois formes d'ouverture
-	// -- « la bouche s'ouvre a l'horizontale dans un versant recoupe par une
-	// vallee, l'aven s'ouvre a la verticale la ou l'eau s'infiltre a travers
-	// un plateau ». Juger la finesse sur le relief de SURFACE degraderait donc
-	// precisement les endroits ou le sous-sol est le plus interessant : avens,
-	// dolines, salles, et les diaclases qui se referment en profondeur.
-	//
-	// On interroge donc l'index spatial du reseau. Il est deja bati, la
-	// requete est une intersection de boites, et elle n'a lieu que pour les
-	// noeuds que le relief venait de declarer plats.
-	if (!bAccidente && CaveNetwork.IsValid())
-	{
-		FWorldseedCaveLocal Local;
-		CaveNetwork.Query(ChunkBoundsM(Key).ExpandBy(DensityRules.CaveBlendM + 4.0f), Local);
-		bAccidente = !Local.IsEmpty();
-	}
-
-	// Meme politique que le cache de surface : on repart de zero plutot que de
-	// gonfler sans fin, la donnee etant deterministe.
-	if (CacheRugosite.Num() > 200000)
-	{
-		CacheRugosite.Reset();
-	}
-	CacheRugosite.Add(Cle, bAccidente ? 1 : 0);
-	return bAccidente;
-}
 void AWorldseedVoxelTerrain::Enumerer(const FWorldseedChunkKey& Key,
 	const FVector& OrigineM,
 	TArray<TPair<FWorldseedChunkKey, double>>& Sortie,
@@ -1383,8 +1274,8 @@ void AWorldseedVoxelTerrain::Equilibrer(
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Worldseed] voxel : ECART 2:1 NON RESORBE -- %d noeuds restent ")
 				TEXT("a plus d'un cran de leur voisin apres %d tours ")
-				TEXT("(rugositeMin %.3f, %d feuilles). Fissures possibles."),
-				Restants, FMath::Max(NiveauMax, 1) + 1, RugositeMin,
+				TEXT("(%d feuilles). Fissures possibles."),
+				Restants, FMath::Max(NiveauMax, 1) + 1,
 				FeuillesCourantes.Num());
 		}
 		else if (DernierEcart2a1Dit > 0)

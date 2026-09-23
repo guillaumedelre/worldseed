@@ -30,7 +30,6 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.bTransvoxel = Rules.Num(VOX, TEXT("transvoxel"), 0.0) > 0.5;
 	Out.NiveauMax = Int(TEXT("anneaux"), 0);
 	Out.RayonAnneau0M = Num(TEXT("anneauRayon0M"), 300.0);
-	Out.RugositeMin = Num(TEXT("rugositeMin"), 0.0);
 	Out.LoadRadiusM = Num(TEXT("rayonChargementM"), 0.0);
 	Out.LargeurTransition = Num(TEXT("transitionLargeur"), 0.5);
 	Out.BandDepthM = Num(TEXT("bandDepthM"), 100.0);
@@ -44,8 +43,6 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 	Out.DetailPenteRef = Num(TEXT("detailPenteRef"), 0.6);
 	Out.DetailCoteM = Num(TEXT("detailCoteM"), 12.0);
 	Out.OverhangOctaves = Int(TEXT("overhangOctaves"), 3);
-	Out.OverhangWarpM = Num(TEXT("overhangWarpM"), 25.0);
-	Out.OverhangWarpFrequency = Num(TEXT("overhangWarpFrequency"), 0.012);
 
 	Out.CaveFrequency = Num(TEXT("caveFrequency"), 0.008);
 	Out.CaveOctaves = Int(TEXT("caveOctaves"), 2);
@@ -67,13 +64,6 @@ FWorldseedDensityRules FWorldseedDensityRules::FromRules(const UWorldseedRules& 
 
 	Out.RockColourFadeM = Num(TEXT("couleurRocheFonduM"), 12.0);
 
-	Out.ArchDepthM = Num(TEXT("archeProfondeurM"), 12.0);
-	Out.ArchSlopeMinDeg = Num(TEXT("archePenteMinDeg"), 38.0);
-	Out.ArchFrequencyXY = Num(TEXT("archeFrequenceXY"), 0.017);
-	Out.ArchFrequencyZ = Num(TEXT("archeFrequenceZ"), 0.080);
-	Out.ArchOctaves = Int(TEXT("archeOctaves"), 2);
-	Out.ArchThreshold = Num(TEXT("archeSeuil"), 0.55);
-	Out.ArchAmplitudeM = Num(TEXT("archeAmplitudeM"), 5.0);
 
 	Out.Fins = FWorldseedFinRules::FromRules(Rules);
 	return Out;
@@ -194,75 +184,6 @@ double FWorldseedDensity::FinAt(const FVector& PosM, double DepthM) const
 	}
 
 	return WorldseedFins::SlotAt(PosM.X, PosM.Y, DepthM, Rules.Fins, Seed);
-}
-
-double FWorldseedDensity::ArchAt(const FVector& PosM, double DepthM) const
-{
-	if (Rules.ArchAmplitudeM <= 0.0f || Rules.ArchOctaves < 1)
-	{
-		return -1.0;
-	}
-
-	// --- GARDE BON MARCHE : une borne VERTICALE genereuse --------------------
-	//
-	// La vraie porte est perpendiculaire, mais la calculer demande quatre
-	// echantillons du relief. On elimine d'abord le gros du volume avec une
-	// borne verticale large : a la pente la plus raide qu'on accepte, la
-	// distance verticale vaut au plus `profondeur * norme du gradient`, et on
-	// prend une norme de cinq, soit environ 79 degres.
-	if (DepthM < 0.0 || DepthM > Rules.ArchDepthM * 5.0)
-	{
-		return -1.0;
-	}
-
-	// --- LA PENTE ET LA DISTANCE VRAIE ---------------------------------------
-	//
-	// Le gradient du relief donne les deux d'un coup : la pente, qui decide si
-	// une arche peut se former ici, et la norme, qui convertit la distance
-	// VERTICALE en distance PERPENDICULAIRE. Sans cette conversion la porte ne
-	// mordrait jamais sur une falaise -- c'est justement la qu'on la veut.
-	const double E = 2.0;
-	const double Hx = SurfaceHeightM(PosM.X + E, PosM.Y)
-		- SurfaceHeightM(PosM.X - E, PosM.Y);
-	const double Hy = SurfaceHeightM(PosM.X, PosM.Y + E)
-		- SurfaceHeightM(PosM.X, PosM.Y - E);
-	const double PenteXY = FMath::Sqrt(Hx * Hx + Hy * Hy) / (2.0 * E);
-
-	if (PenteXY < FMath::Tan(FMath::DegreesToRadians(Rules.ArchSlopeMinDeg)))
-	{
-		return -1.0;
-	}
-
-	const double Norme = FMath::Sqrt(1.0 + PenteXY * PenteXY);
-	const double Perp = DepthM / Norme;
-	if (Perp > Rules.ArchDepthM)
-	{
-		return -1.0;
-	}
-
-	// --- LA NAPPE ------------------------------------------------------------
-	//
-	// Frequence verticale bien plus grande que l'horizontale : le bruit devient
-	// une pile de nappes larges et minces au lieu d'un champ de bulles. C'est
-	// ce rapport, et lui seul, qui fait la forme.
-	const float N = WorldseedPerlin::Fbm3D(
-		static_cast<float>(PosM.X) * Rules.ArchFrequencyXY,
-		static_cast<float>(PosM.Y) * Rules.ArchFrequencyXY,
-		static_cast<float>(PosM.Z) * Rules.ArchFrequencyZ,
-		1.0f, Rules.ArchOctaves, Seed + 7717);
-
-	if (N <= Rules.ArchThreshold)
-	{
-		return -1.0;
-	}
-
-	// Le creusement s'efface en profondeur : une arche est une forme d'EROSION,
-	// elle travaille depuis la paroi vers l'interieur.
-	const double Fondu = 1.0 - Perp / Rules.ArchDepthM;
-	const double Force = (N - Rules.ArchThreshold)
-		/ FMath::Max(1.0 - Rules.ArchThreshold, 0.01);
-
-	return Rules.ArchAmplitudeM * Force * Fondu;
 }
 
 /**
@@ -554,23 +475,6 @@ void FWorldseedDensity::SurfaceRangeM(double MinX, double MinY, double MaxX,
 		}
 	}
 
-	// Le deplacement VERTICAL porte la surface de son amplitude, dans les deux
-	// sens. Le deplacement HORIZONTAL, lui, fait lire le relief jusqu'a sa
-	// portee plus loin : la plage doit donc couvrir le voisinage elargi, sans
-	// quoi le streaming manquerait les chunks ou la surface s'est repliee.
-	if (Rules.OverhangWarpM > 0.0f)
-	{
-		const double Marge = Rules.OverhangWarpM;
-		for (double Y = MinY - Marge; Y <= MaxY + Marge + StepM * 0.5; Y += StepM)
-		{
-			for (double X = MinX - Marge; X <= MaxX + Marge + StepM * 0.5; X += StepM)
-			{
-				const float H = SurfaceHeightM(X, Y);
-				Lo = FMath::Min(Lo, H);
-				Hi = FMath::Max(Hi, H);
-			}
-		}
-	}
 
 	OutMinM = Lo - Rules.OverhangAmplitudeM;
 	OutMaxM = Hi + Rules.OverhangAmplitudeM;
@@ -625,33 +529,6 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 	}
 
 	float Surface = SurfaceHeightM(PosM.X, PosM.Y);
-
-	// --- surplombs, par deplacement HORIZONTAL ------------------------------
-	//
-	// A chaque altitude on va lire le relief un peu plus loin, et le decalage
-	// tourne avec Z. Sur du plat cela ne change presque rien ; sur une falaise,
-	// deux altitudes voisines lisent des endroits dont l'altitude differe de
-	// dizaines de metres, et la surface se replie.
-	//
-	// LE DEPLACEMENT N'EST CALCULE QUE PRES DE LA SURFACE, et c'est une
-	// economie qui compte : les deux tiers des evaluations tombent loin d'elle,
-	// dans le plein ou dans l'air, ou le relief exact n'a aucune importance.
-	// La borne est large -- la bande entiere -- pour qu'un point juste au-dessus
-	// d'une falaise ne bascule pas d'un cote a l'autre du test.
-	if (Rules.OverhangWarpM > 0.0f
-		&& FMath::Abs(PosM.Z - Surface) < Rules.BandDepthM)
-	{
-		const float FX = static_cast<float>(PosM.X);
-		const float FY = static_cast<float>(PosM.Y);
-		const float FZ = static_cast<float>(PosM.Z);
-
-		const double DecalageX = Rules.OverhangWarpM * WorldseedPerlin::Fbm3D(
-			FX, FY, FZ, Rules.OverhangWarpFrequency, 2, Seed + 9001);
-		const double DecalageY = Rules.OverhangWarpM * WorldseedPerlin::Fbm3D(
-			FX, FY, FZ, Rules.OverhangWarpFrequency, 2, Seed + 9002);
-
-		Surface = SurfaceHeightM(PosM.X + DecalageX, PosM.Y + DecalageY);
-	}
 
 	// Distance signee a la surface macro : negative sous terre.
 	double D = PosM.Z - Surface;
@@ -829,18 +706,6 @@ double FWorldseedDensity::At(const FVector& PosM, const FWorldseedCaveLocal* Cav
 		// vide, elle ne repousse pas la roche. L'addition ferait remonter le
 		// sol au-dessus du tube.
 		D = FMath::Max(D, Vide);
-	}
-
-	// --- arches et abris sous roche -----------------------------------------
-	// ON CREUSE, ON NE DEFORME PAS, et c'est toute la difference avec la piste
-	// abandonnee. Un terme soustractif enleve de la matiere a un solide : il ne
-	// peut pas produire de lambeau flottant. Deplacer la surface, si -- mesure
-	// a l'epoque : des ecailles detachees dans le ciel des que le deplacement
-	// cessait d'etre inversible.
-	const double Voute = ArchAt(PosM, DepthM);
-	if (Voute > 0.0)
-	{
-		D = FMath::Max(D, Voute);
 	}
 
 	// --- diaclases ----------------------------------------------------------

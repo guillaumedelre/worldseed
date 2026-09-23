@@ -67,10 +67,13 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 * NORMALES, pas du champ -- voir `bNormalesGradient`. Cout mesure :
 	 * 9,91 ms par chunk contre 9,71, soit deux pour cent du maillage.
 	 *
-	 * On le garde eteint plutot que de le supprimer, comme `overhangWarpM` et
-	 * `rugositeMin` avant lui : le code est juste, la mesure reste
-	 * reproductible par `-WorldseedPerp=1`, et le jour ou une forme de paroi
-	 * butera sur cette discontinuite il sera deja ecrit.
+	 * ON LE GARDE ETEINT, ET C'EST LE SEUL SURVIVANT DE SA CATEGORIE. Le menage
+	 * du 23 septembre 2026 a supprime les autres termes inertes -- deplacement
+	 * horizontal, nappes d'arche, densite de maillage suivant le relief -- parce
+	 * qu'ils etaient detachables. Celui-ci ne l'est pas : il partage la norme du
+	 * gradient avec la modulation du detail par la pente, donc le retirer
+	 * demanderait de demeler les deux. Il coute un bool et une surcharge ; le
+	 * jour ou une forme de paroi butera sur cette discontinuite il sera ecrit.
 	 */
 	bool bPorteePerpendiculaire = false;
 
@@ -119,7 +122,6 @@ struct WORLDSEED_API FWorldseedDensityRules
 	int32 NiveauMax = 0;
 	float RayonAnneau0M = 300.0f;
 	float LoadRadiusM = 0.0f;
-	float RugositeMin = 0.0f;
 	float LargeurTransition = 0.5f;
 
 	/**
@@ -180,27 +182,6 @@ struct WORLDSEED_API FWorldseedDensityRules
 	int32 OverhangOctaves = 3;
 
 	/**
-	 * Deplacement HORIZONTAL du point ou l'on lit le relief, en metres.
-	 *
-	 * C'EST LUI QUI FAIT LES VRAIS SURPLOMBS, et le terme vertical ci-dessus
-	 * n'y arrive pas -- mesure : 0,00 % de colonnes franchissables meme a
-	 * seize metres d'amplitude, parce qu'un fBm de Perlin normalise n'atteint
-	 * jamais le gradient vertical de 1 qu'il faudrait.
-	 *
-	 * Le principe est different : a chaque altitude, on va lire le relief un
-	 * peu PLUS LOIN, et le decalage tourne avec Z. Sur un terrain plat cela ne
-	 * change presque rien -- le relief y est le meme a vingt metres pres. Sur
-	 * une falaise, deux altitudes voisines lisent des endroits dont les
-	 * altitudes different de dizaines de metres : la surface se replie, et l'on
-	 * peut passer dessous. Les surplombs naissent donc exactement la ou ils
-	 * sont credibles, sans qu'on ait eu a le demander.
-	 */
-	float OverhangWarpM = 25.0f;
-
-	/** Frequence du deplacement horizontal, en cycles par metre. */
-	float OverhangWarpFrequency = 0.012f;
-
-	/**
 	 * Frequence des galeries, en cycles par metre.
 	 *
 	 * Une valeur de 1/120 donne des tubes d'une centaine de metres de portee.
@@ -235,58 +216,6 @@ struct WORLDSEED_API FWorldseedDensityRules
 	float CaveSurfaceFadeM = 25.0f;
 
 	// --- arches et abris sous roche ---------------------------------------------
-
-	/**
-	 * Profondeur PERPENDICULAIRE sous laquelle une arche peut se creuser, en metres.
-	 *
-	 * PERPENDICULAIRE, ET LA PRECISION N'EST PAS UN DETAIL. Le champ mesure une
-	 * distance VERTICALE a la surface -- `Z - H(x,y)` -- et sur une falaise
-	 * cette distance est enorme des le premier metre dans la roche, puisque la
-	 * surface a l'aplomb se trouve loin au-dessus. Une porte posee sur elle ne
-	 * mordrait donc JAMAIS la ou les arches se forment. On divise par la norme
-	 * du gradient, `sqrt(1 + |grad H|^2)`, ce qui rend la distance vraie a la
-	 * paroi au premier ordre.
-	 */
-	float ArchDepthM = 12.0f;
-
-	/**
-	 * Pente minimale pour qu'une arche se creuse, en degres.
-	 *
-	 * UNE ARCHE EST UNE FORME DE PAROI, PAS DE PLAINE, et ce n'est pas un gout :
-	 * une nappe d'air creusee sous un terrain PLAT detacherait la calotte qui
-	 * la surmonte -- un bloc flottant, exactement le defaut que la deformation
-	 * produisait. Creusee dans un VERSANT, la meme nappe mord dans la paroi et
-	 * son plafond reste accroche a la colline derriere. La pente est donc la
-	 * condition qui rend le creusement sur.
-	 */
-	float ArchSlopeMinDeg = 38.0f;
-
-	/**
-	 * Frequence horizontale des nappes, en cycles par metre.
-	 *
-	 * Elle donne l'ETENDUE d'une arche : une valeur de 1/60 fait des poches
-	 * d'une vingtaine de metres, ce qu'il faut pour percer un eperon.
-	 */
-	float ArchFrequencyXY = 0.017f;
-
-	/**
-	 * Frequence VERTICALE des nappes, en cycles par metre.
-	 *
-	 * ELLE DOIT ETRE BIEN PLUS GRANDE QUE L'HORIZONTALE, et c'est tout le
-	 * principe. Un bruit isotrope fait des bulles ; comprimer sa periode en Z
-	 * fait des NAPPES -- larges, minces, horizontales. Une nappe qui mord dans
-	 * un versant donne une visiere ; une nappe qui traverse un eperon donne une
-	 * arche. Le rapport entre les deux frequences est la forme.
-	 */
-	float ArchFrequencyZ = 0.080f;
-
-	int32 ArchOctaves = 2;
-
-	/** Seuil au-dela duquel la nappe devient un vide, dans [-1..1]. */
-	float ArchThreshold = 0.55f;
-
-	/** Profondeur maximale du creusement, en metres. */
-	float ArchAmplitudeM = 5.0f;
 
 	// --- diaclases ------------------------------------------------------------
 
@@ -654,14 +583,6 @@ private:
 	 * s'efface au lieu de s'aliaser. Voir AttenuationMaille.
 	 */
 	double JointAt(const FVector& PosM, double DepthM, float MailleM) const;
-
-	/**
-	 * Creusement des arches et abris sous roche : positif dans le vide.
-	 *
-	 * DepthM est la profondeur VERTICALE ; la fonction en tire elle-meme la
-	 * distance perpendiculaire, dont elle a besoin et que l'appelant n'a pas.
-	 */
-	double ArchAt(const FVector& PosM, double DepthM) const;
 
 
 	/** Decoupe des lames de gres par fentes paralleles : positif dans le vide. */
