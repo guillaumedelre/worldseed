@@ -8485,3 +8485,92 @@ geometrie reste combinatoirement close.
 fait que 99), `RebuildWidget` (666), `HoldOrReleasePlayer` (427) et le placement
 du joueur, `Lithology::Compute` (419). Et `WaterBodies` (748 lignes) reste sans
 oracle : il demande un monde instancie.
+
+### La minimap, et pourquoi une capture de scene n'avait aucune chance (23 septembre 2026)
+
+Demande : partir du tutoriel Epic « Complete Map and Mini-map » et l'adapter,
+avec les points cardinaux et le cone de visee en plus. Le tutoriel est
+entierement en Blueprint ; rien de ce qu'il montre ne se transpose ici, et pour
+une raison qui n'est pas de style.
+
+**UNE CAMERA ORTHOGRAPHIQUE NE VERRAIT PRESQUE RIEN.** Le terrain voxel n'existe
+que dans `rayonChargementM` -- 2400 m -- et au-dela c'est la nappe d'horizon,
+enfoncee sous la bande creusable et sortie du rendu principal depuis le
+22 septembre. Elle filmerait un disque de terrain pose sur un decor deforme, et
+couterait une passe de rendu par image. **Le monde, lui, est DEJA EN MEMOIRE** :
+`ProbeCarte` savait deja le peindre. Il ne manquait qu'une fenetre glissante.
+
+**LA TOURNEE PHOTO NE PEUT PAS PHOTOGRAPHIER UN WIDGET, ET CE N'EST PAS UN
+REGLAGE.** `WorldseedPhotographe.cpp:767` appelle `RequestScreenshot(fichier,
+false, false)`, et le deuxieme parametre est `bInShowUI` (`UnrealClient.h:219`).
+A faux, le moteur lit la **cible de rendu du viewport**, alors qu'un widget pose
+par `AddViewportWidgetContent` est composite APRES, dans le back-buffer. Deux
+consequences :
+- le commentaire de `WorldseedFpsOverlay.cpp:140-148` -- « la tournee photo doit
+  pouvoir eteindre le compteur, sans quoi il se retrouve sur toutes les vues » --
+  est **perime**. Ce qui s'y retrouvait, ce sont les messages moteur via
+  `AddOnScreenDebugMessage`, qui passent par le debug canvas ; le `STextBlock`
+  du compteur n'y a jamais ete ;
+- pour juger une interface, on **capture la fenetre** par `System.Drawing` depuis
+  PowerShell -- la voie deja employee pour l'ecran de configuration --, avec
+  `PrintWindow(h, dc, 3)` : `PW_CLIENTONLY | PW_RENDERFULLCONTENT`. Sans le
+  premier, la barre de titre entre dans un bitmap dimensionne sur le CLIENT et
+  tout glisse d'une trentaine de pixels.
+
+**TROIS CONVENTIONS DE CELLULE COEXISTAIENT, ET DEUX SE CONTREDISAIENT D'UNE
+DEMI-CELLULE.** `WorldseedPeinture` tronque (`Floor`), `ReleveJoueur` arrondissait
+(`RoundToInt`) : huit metres d'ecart sur la grille du jeu, donc **un biome NOMME
+qui n'etait pas le biome PEINT sous les pieds**. Le defaut ne se voyait pas parce
+que rien n'affichait les deux cote a cote ; une minimap le fait. Et le
+commentaire disait « au plus proche voisin » en faisant l'inverse : la cellule k
+couvre `U * NX` dans [k, k+1[, donc son centre est en k + 0,5 -- c'est `Floor`
+qui designe le centre le plus proche, `RoundToInt` designe le BORD. **Une
+formule fausse sous un commentaire juste est le pire des deux mondes.** La
+convention vit desormais dans `FWorldseedGeometry::CelluleDepuisMetres`.
+
+**`FMath::Frac` EST BASE SUR `Floor`, `FMath::Fractional` SUR `Trunc`** -- le
+second rend du negatif pour un X negatif, donc un index hors du tableau. Les
+deux noms se ressemblent, un seul convient.
+
+**LE TAMPON DE `UpdateTextureRegions` NE DOIT JAMAIS ETRE UN MEMBRE.** Le fil de
+rendu le lit APRES le retour de la fonction : un tampon reutilise serait reecrit
+sous ses yeux, et cela marcherait quatre-vingt-dix-neuf fois sur cent -- la pire
+facon d'echouer. Chaque peinture alloue le sien, libere par le rappel. Et
+`UpdateTextureRegions`, jamais `UpdateResource`, qui detruit et recree la
+ressource RHI a chaque appel.
+
+**UN LISERÉ SE MESURE EN PIXELS, PAS EN FRACTION D'ANGLE.** Celui du cone valait
+30 % du demi-angle : a 45 degres d'ouverture cela faisait treize degres de chaque
+cote, le CORPS ne commencait qu'au tiers, et a 28 % de blanc il disparaissait sur
+du sable comme sur de l'eau claire. **On lisait deux aretes au lieu d'un cone**,
+et seule l'image l'a dit -- aucun test ne voit cela.
+
+**UN ATTENDU NAIF SE CORRIGE, IL NE S'ELARGIT PAS.** Le test du disque comparait
+son aire a pi/4 = 0,785. Mesure : 0,738. C'est l'attendu qui avait tort -- le
+disque est trace au rayon `Res/2 - 0,5` pour que son fondu tienne dans le tampon,
+et le seuil `alpha > 127` coupe ce fondu en son milieu. Rayon effectif
+`Res/2 - 1`, soit 0,7375 : huit dix-millemes du mesure. Elargir la tolerance
+aurait fait passer le test sans rien apprendre.
+
+**LE CONTROLE D'ORIENTATION QUI N'EST PAS AUTO-REFERENTIEL.** Mes tests
+comparent la carte a elle-meme ; le seul qui la confronte au MONDE 3D est de
+MARCHER. `-WorldseedBanc -WorldseedMarche=90 -WorldseedMarcheCap=0`, deux
+captures espacees : en allant au nord, le lac et la cote DESCENDENT dans le
+disque. Le depot a deja paye une mesure auto-referentielle -- `ProbeTransvoxel`
+comparait les triangles a leurs propres normales et a fait poser l'enroulement a
+l'envers.
+
+**ET LE CONE SUIT LA CAMERA, PAS LE PION.** Deja tranche pour le sol de fond ; la
+marche au nord camera tournee vers l'est le montre en une image.
+
+**CE QUE LES TESTS ONT TRANCHE EN PASSANT** : `LEnroulementNeCoupePasAuMeridien`
+passe, donc la discontinuite verticale visible sur une fenetre a cheval sur le
+meridien de bordure ne vient PAS de la peinture -- **le monde lui-meme porte une
+couture a son meridien**. A reprendre a part.
+
+**RESTE OUVERT** : la carte plein ecran, qui reutilisera `PeindreFenetre` mais
+demandera un second mode d'echantillonnage -- a 1024 px pour 64 km, c'est quatre
+cellules par pixel, ou le plus-proche-voisin scintille et perd des iles. D'ou le
+`MetresParPixel` deja present. Moyenne de bloc pour l'altitude, vote majoritaire
+pour les identifiants : **on ne moyenne jamais un identifiant**, 307 points faux
+sur 17956 deja payes.
