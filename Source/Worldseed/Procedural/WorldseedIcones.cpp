@@ -65,7 +65,7 @@ namespace WorldseedIconesInterne
 	{
 		{ TEXT("place"),        WorldseedIcone::Repere   },
 		{ TEXT("navigation"),   WorldseedIcone::Joueur   },
-		{ TEXT("door_open"),    WorldseedIcone::Arche    },
+		{ TEXT("all_inclusive"), WorldseedIcone::Arche  },
 		{ TEXT("trip_origin"),  WorldseedIcone::Gouffre  },
 		{ TEXT("landslide"),    WorldseedIcone::Doline   },
 		{ TEXT("layers"),       WorldseedIcone::Table    },

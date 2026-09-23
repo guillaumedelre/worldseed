@@ -7,6 +7,30 @@
 #include "WorldseedRetourMenu.generated.h"
 
 /**
+ * QUI PREND ECHAP QUAND LA CARTE EST OUVERTE.
+ *
+ * Deux sous-systemes sondent la meme touche dans le meme tick, et **l'ordre de
+ * tick entre sous-systemes n'est pas garanti**. Un simple « si la carte est
+ * ouverte, je laisse passer » ne suffit donc pas : si la carte tique d'abord
+ * et se ferme, le retour au menu voit ensuite « carte fermee », consomme Echap
+ * a son tour, et l'on FERME LA CARTE ET QUITTE au menu sur une seule pression.
+ *
+ * L'arbitre porte donc la TRAME ou la carte a consomme la touche. Il est pur
+ * -- quatre cas, quatre lignes -- et c'est ce qui le rend testable sans monde,
+ * sans partie et sans clavier.
+ */
+namespace WorldseedEchap
+{
+	/**
+	 * @param bCarteOuverte        etat de la carte AU MOMENT du sondage
+	 * @param TrameCourante        `GFrameCounter`
+	 * @param TrameCarteAConsomme  la trame ou la carte a pris Echap, ou zero
+	 */
+	WORLDSEED_API bool DoitRamenerAuMenu(bool bCarteOuverte, uint64 TrameCourante,
+		uint64 TrameCarteAConsomme);
+}
+
+/**
  * UNE TOUCHE POUR REVENIR AU MENU, ET POURQUOI C'EST UN SOUS-SYSTEME.
  *
  * Le chemin normal d'Unreal serait une action d'entree liee dans un asset, ou

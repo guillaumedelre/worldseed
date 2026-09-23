@@ -6,6 +6,7 @@
 
 #include "Procedural/WorldseedCarte.h"
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedRetourMenu.h"
 
 #include "Misc/AutomationTest.h"
 
@@ -1020,6 +1021,46 @@ bool FWorldseedTestCarteMips::RunTest(const FString& Parameters)
 	TArray<TArray<uint8>> Aucun;
 	WorldseedCarte::CuireReductions(Base.GetData(), 1, 1, Aucun);
 	TestEqual(TEXT("un pixel seul n'a pas de reduction"), Aucun.Num(), 0);
+
+	return true;
+}
+
+
+/**
+ * ECHAP FERME LA CARTE AVANT DE QUITTER, ET UNE PRESSION NE FAIT QU'UNE CHOSE.
+ *
+ * Deux sous-systemes sondent la meme touche dans le meme tick, et **l'ordre de
+ * tick entre sous-systemes n'est pas garanti**. Un simple « si la carte est
+ * ouverte, je laisse passer » marche quand le retour au menu tique d'ABORD --
+ * et echoue dans l'autre sens : la carte se ferme, puis le retour au menu voit
+ * « carte fermee », consomme la meme pression, et l'on quitte le niveau en
+ * croyant refermer une carte.
+ *
+ * LE TEMOIN EST LE DERNIER CAS, et il est indispensable : un arbitre qui
+ * rendrait toujours faux passerait les trois premiers et l'on ne pourrait plus
+ * JAMAIS quitter le niveau.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCarteEchap,
+	"Worldseed.Carte.EchapFermeLaCarteAvantDeQuitter",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCarteEchap::RunTest(const FString& Parameters)
+{
+	constexpr uint64 Trame = 1000;
+
+	TestFalse(TEXT("carte ouverte : elle prend Echap"),
+		WorldseedEchap::DoitRamenerAuMenu(true, Trame, 0));
+
+	TestFalse(TEXT("carte fermee A L'INSTANT : la meme pression ne fait pas deux choses"),
+		WorldseedEchap::DoitRamenerAuMenu(false, Trame, Trame));
+
+	TestTrue(TEXT("carte fermee a la trame precedente : Echap quitte"),
+		WorldseedEchap::DoitRamenerAuMenu(false, Trame, Trame - 1));
+
+	// TEMOIN : sans carte jamais ouverte, Echap DOIT quitter -- sinon on
+	// enfermerait le joueur dans le niveau.
+	TestTrue(TEXT("TEMOIN : carte jamais ouverte, Echap quitte"),
+		WorldseedEchap::DoitRamenerAuMenu(false, Trame, 0));
 
 	return true;
 }

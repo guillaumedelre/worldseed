@@ -2,8 +2,29 @@
 
 #include "Procedural/WorldseedRetourMenu.h"
 
+#include "Procedural/WorldseedCarteEcran.h"
+
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+
+namespace WorldseedEchap
+{
+	bool DoitRamenerAuMenu(bool bCarteOuverte, uint64 TrameCourante,
+		uint64 TrameCarteAConsomme)
+	{
+		// La carte est au-dessus du menu dans la pile : tant qu'elle est
+		// ouverte, Echap la ferme, lui.
+		if (bCarteOuverte)
+		{
+			return false;
+		}
+
+		// ET LA TRAME OU ELLE VIENT DE SE FERMER COMPTE ENCORE. C'est tout
+		// l'objet de cet arbitre : sans lui, l'ordre de tick deciderait si la
+		// meme pression ferme la carte ou quitte le niveau.
+		return TrameCarteAConsomme != TrameCourante;
+	}
+}
 
 namespace
 {
@@ -63,6 +84,16 @@ void UWorldseedRetourMenu::Tick(float DeltaTime)
 	}
 
 	if (!PC->WasInputKeyJustPressed(ToucheRetour))
+	{
+		return;
+	}
+
+	// ECHAP EST UNE PILE, ET LA CARTE EST AU-DESSUS. L'arbitre est une fonction
+	// pure parce que l'ordre de tick entre sous-systemes n'est pas garanti :
+	// voir `WorldseedEchap::DoitRamenerAuMenu`.
+	const UWorldseedCarteEcran* const Carte = W->GetSubsystem<UWorldseedCarteEcran>();
+	if (Carte && !WorldseedEchap::DoitRamenerAuMenu(Carte->EstOuverte(),
+		GFrameCounter, Carte->TrameEchapConsomme()))
 	{
 		return;
 	}

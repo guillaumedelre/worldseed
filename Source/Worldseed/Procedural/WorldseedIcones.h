@@ -92,7 +92,7 @@ namespace WorldseedIcone
 	// --- la carte -----------------------------------------------------------
 	constexpr uint32 Repere   = 0xF1DB;   // place        -- l'epingle du joueur
 	constexpr uint32 Joueur   = 0xE55D;   // navigation   -- la fleche de cap
-	constexpr uint32 Arche    = 0xE77C;   // door_open    -- on passe au travers
+	constexpr uint32 Arche    = 0xEB3D;   // all_inclusive -- deux arcs, un vide
 	constexpr uint32 Gouffre  = 0xE57B;   // trip_origin  -- un puits, vu du ciel
 	constexpr uint32 Doline   = 0xEBD7;   // landslide    -- un effondrement
 	constexpr uint32 Table    = 0xE53B;   // layers       -- des bancs empiles
