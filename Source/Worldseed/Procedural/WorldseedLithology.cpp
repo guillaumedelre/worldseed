@@ -3,7 +3,9 @@
 #include "Procedural/WorldseedLithology.h"
 
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedParts.h"
 #include "Procedural/WorldseedPerlin.h"
+#include "Procedural/WorldseedSocle.h"
 #include "Procedural/WorldseedTrace.h"
 
 #include "Async/ParallelFor.h"
@@ -247,180 +249,44 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 	const uint8 IdOcean = static_cast<uint8>(FMath::Max(Rules.IdOceanique, 0));
 	const uint8 IdSocle = static_cast<uint8>(FMath::Max(Rules.IdSocle, 0));
 
-	// --- LE SEUIL DU SOCLE, PAR QUANTILE ET NON EN METRES ---------------------
-	//
-	// Voir le commentaire de SoclePartHaute : un seuil metrique cale sur un
-	// monde de 8 km avale tout le relief d'un monde de 64. Le quantile porte
-	// sur les TERRES seules -- y inclure les fonds marins reviendrait a mesurer
-	// la part haute d'une distribution que la mer domine.
-	float SeuilSocleM = Rules.SocleElevationM;
-	if (Rules.SoclePartHaute > 0.0f && Rules.SoclePartHaute < 1.0f)
-	{
-		TArray<float> Terres;
-		Terres.Reserve(Count / 3 + 1);
-		for (int32 I = 0; I < Count; ++I)
-		{
-			if (ElevationM[I] > 0.0f) { Terres.Add(ElevationM[I]); }
-		}
-		if (Terres.Num() > 0)
-		{
-			SeuilSocleM = WorldseedGrid::Quantile(Terres, 1.0f - Rules.SoclePartHaute);
-		}
-	}
-
 	// --- LE SOCLE SE DECIDE UNE FOIS, ET IL DEMANDE UN DECAPAGE --------------
 	//
-	// LA REGLE D'ATTRIBUTION LE DEMANDAIT DEJA, et le code ne l'ecoutait qu'a
-	// moitie : « un OROGENE expose son socle -- soulevement et DECAPAGE
-	// emportent la couverture sedimentaire ». Le decapage est une EROSION, et
-	// ce qui decape est le RELIEF ; la convergence ne fait que soulever. En ne
-	// testant que la convergence, on declarait socle toute la bande
-	// convergente -- y compris le BASSIN PLAT qui borde la chaine.
+	// TOUT LE RAISONNEMENT EST DANS `WorldseedSocle.h` -- pourquoi la
+	// convergence seule declarait socle le bassin plat qui borde la chaine, et
+	// ce que ce defaut avait coute (0,00 % de gres, donc aucune table dans tout
+	// le monde). Il y est avec son oracle, ce qu'il n'avait pas ici.
 	//
-	// OR UN BASSIN D'AVANT-PAYS EST L'INVERSE D'UN SOCLE : il est PLEIN des
-	// sediments arraches a la chaine voisine. C'est litteralement le decor des
-	// mesas reelles. Mesure du defaut : sur le terrain chaud, aride et peu
-	// accidente que les tables demandent, 70,80 % de granite et 29,13 % de
-	// basalte pour 0,00 % de gres -- donc aucune table dans tout le monde.
-	//
-	// ET LE TEST ETAIT EN TROIS COPIES dans ce fichier. Ajouter le relief a
-	// l'une aurait fait diverger les trois, sans qu'aucun compilateur ne le
-	// dise. On le calcule donc UNE fois, ici, et les trois le lisent.
+	// SES REGLES SONT LES SIENNES, et c'est ce qui le rend atomique : la
+	// decision du socle est une affaire de RELIEF, elle n'a que faire du
+	// catalogue de roches. Quelle roche porte un socle est une question de
+	// lithologie, et elle se repond plus bas.
+	const FWorldseedSocleRegles SocleRegles{
+		Rules.SocleConvergence,
+		Rules.SocleElevationM,
+		Rules.SoclePartHaute,
+		Rules.SoclePartAccidentee,
+		Rules.SocleReliefRayonM
+	};
+
 	TArray<uint8> EstSocle;
-	EstSocle.Init(0, Count);
-	{
-		// LE RELIEF LOCAL SE MESURE SUR UNE GRILLE GROSSIE, et c'est un choix
-		// de cout : la fenetre fait trois kilometres, soit pres de cent
-		// cellules de rayon, et un balayage naif y coute deux milliards
-		// d'operations. Un huitieme de resolution suffit largement a dire si
-		// l'on est dans une chaine ou dans une plaine -- on ne cherche pas un
-		// contour, on cherche une CLASSE de terrain.
-		constexpr int32 Grossier = 8;
-		const int32 PX = FMath::Max(Geometry.NX / Grossier, 1);
-		const int32 PY = FMath::Max(Geometry.NY / Grossier, 1);
+	FWorldseedSocleReleve SocleReleve;
+	WorldseedSocle::Marquer(Geometry, ElevationM, Convergence, SocleRegles,
+		EstSocle, SocleReleve);
 
-		TArray<float> Bas;  Bas.Init(TNumericLimits<float>::Max(), PX * PY);
-		TArray<float> Haut; Haut.Init(TNumericLimits<float>::Lowest(), PX * PY);
-
-		for (int32 J = 0; J < Geometry.NY; ++J)
-		{
-			const int32 PJ = FMath::Min(J / Grossier, PY - 1);
-			for (int32 I = 0; I < Geometry.NX; ++I)
-			{
-				const int32 P = PJ * PX + FMath::Min(I / Grossier, PX - 1);
-				const float H = ElevationM[J * Geometry.NX + I];
-				Bas[P] = FMath::Min(Bas[P], H);
-				Haut[P] = FMath::Max(Haut[P], H);
-			}
-		}
-
-		const float MailleM = FMath::Max(Geometry.MetersPerPixel(), 1e-3f);
-		const int32 Rayon = FMath::Max(
-			FMath::RoundToInt(Rules.SocleReliefRayonM / (MailleM * Grossier)), 1);
-
-		// Separable : min et max se propagent par axe, donc deux passes au lieu
-		// d'une fenetre carree.
-		auto Etaler = [PX, PY, Rayon](TArray<float>& V, bool bMax)
-		{
-			TArray<float> Tmp = V;
-			for (int32 J = 0; J < PY; ++J)
-			{
-				for (int32 I = 0; I < PX; ++I)
-				{
-					float A = V[J * PX + I];
-					for (int32 D = -Rayon; D <= Rayon; ++D)
-					{
-						const int32 K = FMath::Clamp(I + D, 0, PX - 1);
-						A = bMax ? FMath::Max(A, V[J * PX + K])
-								 : FMath::Min(A, V[J * PX + K]);
-					}
-					Tmp[J * PX + I] = A;
-				}
-			}
-			V = Tmp;
-			for (int32 J = 0; J < PY; ++J)
-			{
-				for (int32 I = 0; I < PX; ++I)
-				{
-					float A = V[J * PX + I];
-					for (int32 D = -Rayon; D <= Rayon; ++D)
-					{
-						const int32 K = FMath::Clamp(J + D, 0, PY - 1);
-						A = bMax ? FMath::Max(A, V[K * PX + I])
-								 : FMath::Min(A, V[K * PX + I]);
-					}
-					Tmp[J * PX + I] = A;
-				}
-			}
-			V = Tmp;
-		};
-
-		Etaler(Bas, false);
-		Etaler(Haut, true);
-
-		auto EstOrogene = [&](int32 C)
-		{
-			return (bHasConv && Convergence[C] > Rules.SocleConvergence)
-				|| (ElevationM[C] > SeuilSocleM);
-		};
-
-		// LE SEUIL SE LIT CONTRE LA DISTRIBUTION DU MONDE, jamais contre
-		// l.intuition -- et l.on echantillonne SUR LE DOMAINE QUI SERA TRIE,
-		// pas sur l.ensemble. Lecon deja payee deux fois dans ce fichier : le
-		// premier calage du socle demandait 45 / 35 / 20 et rendait
-		// 40,8 / 38,1 / 21,1 pour avoir echantillonne trop large.
-		TArray<float> ReliefsOrogenes;
-		ReliefsOrogenes.Reserve(Count / 4);
-		for (int32 J = 0; J < Geometry.NY; ++J)
-		{
-			const int32 PJ = FMath::Min(J / Grossier, PY - 1);
-			for (int32 I = 0; I < Geometry.NX; ++I)
-			{
-				const int32 C = J * Geometry.NX + I;
-				if (ElevationM[C] <= 0.0f || !EstOrogene(C)) { continue; }
-				ReliefsOrogenes.Add(
-					Haut[PJ * PX + FMath::Min(I / Grossier, PX - 1)]
-					- Bas[PJ * PX + FMath::Min(I / Grossier, PX - 1)]);
-			}
-		}
-
-		const bool bTrier = (Rules.SoclePartAccidentee > 0.0f)
-			&& (Rules.SoclePartAccidentee < 1.0f) && (ReliefsOrogenes.Num() > 0);
-		const float SeuilRelief = bTrier
-			? WorldseedGrid::Quantile(ReliefsOrogenes, 1.0f - Rules.SoclePartAccidentee)
-			: 0.0f;
-
-		for (int32 J = 0; J < Geometry.NY; ++J)
-		{
-			const int32 PJ = FMath::Min(J / Grossier, PY - 1);
-			for (int32 I = 0; I < Geometry.NX; ++I)
-			{
-				const int32 C = J * Geometry.NX + I;
-				const int32 P = PJ * PX + FMath::Min(I / Grossier, PX - 1);
-				if (!EstOrogene(C)) { continue; }
-				if (bTrier && (Haut[P] - Bas[P]) < SeuilRelief) { continue; }
-				EstSocle[C] = 1;
-			}
-		}
-
-		// COMBIEN LE DECAPAGE SAUVE-T-IL ? Un chiffre identique apres une
-		// correction reelle est le signe que ce depot a rencontre cinq fois :
-		// soit le monde vient du cache, soit la garde ne mord pas. On le dit.
-		int32 Orogenes = 0, Socles = 0;
-		for (int32 C = 0; C < Count; ++C)
-		{
-			if (ElevationM[C] <= 0.0f) { continue; }
-			if (EstOrogene(C)) { ++Orogenes; }
-			if (EstSocle[C] != 0) { ++Socles; }
-		}
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] substrat : %d cellules orogeniques, %d gardees SOCLE ")
-			TEXT("(%.1f %%) -- le decapage en rend %d au bassin, relief exige %.0f m ")
-			TEXT("sur %.0f m"),
-			Orogenes, Socles,
-			(Orogenes > 0) ? 100.0 * Socles / Orogenes : 0.0,
-			Orogenes - Socles, SeuilRelief, Rules.SocleReliefRayonM);
-	}
+	// COMBIEN LE DECAPAGE SAUVE-T-IL ? Le module MESURE, on RAPPORTE -- sans
+	// quoi il ne serait plus appelable depuis un test sans le polluer. Et un
+	// chiffre identique apres une correction reelle est le signe que ce depot
+	// a rencontre cinq fois : soit le monde vient du cache, soit la garde ne
+	// mord pas. On le dit.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] substrat : %d cellules orogeniques, %d gardees SOCLE ")
+		TEXT("(%.1f %%) -- le decapage en rend %d au bassin, relief exige %.0f m ")
+		TEXT("sur %.0f m"),
+		SocleReleve.Orogenes, SocleReleve.Socles,
+		(SocleReleve.Orogenes > 0)
+			? 100.0 * SocleReleve.Socles / SocleReleve.Orogenes : 0.0,
+		SocleReleve.Orogenes - SocleReleve.Socles,
+		SocleReleve.SeuilReliefM, Rules.SocleReliefRayonM);
 
 	// --- le motif sedimentaire -----------------------------------------------
 	//
@@ -536,19 +402,8 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 			{
 				if (DomaineDe[I] == D) { Echantillon.Add(Motif[I]); }
 			}
-			if (Echantillon.Num() == 0) { continue; }
-
-			float Somme = 0.0f;
-			for (const float P : Dom.Parts) { Somme += P; }
-			Somme = FMath::Max(Somme, 1e-6f);
-
-			float Cumul = 0.0f;
-			for (int32 K = 0; K + 1 < Dom.Ids.Num(); ++K)
-			{
-				Cumul += Dom.Parts[K] / Somme;
-				Dom.Seuils.Add(WorldseedGrid::Quantile(Echantillon,
-					FMath::Clamp(Cumul, 0.0f, 1.0f)));
-			}
+			WorldseedParts::Seuils(Echantillon, Dom.Parts, Dom.Ids.Num(),
+				Dom.Seuils);
 		}
 	}
 
@@ -579,19 +434,8 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 			}
 		}
 
-		if (Echantillon.Num() > 0)
-		{
-			float Somme = 0.0f;
-			for (const float P : Rules.PartsSedimentaires) { Somme += P; }
-			Somme = FMath::Max(Somme, 1e-6f);
-
-			float Cumul = 0.0f;
-			for (int32 K = 0; K + 1 < Rules.IdsSedimentaires.Num(); ++K)
-			{
-				Cumul += Rules.PartsSedimentaires[K] / Somme;
-				Seuils.Add(WorldseedGrid::Quantile(Echantillon, FMath::Clamp(Cumul, 0.0f, 1.0f)));
-			}
-		}
+		WorldseedParts::Seuils(Echantillon, Rules.PartsSedimentaires,
+			Rules.IdsSedimentaires.Num(), Seuils);
 	}
 
 	Out.Id.SetNumUninitialized(Count);
@@ -621,8 +465,7 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 		if (DomaineDe.Num() == Count && Domaines.IsValidIndex(DomaineDe[I]))
 		{
 			const FWorldseedLithoDomaine& Dom = Domaines[DomaineDe[I]];
-			int32 K = 0;
-			while (K < Dom.Seuils.Num() && Motif[I] > Dom.Seuils[K]) { ++K; }
+			const int32 K = WorldseedParts::Classe(Motif[I], Dom.Seuils);
 			Out.Id[I] = static_cast<uint8>(Dom.Ids[FMath::Min(K, Dom.Ids.Num() - 1)]);
 			return;
 		}
@@ -635,8 +478,7 @@ void WorldseedLithology::Compute(const FWorldseedGeometry& Geometry,
 			return;
 		}
 
-		int32 K = 0;
-		while (K < Seuils.Num() && Motif[I] > Seuils[K]) { ++K; }
+		const int32 K = WorldseedParts::Classe(Motif[I], Seuils);
 		Out.Id[I] = static_cast<uint8>(
 			Rules.IdsSedimentaires[FMath::Min(K, Rules.IdsSedimentaires.Num() - 1)]);
 	});
