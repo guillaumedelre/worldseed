@@ -360,19 +360,22 @@ void PeindreCone(uint8* PixelsBGRA, int32 Res, float AzimutDeg,
 			// invisible en pratique. Verifie a l'image sur la planche-contact.
 			const float Radial = FMath::Clamp((1.0f - D / Rayon) / 0.40f, 0.0f, 1.0f);
 
-			// Les flancs portent la lisibilite : sombres et nets, ils tiennent
-			// sur une calotte comme sur un ocean profond, la ou un aplat clair
-			// disparaitrait sur l'un des deux. C'est la lecon du reticule du
-			// globe, ou le halo sombre vient AVANT le trait clair.
-			const float Flanc = 1.0f - FMath::Clamp(
-				(DemiAngle - Angle) / (DemiAngle * 0.30f), 0.0f, 1.0f);
+			// LE LISERE SE MESURE EN PIXELS, PAS EN FRACTION D'ANGLE. Premiere
+			// version : une bande de 30 % du demi-angle. A quarante-cinq
+			// degres de demi-angle cela faisait treize degres de chaque cote,
+			// si bien que le CORPS du cone ne commencait qu'au tiers et
+			// disparaissait -- vu en jeu, on ne lisait plus deux aretes au lieu
+			// d'un cone. Deux pixels d'epaisseur, et le liseré reste un liseré
+			// quelle que soit l'ouverture.
+			const float BordPx = (DemiAngle - Angle) * D;
+			const float Flanc = 1.0f - FMath::Clamp(BordPx - 1.0f, 0.0f, 1.0f);
 
-			// Le corps reste discret : on veut lire une DIRECTION a travers la
-			// carte, pas poser une part de tarte dessus.
+			// LE CORPS DOIT SE VOIR SUR DU SABLE COMME SUR DE L'EAU CLAIRE.
+			// A vingt-huit pour cent de blanc il etait invisible sur les deux.
 			const float Alpha = Couverture * Radial
-				* FMath::Lerp(0.28f, 0.85f, Flanc);
+				* FMath::Lerp(0.42f, 0.92f, Flanc);
 			const uint8 Ton = static_cast<uint8>(
-				255.0f * FMath::Lerp(1.0f, 0.10f, Flanc));
+				255.0f * FMath::Lerp(1.0f, 0.08f, Flanc));
 
 			uint8* const Pixel = PixelsBGRA + (PY * Res + PX) * 4;
 			Pixel[0] = Ton;
