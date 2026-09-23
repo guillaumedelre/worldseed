@@ -463,12 +463,23 @@ void UWorldseedMinimap::Rafraichir()
 		if (Repere.Cellule != DerniereCellule
 			|| !FMath::IsNearlyEqual(DemiPorteeM, DernierePorteeM))
 		{
-			WorldseedCarte::FParamsFenetre P;
+			WorldseedCarte::FParamsFenetre P =
+				WorldseedCarte::FParamsFenetre::Carree(DemiPorteeM, Cote);
 			P.CentreXm = Repere.Xm;
 			P.CentreYm = Repere.Ym;
-			P.DemiPorteeM = DemiPorteeM;
-			P.Res = Cote;
-			P.FondM = WorldseedCarte::FondDuMonde(T->MondeAltitudes());
+
+			// LE FOND DU MONDE EST UNE CONSTANTE DU MONDE, et il etait recalcule
+			// A CHAQUE REPEINTURE : un balayage de huit millions et demi de
+			// flottants tous les quinze metres parcourus, pour une valeur qui ne
+			// peut pas changer tant que le monde est le meme. On le retient, et
+			// on le redemande si le monde change de taille sous nous.
+			if (FondDuMondeM >= 0.0f
+				|| CellulesDuFond != T->MondeAltitudes().Num())
+			{
+				FondDuMondeM = WorldseedCarte::FondDuMonde(T->MondeAltitudes());
+				CellulesDuFond = T->MondeAltitudes().Num();
+			}
+			P.FondM = FondDuMondeM;
 
 			uint8* const Pixels = new uint8[Octets];
 			WorldseedCarte::PeindreFenetre(T->MondeGeometrie(), T->MondeAltitudes(),
@@ -495,7 +506,7 @@ void UWorldseedMinimap::Rafraichir()
 				UE_LOG(LogTemp, Log,
 					TEXT("[Worldseed] minimap peinte : texture %d px, ecran %.0f px, ")
 					TEXT("DPI %.2f, %.1f m/px, centre (%.0f, %.0f) m, cellule %d"),
-					Cote, WorldseedMini::CoteEcran, Dpi, P.MetresParPixel(),
+					Cote, WorldseedMini::CoteEcran, Dpi, P.MetresParPixelX(),
 					Repere.Xm, Repere.Ym, Repere.Cellule);
 			}
 		}

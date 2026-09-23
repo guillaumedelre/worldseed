@@ -1165,9 +1165,8 @@ FString UWorldseedProbeLibrary::ProbeMinimap(int32 Seed, float HeightMeters,
 		{ TEXT("pole"),     CentreXm, HeightM2 * 0.5, 0.0f, true }
 	};
 
-	WorldseedCarte::FParamsFenetre P;
-	P.DemiPorteeM = FMath::Max(static_cast<double>(DemiPorteeM), 1.0);
-	P.Res = Res;
+	WorldseedCarte::FParamsFenetre P = WorldseedCarte::FParamsFenetre::Carree(
+		FMath::Max(static_cast<double>(DemiPorteeM), 1.0), Res);
 	P.FondM = WorldseedCarte::FondDuMonde(World.ElevationM);
 
 	const int32 Marge = 10;
@@ -1258,7 +1257,7 @@ FString UWorldseedProbeLibrary::ProbeMinimap(int32 Seed, float HeightMeters,
 		TEXT("portee %.0f m  %d px  %.1f m/px  fond %.0f m  ")
 		TEXT("six vignettes en %.1f ms"),
 		*Chemin, LargeurPl, HauteurPl, CentreXm, CentreYm, *OuTrouve,
-		DemiPorteeM, Res, P.MetresParPixel(), P.FondM, Ms);
+		DemiPorteeM, Res, P.MetresParPixelX(), P.FondM, Ms);
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Bilan);
 	return Bilan;

@@ -48,11 +48,21 @@ namespace WorldseedCarte
 		double CentreXm = 0.0;
 		double CentreYm = 0.0;
 
-		/** Demi-cote de la fenetre, en metres. */
-		double DemiPorteeM = 2000.0;
+		/**
+		 * Demi-largeur et demi-hauteur de la fenetre, en metres.
+		 *
+		 * ELLES NE SE REMPLISSENT PAS A LA MAIN : voir `Carree` et `Rectangle`.
+		 * Deux demi-portees libres n'imposent PAS des pixels carres -- le monde
+		 * est en 2:1 et un ecran en 16:9 -- et une fenetre etiree fausserait
+		 * l'ombrage, qui suppose des metres isotropes, comme le disque, qui
+		 * suppose un cercle.
+		 */
+		double DemiPorteeXm = 2000.0;
+		double DemiPorteeYm = 2000.0;
 
-		/** Cote du tampon, en pixels. Il est carre. */
-		int32 Res = 256;
+		/** Cote du tampon, en pixels. */
+		int32 ResX = 256;
+		int32 ResY = 256;
 
 		/** Alpha nul hors du disque inscrit, avec un fondu d'un pixel. */
 		bool bDisque = true;
@@ -75,9 +85,48 @@ namespace WorldseedCarte
 		/** Le point le plus bas du monde, qui norme le degrade de profondeur. */
 		float FondM = -300.0f;
 
-		double MetresParPixel() const
+		/** La fenetre carree : celle de la minimap, et celle des cinq oracles. */
+		static FParamsFenetre Carree(double DemiM, int32 Res)
 		{
-			return (2.0 * DemiPorteeM) / static_cast<double>(FMath::Max(Res, 1));
+			FParamsFenetre P;
+			P.DemiPorteeXm = DemiM;
+			P.DemiPorteeYm = DemiM;
+			P.ResX = Res;
+			P.ResY = Res;
+			return P;
+		}
+
+		/**
+		 * Le rectangle : UNE demi-portee, et l'autre SE DEDUIT du nombre de
+		 * pixels. Les pixels sont donc carres par CONSTRUCTION, et non par
+		 * discipline -- il n'existe aucune facon d'exprimer une carte etiree.
+		 */
+		static FParamsFenetre Rectangle(double DemiXm, int32 ResX, int32 ResY)
+		{
+			FParamsFenetre P;
+			P.ResX = FMath::Max(ResX, 1);
+			P.ResY = FMath::Max(ResY, 1);
+			P.DemiPorteeXm = DemiXm;
+			P.DemiPorteeYm = DemiXm * static_cast<double>(P.ResY)
+				/ static_cast<double>(P.ResX);
+			return P;
+		}
+
+		double MetresParPixelX() const
+		{
+			return (2.0 * DemiPorteeXm) / static_cast<double>(FMath::Max(ResX, 1));
+		}
+
+		double MetresParPixelY() const
+		{
+			return (2.0 * DemiPorteeYm) / static_cast<double>(FMath::Max(ResY, 1));
+		}
+
+		/** Ce que les deux fabriques garantissent, et qu'un remplissage a la main peut casser. */
+		bool PixelsCarres() const
+		{
+			return FMath::IsNearlyEqual(MetresParPixelX(), MetresParPixelY(),
+				FMath::Max(MetresParPixelX() * 1e-6, UE_DOUBLE_KINDA_SMALL_NUMBER));
 		}
 	};
 
@@ -96,6 +145,45 @@ namespace WorldseedCarte
 	 */
 	WORLDSEED_API void MetresDuPixel(const FParamsFenetre& P, int32 PX, int32 PY,
 		double& OutXm, double& OutYm);
+
+	/**
+	 * L'INVERSE EXACT de `MetresDuPixel`, et la fonction la plus porteuse d'ici.
+	 *
+	 * Elle sert QUATRE choses qui, sans elle, reformuleraient chacune la meme
+	 * projection : la region UV de la brosse a l'ecran, la position d'un
+	 * marqueur, le clic qui redevient une coordonnee du monde, et le zoom
+	 * centre sur le curseur. L'ecrire une fois est ce qui empeche l'inversion
+	 * nord/sud d'etre reecrite ailleurs -- l'en-tete de ce fichier l'interdit
+	 * en toutes lettres, et le depot a paye ce qu'une formule recopiee coute.
+	 *
+	 * `LargeurMondeM` sert a L'ENROULEMENT, et elle n'est pas facultative en
+	 * pratique : le monde reboucle en longitude, donc un point peut etre a la
+	 * fois « tres a l'est » et « juste a l'ouest ». On retient le representant
+	 * le plus proche du centre de la fenetre, sans quoi le marqueur du joueur
+	 * saute hors de l'ecran des que la vue approche le meridien de bordure.
+	 * Zero desarme l'enroulement.
+	 *
+	 * @return vrai si le point tombe DANS la fenetre. La sortie est ecrite dans
+	 *         tous les cas : un marqueur hors champ a encore une direction.
+	 */
+	WORLDSEED_API bool PixelDuMetre(const FParamsFenetre& P, double LargeurMondeM,
+		double Xm, double Ym, double& OutPX, double& OutPY);
+
+	/**
+	 * L'ecart, en metres, entre les deux points que l'ombrage compare.
+	 *
+	 * IL EST BORNE PAR LE PIXEL, ET C'EST NYQUIST, PAS UNE QUESTION D'UNITES.
+	 * A trois cellules par pixel, comparer deux points distants d'UNE cellule
+	 * echantillonne une frequence que l'image ne porte plus : le relief sort en
+	 * poivre et sel. Le commentaire d'origine -- « une VRAIE pente : l'ombrage
+	 * ne depend pas de la resolution » -- a raison sur les unites et tort sur
+	 * l'echantillonnage.
+	 *
+	 * Fonction pure, et exposee pour cette seule raison : c'est elle que
+	 * l'oracle vise.
+	 */
+	WORLDSEED_API double PasOmbrageMetres(const FParamsFenetre& P,
+		const FWorldseedGeometry& Geo);
 
 	/** Le point le plus bas du monde. Norme le degrade de bathymetrie. */
 	WORLDSEED_API float FondDuMonde(const TArray<float>& ElevationM);

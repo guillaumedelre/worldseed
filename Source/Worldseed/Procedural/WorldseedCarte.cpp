@@ -16,20 +16,64 @@ namespace WorldseedCarte
 void MetresDuPixel(const FParamsFenetre& P, int32 PX, int32 PY,
 	double& OutXm, double& OutYm)
 {
-	const double Pas = P.MetresParPixel();
-	const double Demi = static_cast<double>(P.Res) * 0.5;
+	const double PasX = P.MetresParPixelX();
+	const double PasY = P.MetresParPixelY();
+	const double DemiX = static_cast<double>(P.ResX) * 0.5;
+	const double DemiY = static_cast<double>(P.ResY) * 0.5;
 
 	// Le centre du pixel, et non son coin : sans le demi-pixel, la fenetre
 	// serait decalee d'un demi-pas et le joueur ne tomberait pas au milieu.
-	const double CX = static_cast<double>(PX) + 0.5 - Demi;
-	const double CY = static_cast<double>(PY) + 0.5 - Demi;
+	const double CX = static_cast<double>(PX) + 0.5 - DemiX;
+	const double CY = static_cast<double>(PY) + 0.5 - DemiY;
 
-	OutXm = P.CentreXm + CX * Pas;
+	OutXm = P.CentreXm + CX * PasX;
 
 	// LE SIGNE EST ICI, ET NULLE PART AILLEURS. L'axe des lignes d'une texture
 	// descend ; celui des Y du monde monte vers le nord. La ligne 0 doit donc
 	// rendre le Y le PLUS GRAND, faute de quoi la carte a le nord en bas.
-	OutYm = P.CentreYm - CY * Pas;
+	OutYm = P.CentreYm - CY * PasY;
+}
+
+
+bool PixelDuMetre(const FParamsFenetre& P, double LargeurMondeM,
+	double Xm, double Ym, double& OutPX, double& OutPY)
+{
+	const double PasX = P.MetresParPixelX();
+	const double PasY = P.MetresParPixelY();
+
+	// LE REPRESENTANT LE PLUS PROCHE, et non le point tel qu'il est donne. Le
+	// monde reboucle : un point a +31 km peut etre a 1 km a l'OUEST d'une vue
+	// centree sur -32 km. Sans ce repli, le marqueur du joueur disparaitrait de
+	// la carte des qu'on approche le meridien de bordure.
+	double X = Xm;
+	if (LargeurMondeM > 0.0)
+	{
+		const double Ecart = X - P.CentreXm;
+		X = P.CentreXm + Ecart
+			- LargeurMondeM * FMath::RoundToDouble(Ecart / LargeurMondeM);
+	}
+
+	// L'inverse terme a terme de `MetresDuPixel`, signe compris.
+	OutPX = (X - P.CentreXm) / PasX + static_cast<double>(P.ResX) * 0.5 - 0.5;
+	OutPY = (P.CentreYm - Ym) / PasY + static_cast<double>(P.ResY) * 0.5 - 0.5;
+
+	// Les bornes sont celles des CENTRES de pixels : un point a -0,5 tombe sur
+	// le bord exact de la fenetre, donc encore dedans.
+	return OutPX >= -0.5 && OutPX <= static_cast<double>(P.ResX) - 0.5
+		&& OutPY >= -0.5 && OutPY <= static_cast<double>(P.ResY) - 0.5;
+}
+
+
+double PasOmbrageMetres(const FParamsFenetre& P, const FWorldseedGeometry& Geo)
+{
+	const double Cellules = static_cast<double>(FMath::Max(P.PasOmbrageCellules, 1))
+		* static_cast<double>(Geo.MetersPerPixel());
+
+	// EN AGRANDISSEMENT, ON RESTE A LA CELLULE. Suivre le pixel quand il est
+	// plus FIN que la cellule ne gagnerait rien -- le relief n'a pas ce
+	// detail -- et rapprocherait les deux points jusqu'a rendre la pente
+	// bruyante. On ne borne donc que vers le haut.
+	return FMath::Max(Cellules, P.MetresParPixelX());
 }
 
 
@@ -112,38 +156,48 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 {
 	WORLDSEED_TRACE(Carte);
 
-	if (!PixelsBGRA || P.Res <= 0)
+	if (!PixelsBGRA || P.ResX <= 0 || P.ResY <= 0)
 	{
 		return;
 	}
+
+	// LES DEUX PAS DOIVENT ETRE EGAUX : une fenetre etiree fausserait l'ombrage
+	// et rendrait le disque ovale. Les deux fabriques le garantissent ; ceci
+	// attrape un remplissage a la main.
+	ensureMsgf(P.PixelsCarres(),
+		TEXT("fenetre etiree : %.3f m/px en X contre %.3f en Y -- passer par ")
+		TEXT("FParamsFenetre::Carree ou ::Rectangle"),
+		P.MetresParPixelX(), P.MetresParPixelY());
 
 	const int32 Total = Geo.CellCount();
 	const bool bRelief = ElevationM.Num() == Total && Total > 0;
 	const bool bBiomes = Biomes.Index.Num() == Total
 		&& Biomes.Cover.Num() == Total;
 
-	const int32 Res = P.Res;
+	const int32 ResX = P.ResX;
+	const int32 ResY = P.ResY;
 	const double DemiHauteurM = static_cast<double>(Geo.HeightM) * 0.5;
 
-	// Le rayon du disque, en pixels, moins un demi pour que le fondu tienne
-	// dans le tampon.
-	const float RayonPx = static_cast<float>(Res) * 0.5f - 0.5f;
-	const float CentrePx = static_cast<float>(Res) * 0.5f;
+	// LE DISQUE EST INSCRIT, donc porte par le plus PETIT cote : un « disque »
+	// dans un rectangle n'a de sens que la. Moins un demi pixel pour que le
+	// fondu tienne dans le tampon.
+	const float RayonPx = static_cast<float>(FMath::Min(ResX, ResY)) * 0.5f - 0.5f;
+	const float CentreXPx = static_cast<float>(ResX) * 0.5f;
+	const float CentreYPx = static_cast<float>(ResY) * 0.5f;
 
 	// L'ALTITUDE EST RETENUE PAR PIXEL, pour que le lisere de cote ne
 	// re-echantillonne pas. Elle sert aussi de marqueur de hors-monde.
 	TArray<float> Altitudes;
-	Altitudes.SetNumUninitialized(Res * Res);
+	Altitudes.SetNumUninitialized(ResX * ResY);
 
-	// Le pas d'ombrage, en metres, sur la grille du monde.
-	const double PasOmbrageM = static_cast<double>(
-		FMath::Max(P.PasOmbrageCellules, 1)) * static_cast<double>(Geo.MetersPerPixel());
+	// Le pas d'ombrage, borne par le pixel : voir `PasOmbrageMetres`.
+	const double PasOmbrageM = PasOmbrageMetres(P, Geo);
 
-	ParallelFor(Res, [&](int32 PY)
+	ParallelFor(ResY, [&](int32 PY)
 	{
-		for (int32 PX = 0; PX < Res; ++PX)
+		for (int32 PX = 0; PX < ResX; ++PX)
 		{
-			const int32 Index = PY * Res + PX;
+			const int32 Index = PY * ResX + PX;
 			uint8* const Pixel = PixelsBGRA + Index * 4;
 
 			double Xm = 0.0;
@@ -154,8 +208,8 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 			float Alpha = 1.0f;
 			if (P.bDisque)
 			{
-				const float DX = static_cast<float>(PX) + 0.5f - CentrePx;
-				const float DY = static_cast<float>(PY) + 0.5f - CentrePx;
+				const float DX = static_cast<float>(PX) + 0.5f - CentreXPx;
+				const float DY = static_cast<float>(PY) + 0.5f - CentreYPx;
 				Alpha = Fondu(RayonPx - FMath::Sqrt(DX * DX + DY * DY));
 				if (Alpha <= 0.0f)
 				{
@@ -249,27 +303,42 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 	// propagerait le trait de proche en proche, chaque pixel noirci devenant a
 	// son tour une frontiere. `ProbeCarte` travaille sur une copie pour cette
 	// raison exacte ; ici la copie est le tableau d'altitudes, qui existe deja.
+	//
+	// ET ELLE EST PARALLELE, ce qu'elle n'etait pas. Elle lit `Altitudes`,
+	// qu'elle n'ecrit jamais, et n'ecrit que les trois octets de SON pixel :
+	// aucune dependance entre lignes. A soixante-cinq mille pixels l'asymetrie
+	// ne se voyait pas ; sur une carte du monde entier -- huit millions et demi
+	// de pixels -- cette seconde passe couterait plus cher que la premiere.
 	if (P.bLisereCote)
 	{
-		for (int32 PY = 0; PY < Res; ++PY)
+		// LE MONDE REBOUCLE EN LONGITUDE, mais une fenetre PARTIELLE, non : ses
+		// deux bords sont deux endroits differents, et les relier tracerait un
+		// trait de cote entre deux rives qui ne se touchent pas. On n'enroule
+		// donc que lorsque la fenetre fait reellement le tour.
+		const bool bEnroule = 2.0 * P.DemiPorteeXm
+			>= static_cast<double>(Geo.WidthM()) - P.MetresParPixelX();
+
+		ParallelFor(ResY, [&](int32 PY)
 		{
-			for (int32 PX = 0; PX < Res; ++PX)
+			for (int32 PX = 0; PX < ResX; ++PX)
 			{
-				const int32 Index = PY * Res + PX;
+				const int32 Index = PY * ResX + PX;
 				const float Z = Altitudes[Index];
 				if (!FMath::IsFinite(Z) || Z <= 0.0f)
 				{
 					continue;
 				}
 
-				const int32 XG = FMath::Max(PX - 1, 0);
-				const int32 XD = FMath::Min(PX + 1, Res - 1);
+				const int32 XG = bEnroule ? (PX + ResX - 1) % ResX
+					: FMath::Max(PX - 1, 0);
+				const int32 XD = bEnroule ? (PX + 1) % ResX
+					: FMath::Min(PX + 1, ResX - 1);
 				const int32 YH = FMath::Max(PY - 1, 0);
-				const int32 YB = FMath::Min(PY + 1, Res - 1);
+				const int32 YB = FMath::Min(PY + 1, ResY - 1);
 
-				auto EstMer = [&Altitudes, Res](int32 X, int32 Y) -> bool
+				auto EstMer = [&Altitudes, ResX](int32 X, int32 Y) -> bool
 				{
-					const float A = Altitudes[Y * Res + X];
+					const float A = Altitudes[Y * ResX + X];
 					return FMath::IsFinite(A) && A <= 0.0f;
 				};
 
@@ -284,7 +353,7 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 					// depasserait du fondu de bord.
 				}
 			}
-		}
+		});
 	}
 }
 

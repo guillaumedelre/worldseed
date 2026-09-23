@@ -157,6 +157,24 @@ private:
 	/** Portee du dernier fond peint : la changer force un repeint. */
 	float DernierePorteeM = -1.0f;
 
+	/**
+	 * LE POINT LE PLUS BAS DU MONDE, RETENU -- il etait rebalaye a chaque
+	 * repeinture.
+	 *
+	 * `FondDuMonde` parcourt tout le relief, soit huit millions et demi de
+	 * flottants sur la grille du jeu, pour une valeur qui ne peut pas changer
+	 * tant que le monde est le meme. La minimap se repeint des que le joueur
+	 * change de cellule -- tous les quinze metres parcourus -- et payait ce
+	 * balayage a chaque fois.
+	 *
+	 * Zero signifie « pas encore calcule » : la vraie valeur est toujours
+	 * strictement negative, `FondDuMonde` la bornant a -1.
+	 */
+	float FondDuMondeM = 0.0f;
+
+	/** Taille du relief au moment du calcul : s'il change, le fond aussi. */
+	int32 CellulesDuFond = 0;
+
 	// PAS DE TAMPON MEMBRE, ET C'EST DELIBERE. Le reflexe est d'en garder un
 	// pour ne pas reallouer a chaque peinture. Ce serait un bug : le fil de
 	// RENDU lit le tampon passe a `UpdateTextureRegions` APRES le retour de la
