@@ -16,6 +16,7 @@
 #include "Misc/Paths.h"
 
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedCarte.h"
 #include "Procedural/WorldseedFins.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
@@ -990,22 +991,17 @@ FString UWorldseedProbeLibrary::ProbeCarte(int32 Seed, float HeightMeters,
 	for (int32 I = 0; I < Total; ++I)
 	{
 		const float Z = World.ElevationM[I];
-		FLinearColor C;
 
-		if (Z > 0.0f)
-		{
-			C = bBiomes
-				? WorldseedBiomes::Colour(WorldseedBiomes::AppearanceBiome(
-					World.Biomes.Index[I], World.Biomes.Cover[I]))
-				: FLinearColor(0.45f, 0.42f, 0.36f);
-		}
-		else
-		{
-			// Clair sur le plateau, sombre dans l'abysse.
-			const float T = FMath::Clamp(Z / Fond, 0.0f, 1.0f);
-			C = FMath::Lerp(FLinearColor(0.40f, 0.60f, 0.76f),
-				FLinearColor(0.03f, 0.08f, 0.20f), T);
-		}
+		// LA RAMPE EST PARTAGEE AVEC LA MINIMAP : une formule, deux
+		// consommateurs. Sans cela les deux divergeraient a la premiere
+		// retouche de teinte, et l'on aurait deux cartes du meme monde qui ne
+		// se ressemblent pas. Seul le repli sans biomes reste local -- il
+		// n'appartient qu'a cette sonde.
+		const FLinearColor C = bBiomes
+			? WorldseedCarte::CouleurCellule(Z, World.Biomes.Index[I],
+				World.Biomes.Cover[I], Fond)
+			: (Z > 0.0f ? FLinearColor(0.45f, 0.42f, 0.36f)
+				: WorldseedCarte::CouleurCellule(Z, 0, 0, Fond));
 
 		Pixels[I] = C.ToFColor(true);
 	}
@@ -1060,6 +1056,209 @@ FString UWorldseedProbeLibrary::ProbeCarte(int32 Seed, float HeightMeters,
 		TEXT("carte ecrite : %s (%d x %d, terres %.2f %%, biomes %s)"),
 		*Chemin, NX, NY, World.LandRatio * 100.0f,
 		bBiomes ? TEXT("oui") : TEXT("NON -- altitude seule"));
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Bilan);
+	return Bilan;
+}
+
+
+// ------------------------------------------ la planche-contact de la minimap
+
+FString UWorldseedProbeLibrary::ProbeMinimap(int32 Seed, float HeightMeters,
+	int32 ResolutionY, float CentreXm, float CentreYm, float DemiPorteeM,
+	int32 Res, const FString& Etiquette)
+{
+	WorldseedPipeline::ReloadRules();
+
+	FString Error;
+	WorldseedPipeline::FResult World;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const FWorldseedGeometry& Geo = World.Geometry;
+	const int32 Total = Geo.CellCount();
+	Res = FMath::Clamp(Res, 32, 1024);
+
+	const double WidthM = static_cast<double>(Geo.WidthM());
+	const double HeightM2 = static_cast<double>(Geo.HeightM);
+
+	// --- le centre : UNE COTE, et non le point (0, 0) -----------------------
+	//
+	// Une vignette tiree au hasard tombe en pleine mer trois fois sur dix, et
+	// l'on ne juge alors ni le relief, ni les biomes, ni le lisere -- c'est-a
+	// -dire rien de ce qu'on est venu regarder. On cherche donc du littoral :
+	// une terre basse qui touche l'eau.
+	FString OuTrouve = TEXT("impose");
+	if (FMath::IsNearlyZero(CentreXm) && FMath::IsNearlyZero(CentreYm)
+		&& World.ElevationM.Num() == Total)
+	{
+		// ON PART DU MILIEU DE LA CARTE, EN LATITUDE COMME EN LONGITUDE, et le
+		// second point n'est pas un detail : la premiere version balayait
+		// depuis la colonne 1 et a trouve une cote a 141 m du bord du monde.
+		// La fenetre de 2 km debordait alors, s'enroulait, et les cinq
+		// vignettes montraient toutes la couture -- donc le cas PARTICULIER a
+		// la place du cas normal, et la vignette dediee a la couture faisait
+		// double emploi. Les poles, eux, sont sous la glace et leur cote ne
+		// montre pas grand-chose.
+		const int32 J0 = Geo.NY / 2;
+		const int32 I0 = Geo.NX / 2;
+		bool bTrouve = false;
+
+		for (int32 DJ = 0; DJ < Geo.NY / 2 && !bTrouve; ++DJ)
+		{
+			for (int32 Signe = 0; Signe < 2 && !bTrouve; ++Signe)
+			{
+				const int32 J = J0 + (Signe == 0 ? DJ : -DJ);
+				if (J < 1 || J >= Geo.NY - 1) { continue; }
+
+				for (int32 DI = 0; DI < Geo.NX / 2; ++DI)
+				{
+					const int32 I = I0 + ((DI % 2 == 0) ? (DI / 2) : -(DI / 2 + 1));
+					if (I < 1 || I >= Geo.NX - 1) { continue; }
+
+					const float Z = World.ElevationM[J * Geo.NX + I];
+					if (Z <= 2.0f || Z >= 60.0f) { continue; }
+
+					const bool bTouche =
+						World.ElevationM[J * Geo.NX + I - 1] <= 0.0f
+						|| World.ElevationM[J * Geo.NX + I + 1] <= 0.0f
+						|| World.ElevationM[(J - 1) * Geo.NX + I] <= 0.0f
+						|| World.ElevationM[(J + 1) * Geo.NX + I] <= 0.0f;
+
+					if (bTouche)
+					{
+						CentreXm = static_cast<float>(
+							((static_cast<double>(I) + 0.5) / Geo.NX - 0.5) * WidthM);
+						CentreYm = static_cast<float>(
+							((static_cast<double>(J) + 0.5) / Geo.NY - 0.5) * HeightM2);
+						OuTrouve = TEXT("cote trouvee");
+						bTrouve = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	// --- les six vignettes --------------------------------------------------
+	struct FVignette
+	{
+		const TCHAR* Nom;
+		double Xm;
+		double Ym;
+		float CapDeg;
+		bool bCone;
+	};
+
+	const FVignette Vignettes[6] = {
+		{ TEXT("cap N"),    CentreXm, CentreYm,   0.0f, true  },
+		{ TEXT("cap E"),    CentreXm, CentreYm,  90.0f, true  },
+		{ TEXT("cap S"),    CentreXm, CentreYm, 180.0f, true  },
+		{ TEXT("cap O"),    CentreXm, CentreYm, 270.0f, true  },
+		// LA COUTURE : une fenetre mal enroulee s'y coupe en deux moities qui
+		// n'ont rien a voir. C'est le seul endroit ou le defaut se voit.
+		{ TEXT("couture"),  WidthM * 0.5, CentreYm, 45.0f, true  },
+		// LE POLE : le monde s'y arrete pour de bon, et le vide doit se
+		// distinguer du hors-disque, qui est transparent.
+		{ TEXT("pole"),     CentreXm, HeightM2 * 0.5, 0.0f, true }
+	};
+
+	WorldseedCarte::FParamsFenetre P;
+	P.DemiPorteeM = FMath::Max(static_cast<double>(DemiPorteeM), 1.0);
+	P.Res = Res;
+	P.FondM = WorldseedCarte::FondDuMonde(World.ElevationM);
+
+	const int32 Marge = 10;
+	const int32 Colonnes = 3;
+	const int32 Lignes = 2;
+	const int32 LargeurPl = Colonnes * Res + (Colonnes + 1) * Marge;
+	const int32 HauteurPl = Lignes * Res + (Lignes + 1) * Marge;
+
+	TArray<FColor> Planche;
+	Planche.SetNumUninitialized(LargeurPl * HauteurPl);
+
+	// LE DAMIER, ET IL N'EST PAS DECORATIF : un PNG n'a pas de « transparence
+	// visible ». Sans lui, ni l'alpha du disque ni celui du cone ne se jugent,
+	// et l'on croirait a un fond noir la ou il n'y a rien du tout.
+	for (int32 Y = 0; Y < HauteurPl; ++Y)
+	{
+		for (int32 X = 0; X < LargeurPl; ++X)
+		{
+			const bool bClair = (((X / 8) + (Y / 8)) % 2) == 0;
+			Planche[Y * LargeurPl + X] = bClair
+				? FColor(210, 210, 210, 255) : FColor(168, 168, 168, 255);
+		}
+	}
+
+	TArray<FColor> Fond;
+	TArray<FColor> Cone;
+	Fond.SetNumUninitialized(Res * Res);
+	Cone.SetNumUninitialized(Res * Res);
+
+	const double T0 = FPlatformTime::Seconds();
+
+	for (int32 N = 0; N < 6; ++N)
+	{
+		P.CentreXm = Vignettes[N].Xm;
+		P.CentreYm = Vignettes[N].Ym;
+
+		WorldseedCarte::PeindreFenetre(Geo, World.ElevationM, World.Biomes, P,
+			reinterpret_cast<uint8*>(Fond.GetData()));
+
+		if (Vignettes[N].bCone)
+		{
+			WorldseedCarte::PeindreCone(reinterpret_cast<uint8*>(Cone.GetData()),
+				Res, Vignettes[N].CapDeg, 35.0f, 0.75f);
+		}
+
+		const int32 X0 = Marge + (N % Colonnes) * (Res + Marge);
+		const int32 Y0 = Marge + (N / Colonnes) * (Res + Marge);
+
+		for (int32 Y = 0; Y < Res; ++Y)
+		{
+			for (int32 X = 0; X < Res; ++X)
+			{
+				FColor& Dst = Planche[(Y0 + Y) * LargeurPl + (X0 + X)];
+
+				auto Poser = [&Dst](const FColor& Src)
+				{
+					const float A = static_cast<float>(Src.A) / 255.0f;
+					Dst.R = static_cast<uint8>(Src.R * A + Dst.R * (1.0f - A));
+					Dst.G = static_cast<uint8>(Src.G * A + Dst.G * (1.0f - A));
+					Dst.B = static_cast<uint8>(Src.B * A + Dst.B * (1.0f - A));
+				};
+
+				Poser(Fond[Y * Res + X]);
+				if (Vignettes[N].bCone)
+				{
+					Poser(Cone[Y * Res + X]);
+				}
+			}
+		}
+	}
+
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+
+	const FString Nom = Etiquette.IsEmpty() ? TEXT("minimap") : Etiquette;
+	const FString Chemin = FPaths::Combine(FPaths::ProjectSavedDir(),
+		TEXT("Worldseed"), TEXT("Cartes"), Nom + TEXT(".png"));
+
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Chemin), true);
+
+	const FImageView Image(Planche.GetData(), LargeurPl, HauteurPl);
+	if (!FImageUtils::SaveImageAutoFormat(*Chemin, Image))
+	{
+		return FString::Printf(TEXT("ecriture impossible : %s"), *Chemin);
+	}
+
+	const FString Bilan = FString::Printf(
+		TEXT("planche ecrite : %s (%d x %d)  centre (%.0f, %.0f) m [%s]  ")
+		TEXT("portee %.0f m  %d px  %.1f m/px  fond %.0f m  ")
+		TEXT("six vignettes en %.1f ms"),
+		*Chemin, LargeurPl, HauteurPl, CentreXm, CentreYm, *OuTrouve,
+		DemiPorteeM, Res, P.MetresParPixel(), P.FondM, Ms);
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Bilan);
 	return Bilan;

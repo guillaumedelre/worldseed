@@ -404,6 +404,33 @@ public:
 		int32 ResolutionY = 1024, const FString& Etiquette = TEXT("carte"));
 
 	/**
+	 * La PLANCHE-CONTACT de la minimap : six vignettes dans une seule image.
+	 *
+	 * ELLE JUGE LA MINIMAP SANS SLATE, SANS PIE ET SANS ATTENDRE -- et c'est
+	 * sa raison d'etre. La tournee photo ne peut pas photographier un widget :
+	 * `FScreenshotRequest::RequestScreenshot` y est appele avec `bShowUI` a
+	 * faux, donc le moteur lit la CIBLE DE RENDU du viewport, alors que les
+	 * widgets poses par `AddViewportWidgetContent` sont composites apres, dans
+	 * le back-buffer. Ce n'est pas un reglage qu'on oublie, c'est un mur.
+	 *
+	 * Les six vignettes : le meme lieu aux quatre caps cardinaux, une sur le
+	 * MERIDIEN DE BORDURE -- ou une fenetre mal enroulee se coupe -- et une au
+	 * POLE, ou le monde s'arrete pour de bon.
+	 *
+	 * COMPOSITEES SUR UN DAMIER, parce qu'un PNG n'a pas de « transparence
+	 * visible » : sans damier, ni l'alpha du disque ni celui du cone ne se
+	 * jugent.
+	 *
+	 * Un centre nul cherche une COTE, et non le point (0, 0) : une vignette
+	 * prise au hasard en plein ocean ne montrerait rien.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeMinimap(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024, float CentreXm = 0.0f, float CentreYm = 0.0f,
+		float DemiPorteeM = 2000.0f, int32 Res = 256,
+		const FString& Etiquette = TEXT("minimap"));
+
+	/**
 	 * Controle ALLER-RETOUR de la projection du globe.
 	 *
 	 * Partager une formule entre le rendu, le pointage et le repere garantit
