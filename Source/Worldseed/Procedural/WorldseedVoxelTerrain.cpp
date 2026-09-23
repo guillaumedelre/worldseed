@@ -2127,16 +2127,15 @@ FString AWorldseedVoxelTerrain::OuSuisJe() const
 
 	// La roche se lit au PLUS PROCHE VOISIN : un identifiant est une categorie,
 	// et interpoler entre du granite et du calcaire donnerait du gres.
+	//
+	// ET LA CELLULE EST CELLE QUE LE SOL PEINT. Ces quatre lignes calculaient
+	// leur propre index a coups de `RoundToInt`, la ou la peinture emploie
+	// `Floor` : une demi-cellule d'ecart, soit huit metres sur cette grille,
+	// donc une roche annoncee qui n'etait pas celle qu'on avait sous les pieds.
 	FString Roche = TEXT("inconnue");
 	if (Lithology.IsValid(Geometry.CellCount()))
 	{
-		const double U = FMath::Frac((X / Geometry.WidthM()) + 0.5);
-		const double V = FMath::Clamp((Y / Geometry.HeightM) + 0.5, 0.0, 1.0);
-		const int32 I = FMath::Clamp(FMath::RoundToInt(U * Geometry.NX),
-			0, Geometry.NX - 1);
-		const int32 J = FMath::Clamp(FMath::RoundToInt(V * Geometry.NY),
-			0, Geometry.NY - 1);
-		const uint8 Id = Lithology.Id[J * Geometry.NX + I];
+		const uint8 Id = Lithology.Id[Geometry.CelluleDepuisMetres(X, Y)];
 		Roche = NomParRoche.IsValidIndex(Id) ? NomParRoche[Id]
 			: FString::Printf(TEXT("roche %d"), Id);
 	}
@@ -2289,11 +2288,16 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// fabrique une valeur qui n'existe pas. Le depot a paye ce piege sur la
 	// carte des biomes lue par PCG -- 1,71 % des points affectes a un biome
 	// absent de l'endroit.
-	const double U = FMath::Frac((X / Geometry.WidthM()) + 0.5);
-	const double V = FMath::Clamp((Y / Geometry.HeightM) + 0.5, 0.0, 1.0);
-	const int32 I = FMath::Clamp(FMath::RoundToInt(U * Geometry.NX), 0, Geometry.NX - 1);
-	const int32 J = FMath::Clamp(FMath::RoundToInt(V * Geometry.NY), 0, Geometry.NY - 1);
-	const int32 Cellule = J * Geometry.NX + I;
+	//
+	// ET « LE PLUS PROCHE » N'EST PAS CELUI QU'ON CROIT. Ces lignes arrondissaient
+	// (`RoundToInt`) quand la peinture du sol tronque (`Floor`) : une demi-cellule
+	// d'ecart, donc un biome NOMME qui n'etait pas le biome PEINT sous les pieds.
+	// La convention vit desormais dans la geometrie, et c'est celle du sol --
+	// entre ce qu'on voit et ce qu'on lit, c'est ce qu'on voit qui a raison.
+	double U = 0.0;
+	double V = 0.0;
+	Geometry.UVDepuisMetres(X, Y, U, V);
+	const int32 Cellule = Geometry.CelluleDepuisMetres(X, Y);
 
 	// --- 1. OU SUIS-JE ------------------------------------------------------
 	//
