@@ -547,6 +547,69 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 }
 
 
+// ------------------------------------------------------------- la pyramide
+
+void CuireReductions(const uint8* BaseBGRA, int32 BaseX, int32 BaseY,
+	TArray<TArray<uint8>>& OutNiveaux)
+{
+	WORLDSEED_TRACE(CarteMips);
+
+	OutNiveaux.Reset();
+	if (!BaseBGRA || BaseX <= 0 || BaseY <= 0)
+	{
+		return;
+	}
+
+	const uint8* Source = BaseBGRA;
+	int32 SX = BaseX;
+	int32 SY = BaseY;
+
+	while (SX > 1 || SY > 1)
+	{
+		const int32 DX = FMath::Max(SX >> 1, 1);
+		const int32 DY = FMath::Max(SY >> 1, 1);
+
+		TArray<uint8> Niveau;
+		Niveau.SetNumUninitialized(static_cast<SIZE_T>(DX) * DY * 4);
+
+		for (int32 Y = 0; Y < DY; ++Y)
+		{
+			// Une source impaire laisse une derniere ligne ou colonne sans
+			// paire : on la borne plutot que de sortir du tampon.
+			const int32 Y0 = FMath::Min(Y * 2, SY - 1);
+			const int32 Y1 = FMath::Min(Y * 2 + 1, SY - 1);
+
+			for (int32 X = 0; X < DX; ++X)
+			{
+				const int32 X0 = FMath::Min(X * 2, SX - 1);
+				const int32 X1 = FMath::Min(X * 2 + 1, SX - 1);
+
+				const uint8* const A = Source + (static_cast<SIZE_T>(Y0) * SX + X0) * 4;
+				const uint8* const B = Source + (static_cast<SIZE_T>(Y0) * SX + X1) * 4;
+				const uint8* const C = Source + (static_cast<SIZE_T>(Y1) * SX + X0) * 4;
+				const uint8* const D = Source + (static_cast<SIZE_T>(Y1) * SX + X1) * 4;
+
+				uint8* const Dst = Niveau.GetData() + (static_cast<SIZE_T>(Y) * DX + X) * 4;
+				for (int32 K = 0; K < 4; ++K)
+				{
+					Dst[K] = static_cast<uint8>(
+						(static_cast<int32>(A[K]) + B[K] + C[K] + D[K] + 2) / 4);
+				}
+			}
+		}
+
+		OutNiveaux.Add(MoveTemp(Niveau));
+
+		// Le niveau qu'on vient d'ecrire devient la source du suivant : la
+		// pyramide se batit par reductions successives, jamais depuis la base
+		// -- c'est ce qui la rend progressive et bon marche.
+		Source = OutNiveaux.Last().GetData();
+		SX = DX;
+		SY = DY;
+	}
+}
+
+
 // ------------------------------------------------------------------ le cone
 
 void PeindreCone(uint8* PixelsBGRA, int32 Res, float AzimutDeg,

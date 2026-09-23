@@ -274,6 +274,35 @@ namespace WorldseedCarte
 		const FParamsFenetre& P, uint8* PixelsBGRA);
 
 	/**
+	 * La pyramide de reduction d'une image BGRA : les niveaux 1 a N.
+	 *
+	 * POURQUOI ELLE EST NECESSAIRE, ET C'EST L'IMAGE QUI L'A DIT. La carte est
+	 * cuite a la resolution de la grille -- 4096 par 2048 -- et affichee dans
+	 * environ 1900 pixels : une reduction de 2,13. Sans niveaux intermediaires,
+	 * le GPU preleve un texel sur deux et **le lisere de cote sort pointille**,
+	 * les ilots d'une ou deux cellules se brisent en traits. Avec, le trait
+	 * reste continu. Verifie a l'image sur la planche de `ProbeCarteEcran`,
+	 * vignettes 1 et 2 : c'est exactement cet A/B.
+	 *
+	 * MOYENNER DES COULEURS DEJA PEINTES N'EST PAS MOYENNER UN IDENTIFIANT.
+	 * La regle du depot porte sur l'IDENTIFIANT -- la moyenne de « desert » et
+	 * de « toundra » est un biome qui n'existe nulle part -- et c'est pour cela
+	 * que `AgregerBloc` vote. Ici on reduit une IMAGE deja rendue, ce qu'un
+	 * mipmap fait par construction ; aucun biome n'est relu depuis ces pixels.
+	 *
+	 * ET LA MOYENNE SE FAIT SUR LES OCTETS, DONC EN sRGB. Moyenner en lumiere
+	 * -- linearise puis reencode -- serait plus juste pour de l'eclairage, et
+	 * ferait ici DISPARAITRE le lisere : un trait tres sombre ne pese presque
+	 * rien en lineaire. Sur une carte, ce qu'on veut garder est precisement ce
+	 * trait. Le choix est donc delibere, pas une simplification.
+	 *
+	 * Chaque niveau fait `max(1, Cote >> k)`, la regle des mipmaps, y compris
+	 * pour une taille qui n'est pas une puissance de deux.
+	 */
+	WORLDSEED_API void CuireReductions(const uint8* BaseBGRA, int32 BaseX,
+		int32 BaseY, TArray<TArray<uint8>>& OutNiveaux);
+
+	/**
 	 * Peint le cone de visee dans SON PROPRE tampon, transparent ailleurs.
 	 *
 	 * POURQUOI PAS DANS LE MEME TAMPON QUE LE FOND. On ne peut pas DES-estamper :

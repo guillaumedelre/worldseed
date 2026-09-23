@@ -1264,6 +1264,198 @@ FString UWorldseedProbeLibrary::ProbeMinimap(int32 Seed, float HeightMeters,
 }
 
 
+// ------------------------------------------------- la carte plein ecran
+
+/**
+ * La carte plein ecran, cuite et ecrite en PNG, sans Slate ni jeu.
+ *
+ * Elle repond a deux questions que le raisonnement ne peut pas trancher : ce
+ * que la cuisson COUTE, et ce que la reduction PERD. Voir l'en-tete de
+ * `ProbeCarteEcran` dans `WorldseedProbeLibrary.h`.
+ */
+FString UWorldseedProbeLibrary::ProbeCarteEcran(int32 Seed, float HeightMeters,
+	int32 ResolutionY, int32 LargeurPx, const FString& Etiquette)
+{
+	WorldseedPipeline::ReloadRules();
+
+	FString Error;
+	WorldseedPipeline::FResult World;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, World, Error))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Error);
+	}
+
+	const FWorldseedGeometry& Geo = World.Geometry;
+	const int32 TexX = Geo.NX;
+	const int32 TexY = Geo.NY;
+
+	LargeurPx = FMath::Clamp(LargeurPx, 256, 4096);
+	const int32 HauteurPx = LargeurPx / 2;
+
+	// --- la cuisson, a la resolution de la grille ---------------------------
+	//
+	// UN PIXEL PAR CELLULE : rien n'est agrege, rien n'est vote, et aucune ile
+	// ne peut se perdre. C'est la propriete qui fonde toute la carte, et
+	// l'oracle `LaCuissonEstAlignee` l'epingle.
+	WorldseedCarte::FParamsFenetre Cuisson =
+		WorldseedCarte::FParamsFenetre::Rectangle(
+			static_cast<double>(Geo.WidthM()) * 0.5, TexX, TexY);
+	Cuisson.bDisque = false;
+	Cuisson.FondM = WorldseedCarte::FondDuMonde(World.ElevationM);
+
+	TArray<uint8> Cuit;
+	Cuit.SetNumUninitialized(static_cast<SIZE_T>(TexX) * TexY * 4);
+
+	const double T0 = FPlatformTime::Seconds();
+	WorldseedCarte::PeindreFenetre(Geo, World.ElevationM, World.Biomes,
+		Cuisson, Cuit.GetData());
+	const double MsCuisson = (FPlatformTime::Seconds() - T0) * 1000.0;
+
+	auto LireCuit = [&Cuit, TexX](int32 X, int32 Y) -> FColor
+	{
+		const uint8* const P = Cuit.GetData()
+			+ (static_cast<SIZE_T>(Y) * TexX + X) * 4;
+		return FColor(P[2], P[1], P[0], P[3]);
+	};
+
+	// --- ou regarder de pres : une COTE, jamais le point (0, 0) -------------
+	//
+	// Un recadrage tire au hasard tombe en pleine mer trois fois sur dix, et
+	// l'on ne juge alors ni le lisere ni le relief.
+	// ON BALAYE, ON NE TATONNE PAS. Premiere version : une croix de quatre
+	// points par rayon autour du centre -- elle n'a RIEN trouve et la vignette
+	// de detail s'est retrouvee en plein ocean, ce qui ne montre ni lisere ni
+	// relief. Un balayage complet a pas grossier coute quelques millisecondes
+	// et ne peut pas manquer une cote.
+	int32 CoteX = TexX / 2;
+	int32 CoteY = TexY / 2;
+	int32 MeilleureDistance = TNumericLimits<int32>::Max();
+
+	for (int32 Y = 1; Y < TexY - 1; ++Y)
+	{
+		// La ligne 0 de la CUISSON est au nord ; la grille, elle, a sa ligne 0
+		// au sud. On relit donc le relief a l'envers.
+		const int32 J = TexY - 1 - Y;
+		for (int32 X = 1; X < TexX - 1; ++X)
+		{
+			const float Z = World.ElevationM[J * TexX + X];
+			if (Z <= 1.0f || Z >= 60.0f)
+			{
+				continue;
+			}
+
+			// Une terre BASSE qui touche l'eau : c'est un rivage, et c'est la
+			// que le lisere et la bathymetrie se jugent ensemble.
+			if (World.ElevationM[J * TexX + X + 1] > 0.0f
+				&& World.ElevationM[J * TexX + X - 1] > 0.0f)
+			{
+				continue;
+			}
+
+			// La plus proche du centre : une cote de bord de carte donnerait un
+			// recadrage a moitie vide.
+			const int32 D = FMath::Square(X - TexX / 2) + FMath::Square(Y - TexY / 2);
+			if (D < MeilleureDistance)
+			{
+				MeilleureDistance = D;
+				CoteX = X;
+				CoteY = Y;
+			}
+		}
+	}
+
+	// --- trois vignettes ----------------------------------------------------
+	const int32 Marge = 8;
+	const int32 Largeur = LargeurPx + 2 * Marge;
+	const int32 Hauteur = 3 * HauteurPx + 4 * Marge;
+
+	TArray<FColor> Planche;
+	Planche.Init(FColor(24, 24, 28, 255), Largeur * Hauteur);
+
+	auto Poser = [&Planche, Largeur, Marge, LargeurPx, HauteurPx]
+		(int32 Rang, TFunctionRef<FColor(int32, int32)> Source)
+	{
+		const int32 Y0 = Marge + Rang * (HauteurPx + Marge);
+		for (int32 Y = 0; Y < HauteurPx; ++Y)
+		{
+			for (int32 X = 0; X < LargeurPx; ++X)
+			{
+				Planche[(Y0 + Y) * Largeur + Marge + X] = Source(X, Y);
+			}
+		}
+	};
+
+	// 1. CE QUE L'ECRAN MONTRERA SANS MIPS : un prelevement, comme le fait un
+	//    echantillonnage bilineaire quand on reduit de plus du double.
+	Poser(0, [&](int32 X, int32 Y) -> FColor
+	{
+		const int32 SX = FMath::Min(
+			static_cast<int32>((X + 0.5) * TexX / LargeurPx), TexX - 1);
+		const int32 SY = FMath::Min(
+			static_cast<int32>((Y + 0.5) * TexY / HauteurPx), TexY - 1);
+		return LireCuit(SX, SY);
+	});
+
+	// 2. CE QU'UNE PYRAMIDE DE MIPS DONNERAIT : la moyenne du bloc couvert.
+	//    Moyenner des COULEURS DEJA PEINTES n'est pas moyenner un identifiant
+	//    -- c'est exactement ce que fait un mipmap, et la regle du depot porte
+	//    sur l'identifiant, pas sur le rendu.
+	Poser(1, [&](int32 X, int32 Y) -> FColor
+	{
+		const int32 X0 = X * TexX / LargeurPx;
+		const int32 X1 = FMath::Max((X + 1) * TexX / LargeurPx, X0 + 1);
+		const int32 Y0 = Y * TexY / HauteurPx;
+		const int32 Y1 = FMath::Max((Y + 1) * TexY / HauteurPx, Y0 + 1);
+
+		int32 R = 0, G = 0, B = 0, N = 0;
+		for (int32 SY = Y0; SY < Y1; ++SY)
+		{
+			for (int32 SX = X0; SX < X1; ++SX)
+			{
+				const FColor C = LireCuit(SX, SY);
+				R += C.R; G += C.G; B += C.B; ++N;
+			}
+		}
+		N = FMath::Max(N, 1);
+		return FColor(R / N, G / N, B / N, 255);
+	});
+
+	// 3. UN PIXEL PAR CELLULE, sur une cote : la finesse maximale que la
+	//    donnee contient. Au-dela, il n'y a rien de plus a montrer.
+	Poser(2, [&](int32 X, int32 Y) -> FColor
+	{
+		const int32 SX = FMath::Clamp(CoteX - LargeurPx / 2 + X, 0, TexX - 1);
+		const int32 SY = FMath::Clamp(CoteY - HauteurPx / 2 + Y, 0, TexY - 1);
+		return LireCuit(SX, SY);
+	});
+
+	const FString Nom = Etiquette.IsEmpty() ? TEXT("carte-ecran") : Etiquette;
+	const FString Chemin = FPaths::Combine(FPaths::ProjectSavedDir(),
+		TEXT("Worldseed"), TEXT("Cartes"), Nom + TEXT(".png"));
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Chemin), true);
+
+	const FImageView Image(Planche.GetData(), Largeur, Hauteur);
+	if (!FImageUtils::SaveImageAutoFormat(*Chemin, Image))
+	{
+		return FString::Printf(TEXT("ecriture impossible : %s"), *Chemin);
+	}
+
+	const double Mo = static_cast<double>(TexX) * TexY * 4.0 / (1024.0 * 1024.0);
+	const FString Bilan = FString::Printf(
+		TEXT("carte ecrite : %s -- cuisson %d x %d en %.0f ms (%.1f Mo, %.1f m/px), ")
+		TEXT("reduction x%.2f pour un ecran de %d px, cote a la cellule (%d, %d)"),
+		*Chemin, TexX, TexY, MsCuisson, Mo, Cuisson.MetresParPixelX(),
+		static_cast<double>(TexX) / LargeurPx, LargeurPx, CoteX, CoteY);
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"), *Bilan);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   vignettes : 1 prelevement (sans mips), ")
+		TEXT("2 moyenne (avec mips), 3 un pixel par cellule"));
+
+	return Bilan;
+}
+
+
 // --------------------------------------------- le pointage sur le globe
 
 /**

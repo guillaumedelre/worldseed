@@ -431,6 +431,31 @@ public:
 		const FString& Etiquette = TEXT("minimap"));
 
 	/**
+	 * LA CARTE PLEIN ECRAN, CUITE ET ECRITE EN PNG -- sans Slate, sans jeu.
+	 *
+	 * ELLE TRANCHE DEUX QUESTIONS QUE LE RAISONNEMENT NE PEUT PAS TRANCHER.
+	 * D'abord le TEMPS de cuisson : la carte se cuit une fois a la resolution
+	 * de la grille, et c'est ce chiffre -- pas une extrapolation -- qui dira
+	 * si les quelque cent cinquante millisecondes attendues se paient sur le
+	 * fil de jeu ou s'il faut un fil de travail. Ensuite le BRUIT DE
+	 * REDUCTION : une texture de 4096 affichee dans 1600 pixels mange un pixel
+	 * de lisere sur deux, et c'est ce qui decidera s'il faut une pyramide de
+	 * mips. Les deux se regardent sur l'image qu'elle ecrit.
+	 *
+	 * DEUX IMAGES COTE A COTE, et c'est ce qui rend la seconde question
+	 * lisible : la carte entiere reduite a la largeur demandee, et un
+	 * recadrage de la MEME zone a un pixel par cellule. Ce qui se perd entre
+	 * les deux est exactement ce qu'une pyramide rendrait.
+	 *
+	 * `LargeurPx` est la largeur de l'ECRAN simule, pas celle de la cuisson :
+	 * celle-la se derive de la grille.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeCarteEcran(int32 Seed = 20260909,
+		float HeightMeters = 32000.0f, int32 ResolutionY = 1024,
+		int32 LargeurPx = 1920, const FString& Etiquette = TEXT("carte-ecran"));
+
+	/**
 	 * Controle ALLER-RETOUR de la projection du globe.
 	 *
 	 * Partager une formule entre le rendu, le pointage et le repere garantit

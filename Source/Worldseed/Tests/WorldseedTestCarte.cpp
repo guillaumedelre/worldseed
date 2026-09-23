@@ -941,4 +941,87 @@ bool FWorldseedTestCarteReduction::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+/**
+ * CHAQUE NIVEAU DE LA PYRAMIDE EST LA MOYENNE 2 x 2 DU PRECEDENT.
+ *
+ * Sans elle, la carte cuite a 4096 et affichee dans 1900 pixels sort avec un
+ * lisere de cote POINTILLE -- le GPU preleve un texel sur deux. Verifie a
+ * l'image sur la planche de `ProbeCarteEcran` avant de l'ecrire.
+ *
+ * DEUX TEMOINS. Les tailles doivent suivre la regle des mipmaps jusqu'a un
+ * pixel : une pyramide amputee d'un niveau, ou qui s'arrete trop tot, se voit
+ * la. Et la valeur d'un niveau doit VRAIMENT etre la moyenne de quatre
+ * voisins : une pyramide qui se contenterait de PRELEVER un texel sur deux --
+ * exactement le defaut qu'on corrige -- passerait le controle des tailles sans
+ * broncher.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCarteMips,
+	"Worldseed.Carte.LaPyramideMoyenneEtDescendJusquAUnPixel",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCarteMips::RunTest(const FString& Parameters)
+{
+	// Une base RECTANGULAIRE et non carree : c'est la forme du monde, et une
+	// pyramide qui confondrait les deux axes s'y verrait.
+	constexpr int32 BaseX = 16;
+	constexpr int32 BaseY = 8;
+
+	TArray<uint8> Base;
+	Base.SetNumUninitialized(BaseX * BaseY * 4);
+	for (int32 Y = 0; Y < BaseY; ++Y)
+	{
+		for (int32 X = 0; X < BaseX; ++X)
+		{
+			uint8* const P = Base.GetData() + (Y * BaseX + X) * 4;
+			// Un damier FRANC : la moyenne d'un bloc 2 x 2 vaut alors le milieu
+			// exact, et un prelevement rendrait l'un des deux extremes.
+			const uint8 V = ((X + Y) % 2 == 0) ? 0 : 200;
+			P[0] = V; P[1] = V; P[2] = V; P[3] = 255;
+		}
+	}
+
+	TArray<TArray<uint8>> Niveaux;
+	WorldseedCarte::CuireReductions(Base.GetData(), BaseX, BaseY, Niveaux);
+
+	// 16x8 -> 8x4 -> 4x2 -> 2x1 -> 1x1 : quatre niveaux, et le dernier est un
+	// seul pixel.
+	TestEqual(TEXT("la pyramide descend jusqu'a un pixel"), Niveaux.Num(), 4);
+	if (Niveaux.Num() != 4)
+	{
+		return false;
+	}
+
+	const int32 TaillesX[4] = { 8, 4, 2, 1 };
+	const int32 TaillesY[4] = { 4, 2, 1, 1 };
+	for (int32 K = 0; K < 4; ++K)
+	{
+		TestEqual(*FString::Printf(TEXT("niveau %d : le bon nombre d'octets"), K + 1),
+			Niveaux[K].Num(), TaillesX[K] * TaillesY[K] * 4);
+	}
+
+	// TEMOIN 1 : sur un damier franc, le premier niveau vaut le MILIEU -- 100,
+	// la moyenne de 0 et 200 -- et non l'un des deux extremes. Un prelevement
+	// rendrait 0 ou 200.
+	for (int32 I = 0; I < TaillesX[0] * TaillesY[0]; ++I)
+	{
+		TestEqual(TEXT("TEMOIN : le niveau 1 moyenne, il ne preleve pas"),
+			static_cast<int32>(Niveaux[0][I * 4]), 100);
+	}
+
+	// TEMOIN 2 : l'alpha traverse intact. Une pyramide qui ne reduirait que les
+	// trois premiers canaux laisserait un niveau transparent, et la carte
+	// disparaitrait a certaines echelles seulement.
+	TestEqual(TEXT("TEMOIN : l'alpha survit a la reduction"),
+		static_cast<int32>(Niveaux.Last()[3]), 255);
+
+	// Une base d'un seul pixel n'a aucun niveau a produire : le cas limite ne
+	// doit ni boucler sans fin ni rendre un tableau vide de taille nulle.
+	TArray<TArray<uint8>> Aucun;
+	WorldseedCarte::CuireReductions(Base.GetData(), 1, 1, Aucun);
+	TestEqual(TEXT("un pixel seul n'a pas de reduction"), Aucun.Num(), 0);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
