@@ -403,7 +403,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] voxel : %d anneaux -- %.0f / %.0f / %.0f m, vue %.0f m, ")
 			TEXT("dalle de transition %.2f cellule"),
-			NiveauMax + 1, RayonAnneauM(0), RayonAnneauM(1), RayonAnneauM(2),
+			NiveauMax + 1, Diffusion.RayonAnneauM(0), Diffusion.RayonAnneauM(1), Diffusion.RayonAnneauM(2),
 			LoadRadiusM, LargeurTransition);
 	}
 
@@ -492,6 +492,21 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	// ce qui suit ne fera plus que le lire -- y compris depuis les fils de
 	// maillage, qui en tiendront chacun une reference.
 	Density = Champ;
+
+	// ET LA DIFFUSION RECOIT CE QU'ELLE LIT, UNE FOIS, ICI. Six nombres et le
+	// champ : c'est tout ce que decider « qui est emis, a quel niveau » demande
+	// reellement. Le reste de cet acteur -- composants, travaux en vol, pion,
+	// materiau -- ne la concerne pas, et c'est ce qui la rend eprouvable.
+	{
+		FWorldseedDiffusionRegles DR;
+		DR.ChunkSideM = ChunkSideM;
+		DR.VoxelSizeM = DensityRules.VoxelSizeM;
+		DR.RayonAnneau0M = RayonAnneau0M;
+		DR.LoadRadiusM = LoadRadiusM;
+		DR.BandDepthM = DensityRules.BandDepthM;
+		DR.NiveauMax = NiveauMax;
+		Diffusion.Regler(DR, Density);
+	}
 
 	bWorldReady = Density->IsValid();
 
@@ -586,422 +601,9 @@ FVector AWorldseedVoxelTerrain::StreamingOriginCm() const
 	return GetActorLocation();
 }
 
-FBox AWorldseedVoxelTerrain::ChunkBoundsM(const FWorldseedChunkKey& Key) const
-{
-	const double Side = CoteM(Key.Niveau);
-	const FVector Min(Key.C.X * Side, Key.C.Y * Side, Key.C.Z * Side);
-	return FBox(Min, Min + FVector(Side, Side, Side));
-}
-
-int32 AWorldseedVoxelTerrain::NiveauEmis(const FVector& PointM) const
-{
-	// ON LIT L'ENSEMBLE EMIS, ON NE LE REDERIVE PLUS, ET C'EST LE COEUR DE
-	// TOUT CE FICHIER.
-	//
-	// IL Y AVAIT ICI UNE DESCENTE PONCTUELLE qui rejouait le meme predicat que
-	// la diffusion, au motif -- ecrit en toutes lettres -- qu'un predicat
-	// unique suffirait a garder les deux d'accord. C'est vrai tant que la
-	// partition est une fonction du POINT. Elle a cesse de l'etre le jour ou le
-	// 2:1 a du etre equilibre : l'equilibrage regarde les VOISINS, donc le
-	// niveau d'une feuille depend de ses voisines et non plus d'elle seule.
-	// Aucune descente ponctuelle ne peut reproduire cela, si fidele soit-elle
-	// au predicat.
-	//
-	// La seule reponse juste est donc de demander a l'ensemble reellement emis
-	// -- une source de verite au lieu de deux calculs qu'on espere d'accord.
-	//
-	// INDEX_NONE PLUTOT QU'UN NIVEAU PAR DEFAUT : hors de l'ensemble, il n'y a
-	// pas de feuille, et pretendre un niveau ferait armer une face de
-	// transition vers un voisin qui n'existe pas. C'est a l'appelant de dire
-	// ce que l'absence signifie pour lui.
-	for (int32 N = FMath::Max(NiveauMax, 0); N >= 0; --N)
-	{
-		const double Cote = CoteM(N);
-		const FWorldseedChunkKey Cle{
-			FIntVector(
-				FMath::FloorToInt(PointM.X / Cote),
-				FMath::FloorToInt(PointM.Y / Cote),
-				FMath::FloorToInt(PointM.Z / Cote)),
-			N };
-		if (FeuillesCourantes.Contains(Cle))
-		{
-			return N;
-		}
-	}
-	return INDEX_NONE;
-}
-
-int32 AWorldseedVoxelTerrain::NiveauEstime(const FVector& PointM,
-	const FVector& OrigineM) const
-{
-	const int32 Emis = NiveauEmis(PointM);
-	if (Emis != INDEX_NONE)
-	{
-		return Emis;
-	}
-
-	// HORS DE L'ENSEMBLE, ON N'A QUE LA DISTANCE -- et elle suffit, parce
-	// qu'elle est le critere PRINCIPAL et qu'elle ne depend d'aucun voisin.
-	// Ce chemin ne sert qu'a decrire un point qui n'est pas maille : le filet
-	// du joueur pendant la mise en place, et le releve d'ecran. Jamais a
-	// decider d'une face de transition.
-	int32 Niveau = FMath::Max(NiveauMax, 0);
-	while (Niveau > 0 && FVector::Dist(PointM, OrigineM) < RayonAnneauM(Niveau - 1))
-	{
-		--Niveau;
-	}
-	return Niveau;
-}
-
-uint8 AWorldseedVoxelTerrain::MasqueDe(const FWorldseedChunkKey& Key) const
-{
-	// Le niveau le plus fin ne peut pas avoir de voisin plus fin.
-	if (Key.Niveau <= 0) { return 0; }
-
-	const double Cote = CoteM(Key.Niveau);
-	const FVector Centre = ChunkBoundsM(Key).GetCenter();
-
-	// Meme ordre que WorldseedTransvoxel::EFace : -X, +X, -Y, +Y, -Z, +Z.
-	static const FVector Normales[6] =
-	{
-		FVector(-1, 0, 0), FVector(1, 0, 0),
-		FVector(0, -1, 0), FVector(0, 1, 0),
-		FVector(0, 0, -1), FVector(0, 0, 1),
-	};
-
-	uint8 Masque = 0;
-	for (int32 F = 0; F < 6; ++F)
-	{
-		const FVector Voisin = Centre + Normales[F] * Cote;
-		const int32 NiveauVoisin = NiveauEmis(Voisin);
-
-		// PAS DE VOISIN, PAS DE TRANSITION. Au bord du rayon de chargement il
-		// n'y a rien a coudre : armer une face vers le vide retrancherait un
-		// demi-voxel de geometrie sans rien y gagner, et la jointure se verrait
-		// comme une marche au lieu d'un bord franc.
-		if (NiveauVoisin != INDEX_NONE && NiveauVoisin < Key.Niveau)
-		{
-			Masque |= static_cast<uint8>(1 << F);
-		}
-	}
-	return Masque;
-}
-
-void AWorldseedVoxelTerrain::PlageSurface(int32 CX, int32 CY, int32 Niveau,
-	float& OutMinM, float& OutMaxM) const
-{
-	const FIntVector Cle(CX, CY, Niveau);
-	if (const FVector2D* Deja = CacheSurface.Find(Cle))
-	{
-		OutMinM = static_cast<float>(Deja->X);
-		OutMaxM = static_cast<float>(Deja->Y);
-		return;
-	}
-
-	const double Cote = CoteM(Niveau);
-	Density->SurfaceRangeM(CX * Cote, CY * Cote,
-		(CX + 1) * Cote, (CY + 1) * Cote, OutMinM, OutMaxM);
-
-	// LE CACHE SE VIDE PLUTOT QUE DE GONFLER SANS FIN. Un joueur qui traverse
-	// le monde finirait par l'emplir ; le repartir de zero coute une passe de
-	// recalcul et rien d'autre, puisque la donnee est deterministe.
-	if (CacheSurface.Num() > 200000)
-	{
-		CacheSurface.Reset();
-	}
-	CacheSurface.Add(Cle, FVector2D(OutMinM, OutMaxM));
-}
-
-bool AWorldseedVoxelTerrain::DoitSubdiviser(const FWorldseedChunkKey& Key,
-	const FVector& OrigineM) const
-{
-	if (Key.Niveau <= 0)
-	{
-		return false;
-	}
-
-	// LA DISTANCE, ET ELLE SEULE : un terrain lointain ne merite pas de
-	// finesse. Un second critere a existe ici -- la densite de maillage suivant
-	// le relief, « dans une plaine nous n'avons pas besoin d'un maillage aussi
-	// dense que sur une montagne rocheuse » -- et il a ete RETIRE le
-	// 23 septembre 2026. Il etait livre eteint parce qu'il CASSE la contrainte
-	// 2:1 de Transvoxel : le seuil est une pente, donc il se divise par deux a
-	// chaque niveau, et un noeud peut descendre de deux crans pendant que son
-	// voisin reste en haut. Le raisonnement et la mesure sont dans CLAUDE.md ;
-	// git le rend en une commande le jour ou un vrai equilibrage 2:1 existera.
-	const FVector Centre = ChunkBoundsM(Key).GetCenter();
-	if (FVector::Dist(Centre, OrigineM) >= RayonAnneauM(Key.Niveau - 1))
-	{
-		return false;
-	}
-
-	return true;
-}
-
-void AWorldseedVoxelTerrain::Enumerer(const FWorldseedChunkKey& Key,
-	const FVector& OrigineM,
-	TArray<TPair<FWorldseedChunkKey, double>>& Sortie,
-	bool bEmissionForcee) const
-{
-	const FBox Boite = ChunkBoundsM(Key);
-
-	// ON ECARTE PAR LA DISTANCE A LA BOITE, PAS AU CENTRE, et seulement ici.
-	// Un noeud grossier dont le CENTRE est hors du rayon peut tres bien avoir
-	// des enfants dedans : l'ecarter sur son centre creuserait un trou. La
-	// distance a la boite, elle, ne peut que diminuer en descendant.
-	//
-	// L'EMISSION FORCEE LEVE CE FILTRE, ET IL LE FAUT. Quand l'equilibrage
-	// subdivise un noeud pour tenir le 2:1, certains de ses huit enfants
-	// tombent hors du rayon alors que le PARENT, lui, y etait -- son centre
-	// etait plus proche. Les filtrer laisserait exactement le trou que la
-	// subdivision devait eviter. Ce n'est pas une entorse au rayon : la
-	// matiere etait deja chargee sous forme du parent, on ne fait que la
-	// decouper.
-	if (!bEmissionForcee
-		&& Boite.ComputeSquaredDistanceToPoint(OrigineM) >
-			static_cast<double>(LoadRadiusM) * LoadRadiusM)
-	{
-		return;
-	}
-
-	// LA GRILLE 2D DECIDE DE LA VERTICALE : on ne descend pas dans un noeud que
-	// la surface ne traverse pas, ni dans la bande creusable sous elle.
-	float SurfaceMin = 0.0f;
-	float SurfaceMax = 0.0f;
-	PlageSurface(Key.C.X, Key.C.Y, Key.Niveau, SurfaceMin, SurfaceMax);
-	if (Boite.Min.Z > SurfaceMax ||
-		Boite.Max.Z < SurfaceMin - DensityRules.BandDepthM)
-	{
-		return;
-	}
-
-	const FVector Centre = Boite.GetCenter();
-	const double Dist = FVector::Dist(Centre, OrigineM);
-
-	// SUBDIVISER OU EMETTRE, JAMAIS LES DEUX. C'est ce qui fait de la diffusion
-	// une partition : ni recouvrement, ni trou, quelle que soit la facon dont
-	// les rayons sont choisis.
-	//
-	// LE PREDICAT VIT AILLEURS, EN UN SEUL EXEMPLAIRE : `NiveauEn` doit poser
-	// exactement la meme question pour que les masques de transition tombent
-	// juste.
-	if (DoitSubdiviser(Key, OrigineM))
-	{
-		for (int32 I = 0; I < 8; ++I)
-		{
-			const FWorldseedChunkKey Enfant{
-				FIntVector(
-					Key.C.X * 2 + (I & 1),
-					Key.C.Y * 2 + ((I >> 1) & 1),
-					Key.C.Z * 2 + ((I >> 2) & 1)),
-				Key.Niveau - 1 };
-			// LE FORCAGE NE SE PROPAGE PAS. Il ne vaut que pour le noeud qu'on
-			// vient d'ouvrir : ses enfants retrouvent le regime normal, et
-			// l'equilibrage les reprendra au tour suivant s'ils doivent
-			// descendre encore. Le propager creuserait tout le sous-arbre a
-			// pleine finesse pour une seule contrainte de voisinage.
-			Enumerer(Enfant, OrigineM, Sortie, false);
-		}
-		return;
-	}
-
-	if (!bEmissionForcee && Dist > LoadRadiusM)
-	{
-		return;
-	}
-	Sortie.Emplace(Key, Dist);
-}
-
-void AWorldseedVoxelTerrain::Equilibrer(
-	TArray<TPair<FWorldseedChunkKey, double>>& Feuilles,
-	const FVector& OrigineM)
-{
-	// --- POURQUOI CETTE PASSE EXISTE, ET POURQUOI AUCUN CRITERE LOCAL NE LA
-	//     REMPLACE -----------------------------------------------------------
-	//
-	// `NoeudAccidente` portait une preuve de l'equilibrage 2:1 : « si un noeud
-	// A se subdivise, son emprise elargie est accidentee ; cette emprise
-	// contient ses voisins immediats, donc chaque voisin B voit le meme relief
-	// et se subdivise aussi ». Elle est JUSTE A UN NIVEAU DONNE, et FAUSSE d'un
-	// niveau a l'autre, parce que le seuil est une PENTE -- donc il est divise
-	// par deux a chaque descente.
-	//
-	// Soit A au niveau L, B son voisin, C un enfant de B au niveau L-1.
-	// L'emprise elargie de A contient B, donc etendue(C) <= etendue(A). Mais :
-	//
-	//     C descend si  etendue(C) >= R x 3 x Cote(L) / 2
-	//     A descend si  etendue(A) >= R x 3 x Cote(L)
-	//
-	// Entre les deux seuils, C descend et A reste : DEUX CRANS D'ECART. La
-	// recurrence ne saute pas par accident, elle ne PEUT pas fermer -- une
-	// grandeur sans dimension ne peut pas etre monotone contre un seuil qui
-	// change d'echelle.
-	//
-	// Il n'existe donc aucune retouche locale qui garde l'invariance d'echelle.
-	// Un seuil en metres absolus la fermerait, mais sur ce monde -- pente
-	// mediane 30,6 degres -- tout noeud grossier le depasserait et le gain
-	// disparaitrait. On equilibre donc l'ENSEMBLE EMIS.
-	//
-	// ET C'EST CE QUI A TUE `NiveauEn`. Tant que la partition etait une
-	// fonction du POINT, une descente ponctuelle pouvait la reproduire. Elle
-	// ne l'est plus : le niveau d'une feuille depend de ses VOISINES. Le masque
-	// de transition lit donc desormais l'ensemble (`NiveauEmis`) au lieu de le
-	// rederiver -- une source de verite au lieu de deux calculs qu'on espere
-	// d'accord.
-	FeuillesCourantes.Reset();
-	FeuillesCourantes.Reserve(Feuilles.Num());
-	for (const TPair<FWorldseedChunkKey, double>& F : Feuilles)
-	{
-		FeuillesCourantes.Add(F.Key);
-	}
-
-	if (NiveauMax <= 0)
-	{
-		// Un seul niveau : il n'y a rien a equilibrer, et la diffusion est
-		// RIGOUREUSEMENT celle d'avant les anneaux. C'est la propriete de
-		// surete de ce chantier, et elle doit rester gratuite.
-		return;
-	}
-
-	// Meme ordre que le masque : ce sont les six faces qui se cousent.
-	static const FVector Normales[6] =
-	{
-		FVector(-1, 0, 0), FVector(1, 0, 0),
-		FVector(0, -1, 0), FVector(0, 1, 0),
-		FVector(0, 0, -1), FVector(0, 0, 1),
-	};
-
-	// --- ON SONDE DEPUIS LA FEUILLE FINE, ET C'EST UNE CORRECTION -----------
-	//
-	// PREMIERE VERSION FAUSSE : chaque feuille GROSSIERE sondait ses six faces
-	// en leur centre, et marquait le noeud a subdiviser si elle y voyait plus
-	// fin. Le raisonnement etait bon, l'echantillonnage non -- la face d'un
-	// chunk de niveau 3 touche jusqu'a SOIXANTE-QUATRE chunks de niveau 0, et
-	// un point par face n'en voit qu'un seul. La mesure l'a dit : « ECART 2:1
-	// -- 87 sur 512 feuilles examinees », en regime etabli, apres equilibrage.
-	//
-	// SONDER DEPUIS LE COTE FIN EST COMPLET PAR CONSTRUCTION. Le point juste
-	// au-dela de la face d'une feuille tombe forcement DANS la feuille qui
-	// couvre cette position, quel que soit le niveau de celle-ci -- puisque le
-	// voisin, s'il est plus grossier, est plus GRAND que le point sonde. Toute
-	// paire adjacente a plus d'un cran d'ecart est donc vue, exactement une
-	// fois, depuis sa moitie fine. On marque alors LE VOISIN, pas soi-meme.
-	//
-	// C'est la meme lecon que le routage des galeries : quand une correction ne
-	// deplace pas la mesure, le defaut n'est pas dans le reglage mais dans ce
-	// qu'on regarde.
-	//
-	// LE NOMBRE DE TOURS EST BORNE PAR LA PROFONDEUR, et ce n'est pas une
-	// precaution : chaque tour ne remonte un noeud que d'UN cran, donc au pire
-	// on epuise les niveaux. Une boucle non bornee sur une structure qu'on
-	// modifie en la parcourant est exactement ce qu'on ne veut pas sur le fil
-	// de jeu.
-	int32 Ajoutees = 0;
-	int32 Restants = 0;
-	for (int32 Tour = 0; Tour <= FMath::Max(NiveauMax, 1); ++Tour)
-	{
-		TSet<FWorldseedChunkKey> ASubdiviser;
-		for (const FWorldseedChunkKey& Cle : FeuillesCourantes)
-		{
-			const double Cote = CoteM(Cle.Niveau);
-			const FVector Centre = ChunkBoundsM(Cle).GetCenter();
-			for (const FVector& D : Normales)
-			{
-				const FVector P = Centre + D * Cote;
-				const int32 NV = NiveauEmis(P);
-				if (NV != INDEX_NONE && NV > Cle.Niveau + 1)
-				{
-					// LA CLE DU VOISIN, au niveau ou il a ete emis : c'est LUI
-					// qui doit descendre, pas la feuille qui le signale.
-					const double CoteV = CoteM(NV);
-					ASubdiviser.Add(FWorldseedChunkKey{
-						FIntVector(
-							FMath::FloorToInt(P.X / CoteV),
-							FMath::FloorToInt(P.Y / CoteV),
-							FMath::FloorToInt(P.Z / CoteV)),
-						NV });
-				}
-			}
-		}
-
-		Restants = ASubdiviser.Num();
-		if (Restants == 0)
-		{
-			break;
-		}
-
-		for (const FWorldseedChunkKey& Cle : ASubdiviser)
-		{
-			FeuillesCourantes.Remove(Cle);
-
-			TArray<TPair<FWorldseedChunkKey, double>> Enfants;
-			for (int32 I = 0; I < 8; ++I)
-			{
-				const FWorldseedChunkKey Enfant{
-					FIntVector(
-						Cle.C.X * 2 + (I & 1),
-						Cle.C.Y * 2 + ((I >> 1) & 1),
-						Cle.C.Z * 2 + ((I >> 2) & 1)),
-					Cle.Niveau - 1 };
-				Enumerer(Enfant, OrigineM, Enfants, true);
-			}
-			for (const TPair<FWorldseedChunkKey, double>& E : Enfants)
-			{
-				FeuillesCourantes.Add(E.Key);
-				Feuilles.Add(E);
-				++Ajoutees;
-			}
-		}
-
-		// LES FEUILLES REMPLACEES SORTENT DU TABLEAU, pas seulement de
-		// l'ensemble. Sans cela la diffusion lancerait le maillage d'un chunk
-		// grossier ET de ses enfants : de la geometrie dessinee en double,
-		// exactement ce que la partition existe pour interdire.
-		Feuilles.RemoveAll([this](const TPair<FWorldseedChunkKey, double>& F)
-		{
-			return !FeuillesCourantes.Contains(F.Key);
-		});
-	}
-
-	EquilibrageAjouts = Ajoutees;
-
-	// --- LE CONTROLE VIT ICI, ET NON DANS LE BALAYAGE DES MASQUES ----------
-	//
-	// IL Y ETAIT, ET IL OSCILLAIT. Le balayage n'examine que 512 feuilles par
-	// passe, avec un curseur qui TOURNE : le compte sautait de 87 a 0 et
-	// revenait, et la ligne « resorbe » ne disait jamais que « aucune dans
-	// cette fenetre-ci ». Un controle dont la valeur depend de la fenetre
-	// qu'on regarde ne mesure pas la propriete, il mesure la fenetre.
-	//
-	// Ici il est EXACT et GRATUIT. La boucle ci-dessus parcourt toutes les
-	// feuilles ; `Restants` vaut zero si et seulement si elle s'est arretee
-	// faute de violation a corriger, et sinon le nombre de noeuds encore
-	// fautifs apres avoir epuise les tours. C'est la reponse a « est-ce vrai
-	// maintenant », sur l'ensemble entier.
-	if (Restants != DernierEcart2a1Dit)
-	{
-		if (Restants > 0)
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[Worldseed] voxel : ECART 2:1 NON RESORBE -- %d noeuds restent ")
-				TEXT("a plus d'un cran de leur voisin apres %d tours ")
-				TEXT("(%d feuilles). Fissures possibles."),
-				Restants, FMath::Max(NiveauMax, 1) + 1,
-				FeuillesCourantes.Num());
-		}
-		else if (DernierEcart2a1Dit > 0)
-		{
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : ECART 2:1 resorbe sur l'ensemble des ")
-				TEXT("%d feuilles"), FeuillesCourantes.Num());
-		}
-		DernierEcart2a1Dit = Restants;
-	}
-}
-
 FVector AWorldseedVoxelTerrain::ChunkCentreCm(const FWorldseedChunkKey& Key) const
 {
-	const FBox B = ChunkBoundsM(Key);
+	const FBox B = Diffusion.BoiteM(Key);
 	const FVector CentreM = B.GetCenter();
 	return GetActorLocation() + CentreM * WorldseedMetersToCm;
 }
@@ -1041,7 +643,7 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 	TArray<FWorldseedChunkKey> ARelacher;
 	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
 	{
-		const FVector CentreM = ChunkBoundsM(Pair.Key).GetCenter();
+		const FVector CentreM = Diffusion.BoiteM(Pair.Key).GetCenter();
 		if (FVector::Dist(CentreM, OriginM) > UnloadRadiusM)
 		{
 			ARelacher.Add(Pair.Key);
@@ -1125,7 +727,7 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 	// est alors RIGOUREUSEMENT celle d'avant les anneaux, ce qui est la
 	// propriete de surete de ce chantier.
 	const int32 NiveauHaut = FMath::Max(NiveauMax, 0);
-	const double CoteHaute = CoteM(NiveauHaut);
+	const double CoteHaute = Diffusion.CoteM(NiveauHaut);
 	const int32 Portee = FMath::CeilToInt(LoadRadiusM / CoteHaute) + 1;
 	const int32 CX0 = FMath::FloorToInt(OriginM.X / CoteHaute);
 	const int32 CY0 = FMath::FloorToInt(OriginM.Y / CoteHaute);
@@ -1141,7 +743,7 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 
 			float SurfaceMin = 0.0f;
 			float SurfaceMax = 0.0f;
-			PlageSurface(CX, CY, NiveauHaut, SurfaceMin, SurfaceMax);
+			Diffusion.PlageSurface(CX, CY, NiveauHaut, SurfaceMin, SurfaceMax);
 
 			const int32 ZBas = FMath::FloorToInt(
 				(SurfaceMin - DensityRules.BandDepthM) / CoteHaute);
@@ -1149,7 +751,7 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 
 			for (int32 CZ = ZBas; CZ <= ZHaut; ++CZ)
 			{
-				Enumerer(FWorldseedChunkKey{ FIntVector(CX, CY, CZ), NiveauHaut },
+				Diffusion.Enumerer(FWorldseedChunkKey{ FIntVector(CX, CY, CZ), NiveauHaut },
 					OriginM, Feuilles);
 			}
 		}
@@ -1164,7 +766,7 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 	// masques faux pendant un dixieme de seconde a chaque deplacement. Ce n'est
 	// pas long, et c'est exactement le genre de fissure intermittente qu'on ne
 	// sait plus attribuer ensuite.
-	Equilibrer(Feuilles, OriginM);
+	Diffusion.Equilibrer(Feuilles, OriginM);
 
 	// --- 3 ter. LES MASQUES PERIMES ------------------------------------------
 	//
@@ -1222,7 +824,7 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 			// aucune passe de plus.
 			const FWorldseedVoxelChunkState* const S = Chunks.Find(Cle);
 			if (!S || S->Job.IsValid() || S->bEmpty) { continue; }
-			if (S->Masque != MasqueDe(Cle))
+			if (S->Masque != Diffusion.MasqueDe(Cle))
 			{
 				ARemailler.Add(Cle);
 			}
@@ -1267,7 +869,7 @@ void AWorldseedVoxelTerrain::LaunchJob(const FWorldseedChunkKey& Key)
 
 	FWorldseedVoxelJobPtr Job = MakeShared<FWorldseedVoxelJob, ESPMode::ThreadSafe>();
 	Job->Key = Key;
-	Job->BoundsM = ChunkBoundsM(Key);
+	Job->BoundsM = Diffusion.BoiteM(Key);
 	State.Job = Job;
 
 	// LE CHAMP EST CAPTURE PAR REFERENCE PARTAGEE, ET C'EST UNE CORRECTION.
@@ -1291,7 +893,7 @@ void AWorldseedVoxelTerrain::LaunchJob(const FWorldseedChunkKey& Key)
 	// aucun etat mutable, donc plusieurs fils l'interrogent sans verrou. Le
 	// type le dit maintenant -- il est `const`.
 	TSharedPtr<const FWorldseedDensity, ESPMode::ThreadSafe> Champ = Density;
-	const float VoxelSizeM = VoxelM(Key.Niveau);
+	const float VoxelSizeM = Diffusion.VoxelM(Key.Niveau);
 	const float Largeur = LargeurTransition;
 
 	// LE MASQUE EST CALCULE ICI, SUR LE FIL DE JEU, ET RETENU DANS L'ETAT. Il
@@ -1299,7 +901,7 @@ void AWorldseedVoxelTerrain::LaunchJob(const FWorldseedChunkKey& Key)
 	// de savoir, a la passe suivante, qu'il a change et qu'il faut remailler.
 	const FVector OrigineM =
 		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
-	const uint8 Masque = MasqueDe(Key);
+	const uint8 Masque = Diffusion.MasqueDe(Key);
 	State.Masque = Masque;
 
 	// LES CELLULES DE TRANSITION IMPLIQUENT LE MAILLEUR MAISON. Le marching
@@ -1370,7 +972,7 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 	for (int32 CZ = ZBas; CZ <= ZHaut; ++CZ)
 	{
 		const FWorldseedChunkKey Key{ FIntVector(CX, CY, CZ), 0 };
-		const FVector CentreM = ChunkBoundsM(Key).GetCenter();
+		const FVector CentreM = Diffusion.BoiteM(Key).GetCenter();
 		const double DistM = FVector::Dist(CentreM, OriginM);
 		const FWorldseedVoxelChunkState* S = Chunks.Find(Key);
 
@@ -1392,7 +994,7 @@ FString AWorldseedVoxelTerrain::DiagnostiquerColonne(FVector MondeCm) const
 		// balayage a manque d'un chunk que le mailleur n'a pas su remplir :
 		// vus du dehors, les deux sont un trou.
 		{
-			const FBox B = ChunkBoundsM(Key);
+			const FBox B = Diffusion.BoiteM(Key);
 			const double PasM = DensityRules.VoxelSizeM * 4.0;
 			const int32 N = FMath::Max(FMath::CeilToInt(ChunkSideM / PasM), 1);
 			// AVEC LES GROTTES, comme le mailleur. Mon premier balayage de
@@ -1859,8 +1461,8 @@ FWorldseedChunkKey AWorldseedVoxelTerrain::KeyForPoint(double X, double Y, doubl
 	const FVector PointM(X, Y, Z);
 	const FVector OrigineM =
 		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
-	const int32 Niveau = NiveauEstime(PointM, OrigineM);
-	const double Cote = CoteM(Niveau);
+	const int32 Niveau = Diffusion.NiveauEstime(PointM, OrigineM);
+	const double Cote = Diffusion.CoteM(Niveau);
 
 	return FWorldseedChunkKey{
 		FIntVector(
@@ -2529,7 +2131,7 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			TEXT("  |  %d portent une face de transition")
 			TEXT("  |  %d feuilles ajoutees par l'equilibrage 2:1"),
 			ParNiveau[0], ParNiveau[1], ParNiveau[2], ParNiveau[3], ParNiveau[4],
-			AvecTransition, EquilibrageAjouts);
+			AvecTransition, Diffusion.AjoutsDeLEquilibrage());
 	}
 
 	const double Moyenne = (BuiltChunks + EmptyChunks) > 0
@@ -2952,7 +2554,7 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// paroi pour s'en apercevoir.
 	const FVector OrigineM =
 		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
-	const int32 Niveau = NiveauEstime(FVector(X, Y, Z), OrigineM);
+	const int32 Niveau = Diffusion.NiveauEstime(FVector(X, Y, Z), OrigineM);
 	// Un chunk de niveau N porte TOUJOURS le meme nombre de cellules ; c'est le
 	// voxel qui double a chaque cran.
 	const double MailleM = DensityRules.VoxelSizeM * FMath::Pow(2.0, Niveau);

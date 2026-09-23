@@ -9,6 +9,7 @@
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedDensity.h"
+#include "Procedural/WorldseedDiffusion.h"
 #include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedVoxelChunk.h"
@@ -20,35 +21,6 @@
 
 class UMaterialInterface;
 class UProceduralMeshComponent;
-
-/**
- * La cle d'un chunk : sa cellule, ET SON NIVEAU DE DETAIL.
- *
- * LES GRILLES DES NIVEAUX SONT EMBOITEES, et c'est ce qui rend les anneaux
- * possibles. Un chunk de niveau L fait `ChunkSideM * 2^L` de cote et porte
- * toujours le MEME nombre de cellules -- seule la taille du voxel double. Un
- * chunk de niveau L se decoupe donc exactement en huit chunks de niveau L-1,
- * tous alignes sur l'origine du monde.
- *
- * C'est cet emboitement qui garantit que la diffusion est une PARTITION : un
- * noeud est soit maille, soit remplace par ses huit enfants, jamais les deux.
- * Ni recouvrement -- donc pas de geometrie dessinee en double -- ni trou.
- */
-struct FWorldseedChunkKey
-{
-	FIntVector C = FIntVector::ZeroValue;
-	int32 Niveau = 0;
-
-	bool operator==(const FWorldseedChunkKey& Autre) const
-	{
-		return C == Autre.C && Niveau == Autre.Niveau;
-	}
-};
-
-FORCEINLINE uint32 GetTypeHash(const FWorldseedChunkKey& Cle)
-{
-	return HashCombine(GetTypeHash(Cle.C), ::GetTypeHash(Cle.Niveau));
-}
 
 /**
  * Un maillage de chunk en cours de fabrication sur un fil de travail.
@@ -434,96 +406,17 @@ private:
 	/** Centre d'un chunk, en centimetres monde. */
 	FVector ChunkCentreCm(const FWorldseedChunkKey& Key) const;
 
-	/** Boite d'un chunk, en metres dans le repere de l'acteur. */
-	FBox ChunkBoundsM(const FWorldseedChunkKey& Key) const;
-
-	/** Cote d'un chunk et taille d'un voxel, au niveau donne. */
-	double CoteM(int32 Niveau) const
-	{
-		return static_cast<double>(ChunkSideM) * static_cast<double>(1 << Niveau);
-	}
-	float VoxelM(int32 Niveau) const
-	{
-		return DensityRules.VoxelSizeM * static_cast<float>(1 << Niveau);
-	}
-
-	/** Rayon exterieur de l'anneau de niveau L. Double a chaque cran. */
-	double RayonAnneauM(int32 Niveau) const
-	{
-		return static_cast<double>(RayonAnneau0M) * static_cast<double>(1 << Niveau);
-	}
-
 	/**
-	 * Le niveau REELLEMENT emis en un point, LU dans l'ensemble des feuilles.
-	 * INDEX_NONE si aucune feuille ne couvre ce point.
+	 * LA DIFFUSION, ET ELLE NE CONNAIT NI CET ACTEUR NI LE MONDE.
 	 *
-	 * IL Y AVAIT ICI UNE DESCENTE, et son commentaire promettait « meme
-	 * predicat, donc resultat coherent par construction ». C'etait vrai tant
-	 * que la partition etait une FONCTION DU POINT. Elle a cesse de l'etre le
-	 * jour ou le 2:1 a du etre equilibre : l'equilibrage regarde les voisins,
-	 * donc le niveau d'une feuille depend de ses voisines et non plus d'elle
-	 * seule. Aucune descente ponctuelle ne peut plus la reproduire, si fidele
-	 * soit-elle au predicat.
-	 *
-	 * On LIT donc l'ensemble emis. Une source de verite au lieu de deux
-	 * calculs qu'on espere d'accord -- et le desaccord, ici, serait une
-	 * fissure que rien ne signale.
+	 * Elle decide QUI est emis, a QUEL niveau, et quelles faces de transition --
+	 * soit six reglages, un champ de densite et une origine. Elle vivait ici,
+	 * melee aux composants, aux travaux en vol, au pion et au materiau ; sortie,
+	 * elle devient EPROUVABLE, et sa propriete de surete 2:1 -- Transvoxel ne
+	 * sait coudre qu un niveau d ecart -- cesse de n avoir pour tout filet qu un
+	 * avertissement au journal.
 	 */
-	int32 NiveauEmis(const FVector& PointM) const;
-
-	/**
-	 * Le niveau d'un point, MEME s'il n'est pas maille.
-	 *
-	 * Ne sert qu'a DECRIRE -- le filet du joueur pendant la mise en place, et
-	 * le releve d'ecran -- jamais a decider d'une face de transition. Hors de
-	 * l'ensemble emis il retombe sur la distance seule, qui est le critere
-	 * principal et ne depend d'aucun voisin.
-	 */
-	int32 NiveauEstime(const FVector& PointM, const FVector& OrigineM) const;
-
-	/**
-	 * Equilibre l'ensemble emis pour que deux feuilles voisines ne different
-	 * jamais de plus d'un niveau, et retient cet ensemble.
-	 */
-	void Equilibrer(TArray<TPair<FWorldseedChunkKey, double>>& Feuilles,
-		const FVector& OrigineM);
-
-	/**
-	 * Les faces de ce chunk qui bordent un voisin PLUS FIN.
-	 *
-	 * Ce sont celles-la qui reclament une cellule de transition : Lengyel les
-	 * place dans le bloc GROSSIER, parce que c'est lui qui a trop peu
-	 * d'echantillons. Le niveau le plus fin n'en a donc jamais.
-	 */
-	uint8 MasqueDe(const FWorldseedChunkKey& Key) const;
-
-	/**
-	 * Descend un noeud jusqu'aux feuilles de la partition, et les collecte.
-	 *
-	 * `bEmissionForcee` leve le filtre de rayon pour CE noeud seulement : il
-	 * sert a l'equilibrage, qui ouvre un noeud deja charge et dont certains
-	 * enfants tombent hors du rayon.
-	 */
-	void Enumerer(const FWorldseedChunkKey& Key, const FVector& OrigineM,
-		TArray<TPair<FWorldseedChunkKey, double>>& Sortie,
-		bool bEmissionForcee = false) const;
-
-	/** Lance le maillage d'un chunk sur le pool de fils. */
-	/** Bornes d-altitude d-une colonne de chunks, par le cache. */
-	void PlageSurface(int32 CX, int32 CY, int32 Niveau,
-		float& OutMinM, float& OutMaxM) const;
-
-	/**
-	 * LE PREDICAT UNIQUE : ce noeud se subdivise-t-il ?
-	 *
-	 * IL N'EXISTE QU'UNE FOIS, ET C'EST PORTANT. La diffusion s'en sert pour
-	 * decider quels chunks emettre, `NiveauEn` pour savoir quel niveau un
-	 * voisin porte, donc quelles faces de transition armer. Les ecrire deux
-	 * fois ferait armer des cellules de transition la ou il n'y a pas de
-	 * changement de resolution, et en oublierait ailleurs -- c'est-a-dire une
-	 * fissure, qu'aucune mesure de couture ne saurait attribuer.
-	 */
-	bool DoitSubdiviser(const FWorldseedChunkKey& Key, const FVector& OrigineM) const;
+	FWorldseedDiffusion Diffusion;
 
 	void UpdateChunksInterne();
 	void LaunchJob(const FWorldseedChunkKey& Key);
@@ -867,27 +760,6 @@ private:
 	int32 UpdateCount = 0;
 
 	/**
-	 * L'ensemble des feuilles REELLEMENT emises a la derniere passe.
-	 *
-	 * C'EST LA SOURCE DE VERITE DE LA PARTITION, et elle a remplace une
-	 * descente ponctuelle. Tant que le niveau d'un noeud ne dependait que de sa
-	 * position, deux calculs separes -- l'un pour emettre, l'autre pour savoir
-	 * quel niveau porte un voisin -- pouvaient rester d'accord a condition de
-	 * partager leur predicat. L'equilibrage 2:1 a supprime cette condition : le
-	 * niveau d'une feuille depend desormais de ses VOISINES, donc aucune
-	 * fonction du point seul ne peut le redonner.
-	 *
-	 * Le masque de transition lit donc cet ensemble. Une fissure ne se signale
-	 * pas -- le masque s'arme quand meme, la geometrie reste combinatoirement
-	 * close, et le trou ne se voit qu'a l'oeil sur une jointure precise --
-	 * c'est pourquoi on ne peut pas se permettre deux reponses possibles.
-	 */
-	TSet<FWorldseedChunkKey> FeuillesCourantes;
-
-	/** Feuilles ajoutees par l'equilibrage a la derniere passe. Diagnostic. */
-	int32 EquilibrageAjouts = 0;
-
-	/**
 	 * Les chunks portent-ils leur ombre ? OUI, sauf pendant une mesure.
 	 *
 	 * ELLE N-EST PAS UN REGLAGE, C-EST UN INSTRUMENT. Le moteur signale a
@@ -901,37 +773,7 @@ private:
 	 */
 	bool bOmbresChunks = true;
 
-	/**
-	 * Bornes d-altitude par colonne et par niveau, calculees UNE FOIS.
-	 *
-	 * MESURE : la passe de diffusion coutait 13,65 ms a 2400 m -- soit le pic de
-	 * p95 observe au banc, retrouve en la chronometrant au lieu de le supposer.
-	 * La cause est SurfaceRangeM, qui echantillonne au pas de la grille : un
-	 * noeud de 256 m demande 289 lectures, et la descente la rappelle pour le
-	 * meme noeud que la boucle de tete vient d-interroger.
-	 *
-	 * Or LE RELIEF 2D NE CHANGE PAS EN COURS DE PARTIE. Ces bornes sont donc une
-	 * constante du monde, pas une grandeur a recalculer dix fois par seconde.
-	 */
-	mutable TMap<FIntVector, FVector2D> CacheSurface;
-
 	int32 CurseurMasque = 0;
-
-	/**
-	 * Dernier compte d ecarts 2:1 JOURNALISE, pour ne parler qu au changement.
-	 *
-	 * IL Y AVAIT ICI UN VERROU -- « une seule alerte par partie : l ecart 2:1
-	 * est une propriete, pas un compteur ». L intention etait bonne, la
-	 * consequence non : le 22 septembre l alerte est sortie a la TRAME 3,
-	 * pendant le premier remplissage, quand la partition n a pas encore de
-	 * forme stable -- puis le controle s est tu pour toujours. Il etait alors
-	 * impossible de savoir si le defaut PERSISTAIT ou s il etait transitoire,
-	 * et c est pourtant la seule question qui compte.
-	 *
-	 * Une propriete de surete doit repondre a « est-ce vrai MAINTENANT », pas
-	 * a « est-ce arrive une fois ». -1 signifie « jamais rien dit ».
-	 */
-	int32 DernierEcart2a1Dit = -1;
 
 	TMap<FWorldseedChunkKey, FWorldseedVoxelChunkState> Chunks;
 
