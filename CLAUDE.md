@@ -8395,3 +8395,93 @@ passee de 2,72 a 2,53 Mo.
 Elle partage la norme du gradient avec la modulation du detail par la pente,
 donc la retirer demanderait de demeler les deux pour un booleen. Le commentaire
 du champ le dit desormais, au lieu de renvoyer a `rugositeMin` qui n'existe plus.
+
+### La couverture de tests, et cinq facons de se tromper de mesure (23 septembre 2026)
+
+Demande du proprietaire : revue de code, decouplage, et maximiser la couverture.
+Etat de depart mesure : **41 236 lignes de code pour 3 337 de tests**, soit 8 %,
+et **les passes du DEBUT de chaine n'avaient aucun oracle** -- Perlin 620 lignes,
+Tectonics 629, Erosion 440, WaterBodies 748, Noise 438, Fields 213, Coast 190,
+Fins 167, Ice 92. **28 -> 57 tests verts** au terme de la session.
+
+**LE TROU N'ETAIT PAS OU ON L'ATTEND.** `Perlin` et `Noise` sont le socle de
+TOUT -- relief, tectonique, erosion, diaclases, lames, cavites -- et un bruit
+qui derive ne casse rien : il DEPLACE le monde en silence, et aucune mesure de
+ce depot ne le verrait.
+
+**CINQ PIEGES DE MESURE PAYES DANS LA MEME SESSION, et ce sont eux qui valent :**
+
+1. **UNE DIFFERENCE FINIE EXIGE QUE LE PAS DEPASSE L'ULP DU TYPE A LA MAGNITUDE
+   OU L'ON MESURE.** Le test de Worley a echoue sur une pente de 1,666 pour une
+   fonction 1-lipschitzienne par construction. Cause : le balayage montait a
+   X ~ 16 400, ou l'ULP d'un `float` vaut 9,8e-4 -- exactement le pas de 1e-3.
+   `X + E` tombait sur X ou X + 2 ULP, le pas reel etait indetermine, la pente
+   gonflee d'un facteur allant jusqu'a deux. Borne a 256 : **1,007**. Le meme
+   biais gonflait la continuite de Perlin (2,98 contre 2,53) et passait
+   inapercu sous un seuil genereux.
+
+2. **UNE FIXTURE DOIT REPRODUIRE LA RESOLUTION DU CAS REEL** des qu'une passe
+   compare une distance EN PIXELS a une longueur en metres. Les deux tests du
+   littoral ont echoue sur leur temoin : la passe compare
+   `T = Distance_px * MetresParPixel / Recul` a 0,35, et ma grille faisait 125 m
+   par maille pour un recul de 260 -- le PREMIER pixel de terre etait deja a
+   T = 0,48, la passe ne pouvait RIEN faire. Le monde reel travaille a 15,6 m.
+
+3. **LE CODE PEUT DETROMPER SUR SA PROPRE PREMISSE.** J'attendais que 800 mm de
+   pluie erodent plus que 0 : mesure, **103387,297 contre 103387,305**. Ce n'est
+   pas un defaut -- `RainWeight = PrecipMm / mediane des terres`, donc un champ
+   UNIFORME ne porte aucune information quel que soit son niveau. Et c'est ce
+   qu'on veut : `targetMeanLandMm` a deja ete corrige sans toucher au relief.
+   Le bon oracle porte sur le CONTRASTE -- la meme moitie perd 88 072 m arrosee
+   contre 34 051 aride -- **et sur le niveau absolu, qui doit rester sans
+   effet**. Les deux moities de la propriete, pas une.
+
+4. **LE BUILD UNIFIE FRAPPE AUSSI LES TESTS.** `CompterNonFinis` vivait dans le
+   namespace ANONYME de trois fichiers ; UBT les concatene, et la compilation
+   tombe sur « la fonction a deja un corps » -- dans un fichier auquel on n'a
+   pas touche. Troisieme fois dans ce depot, apres `WorldseedMetersToCm` et
+   `SUB`. Les auxiliaires partages vivent desormais dans la fixture.
+
+5. **LE PREMIER LANCEMENT APRES UN BUILD N'EST PAS COMPARABLE.** Le banc rendait
+   776/1033/625 chunks apres le refactor de la diffusion contre 894/1175/680 au
+   releve pris une heure plus tot : 11 % d'ecart, systematique, reproductible.
+   `git stash` + rebuild + banc dans l'etat courant : le temoin SANS refactor a
+   rendu 697/1008/628, puis 776/1034/625, puis 776/1033/625. Identique au
+   refactor des que la mesure est CHAUDE. **Ce releve demande une passe de
+   chauffe**, et les deux valeurs aberrantes etaient les deux premiers
+   lancements apres compilation.
+
+**CHAQUE TEST PORTE SON TEMOIN.** Ce depot a paye quatre fixtures muettes en une
+journee : un bruit identiquement nul passerait « Perlin s'annule aux noeuds »,
+une correlation buguee a zero passerait « la graine separe », une passe inerte
+passerait « rien ne bouge au-dela de la portee ». On verifie donc toujours aussi
+que la chose MESUREE varie.
+
+### Le decouplage commence : la diffusion sort de l'acteur (23 septembre 2026)
+
+`AWorldseedVoxelTerrain` portait **six responsabilites en 3019 lignes et
+46 methodes publiques** -- chargement du monde, diffusion/LOD, maillage,
+placement du joueur, acces aux donnees, diagnostic -- et il etait INTESTABLE par
+construction : instancier un acteur demande un monde.
+
+**LA MESURE A DECIDE DU PREMIER DECOUPAGE.** Sur les 411 lignes de la diffusion,
+elle ne touchait que **six membres** de l'acteur : `FeuillesCourantes`,
+`NiveauMax`, `CacheSurface`, `LoadRadiusM`, `DensityRules`, `Density`. Ni
+composants, ni travaux en vol, ni pion, ni materiau. `FWorldseedDiffusion` prend
+donc un champ, six reglages et une origine.
+
+    WorldseedVoxelTerrain.cpp   3019 -> 2357 lignes
+    WorldseedVoxelTerrain.h      893 ->  788
+
+**ET LES DEUX PROPRIETES DE SURETE ONT ENFIN UN ORACLE**, elles qui n'avaient
+qu'un avertissement au journal : la diffusion est une PARTITION (0 point couvert
+par deux feuilles sur 3000 sondes) et l'ecart de niveau entre voisins est BORNE
+A UN (verifie sur 1, 2 et 3 anneaux). Transvoxel ne sait coudre qu'un cran, et
+la fissure qui en resulte ne se signale pas : le masque s'arme quand meme et la
+geometrie reste combinatoirement close.
+
+**RESTE A DECOUPLER**, dans l'ordre de ce que la revue a mesure :
+`BuildGroundProxy` (782 lignes, appartient a `AWorldseedGroundProxy` qui n'en
+fait que 99), `RebuildWidget` (666), `HoldOrReleasePlayer` (427) et le placement
+du joueur, `Lithology::Compute` (419). Et `WaterBodies` (748 lignes) reste sans
+oracle : il demande un monde instancie.
