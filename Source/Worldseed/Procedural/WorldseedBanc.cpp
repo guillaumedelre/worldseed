@@ -183,6 +183,39 @@ void UWorldseedBanc::Tick(float DeltaTime)
 			{
 				DepartMarcheCm = P->GetActorLocation();
 			}
+			// LE TEMOIN DE L'INSTRUMENT, PRIS AVANT LE PREMIER PAS.
+			//
+			// Sur un monde POSE le sondage doit rendre ZERO : le streaming est
+			// fige, tout est maille, il n'y a rien a rater. S'il crie ici,
+			// c'est l'INSTRUMENT qui est faux -- marge trop serree, rayon qui
+			// sort par une bouche de grotte, sol de fond pris pour du terrain
+			// -- et le croire ferait chercher un defaut qui n'existe pas. Ce
+			// depot a deja valide une metrique nulle part, l'a crue, et pose la
+			// valeur inverse.
+			//
+			// Il est repris a CHAQUE execution, jamais recopie d'un releve
+			// precedent : un temoin pris dans un autre etat du code n'est pas
+			// un temoin, c'est un souvenir.
+			{
+				const FWorldseedSondageDeVue Temoin = T->SonderLaVue();
+				if (Temoin.Trous == 0)
+				{
+					UE_LOG(LogTemp, Log,
+						TEXT("[Worldseed] banc : TEMOIN -- monde pose, %d rayons, ")
+						TEXT("0 trou. L'instrument se tait quand il doit."),
+						Temoin.Rayons);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[Worldseed] banc : TEMOIN FAUX -- %d trous sur %d ")
+						TEXT("rayons sur un monde POSE, le plus proche a %.0f m. ")
+						TEXT("C'est l'INSTRUMENT qui est en cause, pas le ")
+						TEXT("streaming : ne rien conclure de la marche."),
+						Temoin.Trous, Temoin.Rayons, Temoin.PlusProcheM);
+				}
+			}
+
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] banc : MARCHE %.0f s au cap %.0f deg -- ")
 					TEXT("on mesure ce que le streaming rate en avancant"),
@@ -213,10 +246,31 @@ void UWorldseedBanc::MesurerLaMarche(AWorldseedVoxelTerrain* T)
 	SommeOrphelins += R.Orphelins;
 	SommeManquants += R.Manquants;
 	SommeHysteresis += R.GardesParHysteresis;
+	SommeTrousDecouverts += R.TrousDecouverts;
 	PireOrphelins = FMath::Max(PireOrphelins, R.Orphelins);
 	PireManquants = FMath::Max(PireManquants, R.Manquants);
 	PireHysteresis = FMath::Max(PireHysteresis, R.GardesParHysteresis);
+	PireTrousDecouverts = FMath::Max(PireTrousDecouverts, R.TrousDecouverts);
 	++EchantillonsMarche;
+
+	// LE SONDAGE DE VUE EST CHER -- huit par quatre rayons marches sur le
+	// relief 2D -- donc on le prend a quelques hertz. Le prendre a chaque
+	// trame le ferait peser sur la trame qu'on mesure par ailleurs, ce qui
+	// fausserait les deux.
+	if (Horloge >= ProchainSondage)
+	{
+		ProchainSondage = Horloge + 0.2;
+
+		const FWorldseedSondageDeVue S = T->SonderLaVue();
+		SommeRayonsTroues += S.Trous;
+		PireRayonsTroues = FMath::Max(PireRayonsTroues, S.Trous);
+		if (S.Trous > 0)
+		{
+			TrouLePlusProcheM = (TrouLePlusProcheM <= 0.0f)
+				? S.PlusProcheM : FMath::Min(TrouLePlusProcheM, S.PlusProcheM);
+		}
+		++SondagesDeVue;
+	}
 }
 
 void UWorldseedBanc::Conclure()
@@ -336,14 +390,36 @@ void UWorldseedBanc::Conclure()
 			static_cast<double>(SommeHysteresis) / EchantillonsMarche, PireHysteresis);
 
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed]   MANQUANTS (feuilles sans maillage, TROU) : ")
-			TEXT("moyenne %.0f, pire %d"),
-			static_cast<double>(SommeManquants) / EchantillonsMarche, PireManquants);
+			TEXT("[Worldseed]   MANQUANTS (feuilles sans maillage) : ")
+			TEXT("moyenne %.1f, pire %d  --  dont BEANTS (que rien ne recouvre) : ")
+			TEXT("moyenne %.1f, pire %d"),
+			static_cast<double>(SommeManquants) / EchantillonsMarche, PireManquants,
+			static_cast<double>(SommeTrousDecouverts) / EchantillonsMarche,
+			PireTrousDecouverts);
+
+	// --- ET L'ARBITRE TIERS : CE QUE LA CAMERA VOIT --------------------------
+	//
+	// Tout ce qui precede est NOTRE comptabilite, et une comptabilite peut
+	// etre coherente avec elle-meme et fausse -- `ProbeTransvoxel` a rendu
+	// 0,1 % en se comparant a ses propres normales, et fait poser la valeur
+	// inverse. Ce sondage-ci demande au CHAMP ou la roche devrait etre, puis
+	// au RENDU ce qu'il montre. Le champ n'appartient ni a l'un ni a l'autre.
+		if (SondagesDeVue > 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   SONDAGE DE VUE (%d sondages de 32 rayons) : ")
+				TEXT("moyenne %.2f rayon(s) sans geometrie la ou le champ en ")
+				TEXT("promet, pire %d, le plus proche a %.0f m"),
+				SondagesDeVue,
+				static_cast<double>(SommeRayonsTroues) / SondagesDeVue,
+				PireRayonsTroues, TrouLePlusProcheM);
+		}
 
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed]   a l'arrivee : %d feuilles demandees, %d chunks ")
-			TEXT("suivis, %d orphelins, %d gardes par hysteresis, %d manquants"),
-			F.Feuilles, F.Suivis, F.Orphelins, F.GardesParHysteresis, F.Manquants);
+			TEXT("suivis, %d orphelins, %d gardes par hysteresis, %d manquants dont %d beants"),
+			F.Feuilles, F.Suivis, F.Orphelins, F.GardesParHysteresis, F.Manquants,
+			F.TrousDecouverts);
 
 		if (ParcouruM < 10.0)
 		{

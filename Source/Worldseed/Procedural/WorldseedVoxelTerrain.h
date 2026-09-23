@@ -149,6 +149,59 @@ struct WORLDSEED_API FWorldseedStreamingReleve
 
 	/** Feuilles sans maillage ni marque de vide : TROU. */
 	int32 Manquants = 0;
+
+	/**
+	 * Manquants que RIEN ne recouvre -- le trou reellement BEANT.
+	 *
+	 * ET C'EST LA DISTINCTION QUI MANQUAIT. `Manquants` compte une feuille sans
+	 * maillage, sans savoir si un chunk PERIME bouche encore le trou en
+	 * attendant. Avant que les orphelins ne soient relaches, le parent couvrait
+	 * ses enfants en retard ; apres, il ne couvre plus rien. Le compte ne
+	 * bougeait pas d'un chiffre -- 2 de moyenne dans les deux cas -- alors que
+	 * l'un des deux etats montre un trou et l'autre non.
+	 *
+	 * C'est litteralement le cas d'ecole du depot : « quand un defaut est
+	 * signale A L'OEIL et qu'aucun reglage ne deplace le chiffre, se demander
+	 * si le chiffre MESURE LE DEFAUT ».
+	 */
+	int32 TrousDecouverts = 0;
+};
+
+/**
+ * CE QUE LA CAMERA VOIT, ARBITRE PAR LE CHAMP.
+ *
+ * POURQUOI UN SECOND INSTRUMENT. Tout ce qui precede est NOTRE comptabilite :
+ * elle peut etre parfaitement coherente avec elle-meme et fausse. Ce depot a
+ * paye exactement cela -- `ProbeTransvoxel` comparait les triangles du
+ * mailleur a ses propres normales, ne pouvait que se donner raison, a rendu
+ * 0,1 % et fait poser la valeur inverse ; il a fallu un ARBITRE TIERS, le
+ * gradient du champ, qui n'appartient a aucun des deux.
+ *
+ * Ici le tiers est `SurfaceHeightM` : le relief 2D, qui ne sait rien du
+ * decoupage en chunks, de leur niveau ni de leur etat. Le sondage lui demande
+ * « a partir d'ou ce rayon devrait-il etre DANS la roche », puis demande au
+ * RENDU -- par la collision, que seul un chunk maille porte -- s'il a
+ * rencontre quoi que ce soit avant. Rien rencontre, et c'est un trou.
+ *
+ * LA MARGE N'EST PAS UN REGLAGE DE CONFORT : le champ deplace la vraie surface
+ * de `overhangAmplitudeM + detailAmplitudeM` autour du relief macro. On ne
+ * declare un trou qu'une fois le rayon PLUS BAS que tout ce que ce
+ * deplacement peut expliquer.
+ *
+ * ET LE TEMOIN EST OBLIGATOIRE : sur un monde POSE, ce sondage doit rendre
+ * ZERO. S'il crie a l'arret, c'est l'instrument qui est faux -- et le croire
+ * ferait chercher un defaut qui n'existe pas.
+ */
+struct WORLDSEED_API FWorldseedSondageDeVue
+{
+	/** Directions sondees dans le champ de vision. */
+	int32 Rayons = 0;
+
+	/** Directions ou le champ promet de la roche et ou le rendu ne montre rien. */
+	int32 Trous = 0;
+
+	/** Distance du trou le plus proche, en metres. */
+	float PlusProcheM = 0.0f;
 };
 
 UCLASS()
@@ -584,6 +637,15 @@ public:
 	 * a reserver au banc, jamais a mettre dans la passe de diffusion.
 	 */
 	FWorldseedStreamingReleve ReleveStreaming() const;
+
+	/**
+	 * Sonde le champ de vision et compte les trous BEANTS.
+	 *
+	 * Reserve au banc : il marche le long de chaque rayon sur le relief 2D,
+	 * donc son cout suit le produit rayons x portee. A appeler a quelques
+	 * hertz, jamais a chaque trame.
+	 */
+	FWorldseedSondageDeVue SonderLaVue() const;
 	/**
 	 * Le champ de densite du monde charge.
 	 *
@@ -937,6 +999,28 @@ private:
 	 * les aplats et l'on ne sait plus si le noir est peint ou ombre.
 	 */
 	bool bCarteDesCauses = false;
+
+	/**
+	 * LA CARTE DES ANNEAUX : chaque chunk peint par son NIVEAU.
+	 *
+	 * VERT le niveau 0 (voxel 1 m), BLEU le 1 (2 m), ROUGE le 2 (4 m), puis
+	 * JAUNE et MAGENTA si un jour il y en a plus.
+	 *
+	 * ELLE MONTRE D'UN COUP D'OEIL CE QU'AUCUN COMPTE NE MONTRE : ou tombent
+	 * reellement les paliers, et surtout si un chunk ROUGE est pose PAR-DESSUS
+	 * du VERT -- c'est-a-dire un orphelin, la geometrie dessinee deux fois. Le
+	 * sondage de vue, lui, ne voit que les TROUS ; il est aveugle au doublon,
+	 * qui remplit l'image au lieu de la vider.
+	 *
+	 * C'est le temoin de couleur du depot, une fois de plus : « une couleur
+	 * franche ne se compare a rien, elle est la ou elle n'est pas ». Les cinq
+	 * teintes sont franches et distinctes, donc la lecture est binaire.
+	 *
+	 * A regarder avec `ShowFlag.Lighting 0` : eclairee, une face raide en vert
+	 * sombre et une face plate en bleu sombre se confondent, et l'on perdrait
+	 * exactement ce qu'on est venu voir.
+	 */
+	bool bCarteDesAnneaux = false;
 
 	double FirstFillSeconds = 0.0;
 	double StartSeconds = 0.0;

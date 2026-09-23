@@ -469,6 +469,21 @@ void AWorldseedVoxelTerrain::BeginPlay()
 					TEXT("ShowFlag.Lighting 0."));
 			}
 
+			// ET LA CARTE DES ANNEAUX, pour la meme raison et au meme endroit :
+			// une fois par monde, jamais par chunk.
+			int32 Anneaux = 0;
+			if (FParse::Value(FCommandLine::Get(),
+					TEXT("WorldseedCarteAnneaux="), Anneaux) && Anneaux > 0)
+			{
+				bCarteDesAnneaux = true;
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] voxel : CARTE DES ANNEAUX armee -- les ")
+					TEXT("chunks sont peints par NIVEAU, pas par matiere. ")
+					TEXT("VERT = 0 (voxel 1 m), BLEU = 1 (2 m), ROUGE = 2 (4 m), ")
+					TEXT("jaune = 3, magenta = 4. Du ROUGE POSE SUR DU VERT est ")
+					TEXT("un ORPHELIN. A regarder avec ShowFlag.Lighting 0."));
+			}
+
 			// SANS CETTE LIGNE ON NE SAIT PAS SI LA ROCHE EST BRANCHEE, et la
 			// difference ne se voit pas : une paroi peut etre creme parce
 			// qu'elle est du calcaire, ou parce que le biome au-dessus est du
@@ -1242,6 +1257,32 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	WorstPaintMs = FMath::Max(WorstPaintMs, PeintureMs);
 	TotalPaintVerts += Job->Mesh.Positions.Num();
 
+	// --- LA CARTE DES ANNEAUX, POSEE PAR-DESSUS LA MATIERE ------------------
+	//
+	// ELLE VIT ICI ET NON DANS `WorldseedPeinture`, ET C'EST DELIBERE. La
+	// peinture repond a « de quoi ce sommet est-il fait » ; le niveau d'un
+	// chunk repond a « comment le streaming l'a servi ». Deux sujets, et les
+	// melanger obligerait la peinture a connaitre la cle du chunk -- donc le
+	// decoupage, donc la diffusion -- alors qu'elle n'a besoin que d'un point.
+	//
+	// C'est aussi pour cela qu'elle ECRASE au lieu de nuancer : une teinte
+	// melangee a la matiere ne se lirait plus, et le depot a deja etabli que
+	// seule une couleur FRANCHE tranche. Du ROUGE pose sur du VERT est un
+	// orphelin -- un doublon, que le sondage de vue ne peut pas voir puisqu'il
+	// ne cherche que des trous.
+	if (bCarteDesAnneaux && Job->Mesh.Colours.Num() > 0)
+	{
+		static const FLinearColor ParNiveau[5] = {
+			FLinearColor(0.10f, 0.90f, 0.15f),   // 0 -- vert,    voxel 1 m
+			FLinearColor(0.15f, 0.40f, 1.00f),   // 1 -- bleu,    voxel 2 m
+			FLinearColor(1.00f, 0.15f, 0.12f),   // 2 -- rouge,   voxel 4 m
+			FLinearColor(1.00f, 0.85f, 0.10f),   // 3 -- jaune
+			FLinearColor(1.00f, 0.10f, 1.00f),   // 4 -- magenta
+		};
+		const FLinearColor C = ParNiveau[FMath::Clamp(Key.Niveau, 0, 4)];
+		for (FLinearColor& V : Job->Mesh.Colours) { V = C; }
+	}
+
 	const double DebutUpload = FPlatformTime::Seconds();
 
 	if (!State.Mesh)
@@ -1708,10 +1749,135 @@ FWorldseedStreamingReleve AWorldseedVoxelTerrain::ReleveStreaming() const
 	// VIDE, auquel cas il n'y a reellement rien a dessiner et c'est une
 	// propriete du monde, pas un retard. Confondre les deux ferait compter en
 	// trou les deux cinquiemes du volume qui n'ont aucune surface.
+	//
+	// MAIS UN MANQUANT N'EST PAS FORCEMENT VISIBLE, et c'est la distinction qui
+	// manquait : un chunk PERIME peut encore boucher le trou en attendant. On
+	// regarde donc si quelque chose de MAILLE couvre ce volume -- un ancetre
+	// reste en place, ou les enfants qu'on vient de remplacer.
+	auto CouvertPar = [this](const FWorldseedChunkKey& K)
+	{
+		// Les ANCETRES : un parent perime couvre tout le volume de l'enfant.
+		FWorldseedChunkKey A = K;
+		while (A.Niveau < NiveauMax)
+		{
+			A = FWorldseedChunkKey{
+				FIntVector(FMath::DivideAndRoundDown(A.C.X, 2),
+					FMath::DivideAndRoundDown(A.C.Y, 2),
+					FMath::DivideAndRoundDown(A.C.Z, 2)),
+				A.Niveau + 1 };
+			const FWorldseedVoxelChunkState* const S = Chunks.Find(A);
+			if (S && S->Mesh) { return true; }
+		}
+
+		// Les ENFANTS : huit perimes couvrent le volume du parent. Un seul ne
+		// couvre qu'un huitieme, mais c'est deja assez pour qu'il n'y ait pas
+		// de trou franc a cet endroit -- on reste donc conservateur et l'on ne
+		// declare beant que ce que RIEN ne recouvre.
+		if (K.Niveau > 0)
+		{
+			for (int32 I = 0; I < 8; ++I)
+			{
+				const FWorldseedChunkKey E{
+					FIntVector(K.C.X * 2 + (I & 1),
+						K.C.Y * 2 + ((I >> 1) & 1),
+						K.C.Z * 2 + ((I >> 2) & 1)),
+					K.Niveau - 1 };
+				const FWorldseedVoxelChunkState* const S = Chunks.Find(E);
+				if (S && S->Mesh) { return true; }
+			}
+		}
+		return false;
+	};
+
 	for (const FWorldseedChunkKey& Cle : Demande)
 	{
 		const FWorldseedVoxelChunkState* const S = Chunks.Find(Cle);
-		if (!S || (!S->Mesh && !S->bEmpty)) { ++R.Manquants; }
+		if (S && (S->Mesh || S->bEmpty)) { continue; }
+
+		++R.Manquants;
+		if (!CouvertPar(Cle)) { ++R.TrousDecouverts; }
+	}
+
+	return R;
+}
+
+FWorldseedSondageDeVue AWorldseedVoxelTerrain::SonderLaVue() const
+{
+	FWorldseedSondageDeVue R;
+
+	UWorld* const W = GetWorld();
+	if (!W || !Density.IsValid()) { return R; }
+
+	APlayerCameraManager* const Cam = UGameplayStatics::GetPlayerCameraManager(W, 0);
+	if (!Cam) { return R; }
+
+	// C'EST LA CAMERA QUI VOIT, PAS LE PION -- en vue a la troisieme personne
+	// le bras place l'oeil jusqu'a quatre metres derriere le personnage, et le
+	// depot a deja paye la confusion sur la visibilite du sol de fond.
+	const FVector OeilCm = Cam->GetCameraLocation();
+	const FRotator Vue = Cam->GetCameraRotation();
+	const FVector OeilM = (OeilCm - GetActorLocation()) / WorldseedMetersToCm;
+
+	// LA MARGE VIENT DES REGLES, ELLE N'EST PAS CHOISIE. Le champ deplace la
+	// surface de `surplomb + detail` autour du relief macro ; on ne declare un
+	// trou qu'une fois le rayon plus bas que tout ce que ce deplacement peut
+	// expliquer, plus dix metres de securite.
+	const double MargeM = DensityRules.OverhangAmplitudeM
+		+ DensityRules.DetailAmplitudeM + 10.0;
+
+	constexpr int32 NbLacet = 8;
+	constexpr int32 NbTangage = 4;
+	constexpr float DemiLacetDeg = 40.0f;
+	constexpr float DemiTangageDeg = 20.0f;
+	constexpr double PasM = 8.0;
+
+	for (int32 J = 0; J < NbTangage; ++J)
+	{
+		for (int32 I = 0; I < NbLacet; ++I)
+		{
+			const float U = (NbLacet > 1)
+				? (2.0f * I / (NbLacet - 1) - 1.0f) : 0.0f;
+			const float V = (NbTangage > 1)
+				? (2.0f * J / (NbTangage - 1) - 1.0f) : 0.0f;
+
+			const FVector D =
+				(Vue + FRotator(V * DemiTangageDeg, U * DemiLacetDeg, 0.0f)).Vector();
+			++R.Rayons;
+
+			// 1. OU LE CHAMP PROMET DE LA ROCHE. On avance jusqu'a etre plus
+			//    bas que le relief macro d'au moins la marge.
+			double TChampM = -1.0;
+			for (double T = PasM; T <= LoadRadiusM; T += PasM)
+			{
+				const FVector P = OeilM + D * T;
+				if (P.Z < Density->SurfaceHeightM(P.X, P.Y) - MargeM)
+				{
+					TChampM = T;
+					break;
+				}
+			}
+			if (TChampM < 0.0) { continue; }   // rien de promis : rien a verifier
+
+			// 2. CE QUE LE RENDU MONTRE. Seul un chunk MAILLE porte une
+			//    collision -- « tout chunk maille est solide, sans exception ».
+			//    Le sol de fond, lui, n'en a pas : il ne peut pas masquer un
+			//    trou du voxel, ce qui est exactement ce qu'on veut ici.
+			//
+			//    ON NE COMPARE PAS DES DISTANCES. Un rayon rasant amplifie une
+			//    erreur de quinze metres en altitude en plus de cent cinquante
+			//    metres de portee : le test serait alors domine par
+			//    l'obliquite. On demande seulement s'il a rencontre QUELQUE
+			//    CHOSE avant de s'enfoncer sous la roche.
+			FHitResult Hit;
+			const FVector Fin = OeilCm + D * (TChampM * WorldseedMetersToCm);
+			if (!W->LineTraceSingleByChannel(Hit, OeilCm, Fin, ECC_WorldStatic))
+			{
+				R.PlusProcheM = (R.Trous == 0)
+					? static_cast<float>(TChampM)
+					: FMath::Min(R.PlusProcheM, static_cast<float>(TChampM));
+				++R.Trous;
+			}
+		}
 	}
 
 	return R;

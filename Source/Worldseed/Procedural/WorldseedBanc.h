@@ -182,5 +182,14 @@ private:
 	int32 PireHysteresis = 0;
 	int32 EchantillonsMarche = 0;
 
+	/** Le sondage de vue est cher : on le prend a quelques hertz. */
+	int64 SommeTrousDecouverts = 0;
+	int32 PireTrousDecouverts = 0;
+	int64 SommeRayonsTroues = 0;
+	int32 PireRayonsTroues = 0;
+	int32 SondagesDeVue = 0;
+	float TrouLePlusProcheM = 0.0f;
+	double ProchainSondage = 0.0;
+
 	void MesurerLaMarche(class AWorldseedVoxelTerrain* T);
 };
