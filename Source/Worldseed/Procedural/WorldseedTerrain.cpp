@@ -390,30 +390,17 @@ void AWorldseedTerrain::ReglerRampeDeLaNappe()
 		RayonM = VoxelTerrain->LoadRadiusM;
 	}
 
-	// UNE PORTE POUR L'A/B, parce que c'est un arbitrage A L'IMAGE. Sans elle
-	// il faudrait recompiler entre les deux moities, et le depot a une regle
-	// contre les A/B qui rouvrent le fichier de regles.
-	float Active = 1.0f;
-	{
-		FString Val;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRampe="), Val))
-		{
-			Active = FMath::Clamp(FCString::Atof(*Val), 0.0f, 1.0f);
-		}
-	}
-
 	const float Facteur = FMath::Max(GroundProxyRampFactor, 1.1f);
 	const float DebutCm = RayonM * WorldseedMetersToCm;
 	const float FinCm = RayonM * Facteur * WorldseedMetersToCm;
 
 	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeDebutCm"), DebutCm);
 	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeFinCm"), FinCm);
-	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeActive"), Active);
+	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeActive"), 1.0f);
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] sol de fond : rampe %s -- entiere jusqu'a %.0f m, ")
+		TEXT("[Worldseed] sol de fond : rampe ARMEE -- entiere jusqu'a %.0f m, ")
 		TEXT("nulle au-dela de %.0f m (rayon de vue %.0f m%s)"),
-		Active > 0.0f ? TEXT("ARMEE") : TEXT("COUPEE"),
 		RayonM, RayonM * Facteur, RayonM,
 		VoxelTerrain ? TEXT("") : TEXT(", voxel pas encore pondu"));
 }
@@ -720,15 +707,6 @@ UMaterialInterface* AWorldseedTerrain::ChoisirMateriauMerDecor(
 	// defaut, en gris, sans erreur bloquante. On journalise donc ce qui est
 	// REELLEMENT pose, et `-WorldseedMerMateriau=0` rend le materiau de
 	// terrain pour comparer sur le meme binaire.
-	int32 Actif = 1;
-	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedMerMateriau="), Actif)
-		&& Actif == 0)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Worldseed] sol de fond : materiau de mer COUPE par la ligne de commande"));
-		return Repli;
-	}
-
 	if (HorizonSeaMaterial)
 	{
 		return HorizonSeaMaterial.Get();
@@ -888,16 +866,6 @@ void AWorldseedTerrain::BuildGroundProxy()
 	// A combiner avec `-WorldseedEauFenetre=4`.
 	// 0 = coupee, 1 = couleur de mer, 2 = MAGENTA de controle.
 	Mode.bMerOpaque = true;
-	int32 MerOpaque = 1;
-	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedMerOpaque="), MerOpaque))
-	{
-		Mode.bMerOpaque = (MerOpaque != 0);
-		Mode.bMerTemoin = (MerOpaque == 2);
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Worldseed] sol de fond : mer opaque %s par la ligne de commande"),
-			Mode.bMerTemoin ? TEXT("en MAGENTA de controle")
-				: (Mode.bMerOpaque ? TEXT("ARMEE") : TEXT("COUPEE")));
-	}
 
 	// COMPTER CE QU'ON PEINT. Une couleur qui ne se voit pas a deux causes
 	// opposees -- le terme ne s'evalue jamais, ou il s'evalue et rien ne
@@ -938,23 +906,6 @@ void AWorldseedTerrain::BuildGroundProxy()
 			SurEnfoncementM = FMath::Max<double>(
 				SurEnfoncementM, DR.BandDepthM + GroundProxyHorizonMarginM);
 			MargeMerM = FWorldseedCaveRules::FromRules(*R).SeaMarginM;
-		}
-	}
-	{
-		FString Val;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeVue="), Val))
-		{
-			SurEnfoncementM = FMath::Max(0.0, FCString::Atod(*Val));
-		}
-
-		// LA MARGE EST SURCHARGEABLE PARCE QU'ELLE EST EN QUESTION. Posee a la
-		// valeur des cavites -- cinq metres -- elle laisse la terre sauvee du
-		// noyage affleurer AU RAS de l'eau, donc indiscernable de la mer a
-		// trois kilometres. La regler demande un A/B, et le depot a une regle
-		// contre les A/B qui rouvrent le fichier de regles.
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeMarge="), Val))
-		{
-			MargeMerM = FMath::Max(0.0, FCString::Atod(*Val));
 		}
 	}
 

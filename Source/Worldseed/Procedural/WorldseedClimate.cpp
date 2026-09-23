@@ -259,12 +259,6 @@ namespace WorldseedClimate
 		// world_rules.json, et un A/B qui rouvre le fichier change son
 		// empreinte, donc regenere le monde entre les deux moities -- ce ne
 		// serait plus le meme monde.
-		float CoolingForce = -1.0f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedContinental="), CoolingForce)
-			&& CoolingForce >= 0.0f)
-		{
-			Cooling = CoolingForce;
-		}
 
 		const float CoolL0 = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingLat0Deg"), 25.0));
 		const float CoolL1 = static_cast<float>(Rules.Num(TEMP, TEXT("continentalCoolingLat1Deg"), 60.0));
@@ -435,18 +429,6 @@ namespace WorldseedClimate
 				Rules.Num(PREC, TEXT("subsidenceFadeLat0Deg"), 90.0));
 			float SubFade1 = static_cast<float>(
 				Rules.Num(PREC, TEXT("subsidenceFadeLat1Deg"), 90.0));
-			float FadeForce = -1.0f;
-			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedSubFade0="), FadeForce)
-				&& FadeForce >= 0.0f)
-			{
-				SubFade0 = FadeForce;
-			}
-			FadeForce = -1.0f;
-			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedSubFade1="), FadeForce)
-				&& FadeForce >= 0.0f)
-			{
-				SubFade1 = FadeForce;
-			}
 
 			TArray<float> WobbleNoise;
 			if (Wobble > 0.0f)

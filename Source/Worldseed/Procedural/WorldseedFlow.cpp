@@ -178,14 +178,7 @@ namespace WorldseedFlow
 		// avant son receveur, qui est par construction plus bas.
 		Out.Order.SetNumUninitialized(Count);
 
-		// LA SURCHARGE EXISTE POUR L'A/B, ET SUR LE MEME BINAIRE. Comparer
-		// l'ancien chemin au nouveau en editant le code puis en recompilant ne
-		// compare pas deux etats du meme programme -- regle du depot, payee un
-		// soir ou `world_rules.json` s'est retrouve vide.
-		int32 ForcerTri = 0;
-		FParse::Value(FCommandLine::Get(), TEXT("WorldseedFluxTri="), ForcerTri);
-
-		if (ForcerTri == 0 && Depilements.Num() == Count)
+		if (Depilements.Num() == Count)
 		{
 			// Le comblement a touche toutes les cellules : on retourne l'ordre
 			// de depilement, et il n'y a rien a trier.
@@ -204,10 +197,9 @@ namespace WorldseedFlow
 			// seraient simplement faux, donc l'humidite du sol et les canyons
 			// avec eux. On retombe alors sur le tri, en le DISANT.
 			UE_LOG(LogTemp, Warning,
-				TEXT("[Worldseed] drainage : %d cellules depilees sur %d%s -- ")
+				TEXT("[Worldseed] drainage : %d cellules depilees sur %d -- ")
 				TEXT("ordre repris par tri"),
-				Depilements.Num(), Count,
-				ForcerTri != 0 ? TEXT(" (tri IMPOSE par la ligne de commande)") : TEXT(""));
+				Depilements.Num(), Count);
 
 			for (int32 I = 0; I < Count; ++I)
 			{

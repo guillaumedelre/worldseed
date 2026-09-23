@@ -33,12 +33,6 @@ namespace WorldseedTectonics
 	{
 		float Base = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("continentBaseM"), 30.0));
-		float Force = -1.0f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedSocle="), Force)
-			&& Force >= 0.0f)
-		{
-			Base = Force;
-		}
 		return Base * VerticalScale;
 	}
 
@@ -355,29 +349,15 @@ const int32 Count = NX * NY;
 		// cote a la fois.
 		float PlateWarp = static_cast<float>(
 			Rules.Num(TEXT("tectonics"), TEXT("plateWarpStrength"), 0.0));
-		float WarpForce = -1.0f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WarpForce="), WarpForce)
-			&& WarpForce >= 0.0f)
-		{
-			PlateWarp = WarpForce;
-		}
 		if (PlateWarp > 0.0f)
 		{
 			float WarpFreq = static_cast<float>(
 				Rules.Num(TEXT("tectonics"), TEXT("plateWarpFrequency"), 2.2));
-			float FreqForce = -1.0f;
-			if (FParse::Value(FCommandLine::Get(), TEXT("WarpFreq="), FreqForce)
-				&& FreqForce > 0.0f)
-			{
-				WarpFreq = FreqForce;
-			}
 			WorldseedPerlin::FBMSphere(WarpX, Geo, WarpFreq, 5, Seed + 4441);
 			WorldseedPerlin::FBMSphere(WarpY, Geo, WarpFreq, 5, Seed + 4457);
 			WorldseedPerlin::FBMSphere(WarpZ, Geo, WarpFreq, 5, Seed + 4463);
 		}
 		if (Progress.Step(0.12f)) { return false; }
-		{
-		}
 
 		Out.PlateId.SetNumUninitialized(Count);
 		Out.Convergence.SetNumUninitialized(Count);
@@ -489,12 +469,6 @@ const int32 Count = NX * NY;
 		// bruit : le masque brut est binaire, et un bruit ajoute a une marche
 		// ne peut deplacer le trait que de l'epaisseur de cette marche. Plus
 		// la transition est large, plus le meme bruit deplace loin.
-		float LissageForce = -1.0f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedLissage="), LissageForce)
-			&& LissageForce >= 0.0f)
-		{
-			SmoothPx = LissageForce * 1000.0f / Geo.MetersPerPixel();
-		}
 		if (SmoothPx >= 0.5f)
 		{
 			WorldseedGrid::GaussianFilter(Mask, NX, NY, SmoothPx);

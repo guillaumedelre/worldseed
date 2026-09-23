@@ -291,14 +291,7 @@ namespace WorldseedWaterBodies
 		//
 		// Le vrai cout n'est pas la memoire mais le REDESSIN : la texture se
 		// re-rend entierement a chaque deplacement de la fenetre glissante.
-		int32 Texels = 4096;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedEauTexels="), Texels))
-		{
-			Texels = FMath::Clamp(Texels, 128, 8192);
-			UE_LOG(LogTemp, Warning,
-				TEXT("[Worldseed] eau : texture d'info imposee a %d par la ligne de commande"),
-				Texels);
-		}
+		const int32 Texels = 4096;
 		Out.Zone->SetRenderTargetResolution(FIntPoint(Texels, Texels));
 
 		// --- LA NAPPE LOINTAINE, SANS QUOI L'EAU S'ARRETE NET ----------------
@@ -420,23 +413,7 @@ namespace WorldseedWaterBodies
 			}
 		}
 
-		float FenetreKm = 24.576f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedEauFenetre="), FenetreKm))
-		{
-			FenetreKm = FMath::Clamp(FenetreKm, 0.5f, 24.576f);
-
-			// ON PREVIENT AU LIEU DE BORNER EN SILENCE. Au-dela du plafond de
-			// tuiles le moteur ne refuse pas : il DIVISE la taille de tuile, et
-			// le rivage devient deux fois plus grossier sans que rien d'autre
-			// ne change. Un essai fait la sans le savoir conclurait a l'envers.
-			// Le plafond etant desormais a 512, la borne est 24,576 km.
-			UE_LOG(LogTemp, Warning,
-				TEXT("[Worldseed] eau : fenetre imposee a %.3f km par la ligne de commande%s"),
-				FenetreKm,
-				FenetreKm > 24.576f
-					? TEXT(" -- AU-DELA DU PLAFOND DE 512 TUILES, le moteur va diviser la taille de tuile")
-					: TEXT(""));
-		}
+		const float FenetreKm = 24.576f;
 		const float LocalWindowCm = FenetreKm * 100000.0f;
 
 		const bool bLocalWindow = (WidthCm > LocalWindowCm)

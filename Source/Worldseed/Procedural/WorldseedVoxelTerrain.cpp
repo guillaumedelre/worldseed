@@ -274,99 +274,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
-	// --- LE DEBIT DE POSE SE PILOTE, PARCE QUE C'EST LUI QUI FAIT LA LATENCE
-	//
-	// MESURE DU 22 SEPTEMBRE, ET ELLE DESIGNE LE COUPABLE SANS AMBIGUITE :
-	//
-	//   maillage      8,24 ms/chunk, 24 travaux en vol  ->  ~2900 chunks/s
-	//   televersement 16 par passe toutes les 0,1 s     ->    160 chunks/s
-	//
-	// Le maillage a DIX-HUIT FOIS la capacite necessaire ; ce qui borne le
-	// remplissage est une constante, pas un calcul. A 2346 chunks, ce plafond
-	// fait a lui seul une quinzaine de secondes de remplissage -- et c'est
-	// exactement ce que le joueur voit se construire devant lui.
-	//
-	// La question « peut-on multithreader pour ne plus voir la generation »
-	// trouve donc ici sa reponse : le maillage est DEJA hors du fil de jeu et
-	// tourne au dix-huitieme de ses moyens. Il n'y a rien a paralleliser de
-	// plus, il y a un robinet a ouvrir -- et a mesurer, parce que ce qu'il
-	// laisse passer se paie sur le fil de jeu, a 0,18 ms par chunk pose.
-	{
-		int32 Lot = 0;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedTeleversements="), Lot)
-			&& Lot > 0)
-		{
-			UploadsPerPass = FMath::Clamp(Lot, 1, 256);
-		}
-		float Periode = 0.0f;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPeriode="), Periode)
-			&& Periode >= 0.01f)
-		{
-			UpdatePeriod = Periode;
-		}
 
-		// ET LE NOMBRE DE TRAVAUX EN VOL, QUI EST LE PLAFOND SUIVANT.
-		//
-		// MESURE, ET ELLE VALIDE LE MODELE PAR UNE PREDICTION VERIFIEE :
-		//
-		//   16 poses/passe -> 160/s demandes                    20 s
-		//   32 poses/passe -> 320/s demandes, 24 travaux = 240  15 s
-		//   64 poses/passe -> 640/s demandes, 24 travaux = 240  15 s
-		//
-		// Doubler les poses a gagne cinq secondes ; les quadrupler n'a RIEN
-		// gagne de plus, et c'etait annonce avant de lire le chiffre. Un
-		// travail dure 8,4 ms et la passe 100 : au plus `MaxJobsInFlight`
-		// d'entre eux peuvent etre lances et recoltes par passe, ce qui borne
-		// le debit a `MaxJobsInFlight / UpdatePeriod` -- 240 par seconde, quel
-		// que soit le budget de pose. C'est le robinet suivant.
-		int32 Travaux = 0;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedTravaux="), Travaux)
-			&& Travaux > 0)
-		{
-			MaxJobsInFlight = FMath::Clamp(Travaux, 1, 512);
-		}
-	}
-
-	// --- L'OMBRE DES CHUNKS SE COUPE POUR LA MESURER -----------------------
-	//
-	// POURQUOI CETTE SURCHARGE EXISTE. Le moteur affiche a l'ecran :
-	//
-	//   [VSM] Non-Nanite Marking Job Queue overflow. Performance may be
-	//   affected. This occurs when many non-nanite meshes cover a large area
-	//   of the shadow map.
-	//
-	// Le mecanisme, lu dans le shader (VirtualShadowMapBuildPerPageDrawCommands.usf) :
-	// une instance dont le rectangle depasse huit pages (MAX_SINGLE_THREAD_MARKING_AREA)
-	// devient un « gros travail » et prend une place dans une file de 128
-	// (MARKING_JOB_QUEUE_SIZE = NUM_THREADS_PER_GROUP * 2). Quand la file
-	// deborde, le shader retombe sur un marquage MONO-THREAD : le resultat
-	// reste JUSTE -- ce n'est pas un artefact, contrairement aux debordements
-	// de PagePool et de VisibleInstances que le meme switch signale comme
-	// « will produce visual artifacts » -- mais il est plus lent.
-	//
-	// Cette file est une constante de COMPILATION du shader : aucune variable
-	// de console ne la leve. Les seuls leviers sont donc de reduire le nombre
-	// d'instances non-Nanite qui couvrent beaucoup de pages, ou la surface de
-	// pages elle-meme. Nos chunks sont exactement ce cas : des milliers de
-	// ProceduralMeshComponent de trente-deux metres, qui ne peuvent pas etre
-	// Nanite, tous en `SetCastShadow(true)`. Le sol de fond, lui, est hors de
-	// cause : il est deja en `SetCastShadow(false)`.
-	//
-	// AVANT DE SACRIFIER QUOI QUE CE SOIT, ON CHIFFRE. A 198 images par
-	// seconde ce n'est pas le goulot, et couper des ombres a l'aveugle pour
-	// faire taire un avertissement serait exactement ce que ce depot
-	// s'interdit. Cette bascule sert a UNE chose : mesurer l'ecart de temps
-	// GPU avec et sans, sur la MEME binaire et le MEME monde.
-	{
-		int32 Ombres = 1;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedOmbres="), Ombres))
-		{
-			bOmbresChunks = (Ombres != 0);
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : ombre portee des chunks %s (mesure du VSM)"),
-				bOmbresChunks ? TEXT("ACTIVE") : TEXT("COUPEE"));
-		}
-	}
 
 	if (!LoadWorld())
 	{
@@ -409,22 +317,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		RayonAnneau0M = DensityRules.RayonAnneau0M;
 	}
 	LargeurTransition = DensityRules.LargeurTransition;
-
-	// ET LE MAILLEUR AUSSI SE DEBRANCHE EN LIGNE DE COMMANDE. Un A/B qui
-	// demande de rouvrir le fichier de regles change son empreinte, donc
-	// regenere le monde entre les deux moities : ce ne serait plus le meme
-	// monde, et le depot a une regle contre les A/B mal montes.
-	{
-		int32 Tv = -1;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedTransvoxel="), Tv)
-			&& Tv >= 0)
-		{
-			DensityRules.bTransvoxel = (Tv > 0);
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : mailleur force -- %s"),
-				DensityRules.bTransvoxel ? TEXT("Transvoxel") : TEXT("FMarchingCubes"));
-		}
-	}
 
 	// ET LA TAILLE DU VOXEL, QUI EST LA DENSITE DE MAILLAGE ELLE-MEME.
 	//
@@ -477,37 +369,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	// ET IL NE SE VOIT QUE SUR LES PAROIS, ce qui acheve de le designer : le
 	// detail est MODULE PAR LA PENTE (`detailPenteMin` 0,15 a plat, plein sur
 	// une falaise). Le sol plat n'en porte presque pas, donc il n'aliase pas.
-	// LES DIACLASES, PARCE QU'ELLES SONT UN SUSPECT LEGITIME POUR LE COTELE.
-	// Elles creusent des parois de Voronoi aplaties, donc de la GEOMETRIE, et
-	// le registre note depuis le 21 septembre qu'elles s'aliasent avec la
-	// taille de voxel. Les couper est le seul temoin qui les mette hors de
-	// cause -- ou les designe.
-	{
-		int32 Di = -1;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDiaclases="), Di)
-			&& Di >= 0)
-		{
-			if (Di == 0) { DensityRules.JointApertureM = 0.0f; }
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : diaclases %s"),
-				(Di == 0) ? TEXT("COUPEES") : TEXT("actives"));
-		}
-	}
-
-	{
-		int32 Ng = -1;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNormales="), Ng)
-			&& Ng >= 0)
-		{
-			DensityRules.bNormalesGradient = (Ng > 0);
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : normales %s"),
-				DensityRules.bNormalesGradient
-					? TEXT("prises au GRADIENT du champ")
-					: TEXT("moyennees sur les FACES (etat d'avant, parois en terrasses)"));
-		}
-	}
-
 	{
 		int32 Perp = -1;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPerp="), Perp)
@@ -584,34 +445,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			{
 				DureteParId.Add(E.Hardness);
 			}
-			// LE DATUM SE SURCHARGE, PARCE QUE C'EST LUI QU'ON SOUPCONNE.
-			//
-			// La serie ne fait que 253 m et son toit est a 520 : elle couvre
-			// donc 267 a 520 m dans un monde qui va de -351 a 1700. Au-dessus
-			// du toit, `BancAt` rend le banc SOMMITAL pour tout -- d'ou une
-			// paroi d'une seule couleur des qu'elle depasse 520 m, ce qui est
-			// le cas des canyons de ce monde (556 et 580 m). Mesure de
-			// l'entonnoir : le banc 0 rafle 92 % des sommets qui lisent la
-			// pile.
-			//
-			// L'A/B se fait donc en DESCENDANT le toit sous la paroi qu'on
-			// photographie -- et jamais en editant le fichier de regles, dont
-			// l'empreinte regenererait le monde entre les deux moities.
-			{
-				float Datum = 0.0f;
-				if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDatum="), Datum))
-				{
-					StratRules.DatumM = Datum;
-				}
-
-				int32 Cyc = -1;
-				if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPileCyclique="), Cyc)
-					&& Cyc >= 0)
-				{
-					StratRules.bPileCyclique = (Cyc > 0);
-				}
-			}
-
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : strates -- %d bancs, %.0f m de serie, ")
 				TEXT("datum %.0f m, pile %s (%.0f a %.0f m si bornee)"),
@@ -627,143 +460,21 @@ void AWorldseedVoxelTerrain::BeginPlay()
 				NomParRoche.Add(E.Label.IsEmpty() ? E.Key : E.Label);
 			}
 
-			// --- LES TEINTES DE ROCHE SE SURCHARGENT, ET C'EST LE CATALOGUE
-			//     QU'ON SOUPCONNE MAINTENANT ------------------------------
-			//
-			// La pile enroulee raye enfin les parois, et le proprietaire a
-			// pose le bon diagnostic : « je ne vois rien de choquant en
-			// terme de geometrie, ce qui fait bizarre c'est le rendu des
-			// couleurs ». Le catalogue lui donne raison -- sur les CINQ
-			// roches de la serie, le schiste est a 108/106/116 quand les
-			// quatre autres sont entre 158 et 234 de clarte, et il pese
-			// 97 m sur 253. Une bande sur trois est donc presque noire au
-			// milieu de creme.
-			//
-			// L'A/B NE TOUCHE PAS `world_rules.json` : son empreinte
-			// regenererait le monde entre les deux moities, et ce depot a
-			// deja vide ce fichier en voulant l'editer pour une mesure.
-			//
-			// Deux leviers, et ils ne repondent PAS a la meme question :
-			//
-			//   -WorldseedRoche=<cle>:<R>,<G>,<B>[;<cle>:...]
-			//       remplace UNE teinte. C'est la question posee -- « si tu
-			//       remplaces le noir par une couleur plus approchante des
-			//       autres, ces imperfections s'estompent-elles ? »
-			//
-			//   -WorldseedContrasteRoches=<0..1>
-			//       rapproche TOUTES les teintes de la serie de leur moyenne
-			//       PONDEREE PAR L'EPAISSEUR des bancs -- c'est elle que la
-			//       paroi montre, pas la moyenne du catalogue. A zero la
-			//       serie est d'une seule couleur, donc AUCUNE bande : c'est
-			//       le TEMOIN qui prouve que la mesure voit les bandes et
-			//       non l'ombrage du versant, piege paye deux fois sur cette
-			//       tache.
+			// LA CARTE DES CAUSES S'ARME ICI, une fois par monde et non
+			// par chunk : la peinture tourne sur 1,67 million de sommets,
+			// et relire la ligne de commande dedans serait une depense
+			// pure.
+			int32 Carte = 0;
+			if (FParse::Value(FCommandLine::Get(),
+					TEXT("WorldseedCarteCauses="), Carte) && Carte > 0)
 			{
-				float Contraste = -1.0f;
-				if (FParse::Value(FCommandLine::Get(),
-						TEXT("WorldseedContrasteRoches="), Contraste)
-					&& Contraste >= 0.0f && Contraste < 1.0f
-					&& StratRules.Serie.Num() > 0)
-				{
-					FLinearColor Moyenne(0.0f, 0.0f, 0.0f, 0.0f);
-					float Poids = 0.0f;
-					TSet<uint8> DansLaSerie;
-					for (const FWorldseedStratBanc& B : StratRules.Serie)
-					{
-						DansLaSerie.Add(B.RockId);
-						if (CouleurParRoche.IsValidIndex(B.RockId) && B.ThicknessM > 0.0f)
-						{
-							Moyenne += CouleurParRoche[B.RockId] * B.ThicknessM;
-							Poids += B.ThicknessM;
-						}
-					}
-					if (Poids > 0.0f)
-					{
-						Moyenne /= Poids;
-						Moyenne.A = 1.0f;
-						for (const uint8 Id : DansLaSerie)
-						{
-							if (CouleurParRoche.IsValidIndex(Id))
-							{
-								CouleurParRoche[Id] = FMath::Lerp(
-									Moyenne, CouleurParRoche[Id], Contraste);
-							}
-						}
-						const FColor M = Moyenne.ToFColor(true);
-						UE_LOG(LogTemp, Log,
-							TEXT("[Worldseed] voxel : contraste des roches ramene a %.2f, ")
-							TEXT("%d teintes rapprochees de la moyenne de serie %d/%d/%d"),
-							Contraste, DansLaSerie.Num(), M.R, M.G, M.B);
-					}
-				}
-
-				// LA CARTE DES CAUSES S'ARME ICI, une fois par monde et non
-				// par chunk : la peinture tourne sur 1,67 million de sommets,
-				// et relire la ligne de commande dedans serait une depense
-				// pure.
-				int32 Carte = 0;
-				if (FParse::Value(FCommandLine::Get(),
-						TEXT("WorldseedCarteCauses="), Carte) && Carte > 0)
-				{
-					bCarteDesCauses = true;
-					UE_LOG(LogTemp, Warning,
-						TEXT("[Worldseed] voxel : CARTE DES CAUSES armee -- les ")
-						TEXT("sommets sont peints par BRANCHE, pas par matiere. ")
-						TEXT("Magenta = repli, vert = biome, bleu = roche 2D, ")
-						TEXT("teinte vive = banc. A regarder avec ")
-						TEXT("ShowFlag.Lighting 0."));
-				}
-
-				// FParse::Value S'ARRETE SUR UNE VIRGULE par defaut, et le
-				// depot l'a deja paye : « 0,90,180,270 » arrive comme « 0 »,
-				// sans un mot. D'ou le `false`.
-				FString Spec;
-				if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRoche="),
-						Spec, false) && !Spec.IsEmpty())
-				{
-					TArray<FString> Morceaux;
-					Spec.ParseIntoArray(Morceaux, TEXT(";"), true);
-					for (const FString& Morceau : Morceaux)
-					{
-						FString Cle, Canaux;
-						if (!Morceau.Split(TEXT(":"), &Cle, &Canaux)) { continue; }
-
-						TArray<FString> RGB;
-						Canaux.ParseIntoArray(RGB, TEXT(","), true);
-						if (RGB.Num() < 3) { continue; }
-
-						int32 Id = INDEX_NONE;
-						for (int32 K = 0; K < LR.Catalogue.Num(); ++K)
-						{
-							if (LR.Catalogue[K].Key.Equals(Cle.TrimStartAndEnd(),
-									ESearchCase::IgnoreCase))
-							{
-								Id = K;
-								break;
-							}
-						}
-						if (!CouleurParRoche.IsValidIndex(Id))
-						{
-							UE_LOG(LogTemp, Warning,
-								TEXT("[Worldseed] voxel : roche « %s » inconnue du ")
-								TEXT("catalogue, teinte ignoree"), *Cle);
-							continue;
-						}
-
-						const FColor Neuve(
-							static_cast<uint8>(FMath::Clamp(FCString::Atoi(*RGB[0]), 0, 255)),
-							static_cast<uint8>(FMath::Clamp(FCString::Atoi(*RGB[1]), 0, 255)),
-							static_cast<uint8>(FMath::Clamp(FCString::Atoi(*RGB[2]), 0, 255)),
-							255);
-						const FColor Avant = CouleurParRoche[Id].ToFColor(true);
-						CouleurParRoche[Id] = FLinearColor(Neuve);
-
-						UE_LOG(LogTemp, Log,
-							TEXT("[Worldseed] voxel : teinte de %s %d/%d/%d -> %d/%d/%d"),
-							*NomParRoche[Id], Avant.R, Avant.G, Avant.B,
-							Neuve.R, Neuve.G, Neuve.B);
-					}
-				}
+				bCarteDesCauses = true;
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] voxel : CARTE DES CAUSES armee -- les ")
+					TEXT("sommets sont peints par BRANCHE, pas par matiere. ")
+					TEXT("Magenta = repli, vert = biome, bleu = roche 2D, ")
+					TEXT("teinte vive = banc. A regarder avec ")
+					TEXT("ShowFlag.Lighting 0."));
 			}
 
 			// SANS CETTE LIGNE ON NE SAIT PAS SI LA ROCHE EST BRANCHEE, et la
