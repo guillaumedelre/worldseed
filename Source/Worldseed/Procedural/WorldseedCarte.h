@@ -85,6 +85,16 @@ namespace WorldseedCarte
 		/** Le point le plus bas du monde, qui norme le degrade de profondeur. */
 		float FondM = -300.0f;
 
+		/**
+		 * Faut-il agreger les cellules qu'un pixel recouvre ?
+		 *
+		 * `Auto` decide d'apres l'echelle, et c'est ce qu'on veut partout. Les
+		 * deux autres existent pour les oracles : une propriete ne se prouve
+		 * qu'en comparant les deux branches sur la MEME entree.
+		 */
+		enum class EAgregation : uint8 { Auto, Jamais, Toujours };
+		EAgregation Agregation = EAgregation::Auto;
+
 		/** La fenetre carree : celle de la minimap, et celle des cinq oracles. */
 		static FParamsFenetre Carree(double DemiM, int32 Res)
 		{
@@ -187,6 +197,49 @@ namespace WorldseedCarte
 
 	/** Le point le plus bas du monde. Norme le degrade de bathymetrie. */
 	WORLDSEED_API float FondDuMonde(const TArray<float>& ElevationM);
+
+	/** Ce qu'un pixel trouve quand il recouvre plusieurs cellules. */
+	struct WORLDSEED_API FBlocCellule
+	{
+		float AltitudeMoyenneM = 0.0f;
+		uint8 BiomeMajoritaire = 0;
+		uint8 CoverMajoritaire = 0;
+
+		/** Zero quand le bloc tombe hors du monde : rien n'a ete lu. */
+		int32 NbCellules = 0;
+	};
+
+	/**
+	 * Ce que porte le rectangle de monde qu'un pixel recouvre.
+	 *
+	 * POURQUOI ELLE EXISTE, ET CE N'EST PAS POUR LA CARTE PLEIN ECRAN. Le cran
+	 * de six kilometres de la minimap prend deja 46,9 m par pixel pour une
+	 * maille de 15,6 : TROIS cellules par pixel, lues par un PRELEVEMENT
+	 * PONCTUEL. La grille d'echantillonnage glisse d'un tiers de pixel a chaque
+	 * pas du joueur -- ca fourmille en marchant, et les iles d'une cellule
+	 * apparaissent et disparaissent.
+	 *
+	 * L'ALTITUDE SE MOYENNE, L'IDENTIFIANT SE VOTE. C'est la regle du depot, et
+	 * elle a ete payee : le filtre bilineaire de PCG sur une carte de biomes
+	 * rendait 307 points faux sur 17956, du type « plage » lu comme « alpin ».
+	 * La moyenne de « desert » et de « toundra » n'est pas un biome
+	 * intermediaire, c'est un biome qui n'existe nulle part.
+	 *
+	 * ET LE VOTE EST CONJOINT SUR LE COUPLE (biome, couverture). Voter
+	 * separement fabriquerait une paire qui n'existe dans AUCUNE cellule du
+	 * bloc -- « foret » majoritaire plus « neige » majoritaire, quand toute la
+	 * neige etait sur les cellules de toundra. C'est la meme faute que la
+	 * moyenne d'identifiants, sous un autre costume.
+	 *
+	 * `LargeurM` et `HauteurM` sont l'emprise du pixel, pas un rayon.
+	 */
+	WORLDSEED_API FBlocCellule AgregerBloc(const FWorldseedGeometry& Geo,
+		const TArray<float>& ElevationM, const FWorldseedBiomeMap& Biomes,
+		double CentreXm, double CentreYm, double LargeurM, double HauteurM);
+
+	/** Cellules par pixel. Sous deux, la bilineaire reste le bon outil. */
+	WORLDSEED_API double CellulesParPixel(const FParamsFenetre& P,
+		const FWorldseedGeometry& Geo);
 
 	/**
 	 * La couleur d'une cellule : son biome si elle emerge, sa profondeur sinon.

@@ -5,6 +5,7 @@
 #include "Tests/WorldseedTestMondeFictif.h"
 
 #include "Procedural/WorldseedCarte.h"
+#include "Procedural/WorldseedGrid.h"
 
 #include "Misc/AutomationTest.h"
 
@@ -655,6 +656,287 @@ bool FWorldseedTestCarteAlignement::RunTest(const FString& Parameters)
 	// TEMOIN : un pixel de plus, et le pas n'est plus celui de la grille.
 	TestTrue(TEXT("TEMOIN : a NX + 1 pixels, l'alignement rompt"),
 		CompterAlignes(Geo.NX + 1) <= 0);
+
+	return true;
+}
+
+
+/**
+ * ON NE MOYENNE JAMAIS UN IDENTIFIANT : LE BIOME D'UN BLOC EST LE MAJORITAIRE.
+ *
+ * Et le vote porte sur le COUPLE (biome, couverture). Voter separement
+ * fabriquerait une paire qui n'existe dans aucune cellule du bloc -- « foret »
+ * majoritaire plus « neige » majoritaire, quand toute la neige etait sur les
+ * cellules de toundra --, ce qui est la meme faute que la moyenne
+ * d'identifiants sous un autre costume.
+ *
+ * LE MONDE EST FABRIQUE POUR LA QUESTION, et pas repris de la fixture : il faut
+ * un bloc dont on connaisse la majorite ET dont la moyenne des identifiants
+ * DIFFERE de cette majorite, faute de quoi le test ne distingue pas le defaut
+ * qu'il vise.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCarteVote,
+	"Worldseed.Carte.OnNeMoyenneJamaisUnIdentifiant",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCarteVote::RunTest(const FString& Parameters)
+{
+	const FWorldseedGeometry Geo = WorldseedTest::Geometrie(16);
+	const int32 NX = Geo.NX;
+	const int32 Total = Geo.CellCount();
+
+	// LA TAILLE D.UNE CELLULE, et non l.espacement des noeuds : `MetersPerPixel`
+	// divise par NY - 1, la convention du sol par NY. Voir `CellulesParPixel`.
+	const double Cellule = static_cast<double>(Geo.WidthM()) / Geo.NX;
+
+	// Toutes les terres a la meme altitude : ici on ne juge que le VOTE.
+	TArray<float> Relief;
+	Relief.Init(100.0f, Total);
+
+	FWorldseedBiomeMap Biomes;
+	Biomes.Index.Init(2, Total);
+	Biomes.Cover.Init(0, Total);
+
+	// Un bloc de 2 x 2 : trois cellules de biome 3, une de biome 11. La
+	// MAJORITE est 3 ; la MOYENNE des identifiants vaudrait 5, qui n'est le
+	// biome d'aucune des quatre.
+	const int32 J = 8;
+	const int32 I = 6;
+	Biomes.Index[J * NX + I]           = 3;
+	Biomes.Index[J * NX + I + 1]       = 3;
+	Biomes.Index[(J + 1) * NX + I]     = 3;
+	Biomes.Index[(J + 1) * NX + I + 1] = 11;
+
+	// Le centre du bloc tombe sur le coin partage des quatre cellules.
+	const double Xm = (static_cast<double>(I + 1) / NX - 0.5)
+		* static_cast<double>(Geo.WidthM());
+	const double Ym = (static_cast<double>(J + 1) / Geo.NY - 0.5)
+		* static_cast<double>(Geo.HeightM);
+
+	const WorldseedCarte::FBlocCellule Bloc = WorldseedCarte::AgregerBloc(
+		Geo, Relief, Biomes, Xm, Ym, Cellule * 2.0, Cellule * 2.0);
+
+	TestEqual(TEXT("le bloc a bien lu quatre cellules"), Bloc.NbCellules, 4);
+	TestEqual(TEXT("le biome rendu est le MAJORITAIRE"),
+		static_cast<int32>(Bloc.BiomeMajoritaire), 3);
+
+	// TEMOIN 1 : la moyenne des identifiants vaut 5, et ce n'est PAS ce qu'on
+	// rend. Sans cette ligne, le test ne distinguerait pas le bug qu'il vise.
+	TestNotEqual(TEXT("TEMOIN : et ce n'est pas la moyenne des identifiants"),
+		static_cast<int32>(Bloc.BiomeMajoritaire), 5);
+
+	// --- le vote CONJOINT ---------------------------------------------------
+	//
+	// Deux cellules « 3 sans neige », deux cellules « 7 avec neige » : a
+	// egalite, le depart se fait sur la cle la plus basse, donc (3, 0). Un vote
+	// separe pourrait rendre (3, 1) -- une paire qu'aucune cellule ne porte.
+	Biomes.Index[J * NX + I]           = 3;  Biomes.Cover[J * NX + I]           = 0;
+	Biomes.Index[J * NX + I + 1]       = 3;  Biomes.Cover[J * NX + I + 1]       = 0;
+	Biomes.Index[(J + 1) * NX + I]     = 7;  Biomes.Cover[(J + 1) * NX + I]     = 1;
+	Biomes.Index[(J + 1) * NX + I + 1] = 7;  Biomes.Cover[(J + 1) * NX + I + 1] = 1;
+
+	const WorldseedCarte::FBlocCellule Conjoint = WorldseedCarte::AgregerBloc(
+		Geo, Relief, Biomes, Xm, Ym, Cellule * 2.0, Cellule * 2.0);
+
+	const bool bPaireReelle =
+		(Conjoint.BiomeMajoritaire == 3 && Conjoint.CoverMajoritaire == 0)
+		|| (Conjoint.BiomeMajoritaire == 7 && Conjoint.CoverMajoritaire == 1);
+	TestTrue(TEXT("la paire rendue existe dans le bloc"), bPaireReelle);
+	TestEqual(TEXT("et le departage est deterministe : la cle la plus basse"),
+		static_cast<int32>(Conjoint.BiomeMajoritaire), 3);
+
+	// TEMOIN 2 : les cellules noyees ne votent pas. On noie les deux cellules
+	// de biome 3 ; la majorite doit basculer sur 7, qui emerge encore.
+	Relief[J * NX + I] = -10.0f;
+	Relief[J * NX + I + 1] = -10.0f;
+
+	const WorldseedCarte::FBlocCellule Noye = WorldseedCarte::AgregerBloc(
+		Geo, Relief, Biomes, Xm, Ym, Cellule * 2.0, Cellule * 2.0);
+	TestEqual(TEXT("TEMOIN : sous l'eau, une cellule ne vote pas"),
+		static_cast<int32>(Noye.BiomeMajoritaire), 7);
+
+	return true;
+}
+
+
+/**
+ * L'ALTITUDE D'UN BLOC EST SA MOYENNE -- LA MEME QUE CELLE DE `Downsample`.
+ *
+ * Le depot a deja une reduction par moyenne de blocs, et son commentaire dit
+ * pourquoi : « moyenner conserve l'altitude moyenne de chaque bloc et supprime
+ * le crenelage, la ou le point-sampling garde un pixel au hasard et fait
+ * scintiller le relief ». En ecrire une seconde serait la recopie que ce depot
+ * interdit ; on ne l'APPELLE pas -- elle travaille sur une grille entiere, pas
+ * sur un bloc arbitraire -- mais l'oracle epingle les deux l'une a l'autre, ce
+ * qui est plus fort qu'un appel.
+ *
+ * LE TEMOIN SE PREND SUR LE RELIEF SINUSOIDAL DE LA FIXTURE, jamais sur une
+ * rampe : sur une rampe, la moyenne d'un bloc EGALE la valeur de son centre, et
+ * le temoin serait muet -- la fixture porte d'ailleurs cette note pour une
+ * raison voisine.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCarteMoyenne,
+	"Worldseed.Carte.LAltitudeEstUneMoyenneDeBloc",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCarteMoyenne::RunTest(const FString& Parameters)
+{
+	const FWorldseedGeometry Geo = WorldseedTest::Geometrie(32);
+	const TArray<float> Relief = WorldseedTest::Relief(Geo);
+	const FWorldseedBiomeMap Vide;
+	const double Cellule = static_cast<double>(Geo.WidthM()) / Geo.NX;
+
+	// Un bloc de 4 x 4 cellules, bien a l'interieur du monde.
+	const int32 I0 = 12;
+	const int32 J0 = 12;
+	const double Xm = (static_cast<double>(I0 + 2) / Geo.NX - 0.5)
+		* static_cast<double>(Geo.WidthM());
+	const double Ym = (static_cast<double>(J0 + 2) / Geo.NY - 0.5)
+		* static_cast<double>(Geo.HeightM);
+
+	const WorldseedCarte::FBlocCellule Bloc = WorldseedCarte::AgregerBloc(
+		Geo, Relief, Vide, Xm, Ym, Cellule * 4.0, Cellule * 4.0);
+
+	TestEqual(TEXT("le bloc lit seize cellules"), Bloc.NbCellules, 16);
+
+	double Somme = 0.0;
+	for (int32 J = J0; J < J0 + 4; ++J)
+	{
+		for (int32 I = I0; I < I0 + 4; ++I)
+		{
+			Somme += static_cast<double>(Relief[J * Geo.NX + I]);
+		}
+	}
+	const double Attendue = Somme / 16.0;
+
+	TestEqual(TEXT("l'altitude rendue est la moyenne arithmetique"),
+		static_cast<double>(Bloc.AltitudeMoyenneM), Attendue, 0.001);
+
+	// L'EPINGLE A `Downsample` : la meme grandeur, calculee par la reduction
+	// que le depot emploie deja partout ailleurs.
+	TArray<float> Reduit;
+	WorldseedGrid::Downsample(Relief, Geo.NX, Geo.NY, Geo.NX / 4, Geo.NY / 4, Reduit);
+	const float ParDownsample = Reduit[(J0 / 4) * (Geo.NX / 4) + (I0 / 4)];
+
+	TestEqual(TEXT("et c'est celle de WorldseedGrid::Downsample"),
+		static_cast<double>(Bloc.AltitudeMoyenneM),
+		static_cast<double>(ParDownsample), 0.001);
+
+	// TEMOIN : moyenner N'EST PAS prelever au centre. Sur une rampe les deux
+	// coincideraient et ce test ne prouverait rien.
+	//
+	// ET IL SE MESURE SUR TOUTE LA GRILLE, PAS SUR CE BLOC-CI. Premiere
+	// version : la comparaison portait sur le seul bloc ci-dessus, et elle a
+	// echoue -- non parce que la moyenne etait fausse, mais parce que les trois
+	// harmoniques du relief s'y compensent a moins d'un metre. Un temoin dont
+	// le verdict depend de l'endroit qu'on a choisi ne temoigne de rien ; celui
+	// -ci prend le pire ecart sur tous les blocs alignes.
+	float PireEcart = 0.0f;
+	for (int32 J = 0; J + 4 <= Geo.NY; J += 4)
+	{
+		for (int32 I = 0; I + 4 <= Geo.NX; I += 4)
+		{
+			double S = 0.0;
+			for (int32 DJ = 0; DJ < 4; ++DJ)
+			{
+				for (int32 DI = 0; DI < 4; ++DI)
+				{
+					S += static_cast<double>(Relief[(J + DJ) * Geo.NX + I + DI]);
+				}
+			}
+			PireEcart = FMath::Max(PireEcart, FMath::Abs(
+				Relief[(J + 2) * Geo.NX + I + 2] - static_cast<float>(S / 16.0)));
+		}
+	}
+
+	TestTrue(*FString::Printf(
+		TEXT("TEMOIN : moyenner change la valeur (pire ecart %.1f m)"), PireEcart),
+		PireEcart > 1.0f);
+
+	return true;
+}
+
+
+/**
+ * LA REDUCTION SE DECLENCHE QUAND IL LE FAUT, ET SEULEMENT ALORS.
+ *
+ * Deux affirmations, et il faut les deux. A une cellule par pixel, agreger et
+ * ne pas agreger doivent rendre des images BIT-IDENTIQUES : c'est le temoin
+ * « elle ne se declenche pas a tort », et c'est aussi ce qui garantit que la
+ * carte du monde cuite a la resolution de la grille n'agrege rien. A quatre
+ * cellules par pixel, l'image doit CHANGER et devenir plus LISSE -- sans quoi
+ * on aurait ajoute un chemin de code qui ne fait rien.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCarteReduction,
+	"Worldseed.Carte.LaReductionSeDeclencheQuandIlLeFaut",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCarteReduction::RunTest(const FString& Parameters)
+{
+	const FWorldseedWorldData Monde = WorldseedTest::Monde(64);
+	const double Cellule = static_cast<double>(Monde.Geometry.WidthM()) / Monde.Geometry.NX;
+	constexpr int32 Res = 64;
+
+	auto Peindre = [&Monde](double DemiM, int32 Cote,
+		WorldseedCarte::FParamsFenetre::EAgregation Mode, TArray<uint8>& Out)
+	{
+		WorldseedCarte::FParamsFenetre P =
+			WorldseedCarte::FParamsFenetre::Carree(DemiM, Cote);
+		P.bDisque = false;
+		P.bLisereCote = false;
+		P.Agregation = Mode;
+		P.FondM = WorldseedCarte::FondDuMonde(Monde.ElevationM);
+
+		Out.SetNumUninitialized(Cote * Cote * 4);
+		WorldseedCarte::PeindreFenetre(Monde.Geometry, Monde.ElevationM,
+			Monde.Biomes, P, Out.GetData());
+	};
+
+	// --- une cellule par pixel : les deux chemins doivent coincider ---------
+	TArray<uint8> Fin1, Fin2;
+	Peindre(Cellule * 0.5 * Res, Res,
+		WorldseedCarte::FParamsFenetre::EAgregation::Auto, Fin1);
+	Peindre(Cellule * 0.5 * Res, Res,
+		WorldseedCarte::FParamsFenetre::EAgregation::Jamais, Fin2);
+
+	TestTrue(TEXT("a une cellule par pixel, l'agregation ne se declenche pas"),
+		Fin1 == Fin2);
+
+	// --- quatre cellules par pixel : elle doit se declencher ET lisser -------
+	TArray<uint8> Gros1, Gros2;
+	Peindre(Cellule * 2.0 * Res, Res,
+		WorldseedCarte::FParamsFenetre::EAgregation::Auto, Gros1);
+	Peindre(Cellule * 2.0 * Res, Res,
+		WorldseedCarte::FParamsFenetre::EAgregation::Jamais, Gros2);
+
+	TestFalse(TEXT("a quatre cellules par pixel, elle change l'image"),
+		Gros1 == Gros2);
+
+	// LA VARIATION TOTALE : la somme des ecarts entre voisins. Une image
+	// agregee doit etre plus DOUCE que la meme prise au point.
+	auto Variation = [](const TArray<uint8>& I, int32 Cote) -> int64
+	{
+		int64 V = 0;
+		for (int32 Y = 0; Y < Cote; ++Y)
+		{
+			for (int32 X = 1; X < Cote; ++X)
+			{
+				const int32 A = (Y * Cote + X) * 4;
+				const int32 B = (Y * Cote + X - 1) * 4;
+				V += FMath::Abs(static_cast<int32>(I[A]) - static_cast<int32>(I[B]))
+					+ FMath::Abs(static_cast<int32>(I[A + 1]) - static_cast<int32>(I[B + 1]))
+					+ FMath::Abs(static_cast<int32>(I[A + 2]) - static_cast<int32>(I[B + 2]));
+			}
+		}
+		return V;
+	};
+
+	const int64 VAgregee = Variation(Gros1, Res);
+	const int64 VPonctuelle = Variation(Gros2, Res);
+
+	TestTrue(*FString::Printf(
+		TEXT("l'image agregee est plus douce (%lld contre %lld)"),
+		VAgregee, VPonctuelle), VAgregee < VPonctuelle);
 
 	return true;
 }

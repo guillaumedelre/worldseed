@@ -77,6 +77,159 @@ double PasOmbrageMetres(const FParamsFenetre& P, const FWorldseedGeometry& Geo)
 }
 
 
+// ------------------------------------------------------------ l'agregation
+
+double CellulesParPixel(const FParamsFenetre& P, const FWorldseedGeometry& Geo)
+{
+	// LA TAILLE D'UNE CELLULE N'EST PAS `MetersPerPixel()`, ET LE PIEGE A ETE
+	// PAYE ICI MEME. `MetersPerPixel` vaut `HeightM / (NY - 1)` : c'est
+	// l'espacement des NOEUDS, celui qu'interpole `SampleUV`. Une CELLULE, au
+	// sens de `CelluleDepuisMetres` -- la convention unique du sol, qui divise
+	// par NY -- vaut `HeightM / NY`. L'ecart est de 0,05 % sur la grille du jeu
+	// et de 6,7 % sur la petite grille des tests : assez pour qu'un bloc de
+	// deux cellules en lise quatre, ce que l'oracle a vu tout de suite.
+	const double Cellule = (Geo.NX > 0)
+		? static_cast<double>(Geo.WidthM()) / static_cast<double>(Geo.NX) : 0.0;
+	return (Cellule > 0.0) ? P.MetresParPixelX() / Cellule : 1.0;
+}
+
+
+FBlocCellule AgregerBloc(const FWorldseedGeometry& Geo,
+	const TArray<float>& ElevationM, const FWorldseedBiomeMap& Biomes,
+	double CentreXm, double CentreYm, double LargeurM, double HauteurM)
+{
+	FBlocCellule Out;
+
+	const int32 NX = Geo.NX;
+	const int32 NY = Geo.NY;
+	const int32 Total = NX * NY;
+	if (NX <= 0 || NY <= 0 || ElevationM.Num() != Total)
+	{
+		return Out;
+	}
+
+	const double LargeurMonde = static_cast<double>(Geo.WidthM());
+	const double HauteurMonde = static_cast<double>(Geo.HeightM);
+
+	// Les bornes en indices, NON ENROULEES : l'enroulement se fait a la lecture,
+	// sans quoi un bloc a cheval sur le meridien aurait ses bornes inversees.
+	const double FI0 = ((CentreXm - LargeurM * 0.5) / LargeurMonde + 0.5) * NX;
+	const double FI1 = ((CentreXm + LargeurM * 0.5) / LargeurMonde + 0.5) * NX;
+	const double FJ0 = ((CentreYm - HauteurM * 0.5) / HauteurMonde + 0.5) * NY;
+	const double FJ1 = ((CentreYm + HauteurM * 0.5) / HauteurMonde + 0.5) * NY;
+
+	int32 I0 = FMath::FloorToInt(FI0);
+	int32 I1 = FMath::CeilToInt(FI1) - 1;
+	int32 J0 = FMath::FloorToInt(FJ0);
+	int32 J1 = FMath::CeilToInt(FJ1) - 1;
+
+	// Au moins une cellule : un pixel plus fin qu'une maille lit quand meme
+	// celle sous son centre.
+	I1 = FMath::Max(I1, I0);
+	J1 = FMath::Max(J1, J0);
+
+	// Y NE S'ENROULE PAS : un pole n'a pas de voisin au-dela. Un bloc
+	// entierement hors du monde rend zero cellule, et l'appelant peint le vide.
+	J0 = FMath::Clamp(J0, 0, NY - 1);
+	J1 = FMath::Clamp(J1, 0, NY - 1);
+	if (J1 < J0)
+	{
+		return Out;
+	}
+
+	// AU-DELA DE HUIT CELLULES PAR AXE, ON ECHANTILLONNE. Un pixel de carte
+	// tres dezoomee peut couvrir des centaines de cellules, et les lire toutes
+	// couterait le monde entier par image ; soixante-quatre points suffisent
+	// largement a designer une moyenne et une majorite. En deca -- donc dans
+	// tous les cas qui nous occupent -- le bloc est lu EN ENTIER, et c'est ce
+	// que l'oracle epingle a la moyenne de `WorldseedGrid::Downsample`.
+	constexpr int32 MaxParAxe = 8;
+	const int32 PasI = FMath::Max(1, FMath::DivideAndRoundUp(I1 - I0 + 1, MaxParAxe));
+	const int32 PasJ = FMath::Max(1, FMath::DivideAndRoundUp(J1 - J0 + 1, MaxParAxe));
+
+	const bool bBiomes = Biomes.Index.Num() == Total && Biomes.Cover.Num() == Total;
+
+	// LE VOTE, SUR LE COUPLE EMPAQUETE : biome en octet haut, couverture en bas.
+	// Un petit tableau de pile balaye lineairement -- au plus soixante-quatre
+	// entrees, donc jamais plus de soixante-quatre comparaisons, et aucune
+	// allocation par pixel.
+	uint16 Cles[MaxParAxe * MaxParAxe];
+	int32 Comptes[MaxParAxe * MaxParAxe];
+	int32 NbCles = 0;
+
+	double Somme = 0.0;
+	int32 Lues = 0;
+
+	for (int32 J = J0; J <= J1; J += PasJ)
+	{
+		for (int32 I = I0; I <= I1; I += PasI)
+		{
+			// L'enroulement est ici, et il porte sur la COLONNE seulement.
+			const int32 IE = ((I % NX) + NX) % NX;
+			const int32 Index = J * NX + IE;
+
+			const float Z = ElevationM[Index];
+			Somme += static_cast<double>(Z);
+			++Lues;
+
+			// ON NE VOTE QUE POUR CE QUI EMERGE. Sous l'eau la couleur vient du
+			// degrade de profondeur, pas du biome ; laisser voter les cellules
+			// noyees pourrait donner un biome marin a un pixel dont la moyenne
+			// dit « terre », et l'on peindrait de l'ocean sur une cote.
+			if (!bBiomes || Z <= 0.0f)
+			{
+				continue;
+			}
+
+			const uint16 Cle = static_cast<uint16>(Biomes.Index[Index]) << 8
+				| static_cast<uint16>(Biomes.Cover[Index]);
+
+			int32 K = 0;
+			for (; K < NbCles; ++K)
+			{
+				if (Cles[K] == Cle) { ++Comptes[K]; break; }
+			}
+			if (K == NbCles && NbCles < UE_ARRAY_COUNT(Cles))
+			{
+				Cles[NbCles] = Cle;
+				Comptes[NbCles] = 1;
+				++NbCles;
+			}
+		}
+	}
+
+	if (Lues == 0)
+	{
+		return Out;
+	}
+
+	Out.NbCellules = Lues;
+	Out.AltitudeMoyenneM = static_cast<float>(Somme / static_cast<double>(Lues));
+
+	// LE DEPARTAGE EST DETERMINISTE -- la cle la plus BASSE gagne. Sans regle,
+	// deux biomes a egalite dependraient de l'ordre de parcours, et la carte
+	// changerait d'une cuisson a l'autre sur le meme monde.
+	int32 Meilleur = INDEX_NONE;
+	for (int32 K = 0; K < NbCles; ++K)
+	{
+		if (Meilleur == INDEX_NONE
+			|| Comptes[K] > Comptes[Meilleur]
+			|| (Comptes[K] == Comptes[Meilleur] && Cles[K] < Cles[Meilleur]))
+		{
+			Meilleur = K;
+		}
+	}
+
+	if (Meilleur != INDEX_NONE)
+	{
+		Out.BiomeMajoritaire = static_cast<uint8>(Cles[Meilleur] >> 8);
+		Out.CoverMajoritaire = static_cast<uint8>(Cles[Meilleur] & 0xFF);
+	}
+
+	return Out;
+}
+
+
 // --------------------------------------------------------------- la couleur
 
 float FondDuMonde(const TArray<float>& ElevationM)
@@ -193,6 +346,17 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 	// Le pas d'ombrage, borne par le pixel : voir `PasOmbrageMetres`.
 	const double PasOmbrageM = PasOmbrageMetres(P, Geo);
 
+	// LE SEUIL EST A DEUX CELLULES PAR PIXEL, ET PAS A UNE. Les deux lectures
+	// ne partagent pas exactement la meme convention -- `SampleUV` interpole
+	// entre noeuds, `CelluleDepuisMetres` designe une cellule par son centre --
+	// si bien qu'un basculement a `k > 1` ferait sauter l'image d'un demi-pixel
+	// pile a l'echelle ou l'on regarde. En dessous de deux, la bilineaire reste
+	// de toute facon le bon outil : il n'y a rien a moyenner.
+	const bool bAgreger =
+		(P.Agregation == FParamsFenetre::EAgregation::Toujours)
+		|| (P.Agregation == FParamsFenetre::EAgregation::Auto
+			&& CellulesParPixel(P, Geo) >= 2.0);
+
 	ParallelFor(ResY, [&](int32 PY)
 	{
 		for (int32 PX = 0; PX < ResX; ++PX)
@@ -242,18 +406,43 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 			// intermediaire, c'est un biome qui n'existe nulle part. Ce depot a
 			// paye ce piege sur la carte lue par PCG -- 307 points faux sur
 			// 17956, du type « plage » lu comme « alpin ».
-			const float Z = WorldseedGrid::SampleUV(ElevationM, Geo.NX, Geo.NY,
-				static_cast<float>(U), static_cast<float>(V));
+			// QUAND UN PIXEL COUVRE PLUSIEURS CELLULES, il les agrege : la
+			// moyenne pour l'altitude, le vote pour l'identifiant. Voir
+			// `AgregerBloc` -- et c'est le cran de six kilometres de la minimap
+			// que cela repare, pas seulement la carte du monde.
+			float Z = 0.0f;
+			uint8 IdBiome = 0;
+			uint8 IdCover = 0;
+
+			if (bAgreger)
+			{
+				const FBlocCellule Bloc = AgregerBloc(Geo, ElevationM, Biomes,
+					Xm, Ym, P.MetresParPixelX(), P.MetresParPixelY());
+				Z = Bloc.AltitudeMoyenneM;
+				IdBiome = Bloc.BiomeMajoritaire;
+				IdCover = Bloc.CoverMajoritaire;
+			}
+			else
+			{
+				Z = WorldseedGrid::SampleUV(ElevationM, Geo.NX, Geo.NY,
+					static_cast<float>(U), static_cast<float>(V));
+
+				const int32 Cellule = Geo.CelluleDepuisMetres(Xm, Ym);
+				if (bBiomes)
+				{
+					IdBiome = Biomes.Index[Cellule];
+					IdCover = Biomes.Cover[Cellule];
+				}
+			}
+
 			Altitudes[Index] = Z;
 
 			// SANS BIOMES, LA TERRE EST GRISE ET LA MER GARDE SON DEGRADE.
 			// Passer l'identifiant 0 rendrait la couleur du PREMIER biome du
 			// registre, ce qui peindrait un monde entier dans une teinte
 			// arbitraire sans que rien ne signale qu'il manque une carte.
-			const int32 Cellule = Geo.CelluleDepuisMetres(Xm, Ym);
 			FLinearColor C = bBiomes
-				? CouleurCellule(Z, Biomes.Index[Cellule],
-					Biomes.Cover[Cellule], P.FondM)
+				? CouleurCellule(Z, IdBiome, IdCover, P.FondM)
 				: (Z > 0.0f ? FLinearColor(0.45f, 0.42f, 0.36f)
 					: CouleurCellule(Z, 0, 0, P.FondM));
 
