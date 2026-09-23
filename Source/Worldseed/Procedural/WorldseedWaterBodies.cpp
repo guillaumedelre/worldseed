@@ -230,6 +230,21 @@ namespace WorldseedWaterBodies
 		}
 	}
 
+	float ProfondeurDOceanCm(float SeabedM, float ExagerationZ)
+	{
+		return FMath::Clamp(-SeabedM * WorldseedMetersToCm * ExagerationZ,
+			MinOceanDepthCm, MaxOceanDepthCm);
+	}
+
+	float FenetreMaximaleKm(int32 PlafondDeTuiles)
+	{
+		// `RoundUpToPowerOfTwo(demi-etendue / 24 m)` plafonne a ce nombre de
+		// tuiles : la demi-etendue vaut donc au plus `plafond x 24 m`, et le
+		// COTE le double. 256 tuiles rendent 12,288 km, 512 en rendent 24,576.
+		return 2.0f * static_cast<float>(FMath::Max(PlafondDeTuiles, 1))
+			* 24.0f / 1000.0f;
+	}
+
 	bool Build(UWorld* World, const FWorldseedGeometry& Geometry,
 		float HeightExaggeration, float SeabedM, FWorldseedWaterBodies& Out)
 	{
@@ -413,7 +428,7 @@ namespace WorldseedWaterBodies
 			}
 		}
 
-		const float FenetreKm = 24.576f;
+		const float FenetreKm = FenetreMaximaleKm(512);
 		const float LocalWindowCm = FenetreKm * 100000.0f;
 
 		const bool bLocalWindow = (WidthCm > LocalWindowCm)
@@ -448,9 +463,8 @@ namespace WorldseedWaterBodies
 				// horizontale employee comme profondeur est exactement ce qui,
 				// mis dans ChannelDepth, a fait disparaitre toute l'eau — on ne
 				// laisse pas traîner le meme piege deux fois.
-				const float OceanDepthCm = FMath::Clamp(
-					-SeabedM * WorldseedMetersToCm * HeightExaggeration,
-					MinOceanDepthCm, MaxOceanDepthCm);
+				const float OceanDepthCm =
+					ProfondeurDOceanCm(SeabedM, HeightExaggeration);
 
 				Component->SetOceanExtent(FVector2D(WidthCm, HeightCm));
 

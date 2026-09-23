@@ -49,6 +49,40 @@ namespace WorldseedWaterBodies
 	 * protege de la division, mais tous ses seuils tombent alors exactement sur
 	 * leur borne, et l'eau cesse de se dessiner.
 	 */
+	/**
+	 * L epaisseur a donner a l ocean, en centimetres.
+	 *
+	 * ELLE N EST JAMAIS NULLE, ET C EST TOUT LE SUJET. La `WaterZone` agrege
+	 * les bornes en Z de TOUS les corps d eau en UN intervalle, dans lequel sa
+	 * texture d information normalise chaque hauteur. Un ocean d epaisseur
+	 * nulle donne `[0 .. 0]` -- et l eau cesse de se dessiner SANS le moindre
+	 * avertissement. C est le piege le plus silencieux de ce depot.
+	 *
+	 * Depuis le retrait de l hydrologie, l ocean est le SEUL corps d eau du
+	 * monde : cette chaine n est donc pas defensive, elle est PORTANTE.
+	 *
+	 * La borne basse -- cinquante metres -- vaut meme pour un monde dont le
+	 * fond marin affleurerait : mieux vaut un ocean trop epais qu un ocean
+	 * invisible.
+	 */
+	WORLDSEED_API float ProfondeurDOceanCm(float SeabedM, float ExagerationZ);
+
+	/**
+	 * Le cote de fenetre glissante que le plugin accepte sans diviser ses tuiles.
+	 *
+	 * LE MOTEUR NE REFUSE PAS, IL DIVISE -- et c est ce qui rend la borne
+	 * traitre. `FWaterZoneActor` fait `RoundUpToPowerOfTwo(demi-etendue / 24 m)`
+	 * et plafonne le resultat a `r.Water.WaterMesh.MaxDimensionInTiles` ; passe
+	 * ce plafond, la taille de tuile est DIVISEE et le rivage devient deux fois
+	 * plus grossier, sans qu une seule ligne ne le dise. Un essai fait la sans
+	 * le savoir conclurait a l envers.
+	 *
+	 * ATTENTION AU NOM : le message d avertissement du moteur cite
+	 * `MaxWidthInTiles`, qui N EXISTE PAS. Ce depot avait recopie ce nom et
+	 * pose une ligne morte dans `DefaultEngine.ini` pendant des semaines.
+	 */
+	WORLDSEED_API float FenetreMaximaleKm(int32 PlafondDeTuiles);
+
 	WORLDSEED_API bool Build(UWorld* World, const FWorldseedGeometry& Geometry,
 		float HeightExaggeration, float SeabedM, FWorldseedWaterBodies& Out);
 
