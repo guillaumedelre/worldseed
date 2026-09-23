@@ -8273,7 +8273,12 @@ agissent tous sur la branche roche SEULE.
 **Les deux zebrures ont donc UNE cause, l'escalier.** L'une le lit par la
 couleur, l'autre par l'ombre.
 
-**LE LEVIER EST `voxel.couleurRocheFonduM`**, porte de 12 a 28 m. Saut maximal de
+**LE LEVIER EST `voxel.couleurRocheFonduM`** -- porte a 28 m puis **ANNULE le
+meme soir, decision du proprietaire** : la moitie couleur ne se voyait pas en
+jeu a cote du noir, et il a prefere ne pas garder une modification qui ne regle
+pas ce qu'on voit. La regle vaut donc toujours **12,0**. Le releve ci-dessous
+reste vrai et se rejoue par `-WorldseedCouleurRoche=`, garde a dessein puisque
+la question est ROUVERTE. Saut maximal de
 luminance entre bandes voisines : 82,4 -> 53,8. La valeur est DERIVEE et non
 choisie -- roche pleine a `overhangAmplitudeM + detailAmplitudeM + fondu`, donc
 28 la place aux quarante metres du cas de reference cite par la regle. 45 et 60
@@ -8329,3 +8334,64 @@ dernier octave de detail -- « quatre octaves depuis douze metres descendent a u
 metre et demi, soit la taille du voxel », donc sous Nyquist -- et qu'il ne se voit
 que sur les parois parce que le detail est module par la pente. `-WorldseedDetailOctaves=`
 permet de l'eprouver sans recompiler. C'est la piste a prendre pour le NOIR.
+
+### Le menage du 23 septembre : ce qui ne reglait rien est parti (23 septembre 2026)
+
+Signale par le proprietaire apres une soiree de recherche infructueuse sur les
+zebrures : « on a fait plein de code pour le trouver qui ne sert a rien [...] on
+est en train de garder plein de mini-dettes et de modifications de code qui ne
+reglent rien ». Il avait raison, et l'inventaire l'a chiffre.
+
+**CE QUI A ETE RETIRE, EN TROIS NIVEAUX :**
+
+| | poids |
+|---|---|
+| `WorldseedPolyline` + `WorldseedLabel`, aucun appelant nulle part | **798 lignes** |
+| `WorldseedQualiteRendu`, livre eteint (`NiveauParDefaut = INDEX_NONE`) | 169 lignes |
+| `rugositeMin`, `overhangWarpM`, `archeAmplitudeM` -- termes inertes | ~390 lignes |
+| **22 surcharges de ligne de commande** dont la question etait tranchee | ~430 lignes |
+| **total** | **environ 1790 lignes** |
+
+`WorldseedVoxelTerrain.cpp` passe de **3417 a 3019 lignes**, et son `BeginPlay`
+cesse d'etre 580 lignes de plomberie de mesure.
+
+**LE CRITERE QUI A SERVI, ET IL EST REUTILISABLE : ce n'est pas l'age, c'est
+l'etat de la QUESTION.** On garde le levier d'une question ouverte, on retire
+celui d'une question close -- sa mesure est dans ce fichier, qui est la seule
+part qui vaut encore dans six mois, et git rend le bloc en une commande.
+
+**GARDES A DESSEIN, chacun pour une raison nommee** : le harnais (photos,
+arrets, banc, graine, rayon, anneaux, depart, cap, vues) ; les leviers des
+questions encore OUVERTES -- `DetailOctaves`, `Voxel` et `Niveaux` pour le noir,
+`CouleurRoche` pour la zebrure ; l'instrument `CarteCauses`, qui n'est pas un
+levier d'A/B mais une SONDE et qui vient de nommer la cause du noir ; et `Perp`,
+entrelace avec la modulation du detail par la pente.
+
+**`WarpForce` ET `WarpFreq` N'AVAIENT PAS LE PREFIXE `Worldseed`.** Une
+collision avec un parametre du moteur n'aurait rien signale. Toute surcharge de
+ce depot doit porter le prefixe.
+
+**LA NON-REGRESSION D'UN REFACTOR SE PREND AVANT, ET A TROIS NIVEAUX ICI.** Les
+28 tests d'automation ont ete releves AVANT de toucher au premier fichier, puis
+rejoues : 28 verts des deux cotes. Mais **ils tournent en `nullrhi`** -- ils
+n'exercent ni le streaming, ni l'eau, ni le sol de fond, c'est-a-dire
+exactement ce que ce menage touchait. D'ou, en plus : le jeu joue de bout en
+bout avec le monde REGENERE (altitudes -371..1772 m, terres 29,2 %, au chiffre
+pres comme avant) et la vue canyon02 comparee a son image de reference.
+
+**PIEGE DE COMPILATION** : une compilation de dix secondes qui rend zero n'est
+pas une preuve. Le controle est l'HORODATAGE du binaire -- et sa taille, qui est
+passee de 2,72 a 2,53 Mo.
+
+**PIEGES D'OUTILLAGE PAYES PENDANT LE MENAGE :**
+- `sed -i '415a\t\tcode'` insere un **`t` litteral**, pas une tabulation.
+  Employer `perl -i -pe` pour une insertion indentee.
+- un motif `perl` qui emploie `.` pour filer une apostrophe la remplace par un
+  point dans le REMPLACEMENT aussi : `jusqu'a` est devenu `jusqu.a`.
+- retirer un bloc laisse parfois une **accolade orpheline** ou un `{ }` vide que
+  le compilateur accepte sans rien dire. Les chercher explicitement apres coup.
+
+**UNE SEULE CHOSE N'A PAS ETE RETIREE DE SA CATEGORIE** : `bPorteePerpendiculaire`.
+Elle partage la norme du gradient avec la modulation du detail par la pente,
+donc la retirer demanderait de demeler les deux pour un booleen. Le commentaire
+du champ le dit desormais, au lieu de renvoyer a `rugositeMin` qui n'existe plus.
