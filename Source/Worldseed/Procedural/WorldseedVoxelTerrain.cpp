@@ -399,15 +399,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
-	if (NiveauMax > 0)
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] voxel : %d anneaux -- %.0f / %.0f / %.0f m, vue %.0f m, ")
-			TEXT("dalle de transition %.2f cellule"),
-			NiveauMax + 1, Diffusion.RayonAnneauM(0), Diffusion.RayonAnneauM(1), Diffusion.RayonAnneauM(2),
-			LoadRadiusM, LargeurTransition);
-	}
-
 	// ON LE BATIT MUTABLE, PUIS ON LE FIGE. Un champ se CONSTRUIT -- Init, puis
 	// eventuellement la lithologie -- et ne fait plus ensuite que se lire,
 	// depuis des dizaines de fils a la fois. La reference qui le publie est
@@ -507,6 +498,27 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		DR.BandDepthM = DensityRules.BandDepthM;
 		DR.NiveauMax = NiveauMax;
 		Diffusion.Regler(DR, Density);
+	}
+
+	// ET L'ON DIT LES ANNEAUX **APRES** LES AVOIR POSES.
+	//
+	// CETTE LIGNE MENTAIT. Elle vivait deux cents lignes plus haut et lisait
+	// `Diffusion.RayonAnneauM(...)` avant que `Regler` ne configure quoi que ce
+	// soit : elle affichait donc le defaut d'usine de la diffusion -- 250 --
+	// pour un jeu qui tournait a 300, la valeur de `world_rules.json`. Le
+	// releve etait faux de vingt pour cent, et il l'etait depuis toujours.
+	//
+	// UN LIBELLE QUI MENT EST PIRE QUE PAS DE LIBELLE : celui-ci a servi a
+	// raisonner sur la position des paliers, et c'est en cherchant d'ou venait
+	// la discordance avec la regle qu'on l'a trouve. Un releve qui ne porte pas
+	// sa vraie configuration ne se compare a rien six mois plus tard.
+	if (NiveauMax > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] voxel : %d anneaux -- %.0f / %.0f / %.0f m, vue %.0f m, ")
+			TEXT("dalle de transition %.2f cellule"),
+			NiveauMax + 1, Diffusion.RayonAnneauM(0), Diffusion.RayonAnneauM(1),
+			Diffusion.RayonAnneauM(2), LoadRadiusM, LargeurTransition);
 	}
 
 	bWorldReady = Density->IsValid();
