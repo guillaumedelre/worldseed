@@ -8600,6 +8600,35 @@ vaut `HeightM / NY`. L'ecart est de 0,05 % sur la grille du jeu et de **6,7 %**
 sur celle des tests : assez pour qu'un bloc de deux cellules en lise quatre.
 C'est l'oracle qui l'a dit, du premier coup.
 
+#### Une carte du monde ne se cale pas sur la HAUTEUR de l'ecran
+
+**Signale a l'image apres la livraison : « la projection de la carte est
+coupee ».** C'etait exact, et le journal le chiffrait : 29,6 m par pixel sur un
+widget de 1921 px font **56 862 m visibles pour un monde qui en fait 64 000**.
+Onze pour cent de la largeur restaient hors champ QUOI QU'ON FASSE, et le centre
+etait colle a sa borne -- il n'existait aucun reglage permettant de voir le
+monde entier.
+
+**Le monde est en 2:1, un ecran en 16:9.** Caler l'echelle sur la hauteur
+remplit l'ecran et deborde forcement en largeur ; le dezoom maximal se cale donc
+sur le cote le plus CONTRAIGNANT des deux -- un maximum, pas la hauteur.
+
+**ET LA CARTE NE REMPLIT ALORS PLUS L'ECRAN, ce qui est la contrepartie
+necessaire.** Il reste des bandes en haut et en bas, et les remplir de texture
+etirerait la derniere ligne en bavures. On dessine donc la carte dans le
+rectangle du monde REELLEMENT visible -- l'intersection de la vue et du monde --
+sur un fond qui porte la couleur du hors-monde du peintre. Les deux coins de ce
+rectangle passent par la MEME projection, deux fois : avec la fenetre de vue
+pour savoir ou dessiner, avec celle de la cuisson pour savoir quels texels y
+mettre.
+
+Apres correction : 33,3 m/px, centre (0, 0), le monde bord a bord.
+
+**LA LECON DEPASSE LA CARTE** : des que deux rapports d'aspect se rencontrent,
+« remplir » et « tout montrer » s'excluent. Il faut choisir, et le dire. Aucun
+test ne l'aurait vu -- la projection etait juste, l'echelle aussi ; c'est le
+CADRAGE qui etait faux, et cela ne se voit qu'a l'image.
+
 #### Slate : cinq murs, tous silencieux
 
 - **`FInputModeUIOnly` coupe `WasInputKeyJustPressed`**, dont dependent la
