@@ -59,6 +59,10 @@ void SWorldseedCarte::Construct(const FArguments& InArgs)
 	BrosseFond.DrawAs = ESlateBrushDrawType::Image;
 	BrosseFond.TintColor = FSlateColor(FLinearColor::White);
 
+	// Un rectangle plein : la brosse blanche du style de base, teintee au
+	// dessin. Une brosse sans ressource ne dessinerait rien.
+	BrosseVide = *FCoreStyle::Get().GetBrush("WhiteBrush");
+
 	// ON MANGE LES CLICS, contrairement a la minimap qui est `HitTestInvisible`
 	// « sans quoi le widget mange tous les clics ». Ici c'est l'inverse qu'on
 	// veut : un clic qui raterait la carte partirait au jeu, sous elle.
@@ -108,6 +112,17 @@ int32 SWorldseedCarte::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			C->CentreVueM.X, C->CentreVueM.Y, Tex.X, Tex.Y);
 	}
 
+	// --- le vide autour du monde ---------------------------------------------
+	//
+	// LA CARTE NE REMPLIT PAS FORCEMENT L'ECRAN, et c'est ce qui permet de voir
+	// le monde ENTIER. Il est en 2:1, l'ecran en 16:9 : cale sur la hauteur, on
+	// perdait onze pour cent de la largeur ; cale sur la largeur, il reste des
+	// bandes en haut et en bas. Elles portent la meme couleur que le hors-monde
+	// du peintre -- au-dela d'un pole il n'y a rien, et cela doit se voir.
+	FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+		AllottedGeometry.ToPaintGeometry(), &BrosseVide,
+		ESlateDrawEffect::None, FLinearColor(0.06f, 0.06f, 0.08f, 1.0f));
+
 	// --- le fond -------------------------------------------------------------
 	if (Tex.X > 0 && Tex.Y > 0)
 	{
@@ -119,33 +134,53 @@ int32 SWorldseedCarte::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		const WorldseedCarte::FParamsFenetre Cuisson =
 			WorldseedCarte::FParamsFenetre::Rectangle(LargeurMonde * 0.5, Tex.X, Tex.Y);
 
-		double HautGaucheX = 0.0, HautGaucheY = 0.0;
-		double BasDroiteX = 0.0, BasDroiteY = 0.0;
-		WorldseedCarte::MetresDuPixel(Vue, 0, 0, HautGaucheX, HautGaucheY);
-		WorldseedCarte::MetresDuPixel(Vue, Vue.ResX - 1, Vue.ResY - 1,
-			BasDroiteX, BasDroiteY);
+		// LE RECTANGLE DE MONDE REELLEMENT VISIBLE : l'intersection de la vue
+		// et du monde, et non la vue entiere. Au-dela des bords de la texture
+		// l'adressage est en `Clamp` : peindre la vue entiere y etirerait la
+		// derniere ligne en bavures -- ce qu'on voyait avant de borner.
+		const double DemiLargeurMonde = LargeurMonde * 0.5;
+		const double DemiHauteurMonde = LargeurMonde * 0.25;   // le monde est en 2:1
 
-		double U0 = 0.0, V0 = 0.0, U1 = 0.0, V1 = 0.0;
-		WorldseedCarte::PixelDuMetre(Cuisson, 0.0, HautGaucheX, HautGaucheY, U0, V0);
-		WorldseedCarte::PixelDuMetre(Cuisson, 0.0, BasDroiteX, BasDroiteY, U1, V1);
+		const double X0 = FMath::Max(Vue.CentreXm - Vue.DemiPorteeXm, -DemiLargeurMonde);
+		const double X1 = FMath::Min(Vue.CentreXm + Vue.DemiPorteeXm, DemiLargeurMonde);
+		const double Y0 = FMath::Max(Vue.CentreYm - Vue.DemiPorteeYm, -DemiHauteurMonde);
+		const double Y1 = FMath::Min(Vue.CentreYm + Vue.DemiPorteeYm, DemiHauteurMonde);
 
-		// `PixelDuMetre` rend le CENTRE d'un texel ; une region UV veut ses
-		// BORDS, d'ou le demi-texel.
-		const FBox2f Region(
-			FVector2f(static_cast<float>((U0 + 0.5) / Tex.X),
-				static_cast<float>((V0 + 0.5) / Tex.Y)),
-			FVector2f(static_cast<float>((U1 + 0.5) / Tex.X),
-				static_cast<float>((V1 + 0.5) / Tex.Y)));
+		if (X1 > X0 && Y1 > Y0)
+		{
+			// LES DEUX PROJECTIONS, SUR LES MEMES DEUX COINS : l'une dit ou
+			// dessiner a l'ecran, l'autre quels texels y mettre. Y1 est le
+			// coin HAUT, la ligne 0 etant au nord.
+			double EcranG = 0.0, EcranH = 0.0, EcranD = 0.0, EcranB = 0.0;
+			WorldseedCarte::PixelDuMetre(Vue, 0.0, X0, Y1, EcranG, EcranH);
+			WorldseedCarte::PixelDuMetre(Vue, 0.0, X1, Y0, EcranD, EcranB);
 
-		// UNE `FBox2f` PAR DEFAUT EST INVALIDE, et le batcher teste `bIsValid`
-		// avant de la lire : construite par ses deux coins, celle-ci l'est.
-		BrosseFond.SetResourceObject(C->BrosseCarte()->GetResourceObject());
-		BrosseFond.ImageSize = FVector2D(Taille);
-		BrosseFond.SetUVRegion(Region);
+			double UG = 0.0, VH = 0.0, UD = 0.0, VB = 0.0;
+			WorldseedCarte::PixelDuMetre(Cuisson, 0.0, X0, Y1, UG, VH);
+			WorldseedCarte::PixelDuMetre(Cuisson, 0.0, X1, Y0, UD, VB);
 
-		FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(), &BrosseFond,
-			ESlateDrawEffect::None, FLinearColor::White);
+			// `PixelDuMetre` rend le CENTRE d'un pixel ; un rectangle et une
+			// region UV veulent leurs BORDS, d'ou le demi-pixel.
+			const FBox2f Region(
+				FVector2f(static_cast<float>((UG + 0.5) / Tex.X),
+					static_cast<float>((VH + 0.5) / Tex.Y)),
+				FVector2f(static_cast<float>((UD + 0.5) / Tex.X),
+					static_cast<float>((VB + 0.5) / Tex.Y)));
+
+			const FVector2D Coin(EcranG + 0.5, EcranH + 0.5);
+			const FVector2D Dim(EcranD - EcranG, EcranB - EcranH);
+
+			// UNE `FBox2f` PAR DEFAUT EST INVALIDE, et le batcher teste
+			// `bIsValid` avant de la lire : construite par ses deux coins,
+			// celle-ci l'est.
+			BrosseFond.SetResourceObject(C->BrosseCarte()->GetResourceObject());
+			BrosseFond.ImageSize = Dim;
+			BrosseFond.SetUVRegion(Region);
+
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+				AllottedGeometry.ToPaintGeometry(Dim, FSlateLayoutTransform(Coin)),
+				&BrosseFond, ESlateDrawEffect::None, FLinearColor::White);
+		}
 	}
 
 	// --- les marqueurs -------------------------------------------------------

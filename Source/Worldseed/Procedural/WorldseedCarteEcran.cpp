@@ -259,9 +259,16 @@ void UWorldseedCarteEcran::BornerVue(const FVector2D& TailleEcranPx, float Echel
 	// ne grossirait plus que des texels, sans rien montrer de plus.
 	const double PlusFin = Cellule / FMath::Max(EchelleDPI, 0.01f);
 
-	// Et l'on ne dezoome pas au-dela du monde : sinon la carte flotte dans un
-	// cadre vide.
-	const double PlusLarge = Hauteur / TailleEcranPx.Y;
+	// LE DEZOOM MAXIMAL MONTRE LE MONDE ENTIER, et il se cale sur le cote le
+	// plus CONTRAIGNANT -- donc un maximum, pas la hauteur.
+	//
+	// Cale sur la seule hauteur, comme il l'etait, on ne voyait jamais que
+	// 56 862 m de large sur 64 000 : onze pour cent du monde restaient hors
+	// champ, quoi qu'on fasse, parce que le monde est en 2:1 et l'ecran en
+	// 16:9. Signale a l'image : « la projection est coupee ».
+	const double Largeur0 = static_cast<double>(Geo.WidthM());
+	const double PlusLarge = FMath::Max(Hauteur / TailleEcranPx.Y,
+		Largeur0 / TailleEcranPx.X);
 
 	MetresParPixel = FMath::Clamp(MetresParPixel, PlusFin, FMath::Max(PlusLarge, PlusFin));
 
@@ -478,8 +485,13 @@ void UWorldseedCarteEcran::Ouvrir()
 		{
 			CentreVueM = FVector2D(R.Xm, R.Ym);
 		}
-		MetresParPixel = static_cast<double>(T->MondeGeometrie().HeightM)
-			/ FMath::Max(Taille.Y, 1.0);
+		// LE MONDE ENTIER, donc le cote le plus contraignant des deux -- voir
+		// `BornerVue`. Sur la hauteur seule, onze pour cent de la largeur
+		// restaient hors champ.
+		const FWorldseedGeometry& G = T->MondeGeometrie();
+		MetresParPixel = FMath::Max(
+			static_cast<double>(G.HeightM) / FMath::Max(Taille.Y, 1.0),
+			static_cast<double>(G.WidthM()) / FMath::Max(Taille.X, 1.0));
 	}
 
 	// ON BORNE DES L'OUVERTURE, et pas seulement au glisser : sans cela une

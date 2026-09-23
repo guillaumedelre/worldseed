@@ -70,6 +70,9 @@ private:
 	 */
 	mutable FSlateBrush BrosseFond;
 
+	/** Le vide autour du monde : une couleur unie, pas une texture. */
+	FSlateBrush BrosseVide;
+
 	/** Vrai entre l'enfoncement et le relachement du bouton gauche. */
 	bool bGlisse = false;
 
