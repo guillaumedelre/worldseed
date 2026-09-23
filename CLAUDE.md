@@ -8574,3 +8574,116 @@ cellules par pixel, ou le plus-proche-voisin scintille et perd des iles. D'ou le
 `MetresParPixel` deja present. Moyenne de bloc pour l'altitude, vote majoritaire
 pour les identifiants : **on ne moyenne jamais un identifiant**, 307 points faux
 sur 17956 deja payes.
+
+### La carte plein ecran, et une police d'icones pour tout le projet (23 septembre 2026)
+
+La carte est livree : Tab l'ouvre, la molette zoome, le glisser deplace, le clic
+pose un repere et Ctrl+clic y teleporte. Cuisson **4096 x 2048 en 27 a 46 ms**,
+une fois par partie, **220 images par seconde** la carte ouverte -- elle ne
+repeint rien, elle deplace une region UV.
+
+**LA QUESTION OUVERTE PLUS HAUT EST TRANCHEE, ET DANS L'AUTRE SENS.** Le second
+mode d'echantillonnage annonce n'a pas lieu d'etre : cuite a la RESOLUTION DE LA
+GRILLE, la carte a **un pixel par cellule**, donc elle n'agrege rien et ne peut
+perdre aucune ile. L'agregation reste ecrite, et elle sert -- mais a la MINIMAP.
+
+**UN DEFAUT VIVANT TROUVE EN CHEMIN.** Le cran de 6 km de la minimap prend
+46,9 m par pixel pour une maille de 15,6 : **trois cellules par pixel en
+prelevement ponctuel**, donc un relief qui fourmille en marchant et des iles qui
+clignotent. Et `FondDuMonde` y etait rebalaye a CHAQUE repeinture -- 8,4 millions
+de flottants tous les quinze metres parcourus.
+
+**`Geo.MetersPerPixel()` N'EST PAS LA TAILLE D'UNE CELLULE.** Elle vaut
+`HeightM / (NY - 1)` : l'espacement des NOEUDS, celui qu'interpole `SampleUV`.
+Une CELLULE, au sens de `CelluleDepuisMetres` -- la convention unique du sol --
+vaut `HeightM / NY`. L'ecart est de 0,05 % sur la grille du jeu et de **6,7 %**
+sur celle des tests : assez pour qu'un bloc de deux cellules en lise quatre.
+C'est l'oracle qui l'a dit, du premier coup.
+
+#### Slate : cinq murs, tous silencieux
+
+- **`FInputModeUIOnly` coupe `WasInputKeyJustPressed`**, dont dependent la
+  minimap ET le retour au menu. On reste en `GameAndUI` et l'on ferme la camera
+  par `SetIgnoreLookInput` / `SetIgnoreMoveInput` -- **ce sont des COMPTEURS** :
+  un `true` de trop laisse le pion gele, et le defaut survit a la carte.
+- **Le tiling d'une brosse et une region UV personnalisee s'EXCLUENT.** Des que
+  `ESlateBrushTileType` pose `TileU` (`ElementBatcher.cpp:762`), le batcher
+  recalcule les UV depuis la taille locale et ignore la region. C'est aussi lui,
+  et non `AddressX`, qui decide de l'enroulement. La carte est donc bornee en
+  longitude ; l'enroulement demandera deux images cote a cote.
+- **Une `FBox2f` construite par defaut est INVALIDE**, et le batcher teste
+  `bIsValid` avant de la lire (`ElementBatcher.cpp:741`). « Toute la texture »
+  s'ecrit par ses deux coins, jamais `FBox2f()`.
+- **`TAttribute<T>::CreateUObject` n'existe pas**, malgre la symetrie avec les
+  delegues : c'est `MakeAttributeUObject`. Et l'on ne declare pas un type
+  IMBRIQUE (`SConstraintCanvas::FSlot`) en avant -- d'ou le padding lie.
+- **Le widget fait 1921 x 1080 pour une fenetre de 1600 x 900**, parce que Slate
+  travaille en pixels LOGIQUES et que le facteur DPI valait 0,83. Melanger les
+  deux donne une echelle fausse d'un facteur DPI. Toute borne de zoom se calcule
+  en pixels REELS, et l'on borne la vue **avec la geometrie qui sert a peindre**,
+  jamais avec celle du viewport.
+
+#### La police d'icones
+
+Material Symbols, 4284 icones, 10,2 Mo en LFS, chargee par
+`FStandaloneCompositeFont` -- la voie que le moteur emploie pour ses ecrans de
+chargement (`PreLoadSettingsContainer.cpp:240`), les constructeurs de
+`FSlateFontInfo` qui prennent un chemin etant deprecies depuis 5.6. **C'est ce
+que fait Epic** : l'editeur rend ses icones avec `FontAwesome.ttf` et une table
+de glyphes nommes (`EditorFontGlyphs.h`).
+
+- **Un `.ttf` n'est pas un `.uasset` : rien ne l'embarque dans un build cuit**
+  sans `+DirectoriesToAlwaysStageAsUFS`. Tout marche alors dans l'editeur et en
+  PIE, et les icones disparaissent du SEUL build final.
+- **Plusieurs noms partagent un glyphe** : `place` et `location_on` valent tous
+  deux F1DB, `landscape` et `terrain` tous deux E564.
+- **Un codepoint se recopie a la main depuis un fichier de 4284 lignes**, et une
+  faute d'un chiffre donne un AUTRE glyphe, parfaitement dessine. L'oracle les
+  confronte au catalogue livre ; temoin monte puis retire, il tombe sur
+  « Expected 61915, but it was 61916 ».
+- **Choisir un glyphe se fait A L'IMAGE.** `door_open` pour une arche rendait un
+  rectangle barre, illisible a vingt-deux pixels ; `all_inclusive` -- deux arcs
+  et un vide -- se lit du premier coup. Et **une epingle designe par sa POINTE**,
+  pas par son centre : centree, elle montre un point dix pixels plus bas.
+
+#### Quatre lecons de mesure
+
+- **UNE ESTIMATION DE COUT NE VAUT PAS UNE MESURE.** La cuisson etait annoncee a
+  150 ms, sur un raisonnement soigne et une source qui n'existait pas dans le
+  depot. Mesure : **27 ms**. Toute une branche du plan -- fil de travail, capture
+  de pointeur partage, ecran d'attente -- tombait avec ce chiffre. La sonde a ete
+  ecrite AVANT la premiere ligne de Slate, exprès pour cela.
+- **SANS PYRAMIDE DE MIPS, LE LISERE DE COTE SORT POINTILLE.** La carte est cuite
+  a 4096 et affichee dans 1900 pixels ; le GPU preleve alors un texel sur deux et
+  les ilots se brisent. Moyenner des COULEURS DEJA PEINTES n'est pas moyenner un
+  identifiant -- c'est ce que fait un mipmap -- et la moyenne se fait en sRGB
+  DELIBEREMENT : en lumiere, un trait tres sombre ne pese presque rien et le
+  lisere disparaitrait.
+- **L'ECART AGREGE ENTRE DEUX IMAGES NE TRANCHAIT RIEN** : 48,8 % de pixels
+  differents a 2,13 de reduction... contre 43,0 % a 1,07, ou il ne devrait
+  presque rien se passer. La mesure melangeait l'effet de la reduction et le
+  contraste propre de l'image. Seul le recadrage agrandi, regarde a l'oeil, a
+  departage.
+- **UN TEMOIN DONT LE VERDICT DEPEND DE L'ENDROIT CHOISI NE TEMOIGNE DE RIEN.**
+  Celui de la moyenne de bloc comparait un bloc a son centre, et il a echoue --
+  non parce que la moyenne etait fausse, mais parce que les trois harmoniques du
+  relief de la fixture s'y compensent a moins d'un metre. Il prend desormais le
+  pire ecart sur toute la grille. La tolerance, elle, n'a pas bouge.
+
+#### Deux pieges d'outillage
+
+- **`-run=Automation` n'existe pas** : « Failed to find commandlet class
+  AutomationCommandlet ». C'est `-ExecCmds="Automation RunTests X;Quit"` seul.
+- **PILOTER LE CLAVIER ET LA SOURIS D'UNE MACHINE OU QUELQU'UN TRAVAILLE NE
+  MARCHE PAS.** La premiere verification par injection a parfaitement fonctionne
+  -- clic, molette, Tab, retour au jeu. La seconde n'a RIEN recu : une autre
+  fenetre avait le focus, `SetForegroundWindow` a echoue, et l'image montrait une
+  carte qui ne se fermait pas -- ce qui ressemble trait pour trait a une
+  regression alors que rien n'avait bouge. **Le journal tranche en une ligne**
+  (pas de « repere pose »), et la parade est une surcharge de ligne de commande,
+  comme tout le reste du harnais.
+
+**RESTE OUVERT** : l'enroulement de la carte en longitude (deux images), et une
+legende pour les cinq genres de marqueurs. Les 316 gouffres et dolines ne
+s'affichent qu'au-dela de 12 m par pixel -- a l'echelle du monde, ils feraient un
+voile gris.
