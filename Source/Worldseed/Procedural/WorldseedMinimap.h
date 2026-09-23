@@ -86,8 +86,11 @@ private:
 	void Construire();
 	void Detruire();
 
-	/** Repeint ce qui doit l'etre, selon ce qui a bouge. */
+	/** Repeint ce qui doit l.etre, selon ce qui a bouge. */
 	void Rafraichir();
+
+	/** Pose l.epingle de la carte, ou la range si le joueur n.en a pas. */
+	void PlacerRepere(const struct FWorldseedReperePlayer& Ou);
 
 	AWorldseedVoxelTerrain* Terrain() const;
 
@@ -134,6 +137,30 @@ private:
 	TSharedPtr<SWidget> Racine;
 	TSharedPtr<SImage> ImageFond;
 	TSharedPtr<SImage> ImageCone;
+
+	/**
+	 * LE REPERE POSE SUR LA CARTE, RAPPELE ICI -- et c'est le MEME glyphe.
+	 *
+	 * Il n'est pas peint dans la texture du cone, ou il serait un losange
+	 * dessine a la main : le joueur doit reconnaitre SON repere, celui qu'il
+	 * vient de poser sur la carte plein ecran. Un widget de texte porte donc
+	 * l'epingle, et son ancrage suit la position relative.
+	 */
+	TSharedPtr<STextBlock> TexteRepere;
+
+	/**
+	 * SA POSITION PASSE PAR UN PADDING LIE, et non par un slot conserve.
+	 *
+	 * Garder un `FSlot*` obligerait a declarer un type IMBRIQUE en avant, ce
+	 * que C++ ne permet pas -- et l'en-tete du sous-systeme n'a pas a tirer
+	 * tout Slate. Un attribut lie laisse Slate redemander la position quand il
+	 * en a besoin, et le calcul reste dans le .cpp.
+	 */
+	FVector2D MargeRepereEcran = FVector2D::ZeroVector;
+	bool bRepereVisible = false;
+
+	/** Le padding que Slate redemande : la position de l'epingle. */
+	FMargin MargeRepere() const;
 
 	/** Demi-portee courante, en metres. */
 	float DemiPorteeM = 2000.0f;

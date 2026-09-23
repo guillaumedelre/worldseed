@@ -104,6 +104,19 @@ void UWorldseedCarteEcran::OnWorldBeginPlay(UWorld& InWorld)
 	// Un zoom impose, pour juger une echelle precise sans piloter la molette.
 	FParse::Value(FCommandLine::Get(), TEXT("WorldseedCarteEchelle="), EchelleAutoM);
 
+	// UN REPERE POSE SANS CLIQUER, et ce n'est pas une commodite : piloter la
+	// souris d'une machine ou quelqu'un travaille ne marche pas -- la fenetre
+	// ne prend pas le focus, les evenements partent ailleurs, et l'on croit a
+	// une regression. Deux cles SEPAREES, parce que `FParse::Value` s'arrete
+	// sur une virgule : « 12,34 » lui arrive comme « 12 ».
+	float RX = 0.0f, RY = 0.0f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedRepereX="), RX)
+		&& FParse::Value(FCommandLine::Get(), TEXT("WorldseedRepereY="), RY))
+	{
+		Repere = FVector2D(RX, RY);
+		bRepere = true;
+	}
+
 	if (bArme)
 	{
 		UE_LOG(LogTemp, Log,

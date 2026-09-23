@@ -3,6 +3,8 @@
 #include "Procedural/WorldseedMinimap.h"
 
 #include "Procedural/WorldseedCarte.h"
+#include "Procedural/WorldseedCarteEcran.h"
+#include "Procedural/WorldseedIcones.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
 
 #include "Camera/PlayerCameraManager.h"
@@ -20,6 +22,7 @@
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -317,6 +320,22 @@ void UWorldseedMinimap::Construire()
 				// LES QUATRE LETTRES SONT FIXES : le nord est en haut et la
 				// carte ne tourne jamais, donc elles n'ont aucune raison de
 				// pivoter -- et du texte penche se lit mal.
+				// LE REPERE DE LA CARTE, RAPPELE ICI. Il est pose par-dessus le
+				// cone : c'est une destination, et elle doit rester lisible
+				// meme quand on regarde dans sa direction.
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Left)
+				.VAlign(VAlign_Top)
+				.Padding(MakeAttributeUObject(this, &UWorldseedMinimap::MargeRepere))
+				[
+					SAssignNew(TexteRepere, STextBlock)
+					.Text(WorldseedIcones::Glyphe(WorldseedIcone::Repere))
+					.Font(WorldseedIcones::Police(18.0f))
+					.ColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.35f, 0.35f)))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+				]
+
 				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top)[ Cardinal(TEXT("N")) ]
 				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom)[ Cardinal(TEXT("S")) ]
 				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center)[ Cardinal(TEXT("E")) ]
@@ -547,4 +566,73 @@ void UWorldseedMinimap::Rafraichir()
 
 		DernierCap = Repere.CapDeg;
 	}
+
+	PlacerRepere(Repere);
+}
+
+
+FMargin UWorldseedMinimap::MargeRepere() const
+{
+	// L'EPINGLE DESIGNE PAR SA POINTE : on la remonte de sa hauteur, et on la
+	// centre en largeur. Les deux valeurs suivent la taille de police posee a
+	// la construction ; une mesure exacte demanderait le service de mesure de
+	// Slate a chaque trame pour un glyphe qui ne change jamais.
+	return FMargin(MargeRepereEcran.X - 9.0f, MargeRepereEcran.Y - 18.0f, 0.0f, 0.0f);
+}
+
+
+void UWorldseedMinimap::PlacerRepere(const FWorldseedReperePlayer& Ou)
+{
+	if (!TexteRepere.IsValid())
+	{
+		return;
+	}
+
+	UWorld* const W = GetWorld();
+	const UWorldseedCarteEcran* const Carte =
+		W ? W->GetSubsystem<UWorldseedCarteEcran>() : nullptr;
+
+	if (!Carte || !Carte->ARepere())
+	{
+		bRepereVisible = false;
+		TexteRepere->SetVisibility(EVisibility::Collapsed);
+		return;
+	}
+
+	// LA MEME PROJECTION QUE LE FOND, et c'est ce qui garantit que l'epingle
+	// tombe sur ce que la minimap montre. La recalculer ici en serait une
+	// seconde ecriture, avec son signe a se tromper.
+	const WorldseedCarte::FParamsFenetre P =
+		WorldseedCarte::FParamsFenetre::Carree(DemiPorteeM, WorldseedMini::Cote);
+	WorldseedCarte::FParamsFenetre Vue = P;
+	Vue.CentreXm = Ou.Xm;
+	Vue.CentreYm = Ou.Ym;
+
+	const AWorldseedVoxelTerrain* const T = Terrain();
+	const double Largeur = T ? static_cast<double>(T->MondeGeometrie().WidthM()) : 0.0;
+
+	double PX = 0.0, PY = 0.0;
+	WorldseedCarte::PixelDuMetre(Vue, Largeur, Carte->RepereM().X,
+		Carte->RepereM().Y, PX, PY);
+
+	// En fraction du disque, depuis son centre : -1 a +1 sur chaque axe.
+	const double Demi = WorldseedMini::Cote * 0.5;
+	FVector2D Vers((PX + 0.5 - Demi) / Demi, (PY + 0.5 - Demi) / Demi);
+
+	// HORS DU DISQUE, L'EPINGLE SE POSE SUR LE BORD et devient une DIRECTION.
+	// L'effacer serait pire que de ne rien montrer : une destination qu'on ne
+	// voit plus des qu'on s'en eloigne ne sert a rien.
+	const double Distance = Vers.Size();
+	if (Distance > 0.94)
+	{
+		Vers *= 0.94 / FMath::Max(Distance, UE_DOUBLE_KINDA_SMALL_NUMBER);
+	}
+
+	bRepereVisible = true;
+	TexteRepere->SetVisibility(EVisibility::HitTestInvisible);
+
+	// En pixels de mise en page, depuis le coin haut-gauche du disque.
+	MargeRepereEcran = FVector2D(
+		(0.5 + Vers.X * 0.5) * WorldseedMini::CoteEcran,
+		(0.5 + Vers.Y * 0.5) * WorldseedMini::CoteEcran);
 }
