@@ -35,6 +35,13 @@
 *.glb  filter=lfs diff=lfs merge=lfs -text
 *.gltf filter=lfs diff=lfs merge=lfs -text
 
+# ------------------------------------------------------------------- polices
+# Une police est un binaire comme un autre, et celle de nos icones pese 10 Mo :
+# sans LFS, chaque version en serait stockee entiere dans l'historique.
+# Elle ne passe PAS par un .uasset -- voir Content/Worldseed/Fonts/PROVENANCE.md.
+*.ttf  filter=lfs diff=lfs merge=lfs -text
+*.otf  filter=lfs diff=lfs merge=lfs -text
+
 # ------------------------------------------------------------ texte, explicite
 # Ces fichiers sont lus et edites a la main : on veut des diffs lisibles et des
 # fins de ligne stables, quelle que soit la machine.
