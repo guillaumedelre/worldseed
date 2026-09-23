@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMemory.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/CommandLine.h"
@@ -31,6 +32,10 @@ void UWorldseedBanc::OnWorldBeginPlay(UWorld& InWorld)
 	bQuitterEnsuite = FParse::Param(FCommandLine::Get(), TEXT("WorldseedQuitter"));
 	bProfilGPU = FParse::Param(FCommandLine::Get(), TEXT("WorldseedProfilGPU"));
 	bArme = true;
+
+	// LA MARCHE EST OPTIONNELLE, ET SON ABSENCE REND LE BANC D'AVANT.
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedMarche="), MarcheS);
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedMarcheCap="), MarcheCapDeg);
 
 	// ON ARME ICI, ON NE MESURE PAS. Le sous-systeme recoit son OnWorldBeginPlay
 	// AVANT les acteurs : le terrain n'existe pas encore, et surtout son monde
@@ -153,10 +158,65 @@ void UWorldseedBanc::Tick(float DeltaTime)
 	SommeGpuMs += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
 	++Echantillons;
 
+	if (bEnMarche)
+	{
+		MesurerLaMarche(T);
+		if (Horloge - DebutMarche >= MarcheS)
+		{
+			Conclure();
+		}
+		return;
+	}
+
 	if (Horloge - DebutMesure >= MesureS)
 	{
+		// LA MARCHE VIENT APRES LA MESURE IMMOBILE, JAMAIS PENDANT. Les deux
+		// repondent a deux questions : ce que coute un monde POSE, et ce que
+		// le streaming rate quand on AVANCE. Les melanger rendrait une trame
+		// moyenne qui n'est ni l'une ni l'autre -- et ce depot a deja conclu
+		// sur un agregat recouvrant deux populations.
+		if (MarcheS > 0.0f && !bEnMarche)
+		{
+			bEnMarche = true;
+			DebutMarche = Horloge;
+			if (const APawn* const P = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+			{
+				DepartMarcheCm = P->GetActorLocation();
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] banc : MARCHE %.0f s au cap %.0f deg -- ")
+					TEXT("on mesure ce que le streaming rate en avancant"),
+				MarcheS, MarcheCapDeg);
+			return;
+		}
 		Conclure();
 	}
+}
+
+void UWorldseedBanc::MesurerLaMarche(AWorldseedVoxelTerrain* T)
+{
+	UWorld* const W = GetWorld();
+	if (!W || !T) { return; }
+
+	// ON POUSSE L'ENTREE DE DEPLACEMENT, on ne teleporte pas : c'est le
+	// personnage qui marche, avec sa vitesse, ses pentes et ses collisions.
+	APawn* const P = UGameplayStatics::GetPlayerPawn(W, 0);
+	if (!P) { return; }
+
+	const FVector Dir = FRotator(0.0f, MarcheCapDeg, 0.0f).Vector();
+	P->AddMovementInput(Dir, 1.0f);
+
+	// ET L'ON COMPTE LES DEUX ECARTS SEPAREMENT. Un chunk EN TROP et un chunk
+	// EN MOINS sont deux defauts opposes : le premier dessine deux fois, le
+	// second ne dessine rien. Un seul nombre les recouvrirait.
+	const FWorldseedStreamingReleve R = T->ReleveStreaming();
+	SommeOrphelins += R.Orphelins;
+	SommeManquants += R.Manquants;
+	SommeHysteresis += R.GardesParHysteresis;
+	PireOrphelins = FMath::Max(PireOrphelins, R.Orphelins);
+	PireManquants = FMath::Max(PireManquants, R.Manquants);
+	PireHysteresis = FMath::Max(PireHysteresis, R.GardesParHysteresis);
+	++EchantillonsMarche;
 }
 
 void UWorldseedBanc::Conclure()
@@ -237,6 +297,61 @@ void UWorldseedBanc::Conclure()
 				TEXT("centieme (%.2f ms). La trame est PLAFONNEE, pas limitee ")
 				TEXT("par le GPU -- ne rien conclure de ce releve."),
 				Moyenne);
+		}
+	}
+
+	// --- CE QUE LE STREAMING RATE EN AVANCANT --------------------------------
+	//
+	// DEUX ECARTS, JAMAIS UN SEUL NOMBRE. L'orphelin dessine DEUX FOIS le meme
+	// terrain, le manquant n'en dessine AUCUN : ils se corrigent a l'oppose, et
+	// les additionner rendrait un agregat qu'aucune correction ne deplacerait.
+	//
+	// ET LA DISTANCE PARCOURUE EST DITE, parce qu'une marche bloquee contre une
+	// paroi rendrait zero ecart sans rien prouver -- elle ressemblerait trait
+	// pour trait a un streaming sain.
+	if (EchantillonsMarche > 0 && T)
+	{
+		double ParcouruM = 0.0;
+		if (const APawn* const P = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+		{
+			ParcouruM = FVector::Dist2D(P->GetActorLocation(), DepartMarcheCm) / 100.0;
+		}
+
+		const FWorldseedStreamingReleve F = T->ReleveStreaming();
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   MARCHE %.0f s au cap %.0f deg -- %.0f m parcourus ")
+			TEXT("(%.1f m/s), %d releves"),
+			MarcheS, MarcheCapDeg, ParcouruM,
+			(MarcheS > 0.0f) ? ParcouruM / MarcheS : 0.0, EchantillonsMarche);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   ORPHELINS (plus feuilles mais DANS le rayon, ")
+			TEXT("geometrie en DOUBLE) : moyenne %.0f, pire %d"),
+			static_cast<double>(SommeOrphelins) / EchantillonsMarche, PireOrphelins);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   temoin -- gardes par l'HYSTERESIS (hors rayon, ")
+			TEXT("VOULUS) : moyenne %.0f, pire %d"),
+			static_cast<double>(SommeHysteresis) / EchantillonsMarche, PireHysteresis);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   MANQUANTS (feuilles sans maillage, TROU) : ")
+			TEXT("moyenne %.0f, pire %d"),
+			static_cast<double>(SommeManquants) / EchantillonsMarche, PireManquants);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed]   a l'arrivee : %d feuilles demandees, %d chunks ")
+			TEXT("suivis, %d orphelins, %d gardes par hysteresis, %d manquants"),
+			F.Feuilles, F.Suivis, F.Orphelins, F.GardesParHysteresis, F.Manquants);
+
+		if (ParcouruM < 10.0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed]   ATTENTION : %.0f m parcourus seulement -- le ")
+				TEXT("pion n'a pas marche (bloque, ou aucun controleur). Ce ")
+				TEXT("releve ne mesure PAS le streaming en mouvement."),
+				ParcouruM);
 		}
 	}
 

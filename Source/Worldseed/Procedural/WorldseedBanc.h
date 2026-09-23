@@ -143,4 +143,44 @@ private:
 	double SommeRhiMs = 0.0;
 	double SommeGpuMs = 0.0;
 	int32 Echantillons = 0;
+
+	/**
+	 * LA MARCHE, ET POURQUOI LE BANC IMMOBILE NE POUVAIT PAS REPONDRE.
+	 *
+	 * Le banc mesurait un monde POSE : il attend que le streaming se fige,
+	 * puis chronometre. C'est exactement ce qu'il faut pour un cout d'image --
+	 * et c'est aveugle a tout ce qui n'arrive qu'EN BOUGEANT. Or la diffusion
+	 * ne subdivise un chunk que quand on s'en approche, et ne demande une
+	 * feuille neuve que quand on avance : sur un banc immobile, il ne se passe
+	 * RIEN de ce qu'on veut voir. « Le monde se genere devant moi » n'etait
+	 * donc mesurable par aucun releve de ce depot.
+	 *
+	 * ON MARCHE PAR L'ENTREE DE DEPLACEMENT, PAS PAR TELEPORTATION. Un
+	 * `SetActorLocation` a chaque trame donnerait une origine de streaming qui
+	 * glisse, mais pas la marche du joueur : ni collision, ni pente, ni
+	 * vitesse reelle du personnage. On veut mesurer le cas REEL, pas une
+	 * maquette -- et la distance PARCOURUE est journalisee, donc une marche
+	 * bloquee contre une paroi se voit au lieu de se confondre avec une marche
+	 * reussie.
+	 *
+	 * A ZERO, LE BANC EST RIGOUREUSEMENT CELUI D'AVANT. C'est la propriete de
+	 * surete de cet ajout, et elle se verifie : sans `-WorldseedMarche=`, pas
+	 * une ligne de plus au journal et pas un appel de plus par trame.
+	 */
+	float MarcheS = 0.0f;
+	float MarcheCapDeg = 0.0f;
+	bool bEnMarche = false;
+	double DebutMarche = 0.0;
+	FVector DepartMarcheCm = FVector::ZeroVector;
+
+	/** Les deux ecarts, cumules et au pire, sur toute la marche. */
+	int64 SommeOrphelins = 0;
+	int64 SommeManquants = 0;
+	int64 SommeHysteresis = 0;
+	int32 PireOrphelins = 0;
+	int32 PireManquants = 0;
+	int32 PireHysteresis = 0;
+	int32 EchantillonsMarche = 0;
+
+	void MesurerLaMarche(class AWorldseedVoxelTerrain* T);
 };

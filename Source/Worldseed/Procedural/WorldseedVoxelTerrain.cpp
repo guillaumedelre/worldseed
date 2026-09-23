@@ -1586,6 +1586,59 @@ int32 AWorldseedVoxelTerrain::TravauxEnVol() const
 	return N;
 }
 
+FWorldseedStreamingReleve AWorldseedVoxelTerrain::ReleveStreaming() const
+{
+	FWorldseedStreamingReleve R;
+
+	const TSet<FWorldseedChunkKey>& Demande = Diffusion.Feuilles();
+	R.Feuilles = Demande.Num();
+	R.Suivis = Chunks.Num();
+
+	// UN SUIVI QUI N'EST PLUS UNE FEUILLE EST DESSINE EN TROP -- MAIS SEULEMENT
+	// S'IL EST ENCORE DANS LE RAYON DE CHARGEMENT.
+	//
+	// AU-DELA, C'EST L'HYSTERESIS, ET ELLE EST VOULUE : on garde ce qui vient
+	// de sortir jusqu'a `UnloadRadiusM`, pour qu'un demi-pas en arriere ne
+	// fasse pas tout remailler. Ces chunks-la n'ont PAS d'enfants emis, donc
+	// rien ne les recouvre.
+	//
+	// LES CONFONDRE RUINE LA MESURE, et le premier releve les confondait : 872
+	// « orphelins » apres 197 m de marche, dont la bande d'hysteresis --
+	// 1200 a 1680 m, soit 4,3 km2 -- pouvait a elle seule porter la majorite.
+	// C'est exactement la faute que ce depot a payee sur le routage des
+	// galeries : un agregat sur deux populations ne se corrige pas, il se
+	// decompose.
+	const FVector OrigineM =
+		(StreamingOriginCm() - GetActorLocation()) / WorldseedMetersToCm;
+
+	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
+	{
+		if (Demande.Contains(Pair.Key)) { continue; }
+
+		const FVector Centre = Diffusion.BoiteM(Pair.Key).GetCenter();
+		if (FVector::Dist(Centre, OrigineM) > LoadRadiusM)
+		{
+			++R.GardesParHysteresis;
+		}
+		else
+		{
+			++R.Orphelins;
+		}
+	}
+
+	// ET UNE FEUILLE SANS MAILLAGE EST UN TROU -- sauf si elle est MARQUEE
+	// VIDE, auquel cas il n'y a reellement rien a dessiner et c'est une
+	// propriete du monde, pas un retard. Confondre les deux ferait compter en
+	// trou les deux cinquiemes du volume qui n'ont aucune surface.
+	for (const FWorldseedChunkKey& Cle : Demande)
+	{
+		const FWorldseedVoxelChunkState* const S = Chunks.Find(Cle);
+		if (!S || (!S->Mesh && !S->bEmpty)) { ++R.Manquants; }
+	}
+
+	return R;
+}
+
 FString AWorldseedVoxelTerrain::ReportState() const
 {
 	int32 EnVol = 0;

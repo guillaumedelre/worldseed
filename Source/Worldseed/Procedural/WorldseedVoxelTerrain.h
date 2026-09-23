@@ -98,6 +98,59 @@ struct FWorldseedVoxelChunkState
  * peuvent contenir quelque chose. Les etages du socle ne sont meme pas
  * consideres.
  */
+
+/**
+ * L'ECART ENTRE CE QUE LA DIFFUSION DEMANDE ET CE QUE L'ACTEUR TIENT.
+ *
+ * DEUX ECARTS, ET ILS N'ONT PAS LE MEME REMEDE -- c'est toute la raison d'etre
+ * de ce releve. Un seul nombre les melangerait, et ce depot a paye quatre
+ * corrections de suite sur un agregat qui recouvrait deux populations.
+ *
+ *   ORPHELIN   suivi, mais plus une feuille. Sa geometrie est DESSINEE EN
+ *              DOUBLE, par-dessus celle de ses enfants -- deux surfaces du
+ *              meme terrain a deux resolutions. A l'ecran : le relief qui
+ *              CHANGE de detail, gresille, se dedouble.
+ *
+ *   MANQUANT   feuille demandee, sans maillage et sans marque de vide. Il n'y
+ *              a rien a dessiner la. A l'ecran : du terrain qui APPARAIT du
+ *              neant quand il arrive enfin.
+ *
+ * LE BANC IMMOBILE NE PEUT VOIR NI L'UN NI L'AUTRE : sans deplacement, aucun
+ * chunk ne se subdivise et la diffusion ne demande jamais rien de neuf. C'est
+ * pourquoi ce releve ne vaut qu'accompagne d'une marche.
+ */
+struct WORLDSEED_API FWorldseedStreamingReleve
+{
+	/** Ce que la diffusion DEMANDE a cet instant. */
+	int32 Feuilles = 0;
+
+	/** Ce que l'acteur TIENT, maillages et marques de vide compris. */
+	int32 Suivis = 0;
+
+	/**
+	 * Suivis qui ne sont plus des feuilles, DANS le rayon de chargement.
+	 *
+	 * CEUX-LA SONT LE DEFAUT : leur geometrie recouvre celle de leurs enfants,
+	 * deux surfaces du meme terrain a deux resolutions.
+	 */
+	int32 Orphelins = 0;
+
+	/**
+	 * Suivis qui ne sont plus des feuilles, AU-DELA du rayon de chargement.
+	 *
+	 * CEUX-LA SONT VOULUS, et les confondre avec les precedents ruinerait la
+	 * mesure : l'hysteresis garde volontairement ce qui vient de sortir, pour
+	 * qu'un demi-pas en arriere ne fasse pas tout remailler. Ils ne sont pas
+	 * dessines en double -- ils n'ont pas d'enfants, ils sont seuls sur leur
+	 * volume. Premier releve confondu : 872 « orphelins » dont la plus grande
+	 * part n'etait que cette bande.
+	 */
+	int32 GardesParHysteresis = 0;
+
+	/** Feuilles sans maillage ni marque de vide : TROU. */
+	int32 Manquants = 0;
+};
+
 UCLASS()
 class WORLDSEED_API AWorldseedVoxelTerrain : public AActor
 {
@@ -518,6 +571,19 @@ public:
 
 	int32 NombreDeChunks() const { return Chunks.Num(); }
 	int32 TravauxEnVol() const;
+
+	/**
+	 * Ce que la diffusion demande, ce que l'acteur tient, et les deux ecarts.
+	 *
+	 * L'ACTEUR COMPTE, L'APPELANT RAPPORTE -- la regle posee apres l'extraction
+	 * du sol de fond, ou module et acteur journalisaient tous deux. Une passe
+	 * qui ecrit elle-meme au journal ne peut plus etre appelee a chaque trame
+	 * sans le noyer, ni deux fois sans qu'on croie a un doublon.
+	 *
+	 * Il balaie les deux ensembles, donc son cout suit le nombre de chunks :
+	 * a reserver au banc, jamais a mettre dans la passe de diffusion.
+	 */
+	FWorldseedStreamingReleve ReleveStreaming() const;
 	/**
 	 * Le champ de densite du monde charge.
 	 *
