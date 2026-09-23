@@ -40,16 +40,6 @@ namespace
 		return M;
 	}
 
-	int32 CompterNonFinis(const TArray<float>& A)
-	{
-		int32 N = 0;
-		for (const float V : A)
-		{
-			if (FMath::IsNaN(V) || !FMath::IsFinite(V)) { ++N; }
-		}
-		return N;
-	}
-
 	/** Somme des ecarts absolus, pour dire si DEUX reliefs different. */
 	double Ecart(const TArray<float>& A, const TArray<float>& B)
 	{
@@ -244,7 +234,7 @@ bool FWorldseedTestErosionNInventeRien::RunTest(const FString& Parameters)
 		SommetAvant, SommetApres, Rapport.Iterations));
 
 	TestEqual(TEXT("aucune altitude NaN ou infinie"),
-		CompterNonFinis(B.Relief), 0);
+		WorldseedTest::CompterNonFinis(B.Relief), 0);
 
 	// La tolerance couvre le DEPOT, qui peut remonter une cellule de fond de
 	// vallee -- mais jamais le sommet du monde, et jamais de beaucoup.

@@ -24,16 +24,6 @@ namespace
 	 */
 	constexpr int32 NYBanc = 96;
 
-	int32 CompterNonFinis(const TArray<float>& A)
-	{
-		int32 N = 0;
-		for (const float V : A)
-		{
-			if (FMath::IsNaN(V) || !FMath::IsFinite(V)) { ++N; }
-		}
-		return N;
-	}
-
 	bool Generer(FAutomationTestBase& Test, int32 Seed,
 		FWorldseedTectonicResult& Out, FWorldseedGeometry& OutGeo)
 	{
@@ -134,8 +124,8 @@ bool FWorldseedTestTectoniquePlaques::RunTest(const FString& Parameters)
 	TestEqual(TEXT("une plaque par cellule"), T.PlateId.Num(), N);
 	TestEqual(TEXT("un drapeau continental par cellule"), T.IsContinental.Num(), N);
 	TestEqual(TEXT("une convergence par cellule"), T.Convergence.Num(), N);
-	TestEqual(TEXT("aucune altitude NaN"), CompterNonFinis(T.ElevationM), 0);
-	TestEqual(TEXT("aucune convergence NaN"), CompterNonFinis(T.Convergence), 0);
+	TestEqual(TEXT("aucune altitude NaN"), WorldseedTest::CompterNonFinis(T.ElevationM), 0);
+	TestEqual(TEXT("aucune convergence NaN"), WorldseedTest::CompterNonFinis(T.Convergence), 0);
 
 	// --- les plaques ---------------------------------------------------------
 	TSet<int32> Plaques;

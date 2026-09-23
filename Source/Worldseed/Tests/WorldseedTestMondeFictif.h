@@ -82,6 +82,31 @@ namespace WorldseedTest
 	}
 
 	/** Un tableau de flottants dont chaque valeur est unique, pour l'aller-retour. */
+	/**
+	 * Combien de valeurs ne sont ni finies ni representables.
+	 *
+	 * ELLE VIT ICI PARCE QU'UBT CONCATENE LES `.cpp`. Trois fichiers de test
+	 * l'avaient chacun dans leur namespace ANONYME ; deux namespaces anonymes
+	 * n'en font qu'un dans une unite de traduction unifiee, et la compilation
+	 * tombe sur « la fonction a deja un corps » -- dans un fichier que l'on
+	 * vient d'ecrire comme dans un fichier auquel on n'a pas touche. Ce depot
+	 * a deja paye ce piege deux fois, sur `WorldseedMetersToCm` puis sur `SUB`.
+	 *
+	 * Un NaN merite son propre compteur partout : il ne plante pas, il se
+	 * propage, et une comparaison avec lui rend faux DES DEUX COTES -- donc un
+	 * chunk vide, un biome manquant, un trou dans le terrain que rien ne
+	 * signale.
+	 */
+	inline int32 CompterNonFinis(const TArray<float>& A)
+	{
+		int32 N = 0;
+		for (const float V : A)
+		{
+			if (FMath::IsNaN(V) || !FMath::IsFinite(V)) { ++N; }
+		}
+		return N;
+	}
+
 	inline TArray<float> Serie(int32 N, float Base, float Pas)
 	{
 		TArray<float> A;
