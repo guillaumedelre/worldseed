@@ -859,6 +859,72 @@ void AWorldseedVoxelTerrain::UpdateChunksInterne()
 		++EnVol;
 	}
 
+	// --- 5. OUBLIER CE QUI N'EST PLUS UNE FEUILLE ---------------------------
+	//
+	// LA DISTANCE NE SUFFIT PAS, ET C'ETAIT LE SEUL CRITERE. Un chunk ne cesse
+	// pas d'exister seulement parce qu'il est loin : il cesse d'exister quand
+	// il SE SUBDIVISE. A 300 m, un chunk de niveau 1 cede la place a ses huit
+	// enfants de niveau 0 -- les enfants naissaient, le parent restait, et sa
+	// surface se superposait a la leur au voxel pres.
+	//
+	// MESURE DU DEFAUT, marche de 197 m : 2422 feuilles demandees pour 3290
+	// chunks suivis, soit 806 orphelins et 4 974 896 triangles contre
+	// 3 140 011 a l'arret -- cinquante-huit pour cent de geometrie dessinee
+	// deux fois. Le compte montait de 4,1 par metre parcouru et rien ne le
+	// faisait redescendre : le test de distance ne les rattrapait qu'au-dela
+	// de 1680 m.
+	//
+	// ON NE TOUCHE PAS A L'HYSTERESIS. Au-dela du rayon de CHARGEMENT, un
+	// chunk n'est plus une feuille pour la seule raison que l'enumeration
+	// s'arrete la -- et on le garde a dessein, pour qu'un demi-pas en arriere
+	// ne fasse pas tout remailler. Le releve les compte a part pour cette
+	// raison, et le temoin dit qu'ils sont peu nombreux : 62.
+	//
+	// ET L'ON ATTEND QUE LES ENFANTS SOIENT PRETS, sans quoi on echangerait un
+	// DOUBLON contre un TROU -- les deux defauts que le proprietaire signale,
+	// et « corriger un defaut en revele parfois un autre qu'il masquait » est
+	// deja une note de ce depot. Un enfant qui n'est pas demande n'est pas
+	// attendu : l'enumeration n'emet que les etages ou la surface peut se
+	// trouver, donc les huit ne sont pas tous des feuilles.
+	{
+		const TSet<FWorldseedChunkKey>& Demande = Diffusion.Feuilles();
+
+		auto EnfantsPrets = [this, &Demande](const FWorldseedChunkKey& K)
+		{
+			if (K.Niveau <= 0) { return true; }
+			for (int32 I = 0; I < 8; ++I)
+			{
+				const FWorldseedChunkKey E{
+					FIntVector(K.C.X * 2 + (I & 1),
+						K.C.Y * 2 + ((I >> 1) & 1),
+						K.C.Z * 2 + ((I >> 2) & 1)),
+					K.Niveau - 1 };
+
+				if (!Demande.Contains(E)) { continue; }
+
+				const FWorldseedVoxelChunkState* const S = Chunks.Find(E);
+				if (!S || (!S->Mesh && !S->bEmpty)) { return false; }
+			}
+			return true;
+		};
+
+		TArray<FWorldseedChunkKey> AOublier;
+		for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& Pair : Chunks)
+		{
+			if (Demande.Contains(Pair.Key)) { continue; }
+			if (Pair.Value.Job.IsValid()) { continue; }
+
+			const FVector Centre = Diffusion.BoiteM(Pair.Key).GetCenter();
+			if (FVector::Dist(Centre, OriginM) > LoadRadiusM) { continue; }
+
+			if (EnfantsPrets(Pair.Key)) { AOublier.Add(Pair.Key); }
+		}
+		for (const FWorldseedChunkKey& Key : AOublier)
+		{
+			ReleaseChunk(Key);
+		}
+	}
+
 	HoldOrReleasePlayer();
 }
 
