@@ -216,6 +216,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	bool bRayonForce = false;
 	bool bNiveauxForce = false;
 	bool bAnneau0Force = false;
+	bool bPoidsZForce = false;
 
 	// LE RAYON SE PILOTE DEPUIS LA LIGNE DE COMMANDE, pour le banc.
 	// Sans ce levier, comparer deux rayons demanderait de recompiler entre
@@ -294,6 +295,16 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		UploadsPerPass = FMath::Clamp(UploadsPerPass, 1, 256);
 		MaxJobsInFlight = FMath::Clamp(MaxJobsInFlight, 1, 256);
 		UpdatePeriod = FMath::Clamp(UpdatePeriod, 0.01f, 1.0f);
+
+		// LE POIDS DE LA VERTICALE DANS LE CRITERE DE NIVEAU. A un, rien ne
+		// change -- c.est la propriete de surete de ce levier.
+		float Poids = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPoidsZ="), Poids)
+			&& Poids >= 0.0f)
+		{
+			PoidsZDiffusion = FMath::Clamp(Poids, 0.0f, 4.0f);
+			bPoidsZForce = true;
+		}
 	}
 
 
@@ -337,6 +348,10 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	if (!bAnneau0Force)
 	{
 		RayonAnneau0M = DensityRules.RayonAnneau0M;
+	}
+	if (!bPoidsZForce)
+	{
+		PoidsZDiffusion = FMath::Clamp(DensityRules.PoidsZ, 0.0f, 4.0f);
 	}
 	LargeurTransition = DensityRules.LargeurTransition;
 
@@ -533,6 +548,7 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		DR.LoadRadiusM = LoadRadiusM;
 		DR.BandDepthM = DensityRules.BandDepthM;
 		DR.NiveauMax = NiveauMax;
+		DR.PoidsZ = PoidsZDiffusion;
 		Diffusion.Regler(DR, Density);
 	}
 
@@ -550,11 +566,24 @@ void AWorldseedVoxelTerrain::BeginPlay()
 	// sa vraie configuration ne se compare a rien six mois plus tard.
 	if (NiveauMax > 0)
 	{
+		// ON IMPRIME AUTANT DE PALIERS QU'IL Y EN A. La version d'avant en
+		// citait TROIS en dur : avec un quatrieme anneau elle aurait menti par
+		// omission, et ce journal vient deja de mentir aujourd'hui sur ces
+		// memes rayons. Un releve qui ne porte pas sa configuration ne se
+		// compare a rien.
+		FString Paliers;
+		for (int32 L = 0; L <= NiveauMax; ++L)
+		{
+			Paliers += FString::Printf(TEXT("%s%.0f m a %.0f m/voxel"),
+				(L > 0) ? TEXT(", ") : TEXT(""),
+				FMath::Min(Diffusion.RayonAnneauM(L), LoadRadiusM),
+				DensityRules.VoxelSizeM * static_cast<float>(1 << L));
+		}
+
 		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] voxel : %d anneaux -- %.0f / %.0f / %.0f m, vue %.0f m, ")
+			TEXT("[Worldseed] voxel : %d paliers -- %s | vue %.0f m, ")
 			TEXT("dalle de transition %.2f cellule"),
-			NiveauMax + 1, Diffusion.RayonAnneauM(0), Diffusion.RayonAnneauM(1),
-			Diffusion.RayonAnneauM(2), LoadRadiusM, LargeurTransition);
+			NiveauMax + 1, *Paliers, LoadRadiusM, LargeurTransition);
 	}
 
 	bWorldReady = Density->IsValid();

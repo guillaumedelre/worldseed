@@ -152,8 +152,17 @@ bool FWorldseedDiffusion::DoitSubdiviser(const FWorldseedChunkKey& Key,
 	// le relief -- et il a ete RETIRE le 23 septembre 2026 : livre eteint, il
 	// CASSAIT la contrainte 2:1, son seuil etant une pente, donc divise par
 	// deux a chaque niveau.
+	// LA DISTANCE PEUT ETRE ANISOTROPE, et c'est le seul endroit ou elle l'est.
+	//
+	// Le chargement et le tri des candidats gardent la distance VRAIE : ils
+	// decident de ce qui existe, pas de sa finesse. Seul le NIVEAU se laisse
+	// ponderer -- voir `FWorldseedDiffusionRegles::PoidsZ` pour pourquoi le
+	// critere d'origine est angulairement juste, et pourquoi le vol le met
+	// quand meme en defaut.
 	const FVector Centre = BoiteM(Key).GetCenter();
-	if (FVector::Dist(Centre, OrigineM) >= RayonAnneauM(Key.Niveau - 1))
+	FVector Ecart = Centre - OrigineM;
+	Ecart.Z *= R.PoidsZ;
+	if (Ecart.Size() >= RayonAnneauM(Key.Niveau - 1))
 	{
 		return false;
 	}

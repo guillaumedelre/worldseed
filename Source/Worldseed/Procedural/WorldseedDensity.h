@@ -121,6 +121,16 @@ struct WORLDSEED_API FWorldseedDensityRules
 	 */
 	int32 NiveauMax = 0;
 	float RayonAnneau0M = 300.0f;
+
+	/**
+	 * Poids de la verticale dans le critere de NIVEAU. A 1, comportement d.origine.
+	 *
+	 * Voir `FWorldseedDiffusionRegles::PoidsZ` : les anneaux sont des spheres
+	 * centrees sur le joueur, donc l.altitude CONSOMME le rayon. En vol, le sol
+	 * a l.aplomb tombe dans l.anneau le plus grossier quelle que soit sa
+	 * finesse reelle.
+	 */
+	float PoidsZ = 1.0f;
 	float LoadRadiusM = 0.0f;
 	float LargeurTransition = 0.5f;
 

@@ -63,6 +63,39 @@ struct WORLDSEED_API FWorldseedDiffusionRegles
 
 	/** Nombre d'anneaux au-dela du niveau 0. A zero, resolution uniforme. */
 	int32 NiveauMax = 0;
+
+	/**
+	 * POIDS DE LA VERTICALE DANS LE CRITERE DE SUBDIVISION. A UN, rien ne change.
+	 *
+	 * LE CRITERE ACTUEL EST PLUS DEFENDABLE QU'IL N'EN A L'AIR, et il faut le
+	 * dire avant de le toucher : « subdiviser tant que la distance est sous
+	 * `R0 x 2^(L-1)` » avec un cote de chunk en `32 x 2^L` revient a
+	 * `cote / distance > 64 / R0`, c'est-a-dire une TAILLE ANGULAIRE constante.
+	 * C'est exactement le bon critere pour du rendu, et ce n'est pas un hasard.
+	 *
+	 * CE QUI GENE EN VOL N'EST DONC PAS LE CRITERE, C'EST LA GEOMETRIE. Les
+	 * anneaux sont des spheres centrees sur le joueur : a neuf cents metres
+	 * d'altitude, le sol a l'aplomb est a neuf cents metres, donc dans
+	 * l'anneau 2, donc a quatre metres de voxel. Mesure : le niveau 0 tombe de
+	 * 1277 chunks au repos a 667 en vol, pour le meme reglage. L'altitude
+	 * CONSOMME le rayon, et aucun reglage de streaming n'y peut rien.
+	 *
+	 * Ce poids multiplie l'ecart vertical AVANT de mesurer la distance. A 0,5,
+	 * neuf cents metres d'altitude comptent pour quatre cent cinquante ; a
+	 * 0,25, pour deux cent vingt-cinq. A zero, seule la distance horizontale
+	 * compte -- et le sol a l'aplomb est alors toujours au niveau le plus fin,
+	 * ce qui est genereux et angulairement injustifie.
+	 *
+	 * IL NE PEUT PAS CASSER LA CONTRAINTE 2:1, et c'est ce qui le distingue du
+	 * critere de rugosite retire le 23 septembre. Celui-la avait pour seuil une
+	 * PENTE, donc divisee par deux a chaque cran, et aucune retouche locale ne
+	 * pouvait le rendre monotone. Ici l'anisotropie est une transformation
+	 * LINEAIRE de l'espace, appliquee a l'identique a tous les niveaux : le
+	 * raisonnement « si A descend, ses voisins descendent » tient dans la
+	 * metrique transformee comme dans l'autre. Le controle de la passe
+	 * d'equilibrage reste la pour le dire si je me trompe.
+	 */
+	float PoidsZ = 1.0f;
 };
 
 /**

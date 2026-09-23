@@ -303,6 +303,9 @@ public:
 		meta = (ClampMin = "32.0"))
 	float RayonAnneau0M = 250.0f;
 
+	/** Poids de la verticale dans le critere de niveau. A 1, comportement d.origine. */
+	float PoidsZDiffusion = 1.0f;
+
 	/**
 	 * Epaisseur de la dalle de transition, en FRACTION d'une cellule du chunk.
 	 *
