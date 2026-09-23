@@ -204,6 +204,45 @@ struct WORLDSEED_API FWorldseedSondageDeVue
 	float PlusProcheM = 0.0f;
 };
 
+/**
+ * OU EST LE JOUEUR, ET VERS OU IL REGARDE -- en NOMBRES, pas en texte.
+ *
+ * POURQUOI ELLE EXISTE. `ReleveJoueur` calculait deja tout cela, puis le
+ * JETAIT en `FString`. Le premier consommateur qui a voulu ces nombres -- la
+ * minimap, qui a besoin du centre de sa fenetre et de l'angle de son cone --
+ * n'avait donc d'autre choix que de recalculer, ce qui aurait fait la
+ * quatrieme copie de la position et la deuxieme du cap. Le depot a une regle
+ * contre les formules recopiees, et il l'a payee assez souvent : l'amplitude
+ * saisonniere recalculee dans un second fichier, le classificateur de biomes
+ * reimplemente par le bulletin terrestre -- qui validait donc une COPIE du
+ * classificateur.
+ *
+ * L'en-tete de `ReleveJoueur` argumentait deja dans ce sens : « un overlay qui
+ * irait chercher tout cela lui-meme en dupliquerait les conventions ». C'est
+ * vrai, et c'est exactement pour cela que le releve ne doit pas etre le SEUL
+ * moyen de les obtenir.
+ */
+struct WORLDSEED_API FWorldseedReperePlayer
+{
+	/** Faux tant qu'il n'y a ni pion ni monde : tout le reste est alors nul. */
+	bool bValide = false;
+
+	/** Position dans le repere de l'ACTEUR terrain, en metres. */
+	double Xm = 0.0;
+	double Ym = 0.0;
+	double Zm = 0.0;
+
+	/** Azimut de la CAMERA : zero au nord, croissant vers l'est. */
+	float CapDeg = 0.0f;
+
+	/** Latitude equivalente-aire, et longitude centree sur zero. */
+	float LatitudeDeg = 0.0f;
+	float LongitudeDeg = 0.0f;
+
+	/** Cellule de la grille sous le joueur, convention du sol. */
+	int32 Cellule = INDEX_NONE;
+};
+
 UCLASS()
 class WORLDSEED_API AWorldseedVoxelTerrain : public AActor
 {
@@ -550,6 +589,16 @@ public:
 	 * n'a alors rien a afficher, ce qui vaut mieux qu'une ligne de zeros.
 	 */
 	TArray<FString> ReleveJoueur() const;
+
+	/**
+	 * Position, cap et cellule du joueur, en nombres.
+	 *
+	 * C'est la source de `ReleveJoueur`, qui n'est plus qu'un formateur, et
+	 * celle de tout consommateur qui a besoin des VALEURS -- une minimap, par
+	 * exemple. `bValide` a faux signifie qu'il n'y a ni pion ni monde ; ce
+	 * n'est pas une erreur, c'est l'etat normal du premier dixieme de seconde.
+	 */
+	FWorldseedReperePlayer ReperePlayer() const;
 
 private:
 

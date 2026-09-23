@@ -2267,21 +2267,21 @@ FString AWorldseedVoxelTerrain::LieuxRemarquables() const
 
 // ------------------------------------------- le releve local, pour l'ecran
 
-TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
+FWorldseedReperePlayer AWorldseedVoxelTerrain::ReperePlayer() const
 {
-	TArray<FString> Lignes;
+	FWorldseedReperePlayer Repere;
 
 	UWorld* const W = GetWorld();
 	APawn* const Pawn = W ? UGameplayStatics::GetPlayerPawn(W, 0) : nullptr;
 	if (!Pawn || !bWorldReady || Geometry.NX < 2)
 	{
-		return Lignes;
+		return Repere;
 	}
 
 	const FVector PosCm = Pawn->GetActorLocation() - GetActorLocation();
-	const double X = PosCm.X / WorldseedMetersToCm;
-	const double Y = PosCm.Y / WorldseedMetersToCm;
-	const double Z = PosCm.Z / WorldseedMetersToCm;
+	Repere.Xm = PosCm.X / WorldseedMetersToCm;
+	Repere.Ym = PosCm.Y / WorldseedMetersToCm;
+	Repere.Zm = PosCm.Z / WorldseedMetersToCm;
 
 	// LA CELLULE SE PREND AU PLUS PROCHE VOISIN, comme partout ailleurs : biome
 	// et roche sont des IDENTIFIANTS, et interpoler entre deux categories
@@ -2289,18 +2289,14 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// carte des biomes lue par PCG -- 1,71 % des points affectes a un biome
 	// absent de l'endroit.
 	//
-	// ET « LE PLUS PROCHE » N'EST PAS CELUI QU'ON CROIT. Ces lignes arrondissaient
-	// (`RoundToInt`) quand la peinture du sol tronque (`Floor`) : une demi-cellule
-	// d'ecart, donc un biome NOMME qui n'etait pas le biome PEINT sous les pieds.
-	// La convention vit desormais dans la geometrie, et c'est celle du sol --
-	// entre ce qu'on voit et ce qu'on lit, c'est ce qu'on voit qui a raison.
+	// ET « LE PLUS PROCHE » EST BIEN `Floor` : la cellule k couvre U * NX dans
+	// [k, k+1[, donc son centre est en k + 0,5. C'est `RoundToInt` qui visait
+	// le BORD, et qui nommait donc, une fois sur deux, la cellule d'a cote.
 	double U = 0.0;
 	double V = 0.0;
-	Geometry.UVDepuisMetres(X, Y, U, V);
-	const int32 Cellule = Geometry.CelluleDepuisMetres(X, Y);
+	Geometry.UVDepuisMetres(Repere.Xm, Repere.Ym, U, V);
+	Repere.Cellule = Geometry.CelluleDepuisMetres(Repere.Xm, Repere.Ym);
 
-	// --- 1. OU SUIS-JE ------------------------------------------------------
-	//
 	// LA LATITUDE NE SE DEDUIT PAS DE Y PAR UNE REGLE DE TROIS. La carte est en
 	// projection equivalente-aire : au point d'apparition, le produit lineaire
 	// donnait +65,77 degres la ou la vraie valeur est +46,95. Dix-neuf degres
@@ -2310,8 +2306,8 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// LA LONGITUDE, ELLE, EST UNE CONVENTION D'AFFICHAGE : le monde s'enroule
 	// en X, et l'on etale cet axe sur 360 degres pour donner une planete. On
 	// la centre sur zero, comme un meridien d'origine.
-	const float LatitudeDeg = Geometry.LatitudeDegForV(static_cast<float>(V));
-	const float LongitudeDeg = static_cast<float>(U * 360.0) - 180.0f;
+	Repere.LatitudeDeg = Geometry.LatitudeDegForV(static_cast<float>(V));
+	Repere.LongitudeDeg = static_cast<float>(U * 360.0) - 180.0f;
 
 	// --- LA BOUSSOLE --------------------------------------------------------
 	//
@@ -2334,11 +2330,39 @@ TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
 	// REGARDE, et le depot a deja fait ce choix pour le sol de fond -- en vue a
 	// la troisieme personne, le bras place l'oeil jusqu'a quatre metres
 	// derriere le personnage.
-	float CapDeg = 0.0f;
 	if (const APlayerCameraManager* const Cam = UGameplayStatics::GetPlayerCameraManager(W, 0))
 	{
-		CapDeg = FMath::Fmod(90.0f - static_cast<float>(Cam->GetCameraRotation().Yaw) + 720.0f, 360.0f);
+		Repere.CapDeg = FMath::Fmod(
+			90.0f - static_cast<float>(Cam->GetCameraRotation().Yaw) + 720.0f, 360.0f);
 	}
+
+	Repere.bValide = true;
+	return Repere;
+}
+
+
+TArray<FString> AWorldseedVoxelTerrain::ReleveJoueur() const
+{
+	TArray<FString> Lignes;
+
+	// LE RELEVE N'EST PLUS QU'UN FORMATEUR. Tout ce qu'il disait en texte se
+	// calcule au-dessus, en nombres, pour que la minimap n'ait pas a refaire
+	// la conversion de son cote.
+	const FWorldseedReperePlayer Repere = ReperePlayer();
+	if (!Repere.bValide)
+	{
+		return Lignes;
+	}
+
+	const double X = Repere.Xm;
+	const double Y = Repere.Ym;
+	const double Z = Repere.Zm;
+	const int32 Cellule = Repere.Cellule;
+	const float LatitudeDeg = Repere.LatitudeDeg;
+	const float LongitudeDeg = Repere.LongitudeDeg;
+	const float CapDeg = Repere.CapDeg;
+
+	// --- 1. OU SUIS-JE ------------------------------------------------------
 
 	static const TCHAR* const Roses[] = {
 		TEXT("N"), TEXT("NE"), TEXT("E"), TEXT("SE"),
