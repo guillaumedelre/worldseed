@@ -124,6 +124,16 @@ public:
 	/** Les lieux a dessiner. Batie une fois a la premiere ouverture. */
 	const TArray<FWorldseedMarqueur>& Marqueurs() const { return Lieux; }
 
+	/**
+	 * Combien de lieux de ce genre, et a partir de quelle echelle ils se voient.
+	 *
+	 * LA LEGENDE A BESOIN DES DEUX. Un genre absent de la carte a deux causes
+	 * qui ne se ressemblent pas -- le monde n'en porte aucun, ou le zoom les
+	 * cache -- et les taire toutes les deux laisse croire a la premiere.
+	 */
+	int32 NombreDeGenre(FWorldseedMarqueur::EGenre Genre) const;
+	double EchelleDeGenre(FWorldseedMarqueur::EGenre Genre) const;
+
 	/** Le repere pose par le joueur, s'il y en a un. */
 	bool ARepere() const { return bRepere; }
 	FVector2D RepereM() const { return Repere; }

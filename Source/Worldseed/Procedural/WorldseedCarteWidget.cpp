@@ -49,6 +49,46 @@ namespace WorldseedCarteUI
 		default:                                  return WorldseedIcone::Repere;
 		}
 	}
+
+	/** Les cinq genres, dans l'ordre ou la legende les presente. */
+	const FWorldseedMarqueur::EGenre Genres[5] = {
+		FWorldseedMarqueur::EGenre::Arche,
+		FWorldseedMarqueur::EGenre::Gouffre,
+		FWorldseedMarqueur::EGenre::Doline,
+		FWorldseedMarqueur::EGenre::Table,
+		FWorldseedMarqueur::EGenre::Canyon
+	};
+
+	const TCHAR* Nom(FWorldseedMarqueur::EGenre Genre)
+	{
+		switch (Genre)
+		{
+		case FWorldseedMarqueur::EGenre::Arche:   return TEXT("Arches");
+		case FWorldseedMarqueur::EGenre::Gouffre: return TEXT("Gouffres");
+		case FWorldseedMarqueur::EGenre::Doline:  return TEXT("Dolines");
+		case FWorldseedMarqueur::EGenre::Table:   return TEXT("Tables");
+		case FWorldseedMarqueur::EGenre::Canyon:  return TEXT("Canyons");
+		default:                                  return TEXT("Repere");
+		}
+	}
+
+	/**
+	 * Mise en page de la legende, en pixels.
+	 *
+	 * LA HAUTEUR DE LIGNE SUIT LA TAILLE DU GLYPHE, pas l'inverse. Premiere
+	 * version : des icones de 22 px sur des lignes de 23 -- une police de 22
+	 * dessine sur pres de 28 px de haut, donc les glyphes se touchaient et les
+	 * deux dernieres lignes sortaient du panneau. Vu a l'image.
+	 */
+	constexpr float IconeLegendePx = 17.0f;
+	constexpr float LigneH = 24.0f;
+	constexpr float MargeInt = 12.0f;
+	constexpr float MargeBord = 18.0f;
+	constexpr float ColonneTexte = 38.0f;
+	constexpr float LargeurPanneau = 268.0f;
+
+	/** Hauteur de la mention « sous N m/px », et sa colonne depuis la droite. */
+	constexpr float ColonneMention = 100.0f;
 }
 
 
@@ -281,7 +321,108 @@ int32 SWorldseedCarte::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		}
 	}
 
-	return CoucheMarqueurs + 4;
+	// --- la legende ----------------------------------------------------------
+	//
+	// ELLE DIT AUSSI CE QU'ON NE VOIT PAS, ET C'EST SA RAISON D'ETRE. Un genre
+	// absent de la carte a deux causes qui ne se ressemblent pas : le monde n'en
+	// porte aucun, ou le zoom les cache. Les taire toutes les deux laisse croire
+	// a la premiere -- et l'on cherche un defaut de generation pour ce qui n'est
+	// qu'une echelle.
+	const int32 CoucheLegende = CoucheMarqueurs + 4;
+	const FSlateFontInfo Libelle = FCoreStyle::GetDefaultFontStyle("Regular", 11);
+	const FSlateFontInfo Petit = FCoreStyle::GetDefaultFontStyle("Italic", 9);
+
+	const FSlateFontInfo IconeLegende =
+		WorldseedIcones::Police(WorldseedCarteUI::IconeLegendePx);
+
+	// Cinq lignes, une separation, la ligne d'aide, et les deux marges.
+	const float Hauteur = 2 * WorldseedCarteUI::MargeInt
+		+ 5 * WorldseedCarteUI::LigneH + 6.0f + 20.0f;
+	const FVector2D CoinPanneau(
+		Taille.X - WorldseedCarteUI::LargeurPanneau - WorldseedCarteUI::MargeBord,
+		Taille.Y - Hauteur - WorldseedCarteUI::MargeBord);
+
+	// UN LISERE, ET UN FOND PRESQUE OPAQUE. Un panneau sombre a 78 % se voyait
+	// tres bien sur la mer et DISPARAISSAIT sur la bande de hors-monde, qui est
+	// sombre elle aussi : les deux dernieres lignes semblaient deborder alors
+	// que le panneau etait complet -- mesure a la colonne de pixels, il allait
+	// bien jusqu'au bout. Un panneau d'interface doit se detacher de TOUS les
+	// fonds, pas de la plupart.
+	FSlateDrawElement::MakeBox(OutDrawElements, CoucheLegende,
+		AllottedGeometry.ToPaintGeometry(
+			FVector2D(WorldseedCarteUI::LargeurPanneau + 2.0f, Hauteur + 2.0f),
+			FSlateLayoutTransform(CoinPanneau - FVector2D(1.0, 1.0))),
+		&BrosseVide, ESlateDrawEffect::None, FLinearColor(0.55f, 0.58f, 0.66f, 0.55f));
+
+	FSlateDrawElement::MakeBox(OutDrawElements, CoucheLegende,
+		AllottedGeometry.ToPaintGeometry(
+			FVector2D(WorldseedCarteUI::LargeurPanneau, Hauteur),
+			FSlateLayoutTransform(CoinPanneau)),
+		&BrosseVide, ESlateDrawEffect::None, FLinearColor(0.05f, 0.06f, 0.09f, 0.92f));
+
+	float Y = CoinPanneau.Y + WorldseedCarteUI::MargeInt;
+	for (const FWorldseedMarqueur::EGenre G : WorldseedCarteUI::Genres)
+	{
+		const int32 Nombre = C->NombreDeGenre(G);
+		const double EchelleMax = C->EchelleDeGenre(G);
+
+		// Trois etats, et trois seulement : absent du monde, cache par le zoom,
+		// ou visible. Chacun se lit d'un coup d'oeil.
+		const bool bAucun = (Nombre == 0);
+		const bool bCache = !bAucun && (C->MetresParPixel > EchelleMax);
+
+		const FLinearColor Teinte = bAucun
+			? FLinearColor(0.42f, 0.42f, 0.46f)
+			: (bCache ? WorldseedCarteUI::Teinte(G) * 0.45f : WorldseedCarteUI::Teinte(G));
+		const FLinearColor Encre = bAucun || bCache
+			? FLinearColor(0.58f, 0.58f, 0.62f) : FLinearColor(0.94f, 0.94f, 0.97f);
+
+		const FText Icone = WorldseedIcones::Glyphe(WorldseedCarteUI::Glyphe(G));
+		FSlateDrawElement::MakeText(OutDrawElements, CoucheLegende + 1,
+			AllottedGeometry.ToPaintGeometry(FVector2D(22.0, 22.0),
+				FSlateLayoutTransform(FVector2D(
+					CoinPanneau.X + WorldseedCarteUI::MargeInt, Y + 1.0f))),
+			Icone, IconeLegende, ESlateDrawEffect::None, Teinte);
+
+		const FString Ligne = bAucun
+			? FString::Printf(TEXT("%s  --"), WorldseedCarteUI::Nom(G))
+			: FString::Printf(TEXT("%s  %d"), WorldseedCarteUI::Nom(G), Nombre);
+
+		FSlateDrawElement::MakeText(OutDrawElements, CoucheLegende + 1,
+			AllottedGeometry.ToPaintGeometry(FVector2D(160.0, 20.0),
+				FSlateLayoutTransform(FVector2D(
+					CoinPanneau.X + WorldseedCarteUI::ColonneTexte, Y + 4.0f))),
+			FText::FromString(Ligne), Libelle, ESlateDrawEffect::None, Encre);
+
+		if (bCache)
+		{
+			// LA RAISON, ET LE ZOOM QU'IL FAUDRAIT. Dire « zoomer » sans dire
+			// jusqu'ou laisse tourner la molette au hasard.
+			FSlateDrawElement::MakeText(OutDrawElements, CoucheLegende + 1,
+				AllottedGeometry.ToPaintGeometry(FVector2D(96.0, 18.0),
+					FSlateLayoutTransform(FVector2D(
+						CoinPanneau.X + WorldseedCarteUI::LargeurPanneau
+							- WorldseedCarteUI::ColonneMention, Y + 5.0f))),
+				FText::FromString(FString::Printf(TEXT("sous %.0f m/px"), EchelleMax)),
+				Petit, ESlateDrawEffect::None, FLinearColor(0.72f, 0.66f, 0.42f));
+		}
+
+		Y += WorldseedCarteUI::LigneH;
+	}
+
+	Y += 6.0f;   // la separation avant la ligne d'aide
+
+	// L'echelle courante et les commandes : personne ne devine Ctrl+clic.
+	FSlateDrawElement::MakeText(OutDrawElements, CoucheLegende + 1,
+		AllottedGeometry.ToPaintGeometry(FVector2D(230.0, 18.0),
+			FSlateLayoutTransform(FVector2D(
+				CoinPanneau.X + WorldseedCarteUI::MargeInt, Y + 4.0f))),
+		FText::FromString(FString::Printf(
+			TEXT("%.0f m/px  -  clic : repere, Ctrl+clic : y aller"),
+			C->MetresParPixel)),
+		Petit, ESlateDrawEffect::None, FLinearColor(0.70f, 0.72f, 0.78f));
+
+	return CoucheLegende + 2;
 }
 
 

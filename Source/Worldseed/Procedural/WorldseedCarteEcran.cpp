@@ -164,6 +164,27 @@ AWorldseedVoxelTerrain* UWorldseedCarteEcran::Terrain() const
 }
 
 
+int32 UWorldseedCarteEcran::NombreDeGenre(FWorldseedMarqueur::EGenre Genre) const
+{
+	int32 N = 0;
+	for (const FWorldseedMarqueur& M : Lieux)
+	{
+		if (M.Genre == Genre) { ++N; }
+	}
+	return N;
+}
+
+
+double UWorldseedCarteEcran::EchelleDeGenre(FWorldseedMarqueur::EGenre Genre) const
+{
+	for (const FWorldseedMarqueur& M : Lieux)
+	{
+		if (M.Genre == Genre) { return M.EchelleMaxM; }
+	}
+	return 0.0;
+}
+
+
 double UWorldseedCarteEcran::LargeurMondeM() const
 {
 	const AWorldseedVoxelTerrain* const T = Terrain();
@@ -207,9 +228,27 @@ void UWorldseedCarteEcran::Tick(float DeltaTime)
 			if (EchelleAutoM > 0.0f)
 			{
 				MetresParPixel = EchelleAutoM;
+
+				// ON RECENTRE SUR LE JOUEUR APRES AVOIR CHANGE L'ECHELLE, et
+				// c'est indispensable : le centre avait ete borne pour la vue
+				// du monde entier, ou la marge est presque nulle -- il etait
+				// donc colle au milieu du monde. Zoomer sans recentrer montrait
+				// l'ocean central alors que le joueur etait sur un continent a
+				// neuf cents metres. Le zoom a la molette n'a pas ce defaut :
+				// il conserve le point sous le curseur.
+				if (const AWorldseedVoxelTerrain* const T = Terrain())
+				{
+					const FWorldseedReperePlayer R = T->ReperePlayer();
+					if (R.bValide)
+					{
+						CentreVueM = FVector2D(R.Xm, R.Ym);
+					}
+				}
+
 				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed] carte : echelle imposee a %.1f m/px"),
-					MetresParPixel);
+					TEXT("[Worldseed] carte : echelle imposee a %.1f m/px, ")
+					TEXT("centree sur (%.0f, %.0f) m"),
+					MetresParPixel, CentreVueM.X, CentreVueM.Y);
 			}
 			return;
 		}
@@ -254,10 +293,22 @@ void UWorldseedCarteEcran::BornerVue(const FVector2D& TailleEcranPx, float Echel
 	const double Hauteur = static_cast<double>(Geo.HeightM);
 	const double Cellule = static_cast<double>(Geo.WidthM()) / FMath::Max(Geo.NX, 1);
 
-	// LE PLAFOND DE ZOOM EST PHYSIQUE, PAS UN GOUT : la donnee s'arrete a la
-	// cellule. Au-dela d'un texel par pixel REEL -- d'ou le facteur DPI -- on
-	// ne grossirait plus que des texels, sans rien montrer de plus.
-	const double PlusFin = Cellule / FMath::Max(EchelleDPI, 0.01f);
+	// LE ZOOM VA AU-DELA DE LA RESOLUTION DE LA DONNEE, ET C'EST VOULU.
+	//
+	// S'arreter a un texel par pixel reel semblait rigoureux -- au-dela, la
+	// donnee n'a plus rien a montrer. Mesure sur cette machine : le facteur DPI
+	// vaut 0,83, donc ce plafond tombait a **18,8 m par pixel**... alors que les
+	// gouffres et les dolines ne s'affichent que sous 12. Ils etaient
+	// INATTEIGNABLES, et la legende annoncait un seuil qu'aucun zoom ne pouvait
+	// franchir.
+	//
+	// Une carte ne sert pas qu'a etre nette : on y vise un point, on y lit des
+	// marqueurs, on s'y approche. Quatre texels par pixel laissent l'image
+	// s'adoucir -- comme une carte papier qu'on rapproche -- sans rien
+	// inventer : le filtre bilineaire interpole, il ne fabrique pas de relief.
+	constexpr double ZoomAuDelaDuTexel = 4.0;
+	const double PlusFin = Cellule
+		/ (FMath::Max(EchelleDPI, 0.01f) * ZoomAuDelaDuTexel);
 
 	// LE DEZOOM MAXIMAL MONTRE LE MONDE ENTIER, et il se cale sur le cote le
 	// plus CONTRAIGNANT -- donc un maximum, pas la hauteur.
