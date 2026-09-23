@@ -215,3 +215,115 @@ bool WorldseedPlacement::TerreEmergeeLaPlusProche(const FWorldseedGeometry& Geo,
 	OutY = (static_cast<double>(MeilleurJ) + 0.5) / NY * HauteurM - HauteurM * 0.5;
 	return true;
 }
+
+FWorldseedDepart WorldseedPlacement::Choisir(const FWorldseedDensity& Champ,
+	const FWorldseedGeometry& Geo, const TArray<float>& Heights,
+	const FVector2D& DemandeM, const FWorldseedDepartRegles& R)
+{
+	FWorldseedDepart D;
+	D.XM = DemandeM.X;
+	D.YM = DemandeM.Y;
+	D.SurfaceM = Champ.SurfaceHeightM(D.XM, D.YM);
+	D.SurfaceDemandeeM = D.SurfaceM;
+
+	// --- 1. LA TERRE EMERGEE LA PLUS PROCHE ---------------------------------
+	//
+	// ELLE PRECEDE LA FOUILLE FINE, ET C EST L ORDRE QUI COMPTE. Ce monde est
+	// de l ocean a 70,8 % ; `SolPlat` ne porte qu a 384 metres, donc un joueur
+	// pose au large n en sortirait jamais. La grille 2D, elle, donne la terre
+	// la plus proche en un balayage, a des dizaines de kilometres s il le faut.
+	// Chacune fait ce qu elle sait faire.
+	double TerreX = D.XM;
+	double TerreY = D.YM;
+	D.bTerreTrouvee = TerreEmergeeLaPlusProche(Geo, Heights, DemandeM,
+		R.MargeDeplacementM, TerreX, TerreY);
+	if (D.bTerreTrouvee)
+	{
+		D.TerreXM = TerreX;
+		D.TerreYM = TerreY;
+		D.XM = TerreX;
+		D.YM = TerreY;
+		D.SurfaceM = Champ.SurfaceHeightM(D.XM, D.YM);
+	}
+
+	// --- 2. LE REGIME, ET IL Y EN A TROIS -----------------------------------
+
+	// LE DEPART EXACT, POUR INSPECTER UN POINT PRECIS. Aucune recherche, aucune
+	// borne de pente : c est le seul moyen d aller voir une paroi, un surplomb
+	// ou une bouche de grotte, que toute recherche de sol PLAT ecarterait par
+	// construction. Le joueur peut glisser, et c est accepte.
+	if (R.bExact)
+	{
+		D.Issue = EWorldseedDepart::Exact;
+		D.PenteDeg = PenteDeg(Champ, D.XM, D.YM);
+		D.bColonneCreuse = !SolPlein(Champ, D.XM, D.YM, D.SurfaceM);
+		return D;
+	}
+
+	double FX = D.XM;
+	double FY = D.YM;
+	float FSurface = D.SurfaceM;
+	float FPente = 0.0f;
+
+	// LE DEPART CHOISI EST BORNE EN ALTITUDE, et cette borne est tout le sujet.
+	// `SolPlat` retient le PREMIER point acceptable de sa spirale : sur un
+	// versant raide, le premier sol a douze degres est la plaine d en bas.
+	// Mesure sur deux parties independantes -- latitudes 73,1 et 15,3 degres,
+	// donc sans rapport de terrain -- le joueur est ne 89 et 92 metres SOUS le
+	// point qu il avait choisi. Qui visait un sommet naissait a son pied.
+	if (R.bChoisi)
+	{
+		if (SolPlat(Champ, FVector2D(D.XM, D.YM), R.PenteChoisieMaxDeg,
+			R.EcartAltitudeMaxM, D.SurfaceM, FX, FY, FSurface, FPente))
+		{
+			D.Issue = EWorldseedDepart::SolPlatTrouve;
+			D.XM = FX;
+			D.YM = FY;
+			D.SurfaceM = FSurface;
+			D.PenteDeg = FPente;
+		}
+		else
+		{
+			// ECHEC FRANC : ON TIENT LE POINT VISE.
+			//
+			// ARBITRAGE DU PROPRIETAIRE, 22 septembre 2026. Il y avait ici un
+			// repli vers la recherche LARGE -- douze degres, aucune borne
+			// d altitude -- et c etait une FALAISE DE POLITIQUE : quarante
+			// metres, puis l infini, en un cran. Deux autres formes ont ete
+			// presentees puis ECARTEES : l elargissement par crans, qui gardait
+			// un echec graduel, et le MEILLEUR de toute la spirale, qui traitait
+			// bien la cause -- « elle retient le premier point acceptable, pas
+			// le meilleur » -- mais au prix de la PROXIMITE, en naissant jusqu a
+			// 380 metres du point vise pour gagner trois metres.
+			//
+			// Ce qui est accepte en echange : le pion peut naitre sur une paroi
+			// et glisser.
+			D.Issue = EWorldseedDepart::PointViseTenu;
+			D.PenteDeg = PenteDeg(Champ, D.XM, D.YM);
+
+			// LA COLONNE CREUSE NE FAIT PAS ECHOUER LE CHOIX, mais l appelant
+			// doit pouvoir le DIRE : le joueur peut tomber dans une cavite, et
+			// personne ne saurait pourquoi.
+			D.bColonneCreuse = !SolPlein(Champ, D.XM, D.YM, D.SurfaceM);
+		}
+		return D;
+	}
+
+	// NAISSANCE LIBRE : l endroit n a aucune importance, donc la recherche
+	// large reste la bonne reponse.
+	if (SolPlat(Champ, FVector2D(D.XM, D.YM), R.PenteLibreMaxDeg,
+		0.0f, 0.0f, FX, FY, FSurface, FPente))
+	{
+		D.Issue = EWorldseedDepart::SolPlatTrouve;
+		D.XM = FX;
+		D.YM = FY;
+		D.SurfaceM = FSurface;
+		D.PenteDeg = FPente;
+	}
+	else
+	{
+		D.Issue = EWorldseedDepart::Echec;
+		D.PenteDeg = PenteDeg(Champ, D.XM, D.YM);
+	}
+	return D;
+}

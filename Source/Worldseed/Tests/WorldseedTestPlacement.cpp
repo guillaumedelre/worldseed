@@ -488,4 +488,187 @@ bool FWorldseedTestPlacementTerreEmergee::RunTest(const FString& Parameters)
 
 	return true;
 }
+/**
+ * LES TROIS REGIMES DU DEPART, ET ILS NE FONT PAS LA MEME CHOSE.
+ *
+ * C'EST LA REGLE QUE L'ACTEUR APPLIQUAIT DANS 248 LIGNES MELEES AU PION, et
+ * elle n'avait aucun oracle : eprouver l'echec franc demandait de forcer
+ * `-WorldseedEcartDepart=1` en jeu, de relancer, et de LIRE le journal. Six
+ * essais n'avaient d'ailleurs pas suffi a le declencher, la spirale trouvant
+ * presque toujours quelque chose.
+ *
+ * LA COLLINE REPRODUIT LE DEFAUT D'ORIGINE : plaine a 20 m, sommet a 260, un
+ * versant raide entre les deux. Qui vise le versant voit `SolPlat` retenir le
+ * PREMIER point acceptable de sa spirale -- la plaine d'en bas, 120 metres plus
+ * bas. C'est exactement ce qui a ete mesure en jeu, deux fois : 89 et 92 metres
+ * sous le point choisi, puis 357, puis 914.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestDepartTroisRegimes,
+	"Worldseed.Placement.LesTroisRegimesDuDepart",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestDepartTroisRegimes::RunTest(const FString& Parameters)
+{
+	const FColline C;
+
+	// Le milieu du versant : raide, et a mi-hauteur entre plaine et sommet.
+	const FVector2D SurLeVersant(0.0, 0.0);
+	const float AltitudeVisee = C.Champ.SurfaceHeightM(SurLeVersant.X, SurLeVersant.Y);
+
+	// LA CELLULE EST L'UNITE, ET C'EST UNE LIMITE REELLE DU DEPART « EXACT ».
+	// `TerreEmergeeLaPlusProche` s'execute TOUJOURS, meme en regime exact, et
+	// elle rend le CENTRE de la cellule emergee la plus proche : le point est
+	// donc cale sur la grille du monde, a une demi-cellule pres. Ce n'etait pas
+	// introduit par le decoupage -- l'ordre etait deja celui-la -- mais rien ne
+	// le disait, et « exact » laisse croire au metre.
+	const double CelluleM = C.Geo.MetersPerPixel();
+
+	FWorldseedDepartRegles R;
+	R.MargeDeplacementM = 0.0f;   // le champ de la fixture ne deplace rien
+
+	AddInfo(FString::Printf(
+		TEXT("versant vise a l'altitude %.1f m (plaine %.0f, sommet %.0f), ")
+		TEXT("cellule %.1f m"),
+		AltitudeVisee, FColline::PlaineM, FColline::SommetM, CelluleM));
+
+	// --- REGIME EXACT : on tient le point, pente non bornee -----------------
+	{
+		FWorldseedDepartRegles Exact = R;
+		Exact.bExact = true;
+		Exact.bChoisi = true;
+
+		const FWorldseedDepart D = WorldseedPlacement::Choisir(
+			C.Champ, C.Geo, C.Relief, SurLeVersant, Exact);
+
+		TestTrue(TEXT("EXACT : l'issue est bien le regime exact"),
+			D.Issue == EWorldseedDepart::Exact);
+		TestTrue(TEXT("EXACT : le point ne bouge pas de plus d'une cellule"),
+			FVector2D::Distance(FVector2D(D.XM, D.YM), SurLeVersant) <= CelluleM);
+		TestTrue(TEXT("EXACT : et l'altitude reste celle du versant"),
+			FMath::Abs(D.SurfaceM - AltitudeVisee) < 30.0f);
+	}
+
+	// --- DEPART CHOISI, BORNE SERREE : ECHEC FRANC --------------------------
+	//
+	// C'est le chemin que l'arbitrage du 22 septembre a impose, et le seul que
+	// le jeu n'arrivait pas a declencher : la spirale trouve presque toujours
+	// quelque chose. Ici il suffit de serrer la borne.
+	{
+		FWorldseedDepartRegles Serree = R;
+		Serree.bChoisi = true;
+		Serree.EcartAltitudeMaxM = 1.0f;
+
+		const FWorldseedDepart D = WorldseedPlacement::Choisir(
+			C.Champ, C.Geo, C.Relief, SurLeVersant, Serree);
+
+		AddInfo(FString::Printf(
+			TEXT("borne serree a 1 m : issue %d, altitude %.1f m, pente %.1f deg"),
+			static_cast<int32>(D.Issue), D.SurfaceM, D.PenteDeg));
+
+		TestTrue(TEXT("borne serree : ON TIENT LE POINT VISE"),
+			D.Issue == EWorldseedDepart::PointViseTenu);
+		TestTrue(TEXT("et le point ne descend PAS dans la plaine"),
+			D.SurfaceM > FColline::PlaineM + 50.0f);
+	}
+
+	// --- DEPART CHOISI, BORNE LARGE : on se deplace vers du plat -------------
+	{
+		FWorldseedDepartRegles Large = R;
+		Large.bChoisi = true;
+		Large.EcartAltitudeMaxM = 500.0f;   // assez pour atteindre plaine ou sommet
+
+		const FWorldseedDepart D = WorldseedPlacement::Choisir(
+			C.Champ, C.Geo, C.Relief, SurLeVersant, Large);
+
+		AddInfo(FString::Printf(
+			TEXT("borne large a 500 m : issue %d, altitude %.1f m, pente %.1f deg"),
+			static_cast<int32>(D.Issue), D.SurfaceM, D.PenteDeg));
+
+		TestTrue(TEXT("borne large : on trouve du plat"),
+			D.Issue == EWorldseedDepart::SolPlatTrouve);
+		TestTrue(TEXT("et le sol trouve est reellement plat"),
+			D.PenteDeg <= Large.PenteChoisieMaxDeg);
+	}
+
+	// --- NAISSANCE LIBRE : aucune borne d'altitude --------------------------
+	//
+	// LE TEMOIN QUI DONNE SON SENS A LA BORNE. Sans lui, « la borne retient le
+	// point » ne se distinguerait pas de « la recherche ne trouve jamais rien
+	// sur cette colline » : il faut montrer que la MEME recherche, debornee,
+	// trouve -- et descend.
+	{
+		FWorldseedDepartRegles Libre = R;
+		Libre.bChoisi = false;
+
+		const FWorldseedDepart D = WorldseedPlacement::Choisir(
+			C.Champ, C.Geo, C.Relief, SurLeVersant, Libre);
+
+		AddInfo(FString::Printf(
+			TEXT("naissance libre : issue %d, altitude %.1f m, soit %+.0f m du point vise"),
+			static_cast<int32>(D.Issue), D.SurfaceM, D.SurfaceM - AltitudeVisee));
+
+		TestTrue(TEXT("TEMOIN : debornee, la meme recherche TROUVE"),
+			D.Issue == EWorldseedDepart::SolPlatTrouve);
+		TestTrue(TEXT("TEMOIN : et elle descend loin du point vise"),
+			FMath::Abs(D.SurfaceM - AltitudeVisee) > 50.0f);
+	}
+
+	return true;
+}
+
+/**
+ * LA TERRE EMERGEE PRECEDE TOUT, ET C'EST L'ORDRE QUI COMPTE.
+ *
+ * `SolPlat` ne porte qu'a 384 metres ; ce monde est de l'ocean a 70,8 %. Un
+ * joueur pose au large n'en sortirait donc JAMAIS par la seule fouille fine.
+ * La grille 2D, elle, donne la terre la plus proche en un balayage, a des
+ * dizaines de kilometres s'il le faut.
+ *
+ * ON LE VERIFIE PAR LE DEPLACEMENT, PAS PAR LE DRAPEAU : un `bTerreTrouvee`
+ * vrai ne prouve rien si le point n'a pas bouge.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestDepartTerreDabord,
+	"Worldseed.Placement.LaTerreEmergeePrecedeTout",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestDepartTerreDabord::RunTest(const FString& Parameters)
+{
+	// Une rampe qui plonge : l'ouest est sous la mer, l'est emerge.
+	const FRampe Monde(0.30, 0.0);
+
+	// Un point franchement au large, bien au-dela des 384 m de la fouille fine.
+	const double LargeM = -Monde.Geo.WidthM() * 0.35;
+	const FVector2D AuLarge(LargeM, 0.0);
+
+	const float SurfaceAuLarge = Monde.Champ.SurfaceHeightM(AuLarge.X, AuLarge.Y);
+	if (!TestTrue(TEXT("TEMOIN : le point de depart est bien sous la mer"),
+		SurfaceAuLarge < 0.0f))
+	{
+		return false;
+	}
+
+	FWorldseedDepartRegles R;
+	R.bChoisi = false;
+	R.MargeDeplacementM = 0.0f;
+
+	const FWorldseedDepart D = WorldseedPlacement::Choisir(
+		Monde.Champ, Monde.Geo, Monde.Relief, AuLarge, R);
+
+	const double Parcourue = FVector2D::Distance(FVector2D(D.XM, D.YM), AuLarge);
+
+	AddInfo(FString::Printf(
+		TEXT("depuis (%.0f, %.0f) m sous %.0f m d'eau -- ramene a (%.0f, %.0f) m, ")
+		TEXT("altitude %.1f m, soit %.0f m parcourus"),
+		AuLarge.X, AuLarge.Y, -SurfaceAuLarge, D.XM, D.YM, D.SurfaceM, Parcourue));
+
+	TestTrue(TEXT("une terre a ete trouvee"), D.bTerreTrouvee);
+	TestTrue(TEXT("et le point retenu est EMERGE"), D.SurfaceM > 0.0f);
+
+	// LE CONTROLE QUI TRANCHE : la distance parcourue depasse largement la
+	// portee de la fouille fine, donc c'est bien le balayage 2D qui a repondu.
+	TestTrue(TEXT("le point a ete ramene BIEN au-dela des 384 m de SolPlat"),
+		Parcourue > 384.0);
+
+	return true;
+}
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -1570,64 +1570,73 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 	else if (!bPlayerHeld)
 	{
 		// LE DEPART CHOISI DANS LE MENU DEPLACE LE POINT DE DEPART DE LA
-		// RECHERCHE, et rien d'autre. Tout ce qui suit -- terre emergee la
-		// plus proche, puis sol plat -- s'applique ensuite a l'identique.
-		// C'est le minimum : ecrire ici un second chemin de mise en place
-		// ferait diverger deux moities qui doivent rester la meme.
-		//
-		// IL NE JOUE QU'UNE FOIS. Le filet de rattrapage rearme cette mise en
-		// place quand le joueur passe sous la bande de terrain ; le rejouer le
-		// ramenerait a son point de naissance a chaque chute, ce qui n'est pas
-		// un filet mais une laisse.
-		// LE DRAPEAU EST CONSOMME TOUT DE SUITE, MAIS LE FAIT SURVIT. La suite
-		// a besoin de savoir qu'un point a ete CHOISI -- pour borner le
-		// denivele -- et a quelle altitude il etait, pour la mesurer.
+		// RECHERCHE, et rien d'autre. Tout ce qui suit -- terre emergee la plus
+		// proche, puis sol plat -- s'applique ensuite a l'identique. C'est le
+		// minimum : ecrire ici un second chemin de mise en place ferait diverger
+		// les deux.
 		const bool bChoisi = bDepartDemande;
-		float SurfaceDemandeeM = 0.0f;
-
 		if (bDepartDemande)
 		{
 			bDepartDemande = false;
 			X = DepartXYM.X;
 			Y = DepartXYM.Y;
-			SurfaceM = Density->SurfaceHeightM(X, Y);
-			SurfaceDemandeeM = SurfaceM;
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : depart demande a (%.0f, %.0f) m, ")
-				TEXT("surface %.1f m"), X, Y, SurfaceM);
+				TEXT("surface %.1f m"), X, Y, Density->SurfaceHeightM(X, Y));
 		}
 
-		// ON CHOISIT L'ENDROIT, ON NE SE CONTENTE PAS DE CELUI DU PlayerStart.
-		// Il faut du plat, de l'emerge, et du plein dessous : une colonne sur
-		// huit porte une galerie, et naitre au-dessus revient a tomber dedans.
+		// --- LES SURCHARGES, QUI NE VIVENT QUE DANS L'ACTEUR ----------------
 		//
-		// LA TERRE D'ABORD, LE SOL PLAT ENSUITE, et l'ordre est tout le
-		// correctif. `WorldseedPlacement::SolPlat` refusait deja ce qui est sous la mer,
-		// mais il ne cherche que dans 384 metres : sur un monde couvert
-		// d'ocean a 70,8 %, le point de depart tombe au large et il n'y a
-		// simplement aucune terre a cette distance. Mesure avant correction,
-		// le journal etait sans appel -- « aucun sol plat autour du depart,
-		// pose sur place », puis « joueur tenu a (0, 0) m, surface -153,8 m ».
-		// Cent cinquante metres sous le niveau de la mer.
-		//
-		// La grille 2D donne la terre la plus proche en un balayage, et la
-		// fouille fine repart de la. Chacune fait ce qu'elle sait faire.
-		double TerreX = X;
-		double TerreY = Y;
-		if (WorldseedPlacement::TerreEmergeeLaPlusProche(
-				Geometry, HeightsM(), FVector2D(X, Y),
-				DensityRules.OverhangAmplitudeM + DensityRules.DetailAmplitudeM,
-				TerreX, TerreY))
+		// ELLES SONT LUES ICI ET NON DANS LA REGLE, et c'est deliberement : une
+		// passe qui relit la ligne de commande pour son compte ne s'eprouve
+		// plus -- il faudrait relancer le jeu pour la mettre dans un etat. La
+		// regle recoit des NOMBRES ; d'ou ils viennent ne la concerne pas.
+		FWorldseedDepartRegles DR;
+		DR.bChoisi = bChoisi;
+		DR.PenteChoisieMaxDeg = PenteDepartMaxDeg;
+		DR.EcartAltitudeMaxM = EcartAltitudeDepartM;
+		DR.MargeDeplacementM =
+			DensityRules.OverhangAmplitudeM + DensityRules.DetailAmplitudeM;
+
+		{
+			int32 Exact = 0;
+			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDepartExact="), Exact)
+				&& Exact != 0)
+			{
+				DR.bExact = true;
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] voxel : depart EXACT demande -- ")
+					TEXT("aucune recherche de sol plat, pente non bornee"));
+			}
+		}
+
+		if (FParse::Value(FCommandLine::Get(),
+			TEXT("WorldseedEcartDepart="), DR.EcartAltitudeMaxM))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] voxel : ecart d'altitude tolere force a ")
+				TEXT("%.1f m (defaut %.0f)"),
+				DR.EcartAltitudeMaxM, EcartAltitudeDepartM);
+		}
+
+		// --- LA REGLE, QUI NE CONNAIT NI PION NI COMPOSANT ------------------
+		const FVector2D DemandeM(X, Y);
+		const FWorldseedDepart Depart = WorldseedPlacement::Choisir(
+			*Density, Geometry, HeightsM(), DemandeM, DR);
+
+		X = Depart.XM;
+		Y = Depart.YM;
+		SurfaceM = Depart.SurfaceM;
+
+		if (Depart.bTerreTrouvee)
 		{
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : terre emergee la plus proche a ")
 				TEXT("(%.0f, %.0f) m, soit %.1f km du point demande"),
-				TerreX, TerreY,
-				FVector2D::Distance(FVector2D(X, Y), FVector2D(TerreX, TerreY)) / 1000.0);
-			X = TerreX;
-			Y = TerreY;
-			SurfaceM = Density->SurfaceHeightM(X, Y);
+				Depart.TerreXM, Depart.TerreYM,
+				FVector2D::Distance(DemandeM,
+					FVector2D(Depart.TerreXM, Depart.TerreYM)) / 1000.0);
 		}
 		else
 		{
@@ -1636,183 +1645,54 @@ void AWorldseedVoxelTerrain::HoldOrReleasePlayer()
 				TEXT("le monde est-il entierement sous l'eau ?"));
 		}
 
-		float PenteDeg = 0.0f;
-		double FX = X;
-		double FY = Y;
-		float FSurface = SurfaceM;
-
-		// --- QUAND LE JOUEUR A CHOISI, ON RESTE SUR SON RELIEF ---------------
-		//
-		// La spirale retient le PREMIER point acceptable, pas le meilleur : sur
-		// un versant raide, le premier sol a moins de douze degres est la
-		// plaine d'en bas. Mesure sur deux parties independantes -- latitudes
-		// 73,1 et 15,3 degres, donc sans rapport de terrain -- le joueur
-		// naissait 89 et 92 metres SOUS le point qu'il avait choisi. Qui visait
-		// un sommet naissait a son pied.
-		//
-		// La passe bornee accepte une pente PLUS FORTE en echange d'un ecart
-		// d'altitude PLUS FAIBLE : qui a vise un versant accepte d'etre sur un
-		// versant, c'est la descente qu'il n'a pas demandee.
-		// --- LE DEPART EXACT, POUR INSPECTER UN POINT PRECIS ----------------
-		//
-		// SIGNALE : « tu n'es pas a l'endroit de la capture que je t'ai
-		// faite ». C'etait exact, et de loin : altitude demandee 925 m,
-		// obtenue 10,8 -- NEUF CENT QUATORZE METRES plus bas, au niveau de la
-		// mer. La passe bornee avait echoue (aucun sol a moins de 40 m
-		// d'altitude sur ce versant a 18 degres) et le repli large avait pris
-		// la plaine.
-		//
-		// C'est le bon comportement pour un JOUEUR -- on ne le fait pas naitre
-		// sur une pente ou il glisse -- et le mauvais pour une INSPECTION : un
-		// point de vue ne se juge que depuis le point de vue. Sans ce drapeau,
-		// une couture qui ne se voit qu'a 930 m est inatteignable par
-		// l'outillage, et c'est exactement le defaut qu'on cherche a regarder.
-		bool bExact = false;
-		{
-			int32 Exact = 0;
-			if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedDepartExact="), Exact)
-				&& Exact != 0)
-			{
-				bExact = true;
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] voxel : depart EXACT demande -- ")
-					TEXT("aucune recherche de sol plat, pente non bornee"));
-			}
-		}
-
-		bool bPose = false;
-		bool bTenuSurPlace = false;
-
-		if (bExact)
-		{
-			// On garde X, Y et SurfaceM tels quels : c'est tout l'objet.
-			bPose = true;
-			bTenuSurPlace = true;
-
-			// LA PENTE SE MESURE QUAND MEME. Ce chemin rapportait « pente
-			// 0,0 deg » sur n'importe quelle paroi, faute d'appeler la
-			// recherche -- or c'est le drapeau qu'on emploie justement pour
-			// aller inspecter des endroits impraticables, et savoir sur quoi
-			// l'on vient de se poser fait partie de l'inspection.
-			PenteDeg = WorldseedPlacement::PenteDeg(*Density, X, Y);
-		}
-		else if (bChoisi)
-		{
-			// LA BORNE SE SURCHARGE EN LIGNE DE COMMANDE, et c'est la regle du
-			// depot : « quand un A/B demande un reglage qui n'a pas de
-			// surcharge, on AJOUTE la surcharge ; on ne touche pas au
-			// fichier ». Ici elle sert surtout a EPROUVER le chemin d'echec --
-			// sur ce monde la spirale trouve presque toujours quelque chose
-			// dans ses 384 metres, si bien qu'une valeur basse est le seul
-			// moyen sur de faire jouer l'echec franc.
-			float Ecart = EcartAltitudeDepartM;
-			if (FParse::Value(FCommandLine::Get(),
-				TEXT("WorldseedEcartDepart="), Ecart))
-			{
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] voxel : ecart d'altitude tolere force a ")
-					TEXT("%.1f m (defaut %.0f)"), Ecart, EcartAltitudeDepartM);
-			}
-
-			bPose = WorldseedPlacement::SolPlat(*Density, FVector2D(X, Y),
-				PenteDepartMaxDeg, Ecart, SurfaceM, FX, FY, FSurface, PenteDeg);
-
-			if (!bPose)
-			{
-				// --- ECHEC FRANC : ON TIENT LE POINT VISE --------------------
-				//
-				// ARBITRAGE DU PROPRIETAIRE, 22 septembre 2026. Il y avait ici
-				// un repli vers la recherche LARGE -- douze degres, aucune
-				// borne d'altitude -- et c'etait une FALAISE DE POLITIQUE :
-				// quarante metres puis l'infini, en un cran. Mesure de
-				// l'epoque, 357 metres plus bas que le point vise ; une autre
-				// partie, 914 metres, au niveau de la mer. Qui visait un
-				// sommet naissait dans la plaine.
-				//
-				// Les deux autres voies ont ete presentees et ecartees :
-				// elargir par crans (40, 120, 360, sans borne) aurait garde un
-				// echec possible mais graduel ; retenir le MEILLEUR de toute la
-				// spirale aurait traite la cause nommee par le commentaire
-				// d'origine -- « elle retient le PREMIER point acceptable, pas
-				// le meilleur » -- mais au prix de la PROXIMITE, en naissant
-				// jusqu'a 380 m du point vise pour gagner trois metres.
-				//
-				// CE QUI EST ACCEPTE EN ECHANGE, ET IL FAUT LE DIRE : le pion
-				// peut naitre sur une paroi et glisser. Le sol n'est marchable
-				// que jusqu'a 45 degres, et ce depot a deja mesure 2,7 km de
-				// glissade depuis un depart a 22. Le filet de rattrapage reste
-				// en place -- il rearme la mise en place quand le joueur passe
-				// sous la bande -- mais il ne le ramenera pas ici : un depart
-				// n'est consomme qu'UNE fois, sans quoi ce n'est plus un filet
-				// mais une laisse.
-				bTenuSurPlace = true;
-				bPose = true;
-
-				// LA PENTE SE MESURE QUAND MEME, pour que le releve dise sur
-				// quoi on vient de poser le joueur. Sans elle, ce chemin
-				// rapportait « pente 0,0 deg » sur une paroi a soixante.
-				PenteDeg = WorldseedPlacement::PenteDeg(*Density, X, Y);
-
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] voxel : aucun sol tenable a moins de ")
-					TEXT("%.0f m d'altitude du point choisi -- ON TIENT LE ")
-					TEXT("POINT VISE (pente %.1f deg)"),
-					Ecart, PenteDeg);
-
-				// LE VIDE SOUS LES PIEDS NE DEPLACE PLUS PERSONNE, MAIS IL SE
-				// DIT. Une colonne sur huit porte une galerie : tenir le point
-				// peut donc poser le joueur au-dessus d'un plafond mince. On
-				// ne corrige pas -- ce serait deplacer le point qu'on vient de
-				// decider de tenir -- on previent.
-				if (!WorldseedPlacement::SolPlein(*Density, X, Y, SurfaceM))
-				{
-					UE_LOG(LogTemp, Warning,
-						TEXT("[Worldseed] voxel : ET LA COLONNE EST CREUSE ")
-						TEXT("sous ce point -- le joueur peut tomber dans une ")
-						TEXT("cavite"));
-				}
-			}
-		}
-		else
-		{
-			// NAISSANCE LIBRE : l'endroit n'a aucune importance, donc la
-			// recherche large reste la bonne reponse. Elle n'a pas change.
-			bPose = WorldseedPlacement::SolPlat(*Density, FVector2D(X, Y),
-				12.0f, 0.0f, 0.0f, FX, FY, FSurface, PenteDeg);
-		}
-
 		// TROIS ISSUES, ET ELLES NE SE RESSEMBLENT PAS. On a DEPLACE le joueur
 		// vers du plat, on a TENU son point, ou l'on n'a rien trouve du tout.
 		// Les deux dernieres se lisaient pareil avant -- « pose sur place » --
 		// alors que l'une est un choix et l'autre un echec.
-		if (bPose && !bTenuSurPlace)
+		switch (Depart.Issue)
 		{
-			X = FX;
-			Y = FY;
-			SurfaceM = FSurface;
+		case EWorldseedDepart::SolPlatTrouve:
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed] voxel : sol plat trouve a (%.0f, %.0f) m, ")
 				TEXT("altitude %.1f m, pente %.1f deg%s"),
-				X, Y, SurfaceM, PenteDeg,
+				X, Y, SurfaceM, Depart.PenteDeg,
 				bChoisi
 					? *FString::Printf(TEXT(" (%+.0f m du point choisi)"),
-						SurfaceM - SurfaceDemandeeM)
+						SurfaceM - Depart.SurfaceDemandeeM)
 					: TEXT(""));
-		}
-		else if (bPose)
-		{
+			break;
+
+		case EWorldseedDepart::Exact:
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] voxel : %s a (%.0f, %.0f) m, ")
+				TEXT("[Worldseed] voxel : depart EXACT tenu a (%.0f, %.0f) m, ")
 				TEXT("altitude %.1f m, pente %.1f deg (ecart nul, par ")
 				TEXT("construction)"),
-				bExact ? TEXT("depart EXACT tenu") : TEXT("point vise TENU"),
-				X, Y, SurfaceM, PenteDeg);
-		}
-		else
-		{
+				X, Y, SurfaceM, Depart.PenteDeg);
+			break;
+
+		case EWorldseedDepart::PointViseTenu:
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] voxel : aucun sol tenable a moins de ")
+				TEXT("%.0f m d'altitude du point choisi -- ON TIENT LE ")
+				TEXT("POINT VISE (pente %.1f deg)"),
+				DR.EcartAltitudeMaxM, Depart.PenteDeg);
+			break;
+
+		case EWorldseedDepart::Echec:
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Worldseed] voxel : aucun sol plat autour du depart, ")
 				TEXT("pose sur place"));
+			break;
+		}
+
+		// LA COLONNE CREUSE SE DIT, ELLE N'ARRETE RIEN : l'echec franc tient le
+		// point quoi qu'il arrive, mais sans cette ligne le joueur tomberait
+		// dans une cavite et personne ne saurait pourquoi.
+		if (Depart.bColonneCreuse)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] voxel : ET LA COLONNE EST CREUSE sous ce ")
+				TEXT("point -- le joueur peut tomber dans une cavite"));
 		}
 	}
 
