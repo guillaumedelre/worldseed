@@ -8242,3 +8242,90 @@ multi-ligne mange les barres obliques inverses d'un chemin Windows -- `"$t\$X\$V
 est devenu `"$t$X$V.png"` en silence, et le script a lu un fichier inexistant.
 Pour une insertion de code ou un chemin echappe, employer l'editeur de fichiers
 plutot qu'une substitution.
+
+### La zebrure est biome-contre-roche, et le noir est de l'ombre (23 septembre 2026)
+
+Signale : « est-ce que tu as reussi a attenuer les rayures ? ». **Non** -- et la
+question a fait remonter toute la piste, par la carte des causes.
+
+**LA CHAINE, CHIFFREE, ET C'EST ELLE QUI TRANCHE :**
+
+| ou l'on regarde | plancher de luminance | pixels sous 40 |
+|---|---|---|
+| ce que la peinture ECRIT | 66 | 0,05 % (le basalte seul) |
+| rendu SANS eclairage | **65,2** | **0,00 %** |
+| carte des causes | 68,1 | **0,00 %** |
+| rendu ECLAIRE | **0,0** | **18,5 a 22,1 %** |
+
+Le plancher rendu colle au plancher ecrit et la carte des causes n'a pas un pixel
+noir : **la couleur atteint l'ecran intacte, il n'y a ni trou ni surface non
+peinte**. Le noir est donc fabrique **a 100 % par la passe d'eclairage**.
+
+**ET LA CARTE DES CAUSES DIT AUSSI CE QU'EST LA ZEBRURE.** Les bandes alternent
+**branche biome contre branche roche**, et elles epousent l'escalier : les
+MARCHES gardent la couleur du biome, les CONTREMARCHES prennent celle de la
+roche, parce que la profondeur sous la surface macro saute a chaque ressaut.
+**L'alternation n'est PAS banc contre banc.** C'est ce qui explique enfin
+pourquoi les huit etats de palette du 22 septembre -- schiste reteinte, serie
+uniforme, teinte de roche coupee -- n'avaient jamais deplace le contraste : ils
+agissent tous sur la branche roche SEULE.
+
+**Les deux zebrures ont donc UNE cause, l'escalier.** L'une le lit par la
+couleur, l'autre par l'ombre.
+
+**LE LEVIER EST `voxel.couleurRocheFonduM`**, porte de 12 a 28 m. Saut maximal de
+luminance entre bandes voisines : 82,4 -> 53,8. La valeur est DERIVEE et non
+choisie -- roche pleine a `overhangAmplitudeM + detailAmplitudeM + fondu`, donc
+28 la place aux quarante metres du cas de reference cite par la regle. 45 et 60
+font mieux (39,8 et 31,5) et CASSENT cette garantie.
+
+**ESSAYE ET MESURE COMME MOINS BON : le retour a la pile bornee.** Il change bien
+33,8 % de la paroi, mais la carte des causes bornee montre la MEME alternance en
+deux teintes au lieu de l'arc-en-ciel, il ne gagne que 88 -> 56, et il DEGRADE le
+noir (18,5-19,2 -> 21,0 %). Innocentes de meme : la porte perpendiculaire et les
+diaclases (18,46 / 18,15 / 17,83 %).
+
+**PIEGE NEUF ET SILENCIEUX : `-DPCVars=` NE PEUT PAS POSER UN CVAR `ECVF_Cheat`.**
+`ShowFlag.Lighting` en est un. Le moteur refuse et ne le dit QUE dans le journal :
+
+    Error: The ini file 'DeviceProfiles' tries to set the console variable
+    'ShowFlag.Lighting' marked with ECVF_Cheat, this is only allowed in
+    consolevariables.ini
+
+J'en ai conclu « le noir survit aux lumieres eteintes » alors que je mesurais
+deux fois la meme image -- 18,46 contre 18,75 %. **Sixieme fois que ce depot
+rencontre deux mesures presque identiques pour deux reglages differents.** La
+voie qui marche est `-ExecCmds="ShowFlag.Lighting 0"`, et le journal doit montrer
+`ShowFlag.Lighting = "0"`.
+
+**COROLLAIRE POWERSHELL** : `-ExecCmds="..."` contient un ESPACE, donc un
+`-ArgumentList` en TABLEAU perd ses guillemets internes. Passer **une seule
+chaine brute** a `Start-Process`. `-DPCVars=nom=valeur` n'a pas ce probleme
+(aucun espace), mais il ne peut pas tout poser -- voir ci-dessus.
+
+**LA COMPARAISON IMAGE CONTRE IMAGE ENTRE DEUX LANCEMENTS EST INUTILISABLE
+ECLAIREE** : **82,1 %** de pixels changes entre deux passes reputees identiques,
+ciel fige compris -- Lumen et TSR ne convergent pas pareil. **Sans eclairage,
+0,1 %.** Donc tout A/B de COULEUR se fait lumieres eteintes ; eclairee, seules
+les statistiques agregees (part de sombres, plancher) veulent dire quelque chose.
+
+**PIEGE DE MESURE ANNEXE** : un `%` de pixels changes ne dit pas le SENS. Les
+6-7 % mesures a l'interieur d'une arche a fondu 60 sont la frange beige de la
+BOUCHE, pas la paroi -- il a fallu regarder l'image pour le voir. Et une arche ne
+vaut pas une chambre : son pont fait 7 a 26 m, donc elle ne peut pas eprouver une
+garantie posee a quarante metres. **Il n'existe aucun arret photo de chambre.**
+
+**`-WorldseedArrets=` accepte une LISTE** (`canyon,arche`), ce qui rend un A/B
+sur deux familles abordable.
+
+**L'EMPREINTE DES REGLES EST UN MD5 DU FICHIER ENTIER** (`WorldseedRules.cpp:144`)
+: un reglage de PEINTURE invalide donc tous les mondes en cache et force une
+regeneration -- 201 s en 4096x2048. Le monde obtenu est identique (terres 29,2 %
+avant comme apres) ; il n'y a rien a relancer, seulement a la payer une fois.
+
+**PISTE NON EXPLOREE, ET ELLE EST DEJA ECRITE DANS LE CODE** :
+`WorldseedVoxelTerrain.cpp:479` soutient que les terrasses sont l'ALIASING du
+dernier octave de detail -- « quatre octaves depuis douze metres descendent a un
+metre et demi, soit la taille du voxel », donc sous Nyquist -- et qu'il ne se voit
+que sur les parois parce que le detail est module par la pente. `-WorldseedDetailOctaves=`
+permet de l'eprouver sans recompiler. C'est la piste a prendre pour le NOIR.
