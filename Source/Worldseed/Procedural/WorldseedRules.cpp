@@ -89,6 +89,34 @@ float FWorldseedGeometry::VForLatitudeDeg(float LatitudeDeg) const
 	return static_cast<float>(FMath::Clamp((Y0 + 1.0) * 0.5, 0.0, 1.0));
 }
 
+void FWorldseedGeometry::UVDepuisMetres(double Xm, double Ym,
+	double& OutU, double& OutV) const
+{
+	double U = Xm / static_cast<double>(WidthM()) + 0.5;
+	U -= FMath::FloorToDouble(U);
+
+	OutU = U;
+	OutV = FMath::Clamp(Ym / static_cast<double>(HeightM) + 0.5, 0.0, 1.0);
+}
+
+int32 FWorldseedGeometry::CelluleDepuisMetres(double Xm, double Ym) const
+{
+	double U = 0.0;
+	double V = 0.0;
+	UVDepuisMetres(Xm, Ym, U, V);
+
+	// U vit deja dans [0, 1[ apres le Floor, donc la colonne y tombe seule ;
+	// V, lui, est borne a 1 INCLUS, et V = 1 donnerait la ligne NY. Les deux
+	// bornes restent quand meme : une grille degeneree ne doit pas indexer
+	// hors du tableau.
+	const int32 Col = FMath::Clamp(
+		FMath::FloorToInt(U * static_cast<double>(NX)), 0, NX - 1);
+	const int32 Row = FMath::Clamp(
+		FMath::FloorToInt(V * static_cast<double>(NY)), 0, NY - 1);
+
+	return Row * NX + Col;
+}
+
 TArray<FString> UWorldseedRules::GetCandidatePaths()
 {
 	TArray<FString> Paths;

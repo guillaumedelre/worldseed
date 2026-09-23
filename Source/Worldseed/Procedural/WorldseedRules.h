@@ -126,6 +126,42 @@ struct WORLDSEED_API FWorldseedGeometry
 	 * de la sphere pour retrouver la ligne correspondante.
 	 */
 	float VForLatitudeDeg(float LatitudeDeg) const;
+
+	// ------------------------------------------- position du monde -> grille
+	//
+	// UNE SEULE CONVENTION, ET C'EST CELLE DU SOL. Trois se partageaient le
+	// depot le 23 septembre 2026, et deux se contredisaient d'une DEMI-CELLULE :
+	//
+	//     WorldseedPeinture.cpp    Floor(U * NX)       <- la couleur peinte
+	//     WorldseedDensity.cpp     Floor + modulo      <- le champ
+	//     WorldseedVoxelTerrain    RoundToInt(U * NX)  <- le releve du joueur
+	//
+	// Consequence mesurable : le releve du HUD pouvait nommer un biome que le
+	// joueur ne foulait pas. On tranche pour `Floor`, parce que c'est ce qui
+	// PEINT le sol -- entre ce qu'on voit et ce qu'on lit, c'est ce qu'on voit
+	// qui a raison.
+	//
+	// ELLE VIT DANS LA GEOMETRIE, PAS DANS L'AFFICHAGE, aupres de
+	// `LongitudeDegForColumn` et `VForLatitudeDeg` qui sont deja ici : c'est
+	// une convention du MONDE, et le prochain consommateur ne doit pas avoir a
+	// la redecouvrir.
+
+	/**
+	 * Coordonnees normalisees d'une position du monde, en metres.
+	 *
+	 * U S'ENROULE et V SE BORNE, et ce n'est pas symetrique par gout : la
+	 * longitude fait le tour de la sphere, alors qu'un pole n'a pas de voisin
+	 * au-dela. Borner U couperait la carte au meridien de bordure ; enrouler V
+	 * ferait passer l'Arctique dans l'Antarctique.
+	 *
+	 * `FloorToDouble` et non `FMath::Fractional` : ce dernier est base sur une
+	 * TRONCATURE et rend du negatif pour un X negatif, ce qui indexerait hors
+	 * du tableau. Les deux noms se ressemblent, un seul convient.
+	 */
+	void UVDepuisMetres(double Xm, double Ym, double& OutU, double& OutV) const;
+
+	/** Cellule de la grille sous une position du monde. Convention du sol. */
+	int32 CelluleDepuisMetres(double Xm, double Ym) const;
 };
 
 /**

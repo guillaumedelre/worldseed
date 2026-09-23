@@ -226,4 +226,103 @@ bool FWorldseedTestGrilleEnroulement::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+/**
+ * LA CELLULE SOUS UNE POSITION EST CELLE QUE LE SOL PEINT.
+ *
+ * L'ORACLE EST RECOPIE A DESSEIN. Les cinq lignes ci-dessous sont celles de
+ * `WorldseedPeinture.cpp:93-102`, et c'est tout l'objet du test : figer le
+ * contrat. Si la peinture change de convention un jour, ce test doit tomber et
+ * forcer la decision -- c'est exactement ce qui a manque quand `ReleveJoueur`
+ * a pris `RoundToInt` de son cote, et que le releve du HUD s'est mis a nommer,
+ * une fois sur deux, un biome que le joueur ne foulait pas.
+ *
+ * LE TEMOIN EST LE POINT `FrontiereX / FrontiereY`, et sans lui le test ne
+ * discriminerait RIEN : partout ailleurs `Floor` et `Round` tombent sur la
+ * meme cellule, si bien qu'un retour a `RoundToInt` passerait sans un mot. Ce
+ * point-la est choisi pour que les deux different, et le test VERIFIE qu'ils
+ * different avant de conclure.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestGrilleCelluleDuSol,
+	"Worldseed.Grille.LaCelluleEstCelleDuSol",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestGrilleCelluleDuSol::RunTest(const FString& Parameters)
+{
+	const FWorldseedGeometry G = WorldseedTest::Geometrie(16);
+	const double WidthM = static_cast<double>(G.WidthM());
+	const double HeightM = static_cast<double>(G.HeightM);
+
+	auto CommeLaPeinture = [&G, WidthM, HeightM](double Xm, double Ym) -> int32
+	{
+		double U = Xm / WidthM + 0.5;
+		U -= FMath::FloorToDouble(U);
+		const double V = FMath::Clamp(Ym / HeightM + 0.5, 0.0, 1.0);
+
+		const int32 Col = FMath::Clamp(
+			FMath::FloorToInt(U * G.NX), 0, G.NX - 1);
+		const int32 Row = FMath::Clamp(
+			FMath::FloorToInt(V * G.NY), 0, G.NY - 1);
+		return Row * G.NX + Col;
+	};
+
+	// Un jeu de points qui couvre ce qui casse : le centre, les deux signes,
+	// LES DEUX POLES, et surtout des X HORS DU MONDE -- c'est la que l'absence
+	// d'enroulement se voit.
+	const TArray<FVector2D> Points = {
+		FVector2D(0.0, 0.0),
+		FVector2D(1234.0, -567.0),
+		FVector2D(-1234.0, 567.0),
+		FVector2D(-WidthM * 0.5, 0.0),          // le meridien de bordure
+		FVector2D(WidthM * 0.5, 0.0),           // le MEME point, par enroulement
+		FVector2D(WidthM * 1.7, 0.0),           // presque deux tours
+		FVector2D(-WidthM * 2.3, 0.0),          // et dans l'autre sens
+		FVector2D(0.0, HeightM * 0.5),          // pole nord
+		FVector2D(0.0, -HeightM * 0.5),         // pole sud
+		FVector2D(0.0, HeightM * 3.0)           // au-dela du pole : borne, pas enroule
+	};
+
+	for (const FVector2D& P : Points)
+	{
+		TestEqual(*FString::Printf(TEXT("(%.0f, %.0f) suit la peinture"), P.X, P.Y),
+			G.CelluleDepuisMetres(P.X, P.Y), CommeLaPeinture(P.X, P.Y));
+	}
+
+	// Toutes les cellules rendues sont dans le tableau. Un modulo negatif ou
+	// une borne oubliee se verrait ici, et pas au premier point venu.
+	for (const FVector2D& P : Points)
+	{
+		const int32 Cellule = G.CelluleDepuisMetres(P.X, P.Y);
+		TestTrue(*FString::Printf(TEXT("(%.0f, %.0f) indexe dans la grille"), P.X, P.Y),
+			Cellule >= 0 && Cellule < G.CellCount());
+	}
+
+	// --- LE TEMOIN ----------------------------------------------------------
+	// On vise U * NX = 10,6 et V * NY = 5,6 : Floor rend 10 et 5, Round rend
+	// 11 et 6. Les deux conventions ne peuvent donc pas s'accorder ici.
+	const double FrontiereX = ((10.6 / G.NX) - 0.5) * WidthM;
+	const double FrontiereY = ((5.6 / G.NY) - 0.5) * HeightM;
+
+	double U = 0.0;
+	double V = 0.0;
+	G.UVDepuisMetres(FrontiereX, FrontiereY, U, V);
+
+	const int32 ParFloor = FMath::FloorToInt(V * G.NY) * G.NX
+		+ FMath::FloorToInt(U * G.NX);
+	const int32 ParRound = FMath::RoundToInt(V * G.NY) * G.NX
+		+ FMath::RoundToInt(U * G.NX);
+
+	// SANS CETTE LIGNE, LE TEST SUIVANT NE PROUVE RIEN. Si le point choisi
+	// cessait un jour d'etre a cheval -- une grille de taille differente, par
+	// exemple -- les deux conventions coincideraient et l'assertion finale
+	// passerait pour les deux.
+	TestNotEqual(TEXT("le temoin discrimine bien Floor de Round"),
+		ParFloor, ParRound);
+
+	TestEqual(TEXT("a cheval sur une frontiere, c'est Floor qui gagne"),
+		G.CelluleDepuisMetres(FrontiereX, FrontiereY), ParFloor);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
