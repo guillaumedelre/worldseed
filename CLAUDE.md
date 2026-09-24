@@ -8719,3 +8719,42 @@ pres : une valeur plausible qu'on lit comme une mesure.
 proprietaire : il reste en local et figure au `.gitignore`. Les renvois vers ses
 sections ne resolvent plus pour qui clone. Ce qui doit survivre a une session va
 DANS CE FICHIER ou dans `README.md`.
+
+### Un chiffre DERIVE dans un commentaire se perime en silence (24 septembre 2026)
+
+Signale par le proprietaire apres la relecture de l'atlas : « pour les strates,
+il faut caler ca sur la derniere mesure, c'est elle qui fait foi ». Trois
+chiffres du bloc `strates` de `world_rules.json` decrivaient un etat qui
+n'existe plus, et aucun ne pouvait se signaler.
+
+| commentaire | il disait | la mesure dit |
+|---|---|---|
+| `_comment_serie` | epaisseur totale **420 m** | **253 m** -- la somme des dix epaisseurs juste en dessous, et ce que le journal rapporte a chaque generation |
+| `_comment_datumM` | « ce monde va de **-351 a 1700 m** » | **-371 a 1772 m** avant le dome de calotte |
+| `_comment_contrasteErosion` | « les K des **six** bancs ... moyenne du monde **0,73** » | **dix** bancs, moyenne **0,70**, K de 0,57 a 1,77 |
+
+**LE PLUS INSTRUCTIF EST LE PREMIER : c'etait un chiffre DERIVE, pose a cote de
+ce dont il derive.** La somme des epaisseurs est trois lignes plus bas ; il
+suffisait d'ajouter un banc sans refaire l'addition pour que le commentaire
+devienne faux, et rien -- ni compilateur, ni oracle, ni sonde -- ne pouvait le
+dire. **Quand une donnee porte deja son propre total, le commentaire ne doit pas
+le recopier** : soit il renvoie a la somme, soit il la cite en disant d'ou elle
+vient. Ici le commentaire cite desormais la ligne de journal, qui est recalculee.
+
+Les deux autres sont de la meme famille que la ligne de journal corrigee le
+matin meme : **une valeur plausible qu'on lit comme une mesure**. Elles sont
+gardees mais datees, et la mesure historique de `contrasteErosion` -- celle qui
+a DECIDE le reglage -- garde son contexte (six bancs, moyenne 0,73) au lieu
+d'etre reecrite : c'est le raisonnement qui vaut, pas le chiffre.
+
+**CE QUE COUTE LA CORRECTION, ET CE QU'ELLE NE COUTE PAS.** L'empreinte de
+`world_rules.json` est un MD5 du fichier ENTIER : retoucher un commentaire
+invalide donc tous les mondes en cache et impose une regeneration de 210 a
+260 s. **Mais le monde ne bouge pas d'un octet**, et c'est verifie et non
+suppose : le corps du fichier de cache -- tout sauf l'en-tete de 68 octets, qui
+porte justement l'empreinte -- rend le meme MD5 avant et apres.
+
+C'est exactement le controle qui avait servi le matin meme, quand les sondes
+annoncaient un sommet a 2032 m et la generation fraiche 1842 : deux mondes en
+apparence, un seul en fait. **Devant un cache dont la cle a bouge sans que le
+code change, comparer les CORPS et non les noms de fichier.**
