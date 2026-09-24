@@ -8724,3 +8724,44 @@ de glyphes nommes (`EditorFontGlyphs.h`).
 legende pour les cinq genres de marqueurs. Les 316 gouffres et dolines ne
 s'affichent qu'au-dela de 12 m par pixel -- a l'echelle du monde, ils feraient un
 voile gris.
+
+### Un repli journalise ressemble a une mesure (24 septembre 2026)
+
+Signale par le proprietaire en relisant un journal : « le journal annonce
+`regles chargees : ... 16.0 x 8.0 km` alors que le monde fait 64 x 32, corrige
+stp ». Il avait raison, et le defaut etait plus large que la ligne.
+
+**LES TROIS CHIFFRES NE DECRIVAIENT AUCUN MONDE GENERE.** `LoadRules` batit une
+geometrie depuis le fichier, puis `WorldseedPipeline::Generate` en ECRASE
+aussitot NY, NX et HeightM avec la taille et la resolution de l'appelant
+(`WorldseedPipeline.cpp:133-135`) -- seuls `LatSpanDeg`, `LatitudeMapping` et
+`LatitudeEqualAreaBlend` survivent a la copie, et ce sont exactement les trois
+champs que le menu recopie a la main. La ligne journalisait donc un REPLI
+toujours remplace, sous une forme qui se lit comme une mesure.
+
+**CE N'EST PAS UN DEFAUT D'ARRONDI, C'EST UNE ETIQUETTE FAUSSE.** `world.sizeKm`
+vaut 8 et n'est pas la taille du monde : c'est la HAUTEUR DE REFERENCE du calage
+metrique, dont `WorldseedVerticalScale` tire son rapport. La ligne dit desormais
+`reference d'echelle 8.0 km` et ne prétend plus rien sur la taille -- laquelle
+est dite par `monde genere : ... 64000 x 32000 m`, qui la tient de l'appelant.
+Verifie a l'execution, les deux lignes cote a cote.
+
+**DEUX CLES MORTES TROUVEES EN TIRANT LE FIL, et il faut le dire :**
+`world.simResolution` n'est lue QU'a cet endroit et sa valeur ne sert jamais ;
+`world.resolution` n'est lue NULLE PART depuis la disparition du pipeline PNG.
+Les retirer est un menage legitime **mais il change l'empreinte MD5 du fichier
+de regles**, donc invalide tous les mondes en cache : c'est un arbitrage du
+proprietaire, pas un detail de nettoyage. Elles sont laissees en place, et le
+commentaire du code le dit.
+
+**LA REGLE GENERALE** : un journal ne doit pas afficher une grandeur qu'un autre
+chemin va ecraser. Si elle sert de repli, ou bien on ne la journalise pas, ou
+bien on la nomme pour ce qu'elle est. Du bruit qui ressemble a une information
+coute plus cher que pas d'information -- c'est la meme famille que
+« frame_ms vaut EXACTEMENT gpu_ms » et que les releves identiques au chiffre
+pres : une valeur plausible qu'on lit comme une mesure.
+
+**ET `ETAT_DES_LIEUX.md` EST SORTI DU DEPOT LE MEME JOUR**, a la demande du
+proprietaire : il reste en local et figure au `.gitignore`. Les renvois vers ses
+sections ne resolvent plus pour qui clone. Ce qui doit survivre a une session va
+DANS CE FICHIER ou dans `README.md`.
