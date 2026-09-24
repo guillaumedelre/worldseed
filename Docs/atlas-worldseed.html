@@ -203,10 +203,10 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
 <div class="enveloppe">
 
 <header class="tete">
-  <p class="eyebrow">Worldseed · Unreal Engine 5.8 · référence des outils</p>
+  <p class="eyebrow">Worldseed · Unreal Engine 5.8 · comment le monde est fait</p>
   <h1>Atlas Worldseed</h1>
-  
-  <p class="chapo">Un monde de <strong>8 km de côté</strong> qui va d'un pôle à l'autre, engendré hors d'Unreal par une chaîne de huit étapes, puis importé en relief, en eau, en végétation et en météo. Ce document explique comment lancer chaque outil, comment le climat est construit, et sur quelles mesures terrestres il est calé.</p>
+
+  <p class="chapo">Un monde de <strong>64 × 32 km</strong> qui va d'un pôle à l'autre, calculé <strong>dans le jeu</strong> par une chaîne de huit étapes en C++, à partir d'une graine choisie au menu. Ce document explique comment cette chaîne est bâtie, comment le climat est construit, sur quelles mesures terrestres il est calé, et comment le relief arrive à l'écran. Tous les chiffres sont relevés par les sondes du projet, le <strong>24 septembre 2026</strong>, sur la graine <code>20260909</code>.</p>
   <figure style="margin-top:30px">
     <div class="fig-boite" id="fig-bande"></div>
     <figcaption><b>Le monde en une ligne.</b> Part de terres émergées et température moyenne par bande de latitude, mesurées sur la graine 20260909. La carte fait varier Y comme le sinus de la latitude : les bandes polaires sont donc étroites, comme sur une sphère.</figcaption>
@@ -216,14 +216,13 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
 <div class="corps">
   <nav class="rail" aria-label="Sommaire">
     <span class="titre-rail">Sommaire</span>
-    <a href="#depart">Avant de commencer</a>
     <a href="#vue">Vue d'ensemble</a>
     <a href="#chaine">La chaîne</a>
-    <a href="#lancer">Lancer les outils</a>
+    <a href="#lancer">Mesurer, et regarder</a>
     <a href="#climat">Le système climatique</a>
     <a href="#whittaker">Le diagramme des biomes</a>
     <a href="#echelle">La règle d'échelle</a>
-    <a href="#unreal">Imbrication Unreal</a>
+    <a href="#unreal">Du champ à l'écran</a>
     <a href="#uds">Imbrication UDS</a>
     <a href="#terre">Le réalisme terrestre</a>
     <a href="#pieges">Pièges de mesure</a>
@@ -232,175 +231,146 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
   <main>
 
 <!-- ========================================================= 00 -->
-<section id="depart">
-<h2><span class="num">00</span>Avant de commencer</h2>
-
-<div class="note">
-  <span class="etiq">Le dépôt ne suffit pas à ouvrir le projet</span>
-  <p><strong>Trois packs payants sont nécessaires et ne sont pas versionnés</strong> sur <a href="https://github.com/guillaumedelre/worldseed">github.com/guillaumedelre/worldseed</a>. Les EULA de Fab et du Marketplace autorisent à intégrer un pack dans un <em>produit compilé</em>, jamais à en redistribuer les fichiers sources. Le dépôt étant public, les y pousser serait une redistribution. Il faut donc les posséder.</p>
-</div>
-
-<div class="tbl-boite"><table>
-<thead><tr><th>à installer</th><th>rôle dans le projet</th><th class="n">poids</th><th>dossier attendu</th></tr></thead>
-<tbody>
-<tr><td><strong>Orasot Bundle</strong><br><span class="sous">Fab, payant</span></td><td>matériau de terrain à dix couches, rochers, arbres, falaises</td><td class="n">937 Mo</td><td><code>Content/Orasot_Bundle/</code></td></tr>
-<tr><td><strong>Ultra Dynamic Sky</strong><br><span class="sous">Fab, payant</span></td><td>ciel, soleil physique, météo et système de climat — les 23 presets de villes réelles viennent de là</td><td class="n">545 Mo</td><td><code>Content/UltraDynamicSky/</code></td></tr>
-<tr><td><strong>Stylized PBR Nature</strong><br><span class="sous">Fab, payant</span></td><td>végétation légère : <code>SM_Grass</code> 40 triangles, <code>SM_Bush</code> 64 — les maillages les plus économes du projet</td><td class="n">393 Mo</td><td><code>Content/Stylized_PBR_Nature/</code></td></tr>
-<tr><td><strong>VibeUE</strong><br><span class="sous">gratuit, GitHub</span></td><td>expose l'API Python utilisée par tout <code>Tools/UE/</code></td><td class="n">444 Mo</td><td><code>Plugins/VibeUE/</code></td></tr>
-</tbody></table></div>
-
-<p><strong>Les noms de dossier comptent.</strong> Ils sont référencés en dur par les graphes PCG et par <code>vegetation_recipes.json</code> : un dossier nommé autrement casse toutes les références d'un coup. Sans ces packs, le projet s'ouvre mais le terrain est blanc, la végétation absente et le ciel noir — ce n'est pas un défaut du dépôt, c'est une contrainte de licence.</p>
-
-<h3>Un asset à recréer à la main</h3>
-<p><code>M_WorldseedLandscape</code> est exclu du dépôt pour la même raison : c'est une <em>copie</em> du matériau maître d'Orasot, augmentée d'une dixième couche. Le recréer prend une minute — dupliquer <code>M_LandscapeMasterMaterial</code> vers <code>/Game/Worldseed/Materials/M_WorldseedLandscape</code>, puis ajouter une couche <code>Snow</code> au <code>LandscapeLayerBlend</code>.</p>
-<p>Son <em>instance</em>, <code>MI_WorldseedLandscape</code>, est versionnée, elle : une instance ne contient que des surcharges et une référence au parent. Et ces surcharges comptent — voir la section sur les matériaux.</p>
-
-<h3>Le reste se régénère</h3>
-<div class="cmd"><span class="c"># 1. l'environnement du generateur</span>
-cd Tools/WorldGen &amp;&amp; python -m venv .venv
-.venv/Scripts/python.exe -m pip install numpy scipy pillow
-
-<span class="c"># 2. engendrer le monde (environ 5 min)</span>
-.venv/Scripts/python.exe -m worldgen
-
-<span class="c"># 3. dans l'editeur, tout reconstruire (environ 1 min)</span>
-rebuild_world.rebuild(r"&lt;racine&gt;/Saved/WorldGen/20260909")</div>
-<p>Ni le monde produit (2,2 Go sous <code>Saved/</code>) ni les acteurs World Partition (363 Mo) ne sont versionnés : ils se refont depuis la graine, qui est inscrite dans <code>world_rules.json</code>. <strong>Une graine donne toujours le même monde.</strong></p>
-</section>
-
-<!-- ========================================================= 01 -->
 <section id="vue">
-<h2><span class="num">01</span>Vue d'ensemble</h2>
-<p>Worldseed se divise en deux moitiés qui ne se parlent que par des <strong>fichiers</strong>. C'est délibéré : la simulation ne dépend pas d'Unreal, donc elle se relance en cinq minutes sans ouvrir l'éditeur, et l'éditeur ne recalcule jamais un monde.</p>
+<h2><span class="num">00</span>Vue d'ensemble</h2>
+<p><strong>Il n'y a plus deux moitiés.</strong> Jusqu'au 14 septembre 2026, Worldseed était un générateur Python qui écrivait des images, et un jeu de scripts d'éditeur qui les importait dans un Landscape. Cette architecture n'existe plus : toute la chaîne est en <strong>C++, dans <code>Source/Worldseed/Procedural/</code>, et tourne dans le jeu</strong>. Rien ne s'importe, rien ne se calcule hors du moteur, et il n'y a aucune étape d'éditeur entre le menu et le monde.</p>
 
 <figure>
   <div class="fig-boite" id="fig-archi"></div>
-  <figcaption><b>Ce qui circule entre les deux moitiés.</b> Chaque fichier produit hors éditeur alimente un composant Unreal précis. Rien ne remonte dans l'autre sens.</figcaption>
+  <figcaption><b>Ce qui se passe quand on lance une partie.</b> Le joueur choisit une graine, la chaîne calcule, le monde part au cache, et le terrain se maille autour de lui. Le cache est indexé par une empreinte qui couvre le code <em>et</em> les règles : changer l'un ou l'autre régénère.</figcaption>
 </figure>
 
 <div class="fiches">
-  <div class="fiche"><div class="nom">Tools/WorldGen/</div><div class="quoi"><strong>Hors éditeur.</strong> Python pur (numpy, scipy, Pillow) dans son propre <code>.venv</code>. Simule tectonique, climat, érosion, hydrologie, biomes et surfaces, puis écrit des PNG, des JSON et un rapport HTML.</div></div>
-  <div class="fiche"><div class="nom">Tools/UE/</div><div class="quoi"><strong>Dans l'éditeur.</strong> Python d'Unreal, exécuté par le plugin VibeUE. Lit les fichiers précédents et fabrique le Landscape, l'eau, le semis PCG, les textures virtuelles et les presets climatiques.</div></div>
-  <div class="fiche"><div class="nom">rules/world_rules.json</div><div class="quoi"><strong>La source unique de vérité.</strong> Aucun seuil n'est en dur dans le code. Chaque valeur non évidente porte un commentaire qui dit d'où elle vient, ce qu'elle a coûté et ce qu'on a mesuré en la changeant.</div></div>
-  <div class="fiche"><div class="nom">Saved/WorldGen/&lt;graine&gt;/</div><div class="quoi">La sortie : relief 16 bits, dix cartes de poids, carte des biomes, cartes de climat, rivières et lacs en JSON, manifeste, presets UDS, grille de biomes.</div></div>
+  <div class="fiche"><div class="nom">Source/Worldseed/Procedural/</div><div class="quoi"><strong>Tout.</strong> La chaîne, le terrain voxel, le menu, la carte, les vingt-cinq sondes. 62 700 lignes sur 78 modules, dont 8 300 de tests.</div></div>
+  <div class="fiche"><div class="nom">rules/world_rules.json</div><div class="quoi"><strong>La source unique de vérité.</strong> Aucun seuil n'est en dur dans le code. Chaque valeur non évidente porte un commentaire qui dit d'où elle vient — <code>SOURCE</code>, <code>CALIBRE</code> ou <code>ARBITRAIRE</code> en premier mot —, ce qu'on a mesuré en la changeant, et ce qu'on a essayé puis rejeté.</div></div>
+  <div class="fiche"><div class="nom">Saved/Worldseed/Cache/</div><div class="quoi">Un monde généré, indexé par son empreinte : version de chaîne, graine, taille, résolution, et le MD5 du fichier de règles. 78,6 Mo pour la grille du jeu.</div></div>
+  <div class="fiche"><div class="nom">Tools/UE/</div><div class="quoi"><strong>Légataire.</strong> Douze scripts d'éditeur qui visent <code>L_Worldseed</code>, l'ancienne carte à Landscape. Gardés parce que <code>vegetation.py</code> porte le semis PCG, seule implémentation qui en existe.</div></div>
+</div>
+
+<div class="note">
+  <span class="etiq">Le monde en chiffres</span>
+  <p>64 000 × 32 000 m sur une grille de <strong>4096 × 2048</strong>, soit une maille de 15,6 m. Altitudes de −371 à 1772 m, plus un dôme de calotte qui porte le sommet à 2032. <strong>29,2 % de terres émergées</strong>, comme la Terre. Génération complète 210 s, reprise depuis le cache 2,1 s. Par-dessus, le voxel travaille au mètre dans une bande de 100 m sous la surface.</p>
 </div>
 
 <div class="note">
   <span class="etiq">Le principe qui gouverne tout le reste</span>
-  <p>Une valeur ne se règle pas à l'œil. Chaque réglage du fichier de règles est justifié par une mesure, et les mesures rejetées sont conservées dans le commentaire pour qu'on ne les retente pas. Trois outils existent uniquement pour ça : <code>metrics.py</code> compare deux mondes, <code>terre.py</code> compare le monde à la Terre, <code>diag_*.py</code> cherchent des défauts précis.</p>
+  <p>Une valeur ne se règle pas à l'œil. Chaque réglage est justifié par une mesure, et <strong>les mesures rejetées sont conservées</strong> dans le commentaire pour qu'on ne les retente pas. Quatre-vingt-onze tests échouent tout seuls ; vingt-cinq sondes répondent chacune à une question ; un banc mesure la trame dans le jeu ; et une tournée photo va regarder, parce qu'une forme qui n'a pas été vue n'est pas validée.</p>
+</div>
+
+<div class="note">
+  <span class="etiq">Ouvrir le projet</span>
+  <p>Des packs payants sont nécessaires pour le ciel et les textures de sol, et ne peuvent pas être versionnés — les EULA autorisent à intégrer un pack dans un produit compilé, jamais à en redistribuer les sources. <strong>Le jeu tourne sans eux</strong>, par construction : un seul fichier du projet connaît Ultra Dynamic Sky, et il le joint par réflexion. Le <code>README.md</code> du dépôt donne la liste et la marche à suivre.</p>
 </div>
 </section>
 
 <!-- ========================================================= 02 -->
 <section id="chaine">
-<h2><span class="num">02</span>La chaîne, étape par étape</h2>
-<p>Une génération complète prend environ <strong>cinq minutes</strong> en 2049 de simulation et 4065 de sortie. L'ordre n'est pas négociable : chaque étape consomme la précédente.</p>
+<h2><span class="num">01</span>La chaîne, étape par étape</h2>
+<p>Une génération complète prend <strong>210 secondes</strong> sur la grille du jeu — 4096 × 2048 pour 64 × 32 km, soit une maille de 15,6 m. L'ordre n'est pas négociable : chaque étape consomme la précédente. Le coût indiqué est celui de la mesure du 24 septembre 2026, graine <code>20260909</code>.</p>
 
 <div class="chaine">
   <div class="etape"><div class="rang">1</div><div class="contenu">
     <p class="nom">Tectonique</p>
-    <p class="det">18 plaques, dorsales et chaînes, bruit fractal déformé. Impose un pôle océanique au nord et un continent au sud, puis noie une ceinture de 375 m au bord du monde — sauf sur un pôle continental, qui est un point et non un littoral.</p>
-    <span class="fichiers">tectonics.py → relief brut</span></div></div>
+    <p class="det">18 plaques, dorsales et chaînes, bruit fractal déformé. Impose un pôle océanique au nord et un continent au sud. Le déplacement du point d'échantillonnage avant classement est ce qui <em>courbe</em> les frontières : un diagramme de Voronoï a des arêtes rectilignes par définition, et aucun réglage du Voronoï ne les courbe.</p>
+    <span class="fichiers">3,3 s → 18 plaques, mer à 368 m, terres 29,2 %</span></div></div>
   <div class="etape"><div class="rang">2</div><div class="contenu">
+    <p class="nom">Lithologie</p>
+    <p class="det">Huit roches. La croûte océanique est basaltique — vrai partout sur Terre, aucun réglage ; un orogène expose son socle ; le reste est un bassin dont la roche suit un bruit cohérent, sans quoi un calcaire poivré au hasard ne donnerait jamais le massif d'un seul tenant qu'un réseau karstique exige. <strong>Calculée depuis la tectonique et avant l'érosion</strong> : les plaques ne bougent pas quand la surface se creuse, et l'érosion ne transforme pas du granite en calcaire.</p>
+    <span class="fichiers">0,5 s → 8 roches, et une pile de 10 bancs</span></div></div>
+  <div class="etape"><div class="rang">3</div><div class="contenu">
     <p class="nom">Climat, première passe</p>
     <p class="det">Sur le relief brut. Ne sert qu'à une chose : fournir la carte de pluie qui pondère l'érosion.</p>
-    <span class="fichiers">climate.py → pluie provisoire</span></div></div>
-  <div class="etape"><div class="rang">3</div><div class="contenu">
-    <p class="nom">Érosion</p>
-    <p class="det">60 itérations d'incision fluviale pondérée par la pluie, plus diffusion de versant et éboulement au-delà de l'angle de talus. Les bassins fermés ne sont tolérés qu'en climat aride.</p>
-    <span class="fichiers">erosion.py → relief final</span></div></div>
+    <span class="fichiers">42 s → pluie provisoire, 400 passes d'advection</span></div></div>
   <div class="etape"><div class="rang">4</div><div class="contenu">
-    <p class="nom">Recalage du niveau marin</p>
-    <p class="det">L'érosion déplace de la matière ; sans recalage la part des terres dériverait. On décale le zéro pour retrouver exactement <code>tectonics.landRatio</code>.</p>
-    <span class="fichiers">pipeline.py → 29,2 % de terres</span></div></div>
+    <p class="nom">Boucle soulèvement / érosion</p>
+    <p class="det">300 passes de <code>dz/dt = U − K·A<sup>m</sup>·S<sup>n</sup> + D·∇²z</code>. Le soulèvement vient de la <em>convergence des plaques</em>, déjà calculée et que personne ne lisait. <strong>C'est la boucle qui fait que la roche s'exprime</strong> : sans apport, l'érodabilité ne déplaçait que quatre à sept centimètres ; avec elle, le granite tient 38,7° de pente et le calcaire 21,3. L'érodabilité est rééchantillonnée à l'altitude courante, donc la surface traverse les bancs en descendant.</p>
+    <span class="fichiers">113 s → soulèvement cumulé 38 m, incision max 10,6 m</span></div></div>
   <div class="etape"><div class="rang">5</div><div class="contenu">
-    <p class="nom">Climat, seconde passe</p>
-    <p class="det">Rejoué sur le relief final. C'est ce climat-là qui classe les biomes et qui alimente les presets météo.</p>
-    <span class="fichiers">climate.py → température, pluie, vent, continentalité</span></div></div>
+    <p class="nom">Littoral, plateaux, sapement</p>
+    <p class="det">Trois passes qui <strong>n'abaissent jamais sous le niveau de la mer</strong> — la part émergée est un invariant du projet. La falaise marine recule par <em>sapement</em> et non par équilibre de pente ; le plateau disséqué donne mesas et canyons, calés sur le toit du premier banc dur ; les corniches reculent par le même mécanisme, le banc tendre se désagrégeant sous elles.</p>
+    <span class="fichiers">6,7 s → littoral 1,7 % des terres, tables 0,9 %, sapement 10,2 %</span></div></div>
   <div class="etape"><div class="rang">6</div><div class="contenu">
-    <p class="nom">Hydrologie</p>
-    <p class="det">Écoulement sur relief comblé, extraction des rivières par seuil de débit et ordre de Strahler, des lacs par profondeur et surface de cuvette. Contours tracés en marching squares puis accrochés à la berge.</p>
-    <span class="fichiers">hydrology.py → rivers.json, lakes.json</span></div></div>
+    <p class="nom">Climat, seconde passe</p>
+    <p class="det">Rejoué sur le relief final. C'est ce climat-là qui classe les biomes et qui alimente les préréglages météo.</p>
+    <span class="fichiers">42 s → température, pluie, vent, continentalité, part estivale</span></div></div>
   <div class="etape"><div class="rang">7</div><div class="contenu">
-    <p class="nom">Biomes</p>
-    <p class="det">Diagramme de Whittaker sur le couple température / pluie, puis quatre surcharges que ce couple ne peut pas connaître : l'étage alpin, la roche à nu, la calotte permanente, l'estran et le marais.</p>
-    <span class="fichiers">biomes.py → biome_index.png</span></div></div>
+    <p class="nom">Biomes, substrat, glace</p>
+    <p class="det">Diagramme de Whittaker sur le couple température / pluie, puis les surcharges — dont deux écrivent le <em>substrat</em> et non le biome. Le dôme de calotte vient ensuite, et il monte seulement.</p>
+    <span class="fichiers">0,1 s → 15 biomes attribués, dôme de 479 m</span></div></div>
   <div class="etape"><div class="rang">8</div><div class="contenu">
-    <p class="nom">Surfaces et export</p>
-    <p class="det">Dix couches de poids pour le matériau de terrain, relief monté en résolution avec du détail fractal effacé au bord de l'eau et dans les couloirs de rivière, rapport HTML avec seize contrôles.</p>
-    <span class="fichiers">surfaces.py, export.py → height_16bit.png, layer_*.png, manifest.json</span></div></div>
+    <p class="nom">Cavités</p>
+    <p class="det">Chambres semées à distance minimale là où la roche est karstifiable et la pluie suffisante — <strong>jamais d'après le biome</strong>, qui n'est qu'une étiquette. Puis un arbre couvrant minimal, qui touche tous les sommets <em>par définition</em> : la connexité est acquise, il n'y a rien à vérifier après coup. Les galeries sont routées en A* sous contrainte, et quatre formes d'ouverture — bouche de falaise, aven, doline, arche — donnent au réseau ses accès.</p>
+    <span class="fichiers">13,5 s → 665 chambres, 14 réseaux, 166 bouches, 213 gouffres, 103 dolines, 21 arches</span></div></div>
 </div>
 
 <div class="note">
   <span class="etiq">Une dépendance à connaître par cœur</span>
-  <p>La pluie pilote l'érosion, donc le relief. <strong>Tout terme de température placé avant le calcul des précipitations déplace le terrain, les rivières et les lacs</strong> ; placé après, il ne déplace que les biomes. Le choix se fait sur la causalité réelle : le refroidissement continental vient <em>avant</em> (un air plus froid porte moins de vapeur), la prime de chaleur aride vient <em>après</em> (c'est la sécheresse qui réchauffe).</p>
+  <p>La pluie pilote l'érosion, donc le relief. <strong>Tout terme de température placé avant le calcul des précipitations déplace le terrain</strong> ; placé après, il ne déplace que les biomes. Le choix se fait sur la causalité réelle : le refroidissement continental vient <em>avant</em> (un air plus froid porte moins de vapeur), la prime de chaleur aride vient <em>après</em> (c'est la sécheresse qui réchauffe).</p>
+</div>
+
+<div class="note">
+  <span class="etiq">Ce que le cache contient, et ce qu'il ne contenait pas</span>
+  <p>Le monde part au cache — 78,6 Mo — et la reprise tombe à <strong>2,1 s</strong>. Mais « repris du cache » ne veut pas dire « lu » : quatre passes dérivées se rejouaient derrière ce mot, dont les cavités pour <em>onze secondes</em>. Elles y sont désormais, pour 0,1 Mo de plus. Le contrôle qui tranche n'est pas le temps, c'est le <em>compte</em> — un temps qui tombe à zéro par construction ne témoigne plus de rien.</p>
 </div>
 </section>
 
 <!-- ========================================================= 03 -->
 <section id="lancer">
-<h2><span class="num">03</span>Lancer les outils</h2>
+<h2><span class="num">02</span>Mesurer, et regarder</h2>
+<p>Il n'y a plus rien à lancer pour <em>produire</em> le monde : il se calcule au démarrage du jeu. Ce qui se lance, ce sont les instruments — et <strong>aucun n'exige l'éditeur ouvert</strong>, ce qui compte, parce que le lien de pilotage tombe dès qu'on relance l'éditeur, donc à chaque compilation.</p>
 
-<h3>Hors éditeur</h3>
-<p>Tout part du <code>.venv</code> de <code>Tools/WorldGen</code>. Le module principal doit être lancé <strong>depuis ce répertoire</strong>, sinon Python ne trouve pas le paquet <code>worldgen</code>.</p>
-<div class="cmd"><span class="c"># generer le monde (environ 5 min)</span>
-cd Tools/WorldGen
-.venv/Scripts/python.exe -m worldgen
-
-<span class="c"># variantes utiles</span>
-.venv/Scripts/python.exe -m worldgen --preview     <span class="c"># simulation 1025, erosion allegee</span>
-.venv/Scripts/python.exe -m worldgen --no-write    <span class="c"># calcule et controle sans rien ecrire</span>
-.venv/Scripts/python.exe -m worldgen --seed 12345  <span class="c"># autre graine</span></div>
-
-<p>Puis la préparation pour Unreal, depuis la racine du dépôt :</p>
-<div class="cmd">P=Tools/WorldGen/.venv/Scripts/python.exe
-M=Saved/WorldGen/20260909
-
-$P Tools/WorldGen/tile_world.py $M            <span class="c"># decoupe en tuiles importables</span>
-$P Tools/WorldGen/export_biome_texture.py $M  <span class="c"># carte des biomes + marquage mineral</span>
-$P Tools/WorldGen/spawn_point.py $M           <span class="c"># choisit le point d'apparition</span>
-$P Tools/WorldGen/export_uds_climate.py       <span class="c"># presets climatiques UDS + grille</span></div>
-
-<h4>Contrôle et diagnostic</h4>
+<h3>Quatre instruments, et ils ne se remplacent pas</h3>
 <div class="fiches">
-  <div class="fiche"><div class="nom">terre.py</div><div class="quoi"><strong>Le bulletin de conformité terrestre.</strong> Six critères sourcés, les 23 climats réels d'UDS passés dans notre diagramme de Whittaker, et un score d'écart aux grands biomes.</div></div>
-  <div class="fiche"><div class="nom">metrics.py</div><div class="quoi">Relevé complet d'une génération, et <code>--diff</code> entre deux relevés. <strong>À lancer avant et après toute correction</strong> : c'est le seul contrôle qui voit ce qui a bougé là où on ne touchait pas.</div></div>
-  <div class="fiche"><div class="nom">diag_uds_climat.py</div><div class="quoi">Trois contrôles : climat contre biomes, nos presets contre ceux d'UDS, neige des presets contre couche de neige peinte.</div></div>
-  <div class="fiche"><div class="nom">diag_eau.py</div><div class="quoi">Hauteur du mur d'eau le long des <em>arêtes</em> des polygones de lac, lit de rivière suspendu ou enterré, remontées du terrain le long des cours d'eau.</div></div>
-  <div class="fiche"><div class="nom">diag_climat.py · diag_hydro.py</div><div class="quoi">Profils zonaux, ceinture désertique, ombres pluviométriques ; réseau hydrographique, embouchures, endoréisme.</div></div>
+  <div class="fiche"><div class="nom">Les tests</div><div class="quoi"><strong>Les seuls qui échouent tout seuls.</strong> Quatre-vingt-onze oracles, sans rendu : bruit, tectonique, érosion, drainage, littoral, cavités, Transvoxel, diffusion, carte, cache, et le bulletin terrestre.</div></div>
+  <div class="fiche"><div class="nom">Les sondes</div><div class="quoi">Vingt-cinq, et chacune répond à <em>une</em> question. Elles ne jugent pas. Elles prennent une <strong>graine</strong> et une <strong>taille</strong> en paramètres, ce qui permet d'itérer sans payer le monde de production.</div></div>
+  <div class="fiche"><div class="nom">Le banc</div><div class="quoi">Trame, quatre fils, chunks, triangles, mémoire, remplissage. Il mesure <strong>dans le jeu</strong>, ce qui le met à l'abri du piège le plus coûteux du projet — voir la dernière section.</div></div>
+  <div class="fiche"><div class="nom">La tournée photo</div><div class="quoi">Elle se pose devant chaque forme et la photographie. Parce qu'<strong>une forme qui n'a pas été vue n'est pas validée</strong> : les parois de canyon étaient mesurées justes et rendaient une surface qui ne ressemblait pas à de la roche.</div></div>
 </div>
 
-<h3>Dans l'éditeur</h3>
-<p>Les scripts de <code>Tools/UE</code> s'exécutent par <code>execute_python_code</code>. Le préambule est toujours le même :</p>
-<div class="cmd">import sys, importlib
-sys.path.insert(0, r"D:\UE\Worldseed\Tools\UE")
-import rebuild_world; importlib.reload(rebuild_world)
-print(rebuild_world.rebuild(r"D:\UE\Worldseed\Saved\WorldGen\20260909"))</div>
+<h3>Les lancer</h3>
+<div class="cmd"><span class="c"># les 91 oracles, sans rendu</span>
+UnrealEditor-Cmd.exe Worldseed.uproject -nullrhi -unattended -nopause -nosplash `
+    -ExecCmds="Automation RunTests Worldseed;Quit"
+
+<span class="c"># une sonde, en commandlet, L'EDITEUR ARRETE</span>
+<span class="c"># (le plugin ecoute sur le port 8000, et le commandlet echouerait)</span>
+UnrealEditor-Cmd.exe Worldseed.uproject -unattended -nopause -nosplash `
+    -run=pythonscript -script="&lt;fichier.py&gt;"
+
+<span class="c"># le banc, et la tournee photo</span>
+UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc `
+    -game -windowed -resx=1600 -resy=900 -WorldseedQuitter -WorldseedBanc
+UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc `
+    -game -windowed -resx=1600 -resy=900 -WorldseedQuitter -WorldseedPhotos</div>
+
+<div class="cmd"><span class="c"># le contenu d'un script de sonde</span>
+import unreal
+P = unreal.WorldseedProbeLibrary
+print(P.probe_terre(20260909, 32000.0, 2048))   <span class="c"># bulletin de conformite terrestre</span>
+print(P.probe_biomes(20260909, 32000.0, 2048))  <span class="c"># parts de biomes sur les terres</span>
+print(P.probe_zonal(20260909, 32000.0, 2048))   <span class="c"># fait-il froid LA OU il doit ?</span></div>
+
+<p>Le résultat se lit dans <code>Saved/Logs/Worldseed.log</code> : la sortie standard ne le capture pas. C'est de là que viennent tous les chiffres de cet atlas.</p>
 
 <div class="note">
-  <span class="etiq">Attendu, pas une panne</span>
-  <p><code>execute_python_code</code> remonte <code>PYTHON_EXECUTION_TIMEOUT</code> au bout de 30 secondes <strong>alors que le script continue et aboutit</strong>. Ne pas relancer l'appel : lire la preuve dans <code>Saved/Logs/Worldseed.log</code>, où chaque script journalise ses <code>CREATED:</code> / <code>MODIFIED:</code> / <code>DELETED:</code>.</p>
+  <span class="etiq">Les sondes relisent les règles, le jeu non</span>
+  <p>C'est ce qui permet de changer une valeur et de mesurer sans relancer l'éditeur — et c'est aussi le piège : <strong>modifier une règle puis relancer une partie ne change rien</strong> tant qu'aucune sonde n'est passée entre les deux. Un A/B monté ainsi mesure deux fois la même chose, et le projet s'y est déjà laissé prendre.</p>
 </div>
 
-<div class="fiches">
-  <div class="fiche"><div class="nom">rebuild_world.py</div><div class="quoi"><strong>La séquence complète, et l'ordre compte.</strong> Vide le niveau, importe relief et dix couches en une passe, pose le matériau, crée l'océan <em>avant</em> la zone d'eau, importe la carte des biomes, arme le <code>PCGWorldActor</code>, sème la végétation, place le point d'apparition.</div></div>
-  <div class="fiche"><div class="nom">import_world.py</div><div class="quoi">L'import du Landscape seul. N'assigne pas le matériau — un terrain fraîchement importé est blanc.</div></div>
-  <div class="fiche"><div class="nom">water_world.py</div><div class="quoi">Océan, zone d'eau adoptée, lacs en splines fermées, rivières avec largeur et profondeur par nœud.</div></div>
-  <div class="fiche"><div class="nom">vegetation.py</div><div class="quoi">Construit les graphes PCG depuis <code>vegetation_recipes.json</code>. Sept pas de grille, du tapis à 150 cm aux arbres épars à 1800.</div></div>
-  <div class="fiche"><div class="nom">foliage_lods.py</div><div class="quoi">Pose un groupe de LOD sur les maillages de plus de 400 triangles qui n'en ont pas. <strong>Jamais le groupe nommé <code>Foliage</code></strong> : sa définition est <code>NumLODs=1</code>, il n'en génère aucun.</div></div>
-  <div class="fiche"><div class="nom">rvt_setup.py</div><div class="quoi">Les deux textures virtuelles du pack Orasot. La transform d'un volume est un <em>coin</em> et une <em>taille</em>, pas un centre et une demi-portée.</div></div>
-  <div class="fiche"><div class="nom">uds_climate.py</div><div class="quoi">Matérialise les presets climatiques calculés hors éditeur en assets Unreal, et les vérifie case par case.</div></div>
+<div class="note">
+  <span class="etiq">Un A/B ne se fait jamais en éditant le fichier de règles</span>
+  <p>Son empreinte est un MD5 du fichier entier : l'éditer régénère le monde entre les deux moitiés, qui ne comparent alors plus rien. Quand un A/B demande un réglage sans surcharge de ligne de commande, <strong>on ajoute la surcharge</strong>. Une boucle de mesure qui modifiait le fichier puis le restaurait « à la fin » l'a un jour laissé <em>vide</em> — le monde a cessé d'exister et le joueur est tombé sans fin, ce qui ne ressemble en rien à sa cause.</p>
 </div>
 </section>
 
 <!-- ========================================================= 04 -->
 <section id="climat">
-<h2><span class="num">04</span>Le système climatique</h2>
+<h2><span class="num">03</span>Le système climatique</h2>
 <p>Le climat se construit en couches qui se superposent dans un ordre précis. Chaque formule est calée sur une mesure terrestre, donnée en regard.</p>
 
 <figure>
   <div class="fig-boite" id="fig-zonal"></div>
-  <figcaption><b>Le profil zonal produit.</b> Treize bandes de latitude, mesurées sur le monde courant. La température suit le cosinus de la latitude ; la pluie culmine à la zone de convergence intertropicale et s'effondre dans les ceintures de subsidence vers 25–30°, exactement comme sur Terre.</figcaption>
+  <figcaption><b>Le profil zonal produit.</b> Dix-sept bandes de latitude, relevées par <code>ProbeZonal</code> sur le monde courant — la bande 80-90 N est omise, ce monde n'y ayant aucune terre. La température suit le cosinus de la latitude ; la pluie culmine à la zone de convergence intertropicale et s'effondre dans les ceintures de subsidence vers 25–30°, exactement comme sur Terre.</figcaption>
 </figure>
 
 <h3>1 · Le profil zonal de température</h3>
@@ -456,82 +426,103 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 05 -->
 <section id="whittaker">
-<h2><span class="num">05</span>Le diagramme des biomes</h2>
+<h2><span class="num">04</span>Le diagramme des biomes</h2>
 <p>La classification lit la bande de température, puis le seuil de pluie à l'intérieur de la bande. L'étagement altitudinal n'est pas une règle séparée : il tombe du gradient adiabatique. Un sommet tropical à 3000 m est à 7 °C, donc le diagramme y lit « forêt tempérée » — une forêt de montagne, sans une seule règle d'altitude.</p>
 
 <figure>
   <div class="fig-boite" id="fig-whittaker"></div>
-  <figcaption><b>Notre diagramme de Whittaker, et les 23 climats réels posés dessus.</b> Les presets livrés par Ultra Dynamic Sky sont des relevés de villes réelles, chacun citant sa station et sa source. Chaque point est l'un d'eux, placé à sa température moyenne annuelle et son cumul de pluie. Un désert réel doit tomber dans une case désert, une forêt tropicale dans une case forêt tropicale — c'est le contrôle que <code>terre.py</code> automatise.</figcaption>
+  <figcaption><b>Notre diagramme de Whittaker, et les 23 climats réels posés dessus.</b> Les presets livrés par Ultra Dynamic Sky sont des relevés de villes réelles, chacun citant sa station et sa source. Chaque point est l'un d'eux, placé à sa température moyenne annuelle et son cumul de pluie. Un désert réel doit tomber dans une case désert, une forêt tropicale dans une case forêt tropicale — c'est le contrôle que <code>ProbeTerre</code> automatise, et qu'un test verrouille : <code>Worldseed.Terre.ClimatsReels</code>. <strong>20 sur 23</strong> au 24 septembre 2026.</figcaption>
 </figure>
 
-<p>Quatre surcharges traitent ce que le couple température / pluie ne peut pas savoir :</p>
+<p>Des surcharges traitent ce que le couple température / pluie ne peut pas savoir. <strong>Elles ne vont plus toutes au même endroit</strong>, et c'est la distinction à retenir : ce qui relève du <em>climat</em> écrit le biome ; ce qui relève de la <em>forme du relief</em> écrit le <strong>substrat</strong>, un second axe, et laisse le climat intact dessous. Une pente trop raide n'a jamais cessé d'être en forêt tempérée, elle y est seulement à nu.</p>
 <div class="tbl-boite"><table>
-<thead><tr><th>surcharge</th><th>critère</th><th>origine du critère</th></tr></thead>
+<thead><tr><th>surcharge</th><th>axe</th><th>critère</th><th>origine du critère</th></tr></thead>
 <tbody>
-<tr><td>Étage alpin</td><td>sous la limite des arbres <em>et</em> en altitude réelle</td><td>sans le second critère, toute la toundra de bord de mer basculerait en alpin</td></tr>
-<tr><td>Roche à nu</td><td>pente au-delà de l'angle de tenue</td><td>aucune terre ne reste sur une pente trop forte, quel que soit le climat</td></tr>
-<tr><td>Calotte glaciaire</td><td>mois le plus chaud sous 0 °C</td><td><strong>critère de Köppen EF</strong></td></tr>
-<tr><td>Estran, marais</td><td>proximité de l'eau, pente faible</td><td>géométrie, pas climat</td></tr>
+<tr><td>Étage alpin</td><td>biome</td><td>sous la limite des arbres <em>et</em> en altitude réelle</td><td>sans le second critère, toute la toundra de bord de mer basculerait en alpin</td></tr>
+<tr><td>Calotte glaciaire</td><td>biome</td><td>mois le plus chaud sous 0 °C</td><td><strong>critère de Köppen EF</strong></td></tr>
+<tr><td>Méditerranéen</td><td>biome</td><td>tempéré ou herbacé, dans l'enveloppe des trois relevés réels, et moins d'un quart de la pluie en été</td><td><strong>le rapport 1/3 de Köppen</strong>, groupe Cs, ramené à deux semestres</td></tr>
+<tr><td>Banquise</td><td>couverture</td><td>en mer, mois le plus chaud sous le seuil</td><td>le même critère que la calotte : ce qui fond en été ne tient pas l'année. C'est ce qui donne un pôle <em>nord</em> blanc, lui qui n'a aucune terre</td></tr>
+<tr><td>Roche à nu</td><td><strong>substrat</strong></td><td>pente au-delà de l'angle de tenue</td><td>aucune terre ne reste sur une pente trop forte, quel que soit le climat</td></tr>
+<tr><td>Estran</td><td><strong>substrat</strong></td><td>altitude et distance au rivage</td><td>géométrie, pas climat</td></tr>
 </tbody></table></div>
+
+<div class="note">
+  <span class="etiq">Deux biomes ne sont plus jamais attribués</span>
+  <p><strong>Lac</strong> et <strong>rivière</strong> gardent leur identifiant et leur palette, mais l'hydrologie a été retirée le 18 septembre 2026 : il ne reste que l'océan. Le <strong>marais</strong> est devenu inatteignable par voie de conséquence — il naissait de l'eau douce dilatée. Leurs identifiants ne sont pas renumérotés : ils servent de clés aux recettes de surface, et une clé ne se déplace pas.</p>
+</div>
 </section>
 
 <!-- ========================================================= 06 -->
 <section id="echelle">
-<h2><span class="num">06</span>La règle d'échelle</h2>
-<p>Le monde est une <strong>maquette au 1/4</strong> d'un ancien monde de 32 km. Toute nouvelle valeur doit suivre cette règle, sans quoi une seule constante métrique en dur fausse le monde entier — ce qui est déjà arrivé.</p>
+<h2><span class="num">05</span>La règle d'échelle</h2>
+<p><strong>Ce n'est plus « diviser par quatre ».</strong> Ça l'a été, du temps où le monde faisait 8 km ; ce qui la remplace est plus général, et se paie cher quand on l'oublie : <strong>exprimer un réglage par la grandeur qu'on veut tenir</strong>. Une constante métrique figée sur une référence fausse un monde entier dès que la carte change — et le fichier de règles a payé la leçon <em>cinq fois</em>.</p>
+
 <div class="tbl-boite"><table>
-<thead><tr><th>nature de la valeur</th><th class="n">facteur</th><th>exemples</th></tr></thead>
+<thead><tr><th>ce qui était écrit</th><th>ce qui l'a remplacé</th><th>ce que la valeur métrique cassait</th></tr></thead>
 <tbody>
-<tr><td><strong>Relatif</strong> — inchangé</td><td class="n">×1</td><td>fréquences en cycles par monde, distances en pixels de simulation, seuils normalisés par centile, angles, degrés de latitude, températures, millimètres de pluie</td></tr>
-<tr><td><strong>Métrique</strong></td><td class="n">÷4</td><td>altitudes, largeurs, rayons en kilomètres</td></tr>
-<tr><td><strong>Aire ou débit</strong></td><td class="n">÷16</td><td>surface minimale de lac, seuil de débit</td></tr>
+<tr><td><code>shelfWidthKm</code></td><td><code>shelfPartLargeur</code><br><span class="sous">fraction de la largeur</span></td><td>0,35 km quelle que soit la carte : sur 500 m de monde le plateau continental en couvrait 70 %, sa rampe n'aboutissait jamais, et les fonds plafonnaient vers −98 m au lieu de −300.</td></tr>
+<tr><td><code>mountainWidthKm</code></td><td><code>mountainPartHauteur</code><br><span class="sous">fraction de la hauteur</span></td><td>1,5 km de ceinture de suture partout : 75 % d'une carte de 2 km de haut, 4,7 % d'une de 32. Un monde ne peut pas être le même à toutes les tailles si ses chaînes occupent une part qui varie d'un facteur seize.</td></tr>
+<tr><td><code>oceanModerationRangeKm</code></td><td><code>oceanModerationPartLargeur</code><br><span class="sous">fraction de la largeur</span></td><td>La continentalité saturait trop tôt ou jamais. Sur Terre le passage maritime → continental se fait sur 300 à 800 km pour 40 000 de circonférence, soit 0,75 à 2 % de la largeur.</td></tr>
+<tr><td><code>lapseRateCPerKm</code></td><td><code>lapseSommetC</code><br><span class="sous">refroidissement du sommet</span></td><td>La calotte passait de 10,5 % des terres à 2 × 1 km à 23,1 % à 64 × 32, et le désert chaud de 19,7 à 6,8. <strong>Trois biomes qui n'ont aucune raison de dépendre de la taille de la carte.</strong> Diviser par le facteur vertical ne suffit pas : le relief ne le suit pas linéairement.</td></tr>
+<tr><td><code>lithologieSocleElevationM</code></td><td><code>lithologieSoclePartHaute</code><br><span class="sous">quantile</span></td><td>150 m, calé sur un monde dont les sommets plafonnaient à 300. À 64 km le même monde culmine à 1700 et ce seuil avalait le relief : septante pour cent de cristallin, et la dolomie disparue.</td></tr>
 </tbody></table></div>
-<p>Deux exceptions assumées, décidées par le propriétaire du projet :</p>
-<ul>
-<li>le <strong>gradient adiabatique est multiplié par 4</strong>, pour que l'altitude garde son rôle climatique sur un relief quatre fois plus bas ;</li>
-<li><code>geometryExaggeration</code> est <strong>multipliée par 16</strong>, pour que les rivières gardent leur largeur réelle en mètres. Un monde de 8 km ne peut pas porter de fleuve — son plus grand bassin donnerait un chenal de 40 cm — mais l'échelle humaine, elle, ne rétrécit pas avec le monde : une rivière doit rester un obstacle et demander un pont.</li>
-</ul>
+
+<p><strong>Un quantile ne connaît pas l'échelle</strong> : il tient la proportion demandée quelle que soit l'amplitude du relief. Et chacune de ces clés retombe sur son ancienne valeur métrique si on la met à zéro — la bascule est réversible, et c'est ce qui a permis de la mesurer.</p>
+
+<div class="tbl-boite"><table>
+<thead><tr><th>nature de la valeur</th><th>ce qu'on en fait</th><th>exemples</th></tr></thead>
+<tbody>
+<tr><td><strong>Relatif</strong></td><td>ne change <em>jamais</em></td><td>fréquences en cycles par monde, seuils normalisés par centile, angles, degrés de latitude, températures, millimètres de pluie</td></tr>
+<tr><td><strong>Métrique</strong></td><td>s'exprime en fraction du monde, ou se déduit d'une grandeur qu'on veut tenir</td><td>largeur du plateau continental, ceinture de suture, portée maritime</td></tr>
+<tr><td><strong>Seuil sur une distribution</strong></td><td>devient un quantile</td><td>socle lithologique, proportions de roches</td></tr>
+</tbody></table></div>
+
+<div class="note">
+  <span class="etiq">Deux nombres qu'il ne faut pas confondre</span>
+  <p><code>world.sizeKm</code> vaut 8 et <strong>n'est pas la taille du monde</strong> — c'est la <em>hauteur de référence</em> du calage métrique, dont le facteur vertical tire son rapport : 32000 / 8000 = 4,0, soit exactement son plafond. Les deux se sont longtemps trouvées égales, ce qui masquait la distinction et a fait chercher longtemps pourquoi le relief semblait plat.</p>
+</div>
+
 <div class="note">
   <span class="etiq">Le contrôle qui trouve ce que la lecture du code rate</span>
-  <p>Après toute mise à l'échelle, lancer <code>metrics.py --diff</code> contre l'ancien monde. C'est ce diff — et non la relecture du code — qui a trouvé un <code>+ 400.0</code> écrit en dur dans la tectonique : toutes les autres métriques collaient à moins d'un point, celle-là sautait de 4,7.</p>
+  <p>Après toute mise à l'échelle, comparer un relevé <em>avant</em> et <em>après</em>. C'est un tel écart — et non la relecture du code — qui a trouvé un <code>+ 400.0</code> écrit en dur dans la tectonique : toutes les autres métriques collaient à moins d'un point, celle-là sautait de 4,7. Aujourd'hui ce relevé se prend avec les sondes, et l'empreinte du drainage est journalisée à chaque exécution pour cette raison exacte.</p>
 </div>
 </section>
 
 <!-- ========================================================= 07 -->
 <section id="unreal">
-<h2><span class="num">07</span>Comment ça s'imbrique dans Unreal</h2>
+<h2><span class="num">06</span>Comment le monde arrive à l'écran</h2>
+<p>Rien n'est importé. La chaîne rend des tableaux en mémoire, et le terrain est <strong>maillé à la demande autour du joueur</strong> à partir d'un champ de densité — négatif dans la roche, positif dans l'air, la surface étant l'isovaleur zéro.</p>
+
+<div class="note">
+  <span class="etiq">Il n'y a pas de grille 3D, et il ne peut pas y en avoir</span>
+  <p>À un mètre de voxel, ce monde ferait <strong>soixante-seize milliards</strong> de voxels. Le champ est donc une <em>fonction</em> bâtie sur la grille 2D de la chaîne, plus du bruit 3D. Seules les modifications du joueur seront stockées.</p>
+</div>
+
 <div class="tbl-boite"><table>
-<thead><tr><th>fichier produit</th><th>composant Unreal</th><th>ce qu'il faut savoir</th></tr></thead>
+<thead><tr><th>brique</th><th>ce qu'elle fait</th><th>ce qu'il faut savoir</th></tr></thead>
 <tbody>
-<tr><td><code>height_16bit.png</code></td><td>Landscape</td><td>16×16 composants de 127 quads, 4065 sommets, échelle 196,85 / 196,85 / 136,72. <strong>Ne jamais dépasser ~256 composants avec dix couches</strong> : au-delà, l'import des poids fait tomber le thread RHI.</td></tr>
-<tr><td><code>layer_*.png</code> ×10</td><td>Couches peintes</td><td>Importées en une seule passe avec le relief, sinon une fusion d'edit layers par couche.</td></tr>
-<tr><td><code>biome_index.png</code></td><td>Texture lue par PCG</td><td>Les identifiants de biome sur surface minérale sont <strong>décalés de 100</strong>. La carte dit donc deux choses : quel biome, et si le sol y est rocheux ou sableux.</td></tr>
-<tr><td><code>rivers.json</code>, <code>lakes.json</code></td><td>Water plugin</td><td>Lacs en splines fermées, rivières avec largeur et profondeur par nœud. <code>RiverWidth</code> est la largeur <em>totale</em>, contrairement à ce que dit son commentaire.</td></tr>
-<tr><td><code>spawn_point.json</code></td><td>PlayerStart</td><td>Choisi sur des critères mesurés : altitude, pente, distance à l'eau, biome.</td></tr>
-<tr><td><code>manifest.json</code></td><td>tous</td><td>Géométrie du Landscape, repères de latitude en centimètres, noms des couches, plages climatiques, statistiques.</td></tr>
+<tr><td><strong>Champ de densité</strong></td><td>relief, surplombs, galeries, diaclases, cavités</td><td>Une <em>sortie rapide</em> évite d'évaluer le bruit là où il ne peut plus changer le signe du champ. Elle doit lire le réseau de cavités <em>avant</em>, sans quoi une chambre à quatre-vingt-dix mètres n'existerait jamais.</td></tr>
+<tr><td><strong>Transvoxel</strong></td><td>maille les cellules régulières et les dalles de transition</td><td>Les tables de Lengyel, sous licence MIT. Le mailleur du moteur (<code>FMarchingCubes</code>) ne sait pas produire de cellule de transition, et il déborde d'un voxel — environ neuf pour cent de géométrie dessinée deux fois.</td></tr>
+<tr><td><strong>Anneaux de résolution</strong></td><td>quatre paliers, de 1 m à 8 m de voxel, jusqu'à 2400 m</td><td>La diffusion <em>descend</em> un arbre : un nœud est soit maillé, soit remplacé par ses huit enfants, jamais les deux. Décider le niveau par la seule distance à l'origine produirait des trous et des recouvrements.</td></tr>
+<tr><td><strong>Peinture des sommets</strong></td><td>couleur de biome, de banc stratigraphique ou de roche</td><td>Elle n'écrit <strong>jamais</strong> de noir : plancher mesuré à 66 de luminance. Ce qu'on voit de sombre sur une paroi est de l'<em>ombre</em>.</td></tr>
+<tr><td><strong>Décor d'horizon</strong></td><td>le relief au-delà du rayon voxel</td><td>Deux nappes distinctes, et c'est structurant : l'une nourrit la texture d'information du plugin Water et ne bouge jamais, l'autre est dessinée et s'efface quand on entre sous un plafond. Les confondre coûtait 520 ms de gel à chaque bascule.</td></tr>
+<tr><td><strong>Océan</strong></td><td>plugin Water, fenêtre glissante de 12,288 km</td><td>La <code>WaterZone</code> encode toutes les hauteurs d'eau dans une texture. Un océan d'épaisseur nulle donne l'intervalle <code>[0, 0]</code> et l'eau cesse de se dessiner <strong>sans le moindre avertissement</strong>.</td></tr>
 </tbody></table></div>
 
-<h3>Le semis de végétation</h3>
-<p>Le PCG lit la carte des biomes et sème en <strong>génération à l'exécution</strong>, jamais cuite : le monde complet représenterait une douzaine de millions d'instances.</p>
-<div class="formule">PCGSurfaceSampler → PCGSampleTexture (filtre Point) → PCGProjection → PCGStaticMeshSpawner</div>
-<ul>
-<li>Le filtre PCG des textures est <strong>bilinéaire par défaut</strong>, ce qui interpole des identifiants de biome et invente des biomes inexistants, sans la moindre erreur. Il faut <code>Point</code>.</li>
-<li>Semer d'abord <em>dans</em> la maille puis lire la texture au point — jamais l'inverse. Transformer une texture de tuile entière en points fabrique trois millions de points par maille de 256 m.</li>
-<li>Le déclencheur se pose <strong>avant</strong> le partitionnement, sinon les acteurs de partition sont écrits sur le disque.</li>
-</ul>
-
-<h3>Les matériaux</h3>
-<p>Le terrain utilise le maître du pack Orasot, augmenté d'une dixième couche. <strong>Un pack de terrain se consomme par son instance, jamais par son maître</strong> : la démo du pack surcharge 14 scalaires et 4 textures, et ces valeurs <em>sont</em> le rendu du pack. Deux textures virtuelles (couleur et hauteur) permettent au feuillage de prendre le ton du sol, à condition que le mode de passe de rendu soit <code>ALWAYS</code> — sans quoi le terrain proche paraît aplati.</p>
+<div class="note">
+  <span class="etiq">Le piège qui a coûté le plus cher</span>
+  <p>Le sens d'une normale <strong>n'est pas une propriété globale du chunk</strong>. Trois formes ont été nécessaires : un seul sommet — une grande plaque noire clignotante ; un vote pondéré sur soixante-quatre — il en restait ; <em>chaque sommet tranche pour lui-même</em>. Et l'enroulement ne se déduit jamais, même quand la chaîne de raisonnement paraît complète : il se mesure contre le gradient du champ, qui n'appartient à aucun des deux mailleurs.</p>
+</div>
 </section>
 
 <!-- ========================================================= 08 -->
 <section id="uds">
-<h2><span class="num">08</span>Comment ça s'imbrique dans Ultra Dynamic Sky</h2>
+<h2><span class="num">07</span>Comment ça s'imbrique dans Ultra Dynamic Sky</h2>
 <p>UDS n'est pas qu'un ciel : il embarque son propre système de climat. Un <code>UDS_Climate_Preset</code> porte exactement ce que le générateur calcule déjà par pixel.</p>
 
 <figure>
   <div class="fig-boite" id="fig-uds"></div>
-  <figcaption><b>Du pixel au preset.</b> Chaque case d'un preset UDS a une origine mesurée dans nos cartes. Trente et un presets au total : un par couple biome × hémisphère, celui du sud étant celui du nord avec les saisons échangées.</figcaption>
+  <figcaption><b>Du pixel au preset.</b> Chaque case d'un preset UDS a une origine mesurée dans nos cartes. Trente presets au total : un par couple biome × hémisphère, celui du sud étant celui du nord avec les saisons échangées.</figcaption>
 </figure>
 
 <div class="note">
@@ -566,7 +557,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 09 -->
 <section id="terre">
-<h2><span class="num">09</span>Le réalisme terrestre recherché</h2>
+<h2><span class="num">08</span>Le réalisme terrestre recherché</h2>
 <p>Le critère de réussite posé par le propriétaire : <em>des climats comme on en trouve sur Terre, des biomes pareil, et l'hydrométrie qui en découle</em>, avec des <em>surfaces similaires à la Terre</em>. Deux instruments le mesurent, et ils ne se valent pas.</p>
 
 <h3>La correspondance latitude → Y, qui pèse plus que tout réglage</h3>
@@ -574,30 +565,30 @@ et fait manquer la cible a la premiere.</div>
   <div class="fig-boite" id="fig-latitude"></div>
   <figcaption><b>Parts de surface par zone climatique.</b> En correspondance linéaire, le monde avait trois fois trop de surface polaire et un tiers de tropiques en moins, et aucun réglage de climat ne pouvait le rattraper. La carte fait désormais varier Y comme le sinus de la latitude — projection cylindrique équivalente de Lambert — ce qui reproduit exactement les parts d'une sphère.</figcaption>
 </figure>
-<p class="sous">Contrepartie assumée : la bande qui va du cercle polaire au pôle passe de 1042 à 330 m. <code>latitudeEqualAreaBlend</code> permet de revenir à mi-chemin.</p>
+<p class="sous">Contrepartie assumée : la bande qui va du cercle polaire au pôle passe de 4167 à 1320 m. <code>latitudeEqualAreaBlend</code> permet de revenir à mi-chemin.</p>
 
 <h3>Le bulletin — des critères sourcés, qui se lisent dans l'absolu</h3>
 <div class="tbl-boite"><table>
 <thead><tr><th>critère</th><th class="n">monde</th><th class="n">Terre</th><th>source</th></tr></thead>
 <tbody>
 <tr><td>Terres émergées</td><td class="n">29,2 %</td><td class="n">29,2 %</td><td>valeur physique établie</td></tr>
-<tr><td>Pluie moyenne sur les terres</td><td class="n">713 mm</td><td class="n">715 mm</td><td>valeur physique établie</td></tr>
-<tr><td>Terres au-dessus de 2000 mm</td><td class="n">6,6 %</td><td class="n">7,5 %</td><td>—</td></tr>
-<tr><td>Désert + semi-aride chauds</td><td class="n">15,4 %</td><td class="n">21,0 %</td><td>BWh 14,2 % — Peel, Finlayson &amp; McMahon 2007</td></tr>
-<tr><td>Surface tropicale (&lt; 23,4°)</td><td class="n">39,8 %</td><td class="n">39,8 %</td><td>géométrie d'une sphère : surface entre −L et +L = sin L</td></tr>
+<tr><td>Pluie moyenne sur les terres</td><td class="n">714,8 mm</td><td class="n">715 mm</td><td>valeur physique établie</td></tr>
+<tr><td>Terres au-dessus de 2000 mm</td><td class="n">7,1 %</td><td class="n">7,5 %</td><td>—</td></tr>
+<tr><td>Surface tropicale (&lt; 23,4°)</td><td class="n">39,6 %</td><td class="n">39,8 %</td><td>géométrie d'une sphère : surface entre −L et +L = sin L</td></tr>
 <tr><td>Surface polaire (&gt; 66,6°)</td><td class="n">8,3 %</td><td class="n">8,3 %</td><td>idem</td></tr>
 </tbody></table></div>
 
 <h3>Les parts de biomes</h3>
 <figure>
   <div class="fig-boite" id="fig-biomes"></div>
-  <figcaption><b>Composition du monde, et repères terrestres.</b> Les losanges marquent les ordres de grandeur terrestres pour les huit grands biomes. Savane, prairie, forêt tempérée et calotte sont au niveau ; la taïga et la toundra restent en retrait, ce que la section suivante explique.</figcaption>
+  <figcaption><b>Composition du monde, et repères terrestres.</b> Les losanges marquent les ordres de grandeur terrestres pour les huit grands biomes. Toundra, prairie et savane tombent à moins d'un point ; la <strong>calotte</strong> dépasse de sept, le <strong>désert chaud</strong> manque de huit, et la <strong>forêt tempérée mixte</strong> de dix — c'est le déficit de terres tempérées, chantier ouvert.</figcaption>
 </figure>
 
 <h3>Le score — un instrument de comparaison, jamais de jugement</h3>
 <div class="note">
-  <span class="etiq">Pourquoi il plafonne vers 28–32 %</span>
-  <p>Deux raisons structurelles. Les terres étant fixées à 29,2 %, les parts de biomes sont un <strong>jeu à somme nulle</strong> : agrandir l'Antarctique retire de la savane. Et les huit biomes de référence ne couvrent que 62 % de nos terres — le reste va en roche nue, forêt tropicale sèche, steppe, plages et lacs — alors que la Terre compte sa roche désertique <em>dans</em> le BWh. Ce chiffre sert à départager deux réglages, pas à juger un monde.</p>
+  <span class="etiq">Pourquoi il ne descend pas</span>
+  <p>Deux raisons structurelles. Les terres étant fixées à 29,2 %, les parts de biomes sont un <strong>jeu à somme nulle</strong> : agrandir la calotte retire de la savane. Et les huit biomes de référence ne couvrent que <strong>71,5 %</strong> de nos terres — le reste va en forêt subtropicale humide, forêt tropicale sèche, pelouse alpine, désert froid, steppe et méditerranéen, qui n'ont pas de repère dans cette liste de huit. <strong>Ce chiffre sert à départager deux réglages, pas à juger un monde</strong>, et il vaut 36,8 % au 24 septembre 2026.</p>
+  <p class="sous">Il dépend aussi beaucoup de la <em>graine</em> : la calotte pèse 17,0 % sur <code>20260909</code> et 10,3 % sur <code>1337</code>, à résolution égale. Un relevé sur une seule graine ne se généralise pas — et le projet s'y est déjà laissé prendre.</p>
 </div>
 
 <details>
@@ -615,7 +606,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 10 -->
 <section id="pieges">
-<h2><span class="num">10</span>Pièges de mesure</h2>
+<h2><span class="num">09</span>Pièges de mesure</h2>
 <p>Chacun a été payé comptant. Ils ont en commun de produire un résultat <em>plausible</em> plutôt qu'une erreur.</p>
 <div class="tbl-boite"><table>
 <thead><tr><th>ce qu'on croit mesurer</th><th>ce qui se passe vraiment</th></tr></thead>
@@ -628,11 +619,16 @@ et fait manquer la cible a la premiere.</div>
 <tr><td>Compter les composants d'herbe sur le Landscape</td><td>L'herbe de Landscape n'est <strong>pas exposée comme composant</strong>. La démo du pack, qui a pourtant un tapis visible, rapporte le même zéro. Valider toute métrique sur un cas témoin connu.</td></tr>
 <tr><td>Échantillonner le terrain sur le contour d'un masque</td><td>Le trait passe entre deux cellules et l'arrondi tombe une fois sur deux dans l'eau. Échantillonner en bilinéaire, le long des <strong>arêtes</strong> du polygone.</td></tr>
 <tr><td>Mesurer la continentalité par la distance à l'eau</td><td>Si l'on compte lacs et rivières, la médiane tombe à 100 m et les intérieurs disparaissent. Le modèle, lui, compte la distance à l'<strong>océan seul</strong>.</td></tr>
+<tr><td>Mesurer quoi que ce soit dans un éditeur non focalisé</td><td><strong>Le piège le plus coûteux du projet.</strong> L'éditeur bride son rendu quand il n'a pas le focus — ce qui est l'état permanent d'un éditeur piloté depuis un terminal — et l'outillage attribue ce plafond au GPU, verdict et conseil de profilage à l'appui. Écart mesuré sur la même scène : 21 à 33 images par seconde bridé, <strong>210 à 224</strong> sans. Le signe qui trahit : <code>frame_ms</code> vaut <em>exactement</em> <code>gpu_ms</code>.</td></tr>
+<tr><td>Deux relevés identiques au chiffre près pour deux réglages différents</td><td>Ce n'est jamais un hasard : c'est un plafond caché, une moitié d'A/B qui n'a pas pris, un témoin non branché, ou une mesure qui ne lit pas ce qu'on croit. Le projet a rencontré ce signe <strong>six fois</strong>, et l'a cru fortuit les premières.</td></tr>
+<tr><td>Corriger, mesurer, ne rien voir bouger, et corriger encore</td><td>Se demander d'abord si la mesure <strong>mélange deux populations</strong>. Quatre corrections du routage des galeries n'ont rien déplacé pour cette seule raison : le chiffre global moyennait un résultat impeccable et un repli défaillant. Un agrégat sur des choses de natures différentes ne se corrige pas, il se décompose.</td></tr>
+<tr><td>Régler sans relâche un défaut vu à l'œil</td><td>Se demander si la <strong>métrique mesure ce défaut-là</strong>. La dimension fractale du trait de côte valait 1,013 — mieux que la côte sud-africaine, la plus lisse de la Terre — pendant que les continents étaient des polygones à arêtes rectilignes. Elle quantifie la rugosité <em>fine</em>, le défaut était dans la <em>silhouette</em>. Sept réglages y sont passés.</td></tr>
+<tr><td>Écrire un test dont la fixture ne contient pas le cas</td><td>Un test de comblement sur un relief <em>sans cuvette</em> passe trivialement. Comme deux tableaux vides qui se comparent égaux, ou un monde fictif dont le registre de couleurs n'est pas chargé. Quatre formes de cette faute en une seule journée. <strong>Tout test doit porter une assertion qui échoue quand la matière manque.</strong></td></tr>
 </tbody></table></div>
 </section>
 
 <footer>
-  <p>Worldseed · monde de 8 km, graine 20260909 · simulation 2049, sortie 4065. Toutes les valeurs chiffrées de ce document sont des mesures prises sur le monde courant ou sur des références citées ; aucune n'est estimée.</p>
+  <p>Worldseed · monde de 64 × 32 km, graine 20260909 · grille 4096 × 2048, relevé le 24 septembre 2026. Toutes les valeurs chiffrées de ce document sont des mesures prises sur le monde courant ou sur des références citées ; aucune n'est estimée.</p>
 </footer>
 
   </main>
@@ -642,48 +638,58 @@ et fait manquer la cible a la premiere.</div>
 <script>
 /* ====================================================== donnees mesurees */
 const D = {
-  zonal: [{lat:-83.1,t:-26.5,p:43,terre:100.0},
-    {lat:-69.2,t:-12.6,p:289,terre:69.5},
-    {lat:-55.4,t:1.4,p:973,terre:9.3},
-    {lat:-41.5,t:10.4,p:647,terre:21.0},
-    {lat:-27.7,t:21.8,p:402,terre:18.9},
-    {lat:-13.8,t:24.9,p:1532,terre:25.1},
-    {lat:0.0,t:26.1,p:1845,terre:16.6},
-    {lat:13.8,t:23.6,p:1046,terre:22.4},
-    {lat:27.7,t:22.3,p:271,terre:36.1},
-    {lat:41.5,t:11.7,p:427,terre:44.8},
-    {lat:55.4,t:-0.5,p:788,terre:40.5},
-    {lat:69.2,t:-8.4,p:495,terre:21.0},
-    {lat:83.1,t:-15.4,p:0,terre:0.0}],
-  biomes: [["Désert chaud",15.44,21],
-    ["Savane",11.29,13],
-    ["Calotte glaciaire",10.68,10],
-    ["Forêt tropicale humide",8.28,11],
-    ["Taïga",8.25,10],
-    ["Toundra",8.07,8],
-    ["Forêt tempérée",7.72,9],
-    ["Forêt tropicale sèche",7.42,null],
-    ["Prairie",5.68,8],
-    ["Roche nue",3.72,null],
-    ["Plage",3.08,null],
-    ["Lac",2.31,null],
-    ["Steppe",2.22,null],
-    ["Alpin",2.16,null],
-    ["Rivière",1.40,null],
-    ["Forêt tempérée humide",1.27,null],
-    ["Désert froid",1.01,null],
-    ["Marais",0.01,null]],
-  couleurs: {"Désert chaud":"#D6BE7E","Roche nue":"#706C68","Calotte glaciaire":"#D8E2EC",
-    "Forêt tropicale humide":"#1E6E3A","Savane":"#C4AC5C","Forêt tempérée":"#468042",
-    "Forêt tropicale sèche":"#809846","Désert froid":"#B0B0A6","Taïga":"#2E543E",
-    "Prairie":"#96A85C","Plage":"#E2D4AC","Toundra":"#A6B098","Steppe":"#B2AC6C",
-    "Lac":"#2E74B5","Alpin":"#96928C","Rivière":"#56A4D6","Forêt tempérée humide":"#2A6836","Marais":"#4E5C3A"},
-  /* bandes de Whittaker : [tMin, tMax, [[pMax, nom]...]] */
+  /* Mesures du 24 septembre 2026 — graine 20260909, grille 4096 × 2048,
+     monde 64 × 32 km. Relevées par ProbeZonal, ProbeBiomes et ProbeWhittaker.
+     Les couleurs viennent du registre de biomes de world_rules.json : ce sont
+     donc exactement celles du globe du menu et de la carte du monde. */
+  zonal: [{lat:-85,t:-34.3,p:67,terre:100.0},
+    {lat:-75,t:-23.9,p:127,terre:100.0},
+    {lat:-65,t:-15.2,p:416,terre:71.3},
+    {lat:-55,t:-9.9,p:607,terre:40.5},
+    {lat:-45,t:1.2,p:561,terre:32.9},
+    {lat:-35,t:12.2,p:380,terre:27.1},
+    {lat:-25,t:18.3,p:380,terre:24.9},
+    {lat:-15,t:20.4,p:1270,terre:19.1},
+    {lat:-5,t:21.2,p:1768,terre:28.6},
+    {lat:5,t:22.5,p:1431,terre:32.6},
+    {lat:15,t:22.7,p:788,terre:34.6},
+    {lat:25,t:21.1,p:293,terre:33.1},
+    {lat:35,t:17.6,p:331,terre:17.6},
+    {lat:45,t:9.3,p:1012,terre:5.3},
+    {lat:55,t:2.1,p:1123,terre:13.3},
+    {lat:65,t:-7.2,p:720,terre:17.9},
+    {lat:75,t:-11.2,p:335,terre:10.2}],
+  /* La bande 80-90 N est omise : ce monde n'y a aucune terre — le pôle nord
+     est océan par règle — donc ni température ni pluie terrestres à montrer. */
+  biomes: [["Calotte glaciaire",16.98,10],
+    ["Désert chaud",12.95,21],
+    ["Savane",11.01,13],
+    ["Forêt subtropicale humide",10.06,null],
+    ["Toundra",7.61,8],
+    ["Prairie",7.06,8],
+    ["Taïga",6.60,10],
+    ["Forêt tropicale humide",6.47,11],
+    ["Forêt tropicale sèche",5.78,null],
+    ["Pelouse alpine",5.15,null],
+    ["Désert froid",3.51,null],
+    ["Forêt tempérée mixte",2.78,13],
+    ["Steppe",2.27,null],
+    ["Méditerranéen",1.56,null],
+    ["Forêt pluviale tempérée",0.21,null]],
+  couleurs: {"Calotte glaciaire":"#F2F6FA","Toundra":"#A6B098","Taïga":"#2E543E",
+    "Forêt tempérée mixte":"#468042","Forêt pluviale tempérée":"#2A6836",
+    "Prairie":"#96A85C","Steppe":"#B2AC6C","Désert froid":"#B0B0A6",
+    "Désert chaud":"#D6BE7E","Savane":"#C4AC5C","Forêt tropicale sèche":"#809846",
+    "Forêt tropicale humide":"#1E6E3A","Pelouse alpine":"#96928C",
+    "Méditerranéen":"#9E9470","Forêt subtropicale humide":"#568448"},
+  /* bandes de Whittaker : [tMin, tMax, [[pMax, nom]...]]
+     Le méditerranéen n'y figure PAS : ce n'est pas une case du diagramme mais
+     une SURCHARGE appliquée après, sur la part de pluie tombant en été. */
   bandes: [
     [-27,-5,[[50,"Désert froid"], [3000,"Toundra"]]],
     [-5,5,[[60,"Désert froid"], [350,"Toundra"], [3000,"Taïga"]]],
-    [5,12,[[150,"Désert froid"], [400,"Steppe"], [1200,"Forêt tempérée"], [3000,"Forêt tempérée humide"]]],
-    [12,20,[[250,"Désert chaud"], [600,"Prairie"], [1500,"Forêt tempérée"], [3000,"Forêt tempérée humide"]]],
+    [5,12,[[150,"Désert froid"], [400,"Steppe"], [1500,"Forêt tempérée mixte"], [3000,"Forêt pluviale tempérée"]]],
+    [12,20,[[250,"Désert chaud"], [600,"Prairie"], [3000,"Forêt subtropicale humide"]]],
     [20,33,[[300,"Désert chaud"], [900,"Savane"], [1500,"Forêt tropicale sèche"], [3000,"Forêt tropicale humide"]]]],
   reels: [["Tropical_Savanna-Dry_Winter",28.1,818],["Polar_Ice_Cap",-16.1,197],
     ["Oceanic",8.6,639],["Hot_Desert",25.8,20],["Cold_Desert",17.0,221],
@@ -764,16 +770,15 @@ function svg(hote, w, h) {
   const W=980,H=290;
   const s=svg("fig-archi",W,H);
   const col=[
-    {x:16,w:186,titre:"Tools/WorldGen",sous:"Python hors éditeur",c:"var(--accent)",
-     items:["tectonics · climate","erosion · hydrology","biomes · surfaces","export"]},
-    {x:250,w:216,titre:"Saved/WorldGen/<graine>",sous:"les fichiers échangés",c:"var(--sable)",
-     items:["height_16bit.png","layer_*.png ×10","biome_index.png","rivers · lakes.json",
-            "uds_climate.json","manifest.json"]},
-    {x:514,w:190,titre:"Tools/UE",sous:"Python dans l'éditeur",c:"var(--accent)",
-     items:["rebuild_world","water_world","vegetation · pcg","uds_climate · rvt"]},
-    {x:752,w:212,titre:"Le niveau",sous:"composants Unreal",c:"var(--taiga)",
-     items:["Landscape + 10 couches","WaterZone · lacs · rivières","PCG à l'exécution",
-            "Ultra Dynamic Sky","BP_WorldseedClimat"]}];
+    {x:16,w:186,titre:"L_Menu",sous:"ce que le joueur choisit",c:"var(--sable)",
+     items:["une graine","un point de naissance","un jeu de textures"]},
+    {x:250,w:216,titre:"WorldseedPipeline",sous:"C++, hors du fil de jeu",c:"var(--accent)",
+     items:["tectonique · lithologie","climat · érosion","littoral · plateaux","biomes · glace","cavités"]},
+    {x:514,w:190,titre:"Le cache",sous:"78,6 Mo, par empreinte",c:"var(--sable)",
+     items:["relief · climat","roches · biomes","réseau de cavités","tables et canyons"]},
+    {x:752,w:212,titre:"L_Worldseed_Proc",sous:"ce qui se dessine",c:"var(--taiga)",
+     items:["terrain voxel (Transvoxel)","décor d'horizon","WaterZone · océan","Ultra Dynamic Sky",
+            "carte · minimap"]}];
   col.forEach((c,i)=>{
     const h = 46 + c.items.length*21 + 10;
     const y = (H-h)/2;
@@ -789,7 +794,7 @@ function svg(hote, w, h) {
       E("path",{d:`M${xb-7} ${ym-4} L${xb} ${ym} L${xb-7} ${ym+4} Z`,fill:"var(--trait-fort)"},s);
     }
   });
-  T(W/2,H-6,"aucune information ne remonte dans l'autre sens",
+  T(W/2,H-6,"tout tient dans un lancement du jeu — rien ne s'importe, rien ne remonte",
     {"text-anchor":"middle"},s);
 })();
 
@@ -798,10 +803,12 @@ function svg(hote, w, h) {
   const W=980,H=320,M={g:52,d:54,h:18,b:44};
   const s=svg("fig-zonal",W,H), iw=W-M.g-M.d, ih=H-M.h-M.b;
   const x=l=>M.g+(Math.sin(l*Math.PI/180)+1)/2*iw;
-  const yT=t=>M.h+ih-(t+30)/60*ih;
+  // Plage -40..+30 et non -30..+30 : le continent polaire sud descend a
+  // -34,3 C de moyenne annuelle, et une courbe qui sort du cadre ne se lit pas.
+  const yT=t=>M.h+ih-(t+40)/70*ih;
   const yP=p=>M.h+ih-Math.min(p,2000)/2000*ih;
   // grille
-  [-20,-10,0,10,20].forEach(t=>{
+  [-30,-20,-10,0,10,20].forEach(t=>{
     E("line",{x1:M.g,y1:yT(t),x2:W-M.d,y2:yT(t),class:"sv-grille"},s);
     T(M.g-8,yT(t)+3.5,(t>0?"+":"")+t,{"text-anchor":"end"},s); });
   [0,500,1000,1500,2000].forEach(p=>{
@@ -1016,9 +1023,9 @@ function svg(hote, w, h) {
   const W=980,H=270,M={h:22};
   const s=svg("fig-uds",W,H);
   const gauche=[
-    ["température moyenne annuelle","climate_temp.png"],
-    ["amplitude saisonnière","climate.seasonal_amplitude()"],
-    ["cumul annuel de pluie","climate_rain.png"],
+    ["température moyenne annuelle","WorldseedClimate::TempC"],
+    ["amplitude saisonnière","SeasonalAmplitude()"],
+    ["cumul annuel de pluie","WorldseedClimate::PrecipMm"],
     ["continentalité","distance à l'océan"],
     ["latitude","position Y → asin"]];
   const droite=[
@@ -1043,8 +1050,8 @@ function svg(hote, w, h) {
   const xa=gx+gw+8, xb=dx-8, ym=(M.h+H-30)/2;
   E("line",{x1:xa,y1:ym,x2:xb-7,y2:ym,stroke:"var(--trait-fort)","stroke-width":1.4},s);
   E("path",{d:`M${xb-8} ${ym-4.5} L${xb} ${ym} L${xb-8} ${ym+4.5} Z`,fill:"var(--trait-fort)"},s);
-  T(cx,ym-10,"export_uds_climate.py",{"text-anchor":"middle","font-size":"10"},s);
-  T(cx,ym+20,"31 presets",{"text-anchor":"middle","font-size":"10"},s);
+  T(cx,ym-10,"WorldseedClimatePreset",{"text-anchor":"middle","font-size":"10"},s);
+  T(cx,ym+20,"30 presets",{"text-anchor":"middle","font-size":"10"},s);
   T(W/2,H-8,"un preset par couple biome × hémisphère — au sud, les saisons sont échangées",
     {"text-anchor":"middle"},s);
 })();

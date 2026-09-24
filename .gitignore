@@ -86,3 +86,10 @@ Content/Worldseed/PCG/Materials/
 # `rvt_graft.rediriger()`. Voir README.md.
 Tools/UE/materiaux_greffes.json
 Saved/
+
+# NOTES DE TRAVAIL LOCALES, sorties du depot le 24 septembre 2026 a la demande
+# du proprietaire. Le fichier reste sur le disque et n'est plus partage : c'est
+# un carnet, pas une reference. Ce qui doit survivre a une session va dans
+# CLAUDE.md (les pieges et la mesure qui a tranche) ou dans README.md (comment
+# reconstituer le projet).
+ETAT_DES_LIEUX.md

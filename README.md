@@ -1,45 +1,75 @@
 # Worldseed
 
 Générateur de monde procédural pour **Unreal Engine 5.8**. Un monde qui va d'un
-pôle à l'autre : tectonique, climat, érosion, biomes et surfaces. Depuis le
-14 septembre 2026 la chaîne est **portée en C++ et tourne dans le jeu**, à
-partir d'une graine choisie au menu ; `Tools/WorldGen`, le générateur Python
-d'origine, reste comme référence de calibration mais n'alimente plus le jeu.
+pôle à l'autre — tectonique, lithologie, climat, érosion, biomes — et dont le
+relief est un **champ de densité maillé en voxels** : grottes, gouffres,
+dolines, arches, diaclases, mesas et canyons en font partie, ce ne sont pas des
+décors posés dessus.
 
-L'eau se limite à l'**océan** : rivières, cascades et lacs ont été retirés le
-18 septembre 2026 — `CLAUDE.md` porte les mesures qui l'ont motivé.
+Toute la chaîne est en **C++, dans `Source/Worldseed/Procedural/`, et tourne
+dans le jeu** à partir d'une graine choisie au menu. Rien ne se calcule hors du
+moteur, rien ne s'importe : il n'y a ni Landscape, ni export d'images, ni étape
+d'éditeur entre le menu et le monde. Le monde est déterministe — une graine
+donne toujours le même monde — et il part au cache pour que le second lancement
+ne le recalcule pas.
 
-Le climat n'est pas décoratif : il est calé sur des mesures terrestres et se
-vérifie par des outils dédiés. Le monde est déterministe — une graine donne
-toujours le même monde.
+**Une seule taille : 64 × 32 km**, simulée sur une grille de 4096 × 2048, soit
+une maille de 15,6 m. Le voxel travaille au mètre par-dessus, dans une bande de
+100 m sous la surface, et la vue porte à 2400 m grâce à quatre paliers de
+résolution cousus par Transvoxel.
+
+L'eau se limite à l'**océan**, confié au plugin Water : rivières, cascades et
+lacs ont été retirés le 18 septembre 2026, et `CLAUDE.md` porte les mesures qui
+l'ont motivé.
+
+Le climat n'est pas décoratif. Il est calé sur des mesures terrestres sourcées,
+et il se vérifie : vingt-trois relevés de stations réelles passent dans notre
+propre diagramme de Whittaker à chaque exécution des tests.
 
 ---
 
-## ⚠️ Ce dépôt ne suffit pas à ouvrir le projet
+## Ce que l'on voit en jouant
 
-**Trois packs payants sont nécessaires et ne sont pas — ne peuvent pas être —
-versionnés ici.** Les EULA de Fab et du Marketplace autorisent à intégrer un
-pack dans un *produit compilé*, jamais à en redistribuer les fichiers sources.
-Ce dépôt étant public, les y pousser serait une redistribution.
+`L_Menu` est le point d'entrée. On y choisit **une graine**, **un point de
+naissance** — au clic sur un globe qui montre le monde que cette graine produit,
+ou dans une liste de lieux remarquables : arches, canyons, gouffres — et **un
+jeu de textures de sol**. Puis le monde se génère et l'on entre dans
+`L_Worldseed_Proc`.
 
-| pack | rôle dans le projet | poids |
-|---|---|---|
-| **Orasot Bundle** | matériau de terrain à dix couches, rochers, arbres, falaises | 937 Mo |
-| **Ultra Dynamic Sky** | ciel, soleil physique, météo et système de climat | 545 Mo |
-| **Stylized PBR Nature** | végétation légère — `SM_Grass` 40 triangles, `SM_Bush` 64 | 393 Mo |
+En jeu : une **minimap** avec ses points cardinaux et son cône de visée, une
+**carte plein écran** (Tab) où l'on pose un repère et où Ctrl+clic téléporte, un
+relevé local en bas d'écran, et Échap pour revenir au menu.
 
-Il faut les **acheter ou les récupérer dans votre bibliothèque Fab**, puis les
-installer dans `Content/` sous ces noms exacts :
-`Content/Orasot_Bundle/`, `Content/UltraDynamicSky/`, `Content/Stylized_PBR_Nature/`.
-Les chemins sont référencés en dur par les graphes PCG et les recettes de
-végétation : un nom de dossier différent casse toutes les références.
+---
 
-Sans eux, le projet s'ouvre mais le terrain est blanc, la végétation absente et
-le ciel noir. **Ce n'est pas un défaut du dépôt, c'est une contrainte de
-licence.**
+## ⚠️ Ce dépôt ne suffit pas à ouvrir le projet tel quel
 
-S'ajoute un quatrième composant, gratuit celui-là : le plugin **VibeUE**, qui
-expose l'API Python utilisée par tout `Tools/UE/`.
+**Des packs payants sont nécessaires et ne peuvent pas être versionnés ici.**
+Les EULA de Fab et du Marketplace autorisent à intégrer un pack dans un *produit
+compilé*, jamais à en redistribuer les fichiers sources. Ce dépôt étant public,
+les y pousser serait une redistribution.
+
+Ce qu'ils coûtent dépend de ce que l'on veut voir :
+
+| pack | ce qu'on perd sans lui |
+|---|---|
+| **Ultra Dynamic Sky** | le ciel, le soleil physique, la météo et le cycle jour/nuit |
+| **DreamscapeSeries**, **Stylized_Village**, **Stylized_Egypt** | les textures de sol — il reste les dix-neuf couleurs de biome, à plat |
+
+**Le jeu tourne sans eux, et c'est délibéré.** `FWorldseedUdsBridge` est le seul
+endroit du projet qui connaisse Ultra Dynamic Sky, et il le joint **par
+réflexion** : si le pack manque, on renvoie faux et le jeu continue sans ciel
+piloté. Aucune ligne de C++ ne nomme un pack. Le mode de sol par défaut,
+« Couleurs de biome », ne demande aucune texture.
+
+**Deux packs ne servent plus au monde actuel** et n'apparaissent donc plus
+ci-dessus : `Orasot_Bundle`, dont le matériau à dix couches habillait le
+Landscape de l'ancienne carte, et `Stylized_PBR_Nature`, **retiré du projet le
+14 septembre 2026**. Ils restent nécessaires à `L_Worldseed`, l'ancienne carte,
+que le dépôt conserve.
+
+S'ajoute un composant gratuit : le plugin **VibeUE**, qui expose l'API Python
+utilisée par les scripts de `Tools/UE/`. Le jeu n'en a pas besoin.
 
 ---
 
@@ -47,234 +77,160 @@ expose l'API Python utilisée par tout `Tools/UE/`.
 
 | | suivi | pourquoi |
 |---|---|---|
-| `Tools/WorldGen/` | ✅ | le générateur, en Python pur |
-| `Tools/UE/` | ✅ | les scripts d'import et de construction dans l'éditeur |
-| `Source/`, `Config/`, `*.uproject` | ✅ | le projet lui-même |
-| `Content/Worldseed/` | ✅ | notre contenu : graphes PCG, presets climatiques, Blueprints |
-| `Content/Orasot_Bundle/`, `UltraDynamicSky/`, `Stylized_PBR_Nature/` | ❌ | **packs payants** — voir ci-dessous |
-| `Content/__ExternalActors__/` | ❌ | 363 Mo, entièrement régénérés par `rebuild_world` |
-| `Saved/`, `Intermediate/`, `Binaries/`, `DerivedDataCache/` | ❌ | caches et sorties, régénérables |
+| `Source/`, `Config/`, `*.uproject` | ✅ | le projet et toute la chaîne de génération |
+| `ThirdParty/Transvoxel/` | ✅ | les tables de Lengyel, sous licence MIT, avec leur provenance |
+| `Tools/WorldGen/rules/` | ✅ | **de la donnée, pas du code** — les règles et les relevés terrestres |
+| `Tools/UE/` | ✅ | scripts d'éditeur visant l'ancienne carte `L_Worldseed` |
+| `Content/Worldseed/` | ✅ | notre contenu : cartes, matériaux, préréglages climatiques, police d'icônes |
+| packs payants sous `Content/` | ❌ | redistribution interdite — voir ci-dessus |
+| `Content/__ExternalActors__/` | ❌ | acteurs World Partition, régénérés |
+| `Saved/`, `Intermediate/`, `Binaries/`, `DerivedDataCache/` | ❌ | caches et sorties |
 | `Plugins/` | ❌ | plugin tiers, dépôt séparé |
 
-**Sur les packs payants.** Les EULA de Fab et du Marketplace autorisent à
-intégrer un pack dans un *produit compilé*, pas à en redistribuer les fichiers
-sources. Ce dépôt étant public, ils en sont exclus. Il faut les posséder pour
-ouvrir le projet tel quel. Pour la même raison, `M_WorldseedLandscape` est
-exclu : c'est une copie du matériau maître d'Orasot augmentée d'une dixième
-couche, donc le graphe du pack.
+`M_WorldseedLandscape` est exclu pour la même raison de licence : c'est une
+copie du matériau maître d'Orasot augmentée d'une dixième couche, donc le graphe
+du pack. Son instance `MI_WorldseedLandscape`, elle, est versionnée.
 
 ---
 
 ## Reconstituer le projet depuis un clone
 
-### 1. Prérequis
+1. **Unreal Engine 5.8.**
+2. **Git LFS** — `git lfs install` *avant* le clone, sinon les `.uasset`
+   arrivent sous forme de pointeurs texte et le projet ne s'ouvre pas.
+3. Le plugin **VibeUE**, si l'on veut les scripts d'éditeur :
+   `git clone https://github.com/kevinpbuckley/VibeUE.git Plugins/VibeUE`
+4. Les packs souhaités, depuis votre bibliothèque Fab, installés dans `Content/`
+   sous leur nom d'origine.
+5. Compiler, ouvrir, jouer. **Il n'y a aucune étape de génération préalable** :
+   le monde se calcule au lancement, et la première partie le paie une fois.
 
-- **Unreal Engine 5.8**
-- **Git LFS** — `git lfs install` avant le clone, sinon les `.uasset` arrivent
-  sous forme de pointeurs texte et le projet ne s'ouvre pas
-- Trois packs, depuis votre bibliothèque Fab, à installer dans `Content/` :
-  - `Orasot_Bundle` — terrain stylisé et végétation
-  - `UltraDynamicSky` — ciel, météo et climat dynamiques
-  - `Stylized_PBR_Nature` — végétation légère
-- Le plugin **VibeUE**, qui expose l'API Python utilisée par `Tools/UE/` :
-  ```bash
-  git clone https://github.com/kevinpbuckley/VibeUE.git Plugins/VibeUE
-  ```
+---
 
-### 2. L'environnement du générateur
+## Lancer, mesurer, regarder
 
-```bash
-cd Tools/WorldGen
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install numpy scipy pillow
+Tout passe par la ligne de commande, et **rien n'exige l'éditeur ouvert** — ce
+qui compte, parce que le lien MCP tombe dès qu'on relance l'éditeur, donc à
+chaque compilation.
+
+```powershell
+# Jouer.
+UnrealEditor.exe Worldseed.uproject -game -windowed -resx=1600 -resy=900
+
+# La tournée photo : se poser devant chaque forme et la photographier.
+UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc -game -WorldseedPhotos -WorldseedQuitter -windowed -resx=1600 -resy=900
+
+# Le banc : trame, fils, chunks, triangles, mémoire, remplissage.
+UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc -game -WorldseedBanc -WorldseedQuitter -windowed -resx=1600 -resy=900
+
+# Les tests -- 91 oracles, sans rendu.
+UnrealEditor-Cmd.exe Worldseed.uproject -ExecCmds="Automation RunTests Worldseed;Quit" -unattended -nopause -nosplash -nullrhi
 ```
 
-### 3. Les matériaux dérivés
+Le harnais se pilote par surcharges de ligne de commande — `-WorldseedGraine=`,
+`-WorldseedRayon=`, `-WorldseedNiveaux=`, `-WorldseedDepartX/Y=`,
+`-WorldseedCap=`, `-WorldseedVue=`, `-WorldseedCielClair`… — et c'est une règle
+du dépôt : **quand un A/B demande un réglage qui n'a pas de surcharge, on ajoute
+la surcharge ; on ne touche pas au fichier de règles.** L'éditer en place change
+son empreinte, donc régénère le monde entre les deux moitiés — ce ne serait plus
+le même monde.
 
-Deux jeux de matériaux dérivent des packs et ne peuvent donc pas être
-versionnés. Ils se refont en quelques minutes.
+⚠ **Un chemin de carte commençant par `/` ne survit pas à Git Bash** : MSYS le
+prend pour un chemin POSIX et le préfixe de sa racine d'installation. Le jeu
+démarre, ne charge rien, quitte, et le journal ne porte aucune ligne
+`[Worldseed]` — ce qui ressemble trait pour trait à un module qui ne s'initialise
+pas. **Lancer le jeu depuis PowerShell.**
 
-**Le matériau de terrain.** Dans l'éditeur : dupliquer
-`M_LandscapeMasterMaterial` du pack Orasot en
-`/Game/Worldseed/Materials/M_WorldseedLandscape`, y ajouter une dixième couche
-nommée `Snow` dans le `LandscapeLayerBlend`. L'instance
-`MI_WorldseedLandscape`, elle, est versionnée : elle porte les 18 surcharges de
-l'auteur du pack, sans lesquelles le terrain ne ressemble à rien.
+### Les sondes
 
-Une fois le maître recréé, reposer son carrelage — ce réglage vit dans le
-graphe, donc hors du dépôt :
+Vingt-cinq sondes répondent chacune à une question, en commandlet, **l'éditeur
+arrêté** — le plugin écoute sur le port 8000 et le commandlet échouerait sinon :
+
+```powershell
+UnrealEditor-Cmd.exe Worldseed.uproject -run=pythonscript -script="<fichier.py>" -unattended -nopause -nosplash
+```
 
 ```python
-import landscape_material; landscape_material.regler()
+import unreal
+P = unreal.WorldseedProbeLibrary
+print(P.probe_terre(20260909, 32000.0, 2048))   # bulletin de conformité terrestre
+print(P.probe_biomes(20260909, 32000.0, 2048))  # parts de biomes sur les terres
+print(P.probe_zonal(20260909, 32000.0, 2048))   # fait-il froid LÀ OÙ il doit ?
 ```
 
-Sans lui, le sol d'herbe n'a aucun grain : de larges traînées vertes. Et cela
-se voit — mesure en prairie à hauteur d'œil, **51 % de la moitié basse du cadre
-est du sol nu**, 59,7 % dans les trois premiers mètres. Le script ne retaille
-que l'herbe : la roche resserrée fait apparaître un moiré hexagonal sur les
-pentes lointaines (vérifié par A/B).
+Elles prennent toutes une **graine** et une **taille** en paramètres : c'est ce
+qui permet d'itérer vite sans payer le monde de production. Le résultat se lit
+dans `Saved/Logs/Worldseed.log` — la sortie standard ne le capture pas.
 
-**Les matériaux greffés de la RVT.** Le terrain écrit sa couleur dans une
-Runtime Virtual Texture, mais seuls **38 des 142 maillages semés (27 %)**
-passaient par un matériau qui la relit : la même herbe verte était semée en
-savane comme en forêt tropicale. `rvt_graft.py` copie les **11 matériaux
-maîtres** concernés sous `/Game/Worldseed/PCG/Materials/`, y insère
-l'échantillonnage, puis reparente les **~55 instances** que nos maillages
-utilisent réellement :
-
-```python
-import sys; sys.path.insert(0, r"<racine>/Tools/UE")
-import rvt_graft
-rvt_graft.greffer()       # les 11 maitres : la teinte par le sol
-rvt_graft.greffer_vent()  # le vent d'UDS sur les 9 maitres de feuillage
-rvt_graft.rediriger()     # les instances + la table lue par le semis
-```
-
-⚠️ **Traiter par un ou deux matériaux à la fois.** Recompiler neuf gros
-matériaux d'affilée a fait tomber l'éditeur deux fois — `EXCEPTION_ACCESS_VIOLATION`
-dans `D3D12RHI`. Les fonctions sont idempotentes : elles se relancent sans
-risque, et prennent une liste de suffixes en argument.
-
-Les deux sont idempotents. **`rediriger()` n'est pas optionnel** : greffer un
-maître ne change rien tant que les maillages pointent vers les instances du
-pack. Il écrit `Tools/UE/materiaux_greffes.json`, que `vegetation.py` relit
-pour poser les redirections emplacement par emplacement — 191 entrées de
-maillage sur 216 dans le graphe PCG.
-
-La greffe mélange la couleur du sol dans la couleur de base, **dosée par un
-fondu en hauteur** : au ras du sol la plante prend le ton du terrain, au-delà
-de `Hauteur fondu RVT` centimètres elle garde le sien. C'est ce qui permet de
-teindre une touffe d'herbe sans peindre un arbre en terre. Les deux valeurs se
-règlent par matériau dans `CIBLES`, et `rvt_graft.regler()` les reporte sans
-refaire la greffe.
-
-Mesure sur le feuillage d'une savane, part de pixels verts : **24,6 % → 11,5 %**
-en portant la teinte de 0,75 à 0,85. Performance inchangée : 115 images par
-seconde, verdict PASS.
-
-### 4. Engendrer le monde
-
-```bash
-cd Tools/WorldGen
-.venv/Scripts/python.exe -m worldgen            # environ 5 minutes
-```
-
-Puis, depuis la racine :
-
-```bash
-P=Tools/WorldGen/.venv/Scripts/python.exe
-M=Saved/WorldGen/20260909
-
-$P Tools/WorldGen/tile_world.py $M
-$P Tools/WorldGen/export_biome_texture.py $M
-$P Tools/WorldGen/spawn_point.py $M
-$P Tools/WorldGen/export_uds_climate.py
-```
-
-### 5. Construire le niveau dans l'éditeur
-
-Ouvrir `/Game/Worldseed/Maps/L_Worldseed`, puis exécuter :
-
-```python
-import sys, importlib
-sys.path.insert(0, r"<racine>/Tools/UE")
-import rebuild_world; importlib.reload(rebuild_world)
-print(rebuild_world.rebuild(r"<racine>/Saved/WorldGen/20260909"))
-```
-
-Une minute plus tard : relief, dix couches peintes, océan, lacs, rivières,
-semis PCG et point d'apparition. Compter environ 400 000 instances de
-végétation et 88 images par seconde sur une RTX 4090.
-
-### 6. La météo suit le biome, toute seule
-
-Rien à lancer : `BP_WorldseedClimat` s'en charge au démarrage du jeu. Il lit la
-position du joueur deux fois par seconde, en déduit la latitude et le biome, et
-applique le préréglage climatique correspondant — nos 31 `CP_Worldseed_*`, tirés
-des mesures du générateur, avec les saisons inversées dans l'hémisphère sud.
-
-**Ultra Dynamic Sky fait le reste du calcul lui-même** : il convertit les
-millimètres mensuels de pluie et de neige de chaque préréglage en probabilités de
-météo par saison, arbitre pluie contre neige par leur rapport, et en déduit
-jusqu'au brouillard et aux tempêtes de sable. Il ne faut donc surtout pas écrire
-`Global Weather State` à la main : il suffit d'armer le tirage, ce que le
-Blueprint fait aussi au démarrage (`Random Weather Variation` en intervalle
-aléatoire de 200 à 300 s, et le cycle jour/nuit lancé — 45 minutes réelles pour
-24 heures, sans quoi les saisons ne progressent jamais).
-
-À chaque changement de biome, la météo est retirée au sort immédiatement. Mesure
-en jeu : forêt tempérée → `Partly_Cloudy` ; téléportation au pôle sud → biome
-calotte, `Clear_Skies`, minuteur de changement remis à zéro. Les cartes de
-probabilités passent de 8-9 types de météo en forêt tempérée à 4 sous la calotte.
-107,6 images par seconde, verdict PASS.
-
-**Et le temps passe à une vitesse jouable.** Le calendrier grégorien d'Ultra
-Dynamic Sky donnait une année de **274 heures réelles** — les saisons ne
-changeaient donc jamais, et les quatre saisons de chaque préréglage ne servaient
-à rien. `CAL_Worldseed` (12 mois de 3 jours) ramène l'année à **27 h** et la
-saison à **6 h 45**, la journée restant à 45 minutes. Il est assigné au
-démarrage par `BP_WorldseedClimat`.
-
-⚠ **Ne pas piloter la saison directement** en passant `Season Mode` en manuel :
-avec `Simulate Real Sun`, c'est la DATE qui donne la déclinaison du soleil, et
-découpler les deux produit un hiver sous un soleil d'été. C'est le calendrier
-qui doit être raccourci, parce qu'il déplace les deux ensemble.
-
-Résultat mesuré en toundra boréale : ~3 épisodes neigeux par hiver et ~15
-épisodes pluvieux par été.
+**Les sondes relisent `world_rules.json`, le jeu non.** Changer une règle puis
+relancer une partie ne change rien tant qu'aucune sonde n'est passée entre les
+deux.
 
 ---
 
 ## Vérifier que le monde est juste
 
-```bash
-P=Tools/WorldGen/.venv/Scripts/python.exe
+`ProbeTerre` est l'instrument principal, et le seul qui confronte le monde à des
+valeurs **extérieures au projet** : un monde procédural peut être parfaitement
+cohérent avec lui-même et faux par rapport à la Terre. Il fait deux choses
+distinctes — passer vingt-trois climats de villes réelles dans notre diagramme,
+ce qui juge le **classificateur** et non le monde ; puis un bulletin sur des
+critères **sourcés**, jamais un pourcentage de biome sorti de mémoire.
 
-$P Tools/WorldGen/terre.py               # bulletin de conformité terrestre
-$P Tools/WorldGen/metrics.py <monde>     # relevé complet
-$P Tools/WorldGen/metrics.py --diff avant.json apres.json
-$P Tools/WorldGen/diag_uds_climat.py     # cohérence climat / biomes / UDS
-```
+Ce bulletin est aussi un **test automatique** (`Worldseed.Terre.ClimatsReels`),
+et il se lit station par station : un simple compte laisserait passer un
+échange, ce qui s'est déjà produit — l'ajout de la forêt subtropicale humide a
+fait passer deux relevés et basculer deux autres, pour un score inchangé.
 
-`terre.py` est l'instrument principal. Il compare le monde à des références
-**sourcées** — part des terres émergées, moyenne des précipitations terrestres,
-part du climat BWh (Peel, Finlayson & McMahon 2007), parts de surface par zone
-climatique déduites de la géométrie d'une sphère — et fait passer les 23 climats
-réels livrés par Ultra Dynamic Sky dans notre propre diagramme de Whittaker.
+Les quatre-vingt-onze oracles ne remplacent pas le regard. Une règle du dépôt :
+**une forme qui n'a pas été vue n'est pas validée.** Les terrasses des parois de
+canyon étaient mesurées justes — écart de pente dur contre tendre de +8,17° — et
+rendaient à l'écran une surface qui ne ressemblait pas à de la roche.
 
 ---
 
 ## Où se règle quoi
 
 Tout vit dans **`Tools/WorldGen/rules/world_rules.json`**. Aucun seuil n'est
-écrit en dur dans le code, et chaque valeur non évidente porte un commentaire
-qui dit d'où elle vient, ce qu'on a mesuré en la changeant, et ce qui a été
-essayé puis rejeté.
+écrit en dur dans le code, et chaque valeur non évidente porte un commentaire qui
+dit d'où elle vient — `SOURCE`, `CALIBRE` ou `ARBITRAIRE` en premier mot —, ce
+qu'on a mesuré en la changeant, et ce qui a été essayé puis rejeté.
 
-**Le monde est une maquette au 1/4** d'un ancien monde de 32 km. Toute nouvelle
-valeur suit cette règle : ce qui est *relatif* ne change pas (angles, degrés de
-latitude, températures, millimètres de pluie, fréquences en cycles par monde),
-ce qui est *métrique* se divise par 4, ce qui est une *aire* ou un *débit* se
-divise par 16.
+**La règle d'échelle n'est pas « diviser par quatre ».** Elle l'a été, du temps
+où le monde faisait 8 km ; ce qui la remplace est plus général et se paie cher
+quand on l'oublie : **exprimer un réglage par la grandeur qu'on veut tenir**. Une
+constante métrique figée sur une référence fausse un monde entier dès que la
+carte change, et ce fichier a payé la leçon cinq fois — `shelfWidthKm`,
+`mountainWidthKm`, `oceanModerationRangeKm`, `lapseRateCPerKm` et
+`lithologieSocleElevationM` sont tous devenus des **fractions du monde** ou des
+**quantiles**, qui ne connaissent pas l'échelle. Ce qui est *relatif* ne change
+jamais : fréquences en cycles par monde, seuils normalisés par centile, angles,
+degrés de latitude, températures, millimètres de pluie.
+
+`world.sizeKm` vaut 8 et **n'est pas la taille du monde** : c'est la hauteur de
+référence du calage métrique, dont `WorldseedVerticalScale` tire son rapport —
+32000 / 8000 = 4,0, soit exactement son plafond. Les deux se sont longtemps
+trouvées égales, ce qui masquait la distinction.
+
+⚠ **L'empreinte des règles est un MD5 du fichier entier.** Modifier un simple
+commentaire invalide tous les mondes en cache et force une régénération d'environ
+200 s. Le monde obtenu est identique ; il n'y a rien à relancer, juste à la payer
+une fois.
 
 ---
 
 ## Documentation
 
-- **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — la référence
-  complète. La chaîne étape par étape, le système climatique et ses formules,
-  son calage sur la Terre, son imbrication dans Unreal et Ultra Dynamic Sky, et
-  les pièges de mesure. Neuf schémas tracés sur des mesures réelles, dont le
-  diagramme de Whittaker du projet avec les 23 climats réels posés dessus.
-  Fichier autonome : il s'ouvre par un double-clic, sans serveur.
-  <br>*Version en ligne, identique :*
-  [claude.ai/code/artifact/c0cb40bf…](https://claude.ai/code/artifact/c0cb40bf-ea8f-4dba-889a-92f25245933d)
-- **`CLAUDE.md`** — les pièges rencontrés et leur correctif, accumulés session
-  après session. À lire avant de toucher au moteur : la plupart des impasses y
-  sont déjà décrites, avec la mesure qui les a révélées.
-- **`ETAT_DES_LIEUX.md`** — état du projet et points ouverts.
+- **`CLAUDE.md`** — le registre. Les pièges rencontrés, la mesure qui les a
+  révélés, et les pistes abandonnées avec la raison de ne pas les rouvrir. À lire
+  avant de toucher au moteur : c'est le document le plus utile du dépôt, et de
+  loin le plus long.
+- **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — le système
+  climatique, ses formules, son calage terrestre, et le diagramme de Whittaker du
+  projet avec les vingt-trois climats réels posés dessus. Fichier autonome : il
+  s'ouvre par un double-clic, sans serveur.
 
-**Une réserve sur l'atlas.** Ses chiffres sont des mesures prises sur la graine
-`20260909`, remises à jour le 13 septembre 2026. Régénérer le monde avec une autre graine ou d'autres règles les rend
-caducs : ils décriraient un monde qui n'existe plus. Ils se refont en relisant
-`manifest.json` et `uds_presets_livres.json`, comme lors de la rédaction.
+**Une réserve sur les chiffres.** Ceux de l'atlas sont des mesures prises sur une
+graine et une résolution données, et il le dit en tête. Un relevé sur une seule
+graine à la résolution de travail **ne se généralise pas** à la résolution de
+production — le dépôt s'y est déjà laissé prendre.

@@ -562,6 +562,7 @@ est une piste qu'on ne retente pas. Mais il faut savoir ce qui est mort.
 | `python -m worldgen`, `metrics.py --diff`, le banc `--preview` a 50 s | **N'EXISTENT PLUS.** Le monde se genere DANS LE JEU ; on mesure avec les sondes |
 | le Landscape, ses couches peintes, les tuiles, le rapport HTML | **N'EXISTENT PLUS.** Le relief est un champ de densite maille en voxels |
 | `Tools/UE/*` (12 scripts d'editeur) | **GARDES A DESSEIN**, jusqu'au portage de la vegetation. Ils visent un Landscape disparu, mais `vegetation.py` porte le semis PCG et c'est la seule implementation qui en existe |
+| `ETAT_DES_LIEUX.md` | **SORTI DU DEPOT** le 24 septembre 2026, a la demande du proprietaire : il reste sur le disque, en local, et figure au `.gitignore`. Les renvois vers ses sections -- dont le §5.1 cite plus bas -- ne resolvent donc plus pour qui clone. Ce qui doit survivre a une session va DANS CE FICHIER (les pieges et la mesure qui a tranche) ou dans `README.md` (comment reconstituer le projet) |
 
 **CE QUI RESTE DE `Tools/WorldGen` EST DE LA DONNEE, PAS DU CODE :**
 `rules/world_rules.json`, la source de verite des reglages lue par le C++ a
@@ -595,6 +596,13 @@ le monde de 64 x 32 km en demande deux cent soixante-dix.
 | `ProbeVoisins` | **l'arbitre TIERS** : les deux mailleurs confrontes au GRADIENT DU CHAMP, qui n'appartient a aucun des deux. C'est elle qui a trouve l'enroulement inverse, apres qu'une sonde auto-referentielle eut pose la mauvaise valeur |
 | `ProbeTrous` | colonnes sans aucun sol, et la cause enregistree pour chaque chunk |
 | `ProbeNappe` | le sol de fond : sous un plafond ou a l'air libre |
+| `ProbeZonal` | **OU** se trouve ce que les autres comptent -- temperature, pluie et part des terres par bande de latitude. Un monde peut porter la bonne part de toundra en la posant au mauvais endroit, et `ProbeBiomes` le declarerait conforme |
+| `ProbeCotes` | la dimension fractale du trait de cote, par comptage de boites. **Elle ne voit PAS une silhouette polygonale** : elle quantifie la rugosite FINE, et a mesure 1,013 -- mieux que la cote sud-africaine -- sur des continents a aretes droites |
+| `ProbeMarches` | les gradins tombent-ils sur les bancs ? La PHASE de chaque cellule de paroi dans son banc, avec deux temoins : hasard (detruit la structure) et decalage (la deplace) |
+| `ProbeCarte` | ecrit la carte du monde a plat dans `Saved/Worldseed/Cartes/`, un pixel par cellule. Le globe du menu ne peut pas tenir ce role : il est spherique, on n'en voit qu'une face, et deux reglages ne s'y comparent pas image contre image |
+| `ProbeCarteEcran` | la carte plein ecran : projection, fenetre, mips |
+| `ProbeMinimap` | la fenetre glissante de la minimap, et son agregation |
+| `ProbePointage` | l'aller-retour du pointage sur le globe : latitude et longitude connues, projetees vers l'image puis reinversees. **Le limbe est mal conditionne PAR NATURE** -- la derivee de l'arc sinus y diverge -- d'ou deux chiffres rendus, disque entier et disque franc |
 
 Et l'on REGARDE avec la tournee photo, qui n'exige aucun outillage externe :
 
