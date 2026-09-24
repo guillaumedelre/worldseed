@@ -225,15 +225,23 @@ une fois.
   révélés, et les pistes abandonnées avec la raison de ne pas les rouvrir. À lire
   avant de toucher au moteur : c'est le document le plus utile du dépôt, et de
   loin le plus long.
-- **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — le système
-  climatique, ses formules, son calage terrestre, et le diagramme de Whittaker du
+- **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — la chaîne de
+  génération planétaire, étape par étape : le sous-sol (huit roches, dix bancs,
+  et pourquoi c'est la roche qui décide des formes), la sculpture du relief
+  (boucle soulèvement / érosion, littoral, mesas, canyons, sapement des
+  corniches), le monde souterrain (karst, diaclases, lames, arches), puis le
+  système climatique, son calage terrestre et le diagramme de Whittaker du
   projet avec les vingt-trois climats réels posés dessus. Fichier autonome : il
   s'ouvre par un double-clic, sans serveur.
 - **[`.claude/rules/`](.claude/rules/)** — les conventions, une par fichier.
-  `iconographie.md` dit d'où viennent les icônes des écrans : **Material Symbols**
-  pour l'interface, **game-icons.net** pour le monde — parce que le catalogue
-  Google n'a ni arche, ni grotte, ni canyon. Dans les deux cas, **aucun
-  `.uasset`** : le fichier brut est versionné et lu au démarrage.
+  [`commits.md`](.claude/rules/commits.md) : tout commit suit **Conventional
+  Commits 1.0.0**, et le `!` de rupture a ici un sens précis — un changement qui
+  oblige à **régénérer le monde** ou à réimporter, dont le pied doit dire quoi
+  *remesurer*. [`iconographie.md`](.claude/rules/iconographie.md) dit d'où
+  viennent les icônes des écrans : **Material Symbols** pour l'interface,
+  **game-icons.net** pour le monde — parce que le catalogue Google n'a ni arche,
+  ni grotte, ni canyon. Dans les deux cas, **aucun `.uasset`** : le fichier brut
+  est versionné et lu au démarrage.
 
 **Une réserve sur les chiffres.** Ceux de l'atlas sont des mesures prises sur une
 graine et une résolution données, et il le dit en tête. Un relevé sur une seule

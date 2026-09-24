@@ -16,8 +16,11 @@
   d'un monde qui n'existe plus : les regenerer demande de relire manifest.json
   et uds_presets_livres.json, comme lors de la redaction.
 
-  Version en ligne, identique :
+  Version en ligne :
   https://claude.ai/code/artifact/a6dfe9c1-09eb-4548-b749-dd019a0aeadd
+  ELLE EST EN RETARD depuis le 24 septembre 2026 : les chapitres 02 a 04 --
+  le sous-sol, la sculpture du relief, le monde souterrain -- n'existent que
+  dans ce fichier. La republier avant d'y renvoyer quelqu'un.
 -->
 <style>
   html { color-scheme: light dark; }
@@ -206,7 +209,7 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
   <p class="eyebrow">Worldseed · Unreal Engine 5.8 · comment le monde est fait</p>
   <h1>Atlas Worldseed</h1>
 
-  <p class="chapo">Un monde de <strong>64 × 32 km</strong> qui va d'un pôle à l'autre, calculé <strong>dans le jeu</strong> par une chaîne de huit étapes en C++, à partir d'une graine choisie au menu. Ce document explique comment cette chaîne est bâtie, comment le climat est construit, sur quelles mesures terrestres il est calé, et comment le relief arrive à l'écran. Tous les chiffres sont relevés par les sondes du projet, le <strong>24 septembre 2026</strong>, sur la graine <code>20260909</code>.</p>
+  <p class="chapo">Un monde de <strong>64 × 32 km</strong> qui va d'un pôle à l'autre, calculé <strong>dans le jeu</strong> par une chaîne de huit étapes en C++, à partir d'une graine choisie au menu. Ce document explique comment cette chaîne est bâtie, de quoi le sous-sol est fait et comment il décide des formes, comment le relief est sculpté et le monde souterrain creusé, comment le climat est construit, sur quelles mesures terrestres il est calé, et comment tout cela arrive à l'écran. Tous les chiffres sont relevés par les sondes du projet, le <strong>24 septembre 2026</strong>, sur la graine <code>20260909</code>.</p>
   <figure style="margin-top:30px">
     <div class="fig-boite" id="fig-bande"></div>
     <figcaption><b>Le monde en une ligne.</b> Part de terres émergées et température moyenne par bande de latitude, mesurées sur la graine 20260909. La carte fait varier Y comme le sinus de la latitude : les bandes polaires sont donc étroites, comme sur une sphère.</figcaption>
@@ -218,6 +221,9 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
     <span class="titre-rail">Sommaire</span>
     <a href="#vue">Vue d'ensemble</a>
     <a href="#chaine">La chaîne</a>
+    <a href="#socle">Le sous-sol</a>
+    <a href="#relief">Sculpter le relief</a>
+    <a href="#souterrain">Le monde souterrain</a>
     <a href="#lancer">Mesurer, et regarder</a>
     <a href="#climat">Le système climatique</a>
     <a href="#whittaker">Le diagramme des biomes</a>
@@ -276,7 +282,7 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
   <div class="etape"><div class="rang">2</div><div class="contenu">
     <p class="nom">Lithologie</p>
     <p class="det">Huit roches. La croûte océanique est basaltique — vrai partout sur Terre, aucun réglage ; un orogène expose son socle ; le reste est un bassin dont la roche suit un bruit cohérent, sans quoi un calcaire poivré au hasard ne donnerait jamais le massif d'un seul tenant qu'un réseau karstique exige. <strong>Calculée depuis la tectonique et avant l'érosion</strong> : les plaques ne bougent pas quand la surface se creuse, et l'érosion ne transforme pas du granite en calcaire.</p>
-    <span class="fichiers">0,5 s → 8 roches, et une pile de 10 bancs</span></div></div>
+    <span class="fichiers">0,5 s → 8 roches, et une pile de 10 bancs · <a href="#socle">le détail en 02</a></span></div></div>
   <div class="etape"><div class="rang">3</div><div class="contenu">
     <p class="nom">Climat, première passe</p>
     <p class="det">Sur le relief brut. Ne sert qu'à une chose : fournir la carte de pluie qui pondère l'érosion.</p>
@@ -284,11 +290,11 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
   <div class="etape"><div class="rang">4</div><div class="contenu">
     <p class="nom">Boucle soulèvement / érosion</p>
     <p class="det">300 passes de <code>dz/dt = U − K·A<sup>m</sup>·S<sup>n</sup> + D·∇²z</code>. Le soulèvement vient de la <em>convergence des plaques</em>, déjà calculée et que personne ne lisait. <strong>C'est la boucle qui fait que la roche s'exprime</strong> : sans apport, l'érodabilité ne déplaçait que quatre à sept centimètres ; avec elle, le granite tient 38,7° de pente et le calcaire 21,3. L'érodabilité est rééchantillonnée à l'altitude courante, donc la surface traverse les bancs en descendant.</p>
-    <span class="fichiers">113 s → soulèvement cumulé 38 m, incision max 10,6 m</span></div></div>
+    <span class="fichiers">113 s → soulèvement cumulé 38 m, incision max 10,6 m · <a href="#relief">le détail en 03</a></span></div></div>
   <div class="etape"><div class="rang">5</div><div class="contenu">
     <p class="nom">Littoral, plateaux, sapement</p>
     <p class="det">Trois passes qui <strong>n'abaissent jamais sous le niveau de la mer</strong> — la part émergée est un invariant du projet. La falaise marine recule par <em>sapement</em> et non par équilibre de pente ; le plateau disséqué donne mesas et canyons, calés sur le toit du premier banc dur ; les corniches reculent par le même mécanisme, le banc tendre se désagrégeant sous elles.</p>
-    <span class="fichiers">6,7 s → littoral 1,7 % des terres, tables 0,9 %, sapement 10,2 %</span></div></div>
+    <span class="fichiers">6,7 s → littoral 1,7 % des terres, tables 0,9 %, sapement 10,2 % · <a href="#relief">le détail en 03</a></span></div></div>
   <div class="etape"><div class="rang">6</div><div class="contenu">
     <p class="nom">Climat, seconde passe</p>
     <p class="det">Rejoué sur le relief final. C'est ce climat-là qui classe les biomes et qui alimente les préréglages météo.</p>
@@ -300,7 +306,7 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
   <div class="etape"><div class="rang">8</div><div class="contenu">
     <p class="nom">Cavités</p>
     <p class="det">Chambres semées à distance minimale là où la roche est karstifiable et la pluie suffisante — <strong>jamais d'après le biome</strong>, qui n'est qu'une étiquette. Puis un arbre couvrant minimal, qui touche tous les sommets <em>par définition</em> : la connexité est acquise, il n'y a rien à vérifier après coup. Les galeries sont routées en A* sous contrainte, et quatre formes d'ouverture — bouche de falaise, aven, doline, arche — donnent au réseau ses accès.</p>
-    <span class="fichiers">13,5 s → 665 chambres, 14 réseaux, 166 bouches, 213 gouffres, 103 dolines, 21 arches</span></div></div>
+    <span class="fichiers">13,5 s → 665 chambres, 14 réseaux, 166 bouches, 213 gouffres, 103 dolines, 21 arches · <a href="#souterrain">le détail en 04</a></span></div></div>
 </div>
 
 <div class="note">
@@ -314,9 +320,306 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
 </div>
 </section>
 
+<!-- ========================================================= 02 -->
+<section id="socle">
+<h2><span class="num">02</span>Le sous-sol : huit roches et dix bancs</h2>
+<p><strong>Dans ce monde, c'est la roche qui décide des formes.</strong> Un karst, une mesa, une lame de grès, une fracture ouverte : chacune est une <em>géométrie</em>, et la faire dépendre du biome reviendrait à laisser une étiquette décider d'un relief. Le biome ne sert qu'à lier des assets — il arrive d'ailleurs bien plus tard dans la chaîne. Un massif calcaire est karstique sous une forêt tropicale comme sous un maquis, et la règle vaut dans les deux sens : c'est la lithologie qui est consultée, jamais l'étiquette.</p>
+
+<h3>Comment une roche arrive sous une colonne</h3>
+<p>La carte des roches se calcule <strong>depuis la tectonique et avant l'érosion</strong> : les plaques ne bougent pas quand la surface se creuse, et l'érosion ne transforme pas du granite en calcaire. Trois règles s'appliquent dans cet ordre.</p>
+<ol>
+  <li><strong>La croûte océanique est basaltique.</strong> Vrai partout sur Terre, et aucun réglage ne l'accompagne.</li>
+  <li><strong>Un orogène expose son socle.</strong> Soulèvement et décapage ont emporté la couverture sédimentaire ; ce qui affleure au cœur d'une chaîne est du cristallin.</li>
+  <li><strong>Le reste est un bassin</strong>, et sa roche est tirée dans le <em>domaine de dépôt</em> où il se trouve, par un bruit cohérent — sans quoi un calcaire poivré au hasard dans du grès ne donnerait jamais le massif d'un seul tenant qu'un réseau karstique exige.</li>
+</ol>
+
+<div class="tbl-boite"><table>
+<thead><tr><th>domaine</th><th>où il s'applique</th><th>roches, et leurs parts</th></tr></thead>
+<tbody>
+<tr><td><strong>marin</strong></td><td>plate-forme sous 80 m d'altitude, à moins de 4 km de la mer</td><td>craie 60 %, calcaire 40 %</td></tr>
+<tr><td><strong>volcanique</strong></td><td>à moins de 3 km de croûte océanique, convergence ≥ 0,12</td><td>tuf 65 %, basalte 35 %</td></tr>
+<tr><td><strong>plissé</strong></td><td>convergence ≥ 0,08, mais sous le seuil de socle — 0,35</td><td>dolomie 55 %, calcaire 25 %, grès 20 %</td></tr>
+<tr><td><strong>continental</strong></td><td>tout le reste</td><td>grès 45 %, calcaire 30 %, schiste 25 %</td></tr>
+</tbody></table></div>
+
+<p><strong>L'ordre d'évaluation porte un sens.</strong> Un cap de craie au pied d'un arc volcanique est de la craie, pas du tuf : le milieu de <em>dépôt</em> prime sur le contexte tectonique. Et la bande du plissé doit rester <em>sous</em> le seuil de socle — au-delà, le décapage a emporté la couverture. La dolomie vit donc entre les deux, ce qui est exactement la position des Dolomites : une plate-forme carbonatée soulevée mais non décapée.</p>
+
+<div class="note">
+  <span class="etiq">Deux seuils devenus des quantiles, et pourquoi</span>
+  <p>Le socle était décidé par une <em>altitude</em> — 150 m — calée sur un monde de 8 km dont les sommets plafonnaient à 300. Porté à 64 km, le même monde culmine à 1700 et ce seuil avalait presque tout le relief : <strong>granite 41,1 % des terres et basalte 28,5</strong>, soixante-dix pour cent de cristallin, pendant que le grès tombait à 3,3 % et que la dolomie disparaissait. <strong>Un quantile ne connaît pas l'échelle</strong> : il tient la proportion demandée quelle que soit l'amplitude du relief. Le socle prend donc les 15 % de terres les plus hautes, puis les 35 % les plus accidentées parmi les cellules convergentes — le relief local se mesurant sur 3 km. Relevé de la génération du 24 septembre : <strong>2 128 912 cellules orogéniques, 745 777 gardées socle (35,0 %)</strong>, le décapage en rendant 1 383 135 au bassin.</p>
+  <p><strong>Un bassin d'avant-pays est l'inverse d'un socle</strong>, et l'oublier a coûté toutes les tables du monde. Ne tester que la convergence déclarait socle jusqu'au bassin <em>plat</em> qui borde la chaîne, alors que celui-ci est précisément <em>plein</em> des sédiments arrachés à la chaîne voisine — le plateau du Colorado est un bassin bordé d'uplifts. Mesure du défaut, 20 septembre 2026 : sur le terrain chaud, aride et peu accidenté qu'une table demande, <strong>70,80 % de granite, 29,13 % de basalte, 0,00 % de grès</strong>. Aucune couverture sédimentaire, donc aucune table nulle part.</p>
+</div>
+
+<h3>Le catalogue, et ce qu'il donne sur le monde courant</h3>
+<div class="tbl-boite"><table>
+<thead><tr><th>roche</th><th class="n">des terres</th><th class="n">des mers</th><th class="n">altitude moy.</th><th class="n">karst</th><th class="n">dureté</th></tr></thead>
+<tbody>
+<tr><td>Basalte</td><td class="n">48,76 %</td><td class="n">62,85 %</td><td class="n">518 m</td><td class="n">0,00</td><td class="n">0,85</td></tr>
+<tr><td>Tuf volcanique</td><td class="n">17,72 %</td><td class="n">0,02 %</td><td class="n">743 m</td><td class="n">0,05</td><td class="n">0,30</td></tr>
+<tr><td>Granite</td><td class="n">13,17 %</td><td class="n">0,00 %</td><td class="n">957 m</td><td class="n">0,00</td><td class="n">0,95</td></tr>
+<tr><td>Calcaire</td><td class="n">6,27 %</td><td class="n">15,14 %</td><td class="n">444 m</td><td class="n">1,00</td><td class="n">0,45</td></tr>
+<tr><td>Dolomie</td><td class="n">5,34 %</td><td class="n">0,00 %</td><td class="n">890 m</td><td class="n">0,80</td><td class="n">0,65</td></tr>
+<tr><td>Grès</td><td class="n">4,84 %</td><td class="n">12,31 %</td><td class="n">494 m</td><td class="n">0,15</td><td class="n">0,55</td></tr>
+<tr><td>Craie</td><td class="n">2,24 %</td><td class="n">0,15 %</td><td class="n">37 m</td><td class="n">0,55</td><td class="n">0,25</td></tr>
+<tr><td>Schiste</td><td class="n">1,66 %</td><td class="n">9,53 %</td><td class="n">287 m</td><td class="n">0,10</td><td class="n">0,35</td></tr>
+</tbody></table></div>
+
+<p><strong>Le contrôle n'est pas la part, c'est la place.</strong> Des parts seules ne prouvent rien — un tirage au hasard donnerait les mêmes. Ce qui tranche est le croisement avec l'altitude et la mer : le basalte est majoritairement <em>sous</em> l'eau, le granite est la roche la plus haute du monde à 957 m et n'existe pas en mer, la craie est la plus basse à 37 m parce qu'elle se dépose sur une plate-forme marine. Une erreur d'attribution se lit immédiatement dans ce tableau, et nulle part ailleurs. <strong>13,55 % des terres sont karstifiables</strong> ; sur Terre le karst couvre 15 à 20 % des terres libres de glace.</p>
+
+<div class="note">
+  <span class="etiq">Ce que ce tableau dit, et qui reste ouvert</span>
+  <p>Près de la moitié des terres reposent sur du basalte et un sixième sur du tuf : ce monde émerge beaucoup de croûte océanique et d'arc volcanique, quand sur Terre les terres de croûte océanique sont marginales — l'Islande, Hawaï. <strong>Ce n'est pas un défaut de la lithologie, qui lit fidèlement la tectonique</strong> : c'est le modèle tectonique qui émerge beaucoup de croûte océanique. C'est de ce côté-là qu'il faut reprendre si le basalte paraît trop présent — et c'est la même cause qui étrangle l'entonnoir des mesas, plus bas.</p>
+</div>
+
+<h3>La colonne stratigraphique : la roche varie aussi en Z</h3>
+<p>Une grille 3D de roches est impossible, et le projet avait déjà fait ce calcul pour le relief : <strong>à un mètre de voxel ce monde ferait soixante-seize milliards de voxels</strong>, soit 76 Go rien que pour un identifiant par voxel. La réponse est la même — une <em>fonction</em> plutôt qu'une grille. La carte 2D dit quelle roche fait le <strong>socle</strong> ; une série de bancs se lit par-dessus à n'importe quel <code>(x, y, z)</code> sans rien stocker, en descendant une pile de dix éléments.</p>
+
+<figure>
+  <div class="fig-boite" id="fig-serie"></div>
+  <figcaption><b>La pile telle qu'elle est lue.</b> Dix bancs pour 253 m, sous un toit — le <em>datum</em> — à 520 m. Le <code>K</code> indiqué est le coefficient d'érodabilité effectif après amplification du contraste : plus il est grand, plus le banc s'use vite. Les bancs durs font les corniches, les tendres font les talus.</figcaption>
+</figure>
+
+<p><strong>Les bancs sont horizontaux, et ce n'est pas une simplification : c'est la cause de la forme.</strong> Les rayures du Grand Canyon sont horizontales parce que les bancs le sont, et toutes les mesas d'une région partagent leur sommet parce qu'elles s'arrêtent <em>toutes</em> sur le même banc dur. Le gauchissement — 140 m d'amplitude sur 16 km de longueur d'onde, soit moins d'un degré de pendage — n'existe que pour éviter que le monde entier porte ses corniches au même niveau sur 64 km.</p>
+
+<p>La série ne recouvre que le sédimentaire : une fenêtre de dureté de 0,25 à 0,70 sur le socle. Hors d'elle — granite, basalte — la lecture rend la roche 2D à toute profondeur, donc rien ne change. Mesuré sur le monde courant : <strong>la série couvre 37,4 % des cellules</strong>.</p>
+
+<div class="note">
+  <span class="etiq">La pile se répète, et il a fallu le mesurer pour s'en apercevoir</span>
+  <p>Dix bancs pour 253 m sous un toit à 520 couvrent la tranche 267–520 m dans un monde qui va de −371 à 1772. <strong>Tout le relief qui montre vraiment de la roche est au-dessus</strong> : les canyons à 556 et 580 m, les massifs au-delà de 1000. Mesure du 22 septembre : sur les sommets qui lisent la pile, le banc sommital en raflait <strong>92 %</strong> — parce qu'au-dessus du toit la lecture rend le banc zéro pour tout, ce qui est juste et ce qui rend <em>toute paroi unie</em>. Les rayures promises n'atteignaient l'écran nulle part. La pile s'enroule donc indéfiniment, comme le fait un vrai bassin sédimentaire, qui empile des milliers de mètres de bancs alternés.</p>
+  <p><strong>Ce que l'enroulement laisse incohérent, et il faut le savoir</strong> : au-dessus du toit, la <em>couleur</em> raye, alors que le chapiteau d'une mesa continue de se caler sur le premier banc dur de la pile <em>non</em> enroulée. Sur une mesa, la teinte de la corniche peut donc ne pas être celle du banc qui la porte. Aligner les deux demanderait une régénération.</p>
+</div>
+
+<h3>Où la roche entre dans l'érosion</h3>
+<p>Dans la loi de puissance de courant <code>E = K·A<sup>m</sup>·S<sup>n</sup></code>, c'est <code>K</code> qui porte la résistance du substrat. Le mettre ailleurs — dans l'exposant, ou en post-traitement — reviendrait à bricoler un résultat au lieu de décrire une cause.</p>
+<div class="formule">K = clamp( 1 + poids × (dureté moyenne du MONDE − dureté locale), 0,15, 2,5 )</div>
+<p><strong>L'ancrage est la moyenne du monde, pondérée par la surface réellement couverte, et il est figé.</strong> Une érodabilité absolue changerait la quantité <em>totale</em> d'érosion, donc l'amplitude du relief, donc tout le calage terrestre — pour une question qui ne porte que sur sa <em>répartition</em>. On redistribue, on n'ajoute pas. Sur le monde courant cette moyenne vaut <strong>0,70</strong>.</p>
+
+<p><strong>Sans amplification du contraste, les bancs ne font aucun gradin</strong>, et c'est mesuré. La formule est additive et ancrée sur 0,70, alors que toute la série sédimentaire est <em>sous</em> cette moyenne : les <code>K</code> des bancs se tassaient entre 1,08 et 1,48, soit un rapport de 1,37. Une corniche qui résiste 1,37 fois mieux que son talus ne se voit pas. On écarte donc les duretés <strong>autour de la moyenne de la série</strong> — 0,41 — et non autour de celle du monde : les bancs s'éloignent les uns des autres <em>sans</em> que leur moyenne bouge, donc sans changer le volume d'érosion sur la couverture, et sans toucher au calage du granite et du basalte, qui ne sont pas dans la série. Mesuré : <strong><code>K</code> de 0,57 à 1,77, rapport 3,10</strong>.</p>
+
+<p>Enfin, <code>K</code> n'est pas figé avant la boucle : il est <strong>rééchantillonné à l'altitude courante</strong> à chaque recalcul de drainage. C'est de cette traversée que naissent les gradins — une corniche est un banc dur atteint <em>après</em> un banc tendre, et un <code>K</code> calculé une seule fois ne peut pas le savoir. Le toit de la série, lui, est une surface géologique : il ne bouge pas pendant l'érosion, on paie son bruit une fois, et chaque rééchantillonnage ne coûte plus qu'une descente dans la pile.</p>
+</section>
+
 <!-- ========================================================= 03 -->
+<section id="relief">
+<h2><span class="num">03</span>Sculpter le relief</h2>
+<p>La tectonique pose une condition initiale ; c'est l'<strong>érosion</strong> qui fait le relief qu'on regarde, et quatre passes courtes qui lui donnent ses formes franches. Toutes travaillent dans le relief 2D, à 15,6 m de maille ; le voxel ajoute ensuite son grain d'un mètre, ce qui est son rôle.</p>
+
+<h3>La boucle soulèvement / érosion</h3>
+<div class="formule">dz/dt = U − K·A<sup>m</sup>·S<sup>n</sup> + D·∇²z      <span class="c">300 passes, drainage recalculé toutes les 5</span></div>
+<p>Trois processus en alternance : l'<strong>incision par puissance de courant</strong>, l'<strong>érosion thermique</strong> — au-delà de 34° de talus, la matière glisse — et la <strong>diffusion de versant</strong>, qui adoucit les interfluves. Les exposants travaillent sur des valeurs <em>normalisées</em>, aire et pente ramenées à un centile de référence, pour qu'un même jeu de réglages donne le même résultat visuel à n'importe quelle résolution : sans cela, changer de résolution changerait le monde.</p>
+
+<p><strong>L'aire drainée est pondérée par la pluie</strong>, ce qui la transforme en <em>débit</em>. C'est la différence entre un oued et un fleuve, et c'est ce qui fait exister le fleuve <strong>allogène</strong> — celui qui ramasse son eau dans des montagnes humides et traverse ensuite un désert. Le Colorado est exactement cela, et c'est pourquoi le plus grand canyon du monde se trouve dans une région qui ne reçoit presque rien.</p>
+
+<div class="note">
+  <span class="etiq">Pourquoi le soulèvement était indispensable, et ce qu'il a fallu monter avec lui</span>
+  <p><strong>Sans apport, un relief qui s'érode se contente de se relaxer.</strong> Il converge vers la même forme, un peu plus tôt ou un peu plus tard, et tout terme ajouté à la loi — la roche comprise — ne fait que rééchelonner le temps. Mesure à l'appui : la dureté branchée sur un modèle sans soulèvement ne déplaçait que <strong>quatre à sept centimètres</strong>.</p>
+  <p>Le soulèvement vient de la <em>convergence des plaques</em>, déjà calculée par la tectonique et que personne ne lisait : 0,18 m par passe en continental uniforme, plus 0,36 m pondérés par la convergence. Il ne s'applique qu'au continental — soulever le plancher océanique changerait la part des terres à chaque passe. Avec lui, le système tend vers <code>U = K·A<sup>m</sup>·S<sup>n</sup></code>, donc vers une pente d'équilibre :</p>
+  <div class="formule">S = ( U / (K·A<sup>m</sup>) )<sup>1/n</sup>
+<span class="c">à soulèvement égal, une roche dure tient une pente plus RAIDE</span></div>
+  <p><strong>Il a fallu monter l'incision en même temps</strong>, et ce n'était pas évident. À l'équilibre les deux termes s'égalent : une incision qui ne retirait que 0,04 m par passe aurait été submergée par un soulèvement capable de faire du relief. Les deux montent donc ensemble — c'est leur <em>rapport</em> qui fixe l'amplitude, pas leurs valeurs.</p>
+</div>
+
+
+<h3>Ce que la boucle produit : une pente par roche</h3>
+<p>C'est la mesure qui dit si la roche s'exprime, et c'est la seule. Relevée à la fin de la boucle, sur la génération complète du 24 septembre 2026.</p>
+<div class="tbl-boite"><table>
+<thead><tr><th>roche</th><th class="n">dureté</th><th class="n">pente moyenne</th><th class="n">perte moyenne</th></tr></thead>
+<tbody>
+<tr><td><strong>Granite</strong></td><td class="n">0,95</td><td class="n"><strong>38,7°</strong></td><td class="n">−81,9 m</td></tr>
+<tr><td>Basalte</td><td class="n">0,85</td><td class="n">30,8°</td><td class="n">−2,5 m</td></tr>
+<tr><td>Dolomie</td><td class="n">0,65</td><td class="n">18,6°</td><td class="n"><strong>−112,6 m</strong></td></tr>
+<tr><td>Grès</td><td class="n">0,55</td><td class="n">20,4°</td><td class="n">−67,4 m</td></tr>
+<tr><td>Calcaire</td><td class="n">0,45</td><td class="n">21,3°</td><td class="n">−79,4 m</td></tr>
+<tr><td>Schiste</td><td class="n">0,35</td><td class="n">23,5°</td><td class="n">−38,2 m</td></tr>
+<tr><td>Tuf volcanique</td><td class="n">0,30</td><td class="n">30,7°</td><td class="n">−101,4 m</td></tr>
+<tr><td><strong>Craie</strong></td><td class="n">0,25</td><td class="n"><strong>16,8°</strong></td><td class="n">−60,8 m</td></tr>
+</tbody></table></div>
+<p><strong>Les deux extrêmes disent le mécanisme</strong> : le granite tient 38,7° et la craie 16,8, soit un écart de vingt-deux degrés là où la même dureté branchée sur une érosion <em>sans</em> soulèvement ne déplaçait que quelques centimètres. C'est <code>S = (U / K·A<sup>m</sup>)<sup>1/n</sup></code>, et rien d'autre.</p>
+<div class="note">
+  <span class="etiq">Ni l'altitude ni la perte ne mesurent l'érosion différentielle</span>
+  <p>La colonne de droite est là pour cela : <strong>la dolomie est la roche qui perd le plus — 112,6 m — et c'est une roche dure.</strong> Le tuf en perd 101 et le basalte 2,5, alors que le basalte est trois fois plus dur. La perte est dominée par la <em>position</em> que la règle d'attribution donne à chaque roche : le basalte est majoritairement sous la mer, où il n'y a rien à inciser ; la dolomie est en montagne, raide et arrosée, donc elle reçoit de l'eau et du soulèvement.</p>
+  <p>Ce dépôt s'y est laissé prendre deux fois de suite avant de le comprendre. <strong>Seule la PENTE dit quelque chose de la résistance, et seul l'écart à un témoin l'isole.</strong> Et même la pente n'est pas monotone en dureté ici — le schiste tient 23,5° pour 0,35 quand le grès n'en tient que 20,4 pour 0,55 : le terme de roche redistribue l'érosion, il ne décide pas seul de la forme d'un versant.</p>
+</div>
+<p class="sous">Le garde-fou numérique ne mange pas la physique qu'il protège : <strong>0,03 % des cellules seulement saturent le plafond d'incision par passe</strong>, soit 829 645 sur 2,52 milliards d'évaluations. Le plafond est d'ailleurs mis à l'échelle de la roche, pour cette raison exacte.</p>
+
+<h3>Quatre passes de finition, et aucune n'abaisse sous la mer</h3>
+<p>La part émergée est calibrée à 29,2 % et traitée comme un <strong>invariant du projet</strong> : chacune de ces passes ne fait que baisser, jamais sous un plancher de quelques mètres au-dessus du niveau marin. Vérifié après chacune — 29,20 % avant comme après.</p>
+<p class="sous" style="font-size:13.5px">Les comptes ci-dessous sont ceux d'une génération complète de la grille du jeu, graine <code>20260909</code>, relevés le 24 septembre 2026. Ils sont <em>déterministes</em> — même graine, mêmes chiffres — contrairement aux durées, qui dépendent de la charge de la machine et sont données plus haut, dans <a href="#chaine">la chaîne</a>.</p>
+
+<div class="tbl-boite"><table>
+<thead><tr><th>passe</th><th>ce qu'elle lit</th><th>ce qu'elle fait</th><th>mesuré</th></tr></thead>
+<tbody>
+<tr><td><strong>Littoral</strong><br><span class="sous">recul de falaise</span></td><td>distance à la mer, dureté de la roche</td><td>Recul de 260 m : plateforme d'abrasion sur 35 % de la portée, face sur 15 %, le reste en raccord.</td><td class="sous">140 649 cellules, <strong>1,7 % des terres</strong>, abaissement moyen 30,7 m, max 250 m</td></tr>
+<tr><td><strong>Plateau disséqué</strong><br><span class="sous">mesas et canyons</span></td><td>altitude, pluie, température, relief local, dureté, drainage, masque de région</td><td>Rabote les sommets sur une surface d'aplanissement et sur le toit du premier banc dur ; creuse les gorges le long du drainage, plus les fentes du champ de lames.</td><td class="sous">zone 0,95 % des terres, <strong>21 981 cellules remodelées (0,90 %)</strong>, abaissement moyen 197,2 m, max 360 m</td></tr>
+<tr><td><strong>Sapement</strong><br><span class="sous">recul des corniches</span></td><td>série de bancs, pluie, distance à la zone déjà décapée</td><td>Recul de 220 m, face sur 14 % — soit une maille de simulation — amplifié par la <em>tendreté du banc du dessous</em>.</td><td class="sous">5 corniches, 250 267 cellules (<strong>10,22 % des terres</strong>), abaissement moyen 31,0 m, <strong>max 52 m</strong></td></tr>
+<tr><td><strong>Lames et fentes</strong><br><span class="sous">un champ, pas une passe</span></td><td>grès, masque de région, orientation locale</td><td>Fentes parallèles espacées de 70 m, larges de 16, profondes de 50. Lu par le plateau pour ses fentes, par le champ de densité pour la géométrie fine, et par les cavités pour trouver où percer une arche.</td><td class="sous">lames sur 0,0 à 1,5 % des terres selon le biome</td></tr>
+</tbody></table></div>
+
+<div class="note">
+  <span class="etiq">Une falaise ne naît pas d'un équilibre de pente</span>
+  <p>Le modèle d'incision donne à chaque roche la pente qu'elle peut tenir, et la roche tendre en tient une très faible : dénivelé local sur 63 m, monde de 64 × 32 km — basalte 51,8 m, granite 33,4, mais <strong>grès 12,8, calcaire 12,8, schiste 13,1</strong>. Autrement dit, dans ce monde, la roche tendre n'a aucune falaise.</p>
+  <p><strong>C'est faux pour un littoral, et c'est même l'inverse.</strong> Les falaises les plus spectaculaires de la Terre sont dans la roche tendre — Étretat et Douvres sont de la craie. La raison est qu'une falaise marine naît d'un <em>sapement</em> : la houle creuse une encoche au pied, la masse sus-jacente s'effondre, et le front recule en restant vertical. Plus la roche est tendre, plus il recule vite, donc plus la falaise est haute puisqu'elle mord loin dans les terres. Sans ce mécanisme, aucune arche marine n'est possible : une arche se lit parce qu'on voit le ciel au travers, ce qui demande que le sol <em>tombe</em> autour d'elle.</p>
+  <p>Le sapement des corniches est <strong>le même mécanisme, terme à terme</strong> : le banc tendre se désagrège, la corniche perd son appui et recule en restant verticale, et une banquette se dégage au toit du banc suivant. La seule différence est le moteur — la houle d'un côté, la désagrégation du banc inférieur de l'autre. Et la mesure le confirme jusque dans le chiffre : les 52 m de chute maximale sont exactement <em>toit du grès → toit de la dolomie</em>, 22 + 30. La marche ne vient pas du terrain, elle vient de la géométrie de la série.</p>
+  <p>Dans les deux cas, <strong>la face doit tenir dans une maille de simulation</strong>, sinon la falaise n'est qu'une rampe — leçon payée deux fois, sur le littoral puis sur le profil de canyon. À 220 m de recul et 31 m de maille, 0,14 met la face pile sur une maille.</p>
+</div>
+
+<h3>La mesa : pourquoi elle ne peut pas venir d'un bruit</h3>
+<p>Sur une photo de Monument Valley, <strong>tous les sommets sont à la même altitude</strong>, parce qu'ils sont les morceaux d'<em>une seule</em> ancienne plaine. Aucun bruit fractal ne peut produire cela : un fBm donne des sommets à des hauteurs toutes différentes, donc des collines, jamais des tables.</p>
+<p>La passe construit donc une <strong>surface de référence</strong> — un maximum glissant de 250 m de rayon, puis lissé. Le maximum retient les sommets, le lissage les relie en une surface continue, et là où ce lissage passe <em>sous</em> un sommet isolé, le <code>min</code> final rabote ce sommet à plat. Prendre le maximum seul ne raboterait rien : il vaut le relief sur chaque sommet par construction.</p>
+<p><strong>Mais le vrai chapiteau est géologique.</strong> Le sommet se cale sur le <em>toit du premier banc dur</em> rencontré en descendant — dureté au moins 0,40. Deux mesas voisines s'arrêtent donc sur le <em>même</em> banc, à la <em>même</em> altitude : la propriété qui définit la forme sort de la géologie et non d'une astuce. Le maximum glissant reste, mais pour ce qu'il sait faire — servir de repli là où aucun banc dur n'affleure.</p>
+<p>Le canyon est l'autre face du même objet — ce qui a été enlevé plutôt que ce qui reste, et c'est précisément pourquoi une seule passe les produit. Son profil se dessine depuis la <strong>distance au chenal</strong> : plancher plat sur 45 m, puis chute sur une maille. Une première version seuillait le flux accumulé par un <code>smoothstep</code>, donc la profondeur décroissait continûment en s'éloignant du lit : cela donne une <em>rampe</em>, pas une gorge.</p>
+
+<div class="tbl-boite"><table>
+<thead><tr><th>population</th><th class="n">cellules</th><th class="n">pente médiane</th><th class="n">plat &lt; 5°</th><th class="n">5–25°</th><th class="n">&gt; 45°</th><th class="n">écart des sommets</th></tr></thead>
+<tbody>
+<tr><td><strong>en zone</strong></td><td class="n">3 070</td><td class="n">31,9°</td><td class="n">1,9 %</td><td class="n">35,3 %</td><td class="n">26,6 %</td><td class="n">18 m</td></tr>
+<tr><td>témoin spatial</td><td class="n">62 840</td><td class="n">23,6°</td><td class="n">8,7 %</td><td class="n">44,6 %</td><td class="n">1,7 %</td><td class="n">10 m</td></tr>
+</tbody></table></div>
+<p><strong>Une table donne beaucoup de plat <em>et</em> beaucoup de raide</strong> — c'est la signature qu'on cherche, et elle est là : 26,6 % de cellules au-delà de 45° contre 1,7 % pour le témoin. L'écart d'altitude des sommets, lui, ne se lit <em>jamais</em> contre le témoin : une plaine a un écart minuscule par <em>absence</em> de relief, pas par partage d'une surface. Il se lit relativement à l'escarpement — 18 m pour 180 m, soit <strong>9,8 %</strong>.</p>
+<p>Le témoin est <strong>spatial et non temporel</strong> : ce sont les cellules du même monde qui passent toutes les gardes sauf le masque de région. Comparer deux générations demanderait de changer une règle entre les deux — or le jeu ne relit pas le fichier de règles, si bien qu'un témoin ainsi obtenu mesurerait exactement le cas testé.</p>
+
+<h3>L'entonnoir : une couverture faible se décompose, elle ne se règle pas</h3>
+<p>Une couverture trop faible peut venir de six gardes différentes, et sans le compte de chacune on règle au hasard la mauvaise. Ce dépôt l'a payé quatre fois de suite sur le routage des galeries avant d'en faire une habitude.</p>
+<figure>
+  <div class="fig-boite" id="fig-entonnoir"></div>
+  <figcaption><b>Où les cellules se perdent, pour le plateau disséqué.</b> Chaque barre est le nombre de cellules survivantes après la garde indiquée, en part des terres émergées. Mesure du 24 septembre 2026, graine 20260909.</figcaption>
+</figure>
+<p><strong>Deux gardes dominent, et la première est la roche.</strong> Le terrain qui passe les quatre gardes physiques — assez haut, aride, hors-gel, peu accidenté — représente 8,42 % des terres, mais il est à 44,2 % de basalte, 30,5 % de tuf et 23,8 % de granite, contre <strong>0,73 % de calcaire et 0,74 % de craie</strong>. La garde de dureté, qui demande du sédimentaire tendre, n'a donc presque rien à retenir : elle en garde 32 %. Le masque de région en garde ensuite 4,7 %. Le monde courant produit <strong>une table retenue sur six candidats</strong>, et 16 parois de canyon sur 7 974.</p>
+<p>La cause de fond est en amont, dans une tectonique qui émerge beaucoup de croûte océanique et d'arc volcanique : un monde où les plaines arides seraient sédimentaires donnerait des mesas sans qu'on touche à un seul réglage de cette passe. <strong>C'est le genre de constat qu'un entonnoir rend lisible et qu'un pourcentage final laisserait interpréter de travers</strong> — on réglerait la portée, l'escarpement ou le seuil de pluie, et aucun des trois n'est en cause.</p>
+
+<div class="note">
+  <span class="etiq">Un masque à fréquence trop basse rend la couverture aléatoire</span>
+  <p>À 0,00012 cycle/m, la longueur d'onde du masque de région fait 8,3 km : une trentaine de taches sur tout le monde. Or le terrain éligible est lui-même groupé en quelques régions. <strong>L'intersection de deux ensembles peu nombreux est une loterie sur la graine, pas une proportion</strong> — le masque ne gardait que 3 % de l'éligible là où son seuil en promettait 18. Porté à 0,00028, soit environ 120 taches, l'intersection redevient statistique. À retenir pour tout masque posé <em>en plus</em> d'autres critères déjà sélectifs.</p>
+</div>
+
+<h3>L'escalier : il se mesure dans la phase, pas dans la pente moyenne</h3>
+<p>Une stratigraphie qui taille des marches doit concentrer la surface <em>au toit</em> des bancs et l'y aplatir. La sonde mesure donc, pour chaque cellule de paroi de canyon, sa position <strong>dans son banc</strong> — 0 au toit, 1 à la base.</p>
+<div class="tbl-boite"><table>
+<thead><tr><th>position dans le banc</th><th class="n">points (× attendu)</th><th class="n">pente moyenne</th><th class="n">part de plats</th></tr></thead>
+<tbody>
+<tr><td><strong>0,0 – 0,1 (le toit)</strong></td><td class="n">4 494 (<strong>×3,66</strong>)</td><td class="n">31,4°</td><td class="n"><strong>52,0 %</strong></td></tr>
+<tr><td>0,1 – 0,2</td><td class="n">836 (×0,68)</td><td class="n">51,0°</td><td class="n">2,8 %</td></tr>
+<tr><td>0,3 – 0,4</td><td class="n">1 202 (×0,98)</td><td class="n">42,8°</td><td class="n">22,0 %</td></tr>
+<tr><td>les six autres casiers</td><td class="n">≈ 820 (×0,67)</td><td class="n">≈ 50,8°</td><td class="n">≈ 2,3 %</td></tr>
+</tbody></table></div>
+<p>La surface séjourne au toit des bancs <strong>trois fois et demie plus</strong> que le hasard ne le voudrait, elle y est deux fois moins pentue, et <strong>la moitié de ces points sont plats contre deux pour cent ailleurs</strong>. C'est la banquette, et c'est exactement le mécanisme du sapement.</p>
+<p><strong>Deux témoins, et il en faut deux.</strong> Une phase tirée au hachage <em>détruit</em> la structure et rend ×1,03, avec 3,2 % d'amplitude de pente contre 41,9 ; un décalage de 12 m des limites de bancs la <em>déplace</em> — le pic passe du casier 0 au casier 6. Le premier prouve que la structure est réelle, le second qu'elle est bien calée sur les bancs. Un témoin qui ne peut pas rendre un résultat négatif n'est pas un témoin : la première version comparait des <em>amplitudes</em>, or l'amplitude d'une courbe est invariante par translation, et elle concluait « aucun calage » — l'inverse de la vérité. La même version filtrait par ailleurs les cellules sous huit degrés « pour ne garder que les parois », c'est-à-dire qu'elle écartait exactement les banquettes : <strong>on ne cherche pas un escalier en jetant ses marches.</strong></p>
+
+<div class="note">
+  <span class="etiq">Ce qui n'est pas établi, et qu'il ne faut pas lire à la place</span>
+  <p>La même génération, mesurée sur <em>l'ensemble</em> de la série et non sur les parois de canyon, donne un écart de pente dur / tendre de <strong>−2,11°</strong> (rapport 0,95) et un rapport d'altitude de 1,003 : aucun contraste. Les deux relevés ne portent pas sur la même population — 97 389 cellules de série contre 12 282 points de paroi — et c'est le motif que ce dépôt connaît par cœur : <strong>un agrégat sur des choses de natures différentes ne se corrige pas, il se décompose.</strong> Ce qui est établi est que <em>la surface séjourne au toit des bancs sur les parois</em> ; ce qui ne l'est pas est que le contraste de pente se lise sur l'ensemble du monde.</p>
+  <p>Et il y a une raison de fond pour la seconde moitié : à l'équilibre soulèvement / érosion, un banc dur ajuste sa <em>pente</em>, il ne retient pas une <em>altitude</em>. Les marches du Grand Canyon sont une forme <strong>transitoire</strong>, faite de falaises qui reculent horizontalement — c'est précisément ce qu'un modèle d'incision ne sait pas produire, et pourquoi la passe de sapement existe.</p>
+</div>
+
+<h3>La couverture de la pile, mesurée là où elle compte</h3>
+<p>Sur les fenêtres de canyon : <strong>13,7 % des cellules dans la pile, 64,4 % au-dessus du datum, 21,9 % sous la pile</strong>. La géométrie n'a de bancs que dans la tranche bornée 267–520 m — l'érosion stratifiée et le sapement lisent celle-là, l'enroulement ne touchant que la couleur. <strong>Sur près des deux tiers du terrain de canyon, on peint donc des rayures sur un relief qui n'en porte aucune</strong> : de la strate sans marche. C'est chiffré, c'est assumé, et c'est ce qu'il faudrait reprendre en premier pour que la couleur et la forme disent la même chose partout.</p>
+</section>
+
+<!-- ========================================================= 04 -->
+<section id="souterrain">
+<h2><span class="num">04</span>Le monde souterrain</h2>
+<p>Du bruit 3D produit des cavernes crédibles — le champ de densité en porte, et elles se voient. <strong>Mais rien n'assure qu'elles communiquent, ni qu'une seule débouche à l'air libre.</strong> C'est à ce manque, et à lui seul, que répond la passe des cavités.</p>
+
+<h3>La connexité est acquise par construction, pas vérifiée après coup</h3>
+<p>La passe se lit en dix temps nommés : <strong>Semer, Relier, Creuser, Composantes, Effondrer, Dissoudre, Ouvrir, Percer, Indexer, Vérifier</strong>. Les chambres sont semées à distance minimale, puis reliées par un <strong>arbre couvrant minimal</strong> — qui touche tous les sommets <em>par définition</em>, si bien qu'il n'y a rien à contrôler ensuite. On ajoute 15 % d'arêtes courtes en plus, sans quoi un arbre n'a aucun cycle et le joueur revient toujours sur ses pas. Le contrôle interne qui rassure est arithmétique : un arbre couvrant sur <em>n</em> sommets a exactement <em>n</em> − 1 arêtes, et le relevé doit donner ce compte plus les boucles.</p>
+<p>Les galeries sont des <strong>capsules à rayon variable</strong>, et non des tubes maillés : une capsule est une primitive de distance signée, donc elle se combine par une union lisse et se dérive proprement. Un tube maillé demanderait de le coudre au terrain, ce qui est exactement le travail que le marching cubes fait déjà. <strong>L'union lisse dégénère exactement vers le maximum dur quand son rayon tend vers zéro</strong> : « un compromis entre maximum dur et lisse » n'est donc pas un choix binaire mais une valeur de réglage — 2,5 m ici.</p>
+
+<h3>Où l'on creuse — et jamais d'après le biome</h3>
+<div class="tbl-boite"><table>
+<thead><tr><th>condition</th><th class="n">valeur</th><th>pourquoi</th></tr></thead>
+<tbody>
+<tr><td>karstifiabilité de la roche</td><td class="n">≥ 0,50</td><td>un karst est creusé par <em>dissolution</em> ; le granite ne se dissout pas</td></tr>
+<tr><td>pluie annuelle</td><td class="n">≥ 600 mm</td><td>il faut de l'eau pour dissoudre — le champ de pluie, jamais l'étiquette</td></tr>
+<tr><td>espacement des chambres</td><td class="n">180 m</td><td>refus par grille de hachage, sinon le coût serait quadratique</td></tr>
+<tr><td>profondeur</td><td class="n">20 à 45 m</td><td>plancher : rien ne se creuse sous la mer</td></tr>
+<tr><td>rayon de salle</td><td class="n">6 à 16 m</td><td><strong>la profondeur minimale doit dépasser le rayon maximal</strong></td></tr>
+</tbody></table></div>
+<p><strong>La contrainte « pas de cavité sous la mer » mord beaucoup plus qu'il n'y paraît.</strong> Une chambre à 90 m de profondeur avec 22 m de rayon exige plus de 117 m d'altitude, et ce monde est bas : la poser a fait tomber le compte de 70 chambres à 21. La bande a donc été resserrée. C'est le vrai arbitrage caché derrière cette règle — <em>moins profond, ou moins de grottes</em>.</p>
+<p>Et le second garde-fou est passé inaperçu longtemps : si la profondeur minimale ne dépasse pas le rayon maximal, <strong>le haut de la chambre sort du sol et ouvre un puits à ciel ouvert</strong>. Le défaut a existé — douze mètres de profondeur pour seize de rayon — et aucune mesure ne le voyait, le contrôle de percement n'échantillonnant que les galeries. Il a un oracle depuis.</p>
+<p>Un contre-sens à connaître, parce qu'il va contre l'intuition : <strong>la bande la plus profonde perd le <em>moins</em> de liaisons.</strong> Une chambre profonde ne peut exister que sur les hauteurs, et là il y a de la roche partout pour creuser entre elles ; les chambres peu profondes s'éparpillent jusqu'en plaine, où la mer interrompt tout — la bande la plus superficielle morcelle le sous-sol en sept systèmes indépendants contre quatre.</p>
+
+<h3>Le routage, et ce qu'un chiffre agrégé cachait</h3>
+<p>Une capsule droite entre deux chambres ignore tout : elle ressort à l'air libre en franchissant une colline, traverse du granite comme du calcaire, et monte d'une pente impraticable. L'A* encode ces règles dans son <em>coût</em> — interdit dès que le <strong>plafond</strong> de la galerie atteint la surface, très cher au-dessous, surcoût ×2 sur la roche dure, pénalité de dénivelé ×1,6, remise de 0,45 sur une cellule déjà empruntée pour mutualiser les troncs communs. Il tourne sur une grille grossière de 6 m, borné à un couloir de 48 m autour de la droite, plafonné à 150 000 nœuds.</p>
+<p>Mesuré sur le monde courant : <strong>44 499 points de galerie, dont 0,00 % au-dessus du sol</strong> — contre 24,93 % avec des capsules droites.</p>
+<div class="note">
+  <span class="etiq">Quatre corrections qui n'ont rien déplacé</span>
+  <p>Le premier relevé donnait 22,78 % après routage contre 24,93 % sans : autant dire que le routage ne servait à rien. Quatre corrections ont suivi — l'interdit qui portait sur l'axe et non sur le plafond, une simplification qui remplaçait un coude par une corde, une lecture de surface au plus proche voisin, la largeur du couloir — et <strong>aucune n'a bougé le chiffre de plus d'un point</strong>. Les trois premières étaient de vrais défauts et sont gardées, mais aucune n'était <em>la</em> cause.</p>
+  <p>En séparant les deux populations, tout apparaît : galeries routées 4 454 points, <strong>0,00 %</strong> au-dessus du sol ; galeries <em>repliées</em> faute de chemin, 6 174 points, <strong>39,20 %</strong>. Le routage était parfait depuis le début, et douze liaisons en échec sur soixante-dix-neuf portaient 58 % de l'échantillon. <strong>Quand une correction ne bouge pas la mesure, se demander d'abord si la mesure mélange deux populations.</strong></p>
+  <p>Le remède n'est d'ailleurs pas un meilleur repli : <strong>il n'y a pas un réseau, il y en a plusieurs.</strong> Deux massifs séparés par une baie ont deux systèmes karstiques distincts — c'est vrai sur Terre. Les liaisons sans issue sont donc abandonnées, le graphe se sépare, chaque morceau garde sa connexité interne, et il suffit de donner <em>une ouverture à chacun</em>. Le nombre d'ouvertures demandé devient alors un plancher de densité, pas un plafond d'accessibilité.</p>
+</div>
+
+<h3>Quatre formes d'ouverture, et elles ne se valent pas</h3>
+<figure>
+  <div class="fig-boite" id="fig-ouvertures"></div>
+  <figcaption><b>Les quatre accès, en coupe.</b> Deux se forment toutes seules par géologie et ne doivent rien à un budget ; la bouche de falaise est la <em>garantie</em> ; l'arche est percée dans une lame de grès.</figcaption>
+</figure>
+<ul>
+  <li><strong>La doline</strong> se forme là où le plafond est <em>mince</em> — douze mètres au plus. Il cède, la surface s'affaisse en entonnoir jusqu'au vide, et les parois s'éboulent jusqu'à leur angle de repos : l'ouverture est donc <em>plus large</em> que la salle. Le critère est <code>profondeur − rayon</code>, et rien d'autre. C'est la seule forme karstique qui se voie de loin — les autres, il faut les avoir trouvées.</li>
+  <li><strong>L'aven</strong> se forme là où le plafond est <em>épais</em> mais le terrain <em>plat</em> au-dessus — vingt degrés au plus. L'eau s'y infiltre et dissout un puits en cloche. Les deux critères sont complémentaires et se partagent les chambres sans se recouvrir : une chambre dont le plafond a cédé n'a pas eu le temps de se dissoudre.</li>
+  <li><strong>La bouche de falaise</strong> est la <em>garantie</em>. Elle existe pour qu'aucun réseau ne reste muré, se place sur la cellule la plus raide du voisinage — au moins 35° — et s'enfonce vers l'amont. En pénétrant horizontalement dans un versant raide, on gagne de la profondeur en quelques mètres ; la même galerie sur un terrain plat resterait à fleur de sol sur des dizaines de mètres et éventrerait le paysage.</li>
+  <li><strong>L'arche</strong> est percée dans une lame de grès, à la base d'un cap ou d'une crête mince, avec un pont de roche de 7 à 12 m au-dessus.</li>
+</ul>
+<p><strong>Une seule fonction creuse les deux puits</strong> : doline et aven sont le même objet — une chaîne de capsules le long d'un axe vertical ondulant — et ne diffèrent que par le <em>sens</em> de la variation de rayon. La doline s'évase vers le haut, l'aven vers le bas ; les deux profils se distinguent d'un coup d'œil pour cette seule raison. Les écrire deux fois aurait fait diverger deux moitiés qui doivent rester identiques.</p>
+<p>Et <strong>la bouche garde son propre plancher</strong>, arbitré à part : c'est la seule des trois où l'on entre <em>en marchant</em>. Dans un aven comme dans une doline, on tombe. Les compter dans le même budget revenait à traiter comme interchangeables deux expériences de jeu qui ne le sont pas — le défaut a existé, et il ne restait qu'une bouche pour tout le monde.</p>
+<p>Mesuré sur le monde courant : <strong>665 chambres, 14 réseaux, 166 bouches, 213 avens, 103 dolines, 21 arches.</strong> Et le compte des réseaux sans ouverture est journalisé à chaque génération — <em>une garantie se vérifie, elle ne se suppose pas</em> : sans cette ligne, on la croirait tenue parce que le code a tourné.</p>
+
+<div class="note">
+  <span class="etiq">Un défaut d'ouvertures en double, et le remède qui n'est pas celui qu'on croit</span>
+  <p>Deux chambres voisines élisaient la <em>même</em> cellule la plus raide : elles cherchent chacune l'escarpement de leur voisinage, et ces voisinages se recouvrent. Le point qui fait la différence est qu'on écarte les candidates <strong>pendant</strong> la recherche et non après : refuser à la fin aurait simplement fait perdre l'entrée, alors qu'écarter en cours de route laisse la recherche trouver le <em>second</em> escarpement du voisinage, qui fait très bien l'affaire. Après correction, aucune entrée perdue et la paire la plus proche passe à 125 m pour un minimum exigé de 120.</p>
+</div>
+
+<h3>Diaclases : la roche insoluble a ses propres cavités</h3>
+<p>Là où la roche se dissout, le karst ; <strong>là où elle ne se dissout pas, des fractures</strong> — et c'est la lithologie qui répartit, pas un choix. Le générateur est un bruit de Worley 3D aplati verticalement : la <em>différence</em> entre les distances aux deux germes les plus proches s'annule exactement sur la frontière de Voronoï, et la seuiller donne un réseau de parois minces, <strong>connexes par construction</strong> puisque les faces d'un diagramme de Voronoï se touchent toutes. Même vertu que l'arbre couvrant, sans aucun calcul global. L'aplatissement vertical fait toute la différence entre une fracture et une bulle : en comprimant Z avant d'évaluer, les cellules deviennent des prismes et leurs parois des plans quasi verticaux.</p>
+<p><strong>Le fondu de profondeur est l'inverse de celui des galeries</strong>, et c'est de la géologie : un karst se creuse en profondeur, une diaclase se <em>referme</em>, parce que la charge sus-jacente serre les joints et que c'est la décompression, près de la surface, qui les ouvre. Une fissure de granite est donc une forme <em>de surface</em> — et elle débouche à l'air libre, ce qui lui tient lieu d'ouverture sans qu'on ait rien à poser.</p>
+<div class="tbl-boite"><table>
+<thead><tr><th>entonnoir des diaclases</th><th class="n">cellules</th><th class="n">part</th></tr></thead>
+<tbody>
+<tr><td>roche insoluble émergée</td><td class="n">1 950 901</td><td class="n">100,00 %</td></tr>
+<tr><td>+ tirage de région (maille 4 km)</td><td class="n">867 592</td><td class="n">44,47 %</td></tr>
+<tr><td>+ masque de bruit (seuil 0,45)</td><td class="n">67 149</td><td class="n">3,44 %</td></tr>
+<tr><td>+ pente au-delà de 22°</td><td class="n">47 226</td><td class="n">2,42 %</td></tr>
+</tbody></table></div>
+<p>Soit <strong>1,93 % des terres</strong> qui portent un réseau ouvert. Le témoin qui prouve que la forme existe vraiment est un A/B au bon endroit : sur un carré de 400 m en zone, <strong>10,10 % des colonnes sont ouvertes sur deux mètres avec le terme, 6,53 % sans</strong>.</p>
+<div class="note">
+  <span class="etiq">Deux pièges de cette passe, et ils resservent</span>
+  <p><strong>Un seuil n'est pas une part.</strong> Le réglage s'appelait <code>diaclaseZonePct</code> et valait 0,16 ; le code en tirait un seuil en supposant le bruit uniforme sur [−1, 1]. Un Perlin ne l'est pas, il se masse autour de zéro : le seuil censé garder 16 % n'en gardait que <strong>1,59</strong>. Même famille d'erreur que 715 mm pris pour une médiane. Le réglage a été renommé <code>diaclaseZoneSeuil</code>, avec sa courbe relevée en commentaire.</p>
+  <p><strong>Deux mètres d'ouverture est un plancher imposé par le voxel</strong>, pas un goût : à un mètre de voxel, le marching cubes ne peut pas représenter une fente plus étroite que deux voxels. On ne retient donc que les fissures élargies — les seules où un homme passe, et les seules qui intéressent le jeu.</p>
+</div>
+
+<h3>Les lames de grès, et les arches qu'elles seules permettent</h3>
+<p>Les arches de grès — Arches National Park en est l'archétype — <strong>ne sont pas taillées par la pente</strong>. Elles naissent de joints verticaux <em>parallèles</em> que l'eau élargit : la roche restée entre deux joints devient une <strong>lame</strong>, un mur mince et long, et c'est seulement dans une lame qu'une ouverture traversante peut se creuser. Sans ce mécanisme, il n'y a pas d'arche ici : sur 6 327 sondages, les 229 crêtes assez minces pour être percées étaient à 135 en granite et 94 en basalte, et <strong>zéro en calcaire, grès ou schiste</strong> — parce que la boucle soulèvement / érosion donne au granite 33,5° de pente et au grès 8,7. La roche des arches réelles est précisément celle qui, chez nous, n'a plus de relief.</p>
+<div class="note">
+  <span class="etiq">Un champ orienté ne se laisse pas tourner naïvement</span>
+  <p>Écrire <code>U = X·cos θ(X,Y) + Y·sin θ(X,Y)</code> pour des bandes qui tournent doucement est <strong>faux</strong> : θ multiplie la coordonnée <em>absolue</em> du monde, qui monte à 32 000 m, si bien que <code>|∇U|</code> vaut environ <strong>cinq</strong> loin de l'origine. L'espacement réel des fentes tombait à quatorze mètres pour soixante-dix demandés, et il ne restait aucune lame. Le remède est une orientation <strong>constante par morceaux</strong> — une case de 16 km, bien plus large qu'une tache de lames, donc la discontinuité tombe là où la zone est déjà nulle. <code>|∇U|</code> vaut alors exactement 1. À retenir pour <em>tout</em> champ orienté.</p>
+</div>
+<p>Et la vérification d'une arche est elle-même un piège. <strong>L'union lisse gonfle chaque forme creusée d'environ le rayon de raccord</strong> : un pont demandé à 4 m ne laissait que 1,5 m de roche. Le plancher a été porté à 7. Quant à la mesure de l'épaisseur du pont, elle partait <em>dans</em> le trou qu'on venait de creuser et rendait zéro — <em>au même décalage de −22 m sur les dix arches</em>. Une mesure identique au chiffre près sur dix cas indépendants mesure le mesureur, pas le mesuré.</p>
+
+<h3>Le tableau qui dit que le biome ne décide de rien</h3>
+<div class="tbl-boite"><table>
+<thead><tr><th>biome</th><th class="n">% terres</th><th class="n">temp.</th><th class="n">pluie</th><th class="n">karst</th><th class="n">salles</th><th class="n">avens</th><th class="n">dolines</th><th class="n">arches</th><th class="n">diaclases</th></tr></thead>
+<tbody>
+<tr><td>Calotte glaciaire</td><td class="n">17,06</td><td class="n">−24,0</td><td class="n">182</td><td class="n">0,33</td><td class="n">4</td><td class="n">0</td><td class="n">1</td><td class="n">2</td><td class="n">2,36 %</td></tr>
+<tr><td>Désert chaud</td><td class="n">12,95</td><td class="n">22,9</td><td class="n">166</td><td class="n">0,07</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">1</td><td class="n">1,43 %</td></tr>
+<tr><td>Savane</td><td class="n">11,01</td><td class="n">22,9</td><td class="n">565</td><td class="n">0,05</td><td class="n">26</td><td class="n">6</td><td class="n">7</td><td class="n">0</td><td class="n">2,20 %</td></tr>
+<tr><td>Forêt subtropicale humide</td><td class="n">10,05</td><td class="n">16,8</td><td class="n">1504</td><td class="n">0,04</td><td class="n">62</td><td class="n">30</td><td class="n">7</td><td class="n">1</td><td class="n">2,43 %</td></tr>
+<tr><td><strong>Toundra</strong></td><td class="n">7,60</td><td class="n">−9,3</td><td class="n">584</td><td class="n"><strong>0,25</strong></td><td class="n"><strong>205</strong></td><td class="n">61</td><td class="n">36</td><td class="n">2</td><td class="n">0,81 %</td></tr>
+<tr><td>Prairie</td><td class="n">7,05</td><td class="n">17,1</td><td class="n">405</td><td class="n">0,04</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">1</td><td class="n">2,84 %</td></tr>
+<tr><td><strong>Taïga</strong></td><td class="n">6,59</td><td class="n">0,0</td><td class="n">890</td><td class="n"><strong>0,24</strong></td><td class="n"><strong>167</strong></td><td class="n">59</td><td class="n">24</td><td class="n">3</td><td class="n">0,84 %</td></tr>
+<tr><td>Forêt tropicale humide</td><td class="n">6,46</td><td class="n">23,6</td><td class="n">2795</td><td class="n">0,04</td><td class="n">44</td><td class="n">5</td><td class="n">3</td><td class="n">4</td><td class="n">3,96 %</td></tr>
+<tr><td>Forêt tropicale sèche</td><td class="n">5,78</td><td class="n">23,3</td><td class="n">1116</td><td class="n">0,03</td><td class="n">24</td><td class="n">3</td><td class="n">5</td><td class="n">1</td><td class="n">2,66 %</td></tr>
+<tr><td>Pelouse alpine</td><td class="n">5,15</td><td class="n">−7,7</td><td class="n">409</td><td class="n">0,19</td><td class="n">69</td><td class="n">28</td><td class="n">11</td><td class="n">0</td><td class="n">4,91 %</td></tr>
+<tr><td>Désert froid</td><td class="n">3,51</td><td class="n">15,5</td><td class="n">151</td><td class="n">0,03</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">1,44 %</td></tr>
+<tr><td>Forêt tempérée mixte</td><td class="n">2,76</td><td class="n">7,8</td><td class="n">937</td><td class="n">0,12</td><td class="n">41</td><td class="n">14</td><td class="n">5</td><td class="n">4</td><td class="n">1,04 %</td></tr>
+<tr><td>Steppe</td><td class="n">2,28</td><td class="n">8,8</td><td class="n">269</td><td class="n">0,12</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">3,79 %</td></tr>
+<tr><td>Méditerranéen</td><td class="n">1,56</td><td class="n">10,4</td><td class="n">616</td><td class="n">0,13</td><td class="n">15</td><td class="n">5</td><td class="n">3</td><td class="n">2</td><td class="n">0,63 %</td></tr>
+<tr><td>Forêt pluviale tempérée</td><td class="n">0,21</td><td class="n">9,0</td><td class="n">1829</td><td class="n">0,14</td><td class="n">8</td><td class="n">2</td><td class="n">1</td><td class="n">0</td><td class="n">0,56 %</td></tr>
+</tbody></table></div>
+<p><strong>Aucune de ces colonnes n'est une règle.</strong> Le biome ne décide de rien ; ce qui explique les salles est la colonne <em>karst</em>, qui vient de la lithologie. La toundra et la taïga en portent 372 à elles deux parce que leur karstifiabilité moyenne vaut 0,25 et 0,24 ; la prairie, la steppe et les deux déserts, pourtant tempérés ou accessibles, n'en ont <em>aucune</em> — 0,03 à 0,12. Et la calotte glaciaire en porte quatre, sous la glace. Ce tableau est la vérification de l'arbitrage fondateur de tout ce chapitre : <em>la roche décide, l'étiquette suit</em>.</p>
+</section>
+
+<!-- ========================================================= 05 -->
 <section id="lancer">
-<h2><span class="num">02</span>Mesurer, et regarder</h2>
+<h2><span class="num">05</span>Mesurer, et regarder</h2>
 <p>Il n'y a plus rien à lancer pour <em>produire</em> le monde : il se calcule au démarrage du jeu. Ce qui se lance, ce sont les instruments — et <strong>aucun n'exige l'éditeur ouvert</strong>, ce qui compte, parce que le lien de pilotage tombe dès qu'on relance l'éditeur, donc à chaque compilation.</p>
 
 <h3>Quatre instruments, et ils ne se remplacent pas</h3>
@@ -365,7 +668,7 @@ print(P.probe_zonal(20260909, 32000.0, 2048))   <span class="c"># fait-il froid 
 
 <!-- ========================================================= 04 -->
 <section id="climat">
-<h2><span class="num">03</span>Le système climatique</h2>
+<h2><span class="num">06</span>Le système climatique</h2>
 <p>Le climat se construit en couches qui se superposent dans un ordre précis. Chaque formule est calée sur une mesure terrestre, donnée en regard.</p>
 
 <figure>
@@ -426,7 +729,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 05 -->
 <section id="whittaker">
-<h2><span class="num">04</span>Le diagramme des biomes</h2>
+<h2><span class="num">07</span>Le diagramme des biomes</h2>
 <p>La classification lit la bande de température, puis le seuil de pluie à l'intérieur de la bande. L'étagement altitudinal n'est pas une règle séparée : il tombe du gradient adiabatique. Un sommet tropical à 3000 m est à 7 °C, donc le diagramme y lit « forêt tempérée » — une forêt de montagne, sans une seule règle d'altitude.</p>
 
 <figure>
@@ -454,7 +757,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 06 -->
 <section id="echelle">
-<h2><span class="num">05</span>La règle d'échelle</h2>
+<h2><span class="num">08</span>La règle d'échelle</h2>
 <p><strong>Ce n'est plus « diviser par quatre ».</strong> Ça l'a été, du temps où le monde faisait 8 km ; ce qui la remplace est plus général, et se paie cher quand on l'oublie : <strong>exprimer un réglage par la grandeur qu'on veut tenir</strong>. Une constante métrique figée sur une référence fausse un monde entier dès que la carte change — et le fichier de règles a payé la leçon <em>cinq fois</em>.</p>
 
 <div class="tbl-boite"><table>
@@ -490,7 +793,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 07 -->
 <section id="unreal">
-<h2><span class="num">06</span>Comment le monde arrive à l'écran</h2>
+<h2><span class="num">09</span>Comment le monde arrive à l'écran</h2>
 <p>Rien n'est importé. La chaîne rend des tableaux en mémoire, et le terrain est <strong>maillé à la demande autour du joueur</strong> à partir d'un champ de densité — négatif dans la roche, positif dans l'air, la surface étant l'isovaleur zéro.</p>
 
 <div class="note">
@@ -517,7 +820,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 08 -->
 <section id="uds">
-<h2><span class="num">07</span>Comment ça s'imbrique dans Ultra Dynamic Sky</h2>
+<h2><span class="num">10</span>Comment ça s'imbrique dans Ultra Dynamic Sky</h2>
 <p>UDS n'est pas qu'un ciel : il embarque son propre système de climat. Un <code>UDS_Climate_Preset</code> porte exactement ce que le générateur calcule déjà par pixel.</p>
 
 <figure>
@@ -557,7 +860,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 09 -->
 <section id="terre">
-<h2><span class="num">08</span>Le réalisme terrestre recherché</h2>
+<h2><span class="num">11</span>Le réalisme terrestre recherché</h2>
 <p>Le critère de réussite posé par le propriétaire : <em>des climats comme on en trouve sur Terre, des biomes pareil, et l'hydrométrie qui en découle</em>, avec des <em>surfaces similaires à la Terre</em>. Deux instruments le mesurent, et ils ne se valent pas.</p>
 
 <h3>La correspondance latitude → Y, qui pèse plus que tout réglage</h3>
@@ -606,7 +909,7 @@ et fait manquer la cible a la premiere.</div>
 
 <!-- ========================================================= 10 -->
 <section id="pieges">
-<h2><span class="num">09</span>Pièges de mesure</h2>
+<h2><span class="num">12</span>Pièges de mesure</h2>
 <p>Chacun a été payé comptant. Ils ont en commun de produire un résultat <em>plausible</em> plutôt qu'une erreur.</p>
 <div class="tbl-boite"><table>
 <thead><tr><th>ce qu'on croit mesurer</th><th>ce qui se passe vraiment</th></tr></thead>
@@ -1055,6 +1358,173 @@ function svg(hote, w, h) {
   T(W/2,H-8,"un preset par couple biome × hémisphère — au sud, les saisons sont échangées",
     {"text-anchor":"middle"},s);
 })();
+
+/* ------------------------------------------------ 10. colonne stratigraphique
+   La serie de world_rules.json, section "strates". Le K est calcule avec la
+   formule exacte du moteur :
+     ecartee = moyenneSerie + (durete - moyenneSerie) * contrasteErosion
+     K       = clamp(1 + poids * (moyenneMonde - ecartee), 0.15, 2.5)
+   avec moyenneMonde 0,70 (mesuree), moyenneSerie 0,41 (ponderee par
+   l'epaisseur), contraste 3,0 et poids 1,0. Le releve du jeu confirme la
+   plage : « K de 0.57 a 1.77 ». */
+(function(){
+  const bancs=[
+    {n:"Grès",     e:22, h:0.55, k:0.87, c:"#C29870"},
+    {n:"Schiste",  e:30, h:0.35, k:1.47, c:"#6C6A74"},
+    {n:"Dolomie",  e:18, h:0.65, k:0.57, c:"#C6BCAA"},
+    {n:"Craie",    e:28, h:0.25, k:1.77, c:"#ECEAE2"},
+    {n:"Calcaire", e:20, h:0.45, k:1.17, c:"#D6CEB4"},
+    {n:"Schiste",  e:32, h:0.35, k:1.47, c:"#6C6A74"},
+    {n:"Grès",     e:20, h:0.55, k:0.87, c:"#C29870"},
+    {n:"Craie",    e:30, h:0.25, k:1.77, c:"#ECEAE2"},
+    {n:"Dolomie",  e:18, h:0.65, k:0.57, c:"#C6BCAA"},
+    {n:"Schiste",  e:35, h:0.35, k:1.47, c:"#6C6A74"}];
+  const DATUM=520, TOT=bancs.reduce((a,b)=>a+b.e,0);   // 253 m
+  // LE ROLE SE LIT CONTRE LA MOYENNE DE LA SERIE, jamais contre celle du monde :
+  // c'est autour d'elle que le contraste ecarte les bancs, et c'est elle qui
+  // decide lequel resiste a son voisin. Le calcaire, a 0,45, fait corniche dans
+  // cette serie alors que son K depasse 1 -- il s'use plus vite que la moyenne
+  // du MONDE, et moins vite que le schiste ou la craie qui l'encadrent.
+  const MOY=0.41;
+  const W=980,H=330,M={g:62,h:26,b:24};
+  const s=svg("fig-serie",W,H);
+  const ih=H-M.h-M.b, ech=ih/TOT, xc=M.g, wc=118;
+  // axe des altitudes
+  E("line",{x1:xc-10,y1:M.h,x2:xc-10,y2:M.h+ih,class:"sv-axe"},s);
+  let z=0;
+  bancs.forEach((b,i)=>{
+    const y=M.h+z*ech, hh=b.e*ech;
+    E("rect",{x:xc,y:y,width:wc,height:hh,fill:b.c,stroke:"var(--trait-fort)",
+      "stroke-width":.6},s);
+    // altitude du toit
+    T(xc-14,y+4,(DATUM-z).toFixed(0)+" m",{"text-anchor":"end"},s);
+    // fiche du banc
+    const xf=xc+wc+26, yc=y+hh/2;
+    E("line",{x1:xc+wc,y1:yc,x2:xf-8,y2:yc,class:"sv-grille"},s);
+    T(xf,yc+4,b.n,{class:"sv-txt-fort"},s);
+    T(xf+92,yc+4,b.e+" m",{"text-anchor":"end"},s);
+    T(xf+168,yc+4,"dureté "+b.h.toFixed(2).replace(".",","),{"text-anchor":"end"},s);
+    // barre de K, 0 a 2
+    const xk=xf+192, wk=190;
+    E("rect",{x:xk,y:yc-6,width:wk,height:12,fill:"var(--surface-2)",rx:2},s);
+    E("line",{x1:xk+wk/2,y1:yc-9,x2:xk+wk/2,y2:yc+9,class:"sv-grille"},s);
+    E("rect",{x:xk,y:yc-6,width:wk*b.k/2,height:12,rx:2,
+      fill:b.h<MOY?"var(--serie-t)":"var(--serie-p)"},s);
+    T(xk+wk+8,yc+4,"K "+b.k.toFixed(2).replace(".",","),{},s);
+    T(xk+wk+64,yc+4,b.h<MOY?"talus":"corniche",
+      {fill:b.h<MOY?"var(--serie-t)":"var(--serie-p)"},s);
+    z+=b.e;
+  });
+  T(xc-14,M.h-10,"datum",{"text-anchor":"end"},s);
+  T(xc,M.h-10,"la pile — 253 m, puis elle se répète",{},s);
+  T(xc-14,M.h+ih+16,(DATUM-TOT)+" m",{"text-anchor":"end"},s);
+  T(xc+wc+26,M.h+ih+16,
+    "K < 1 : le banc résiste et fait corniche  ·  K > 1 : il s'use et fait talus",{},s);
+})();
+
+/* ------------------------------------------------ 11. entonnoir des tables */
+(function(){
+  const g=[
+    {l:"terres émergées",            n:2449474, p:100.00},
+    {l:"altitude ≥ 60 m",            n:2205987, p:90.06},
+    {l:"pluie ≤ 300 mm",             n: 811701, p:33.14},
+    {l:"température ≥ 0 °C",         n: 435942, p:17.80},
+    {l:"relief local ≤ 320 m",       n: 206159, p: 8.42},
+    {l:"dureté 0,25 à 0,70",         n:  65910, p: 2.69},
+    {l:"masque de région > 0,30",    n:   3070, p: 0.13}];
+  const W=980,H=52+g.length*30,M={g:200,d:16,h:30};
+  const s=svg("fig-entonnoir",W,H), iw=W-M.g-M.d;
+  T(M.g,18,"survie à cette garde, en part de la ligne précédente",{},s);
+  T(W-M.d,18,"cellules · part des terres",{"text-anchor":"end"},s);
+  g.forEach((d,i)=>{
+    const y=M.h+i*30, surv=i? d.n/g[i-1].n : 1;
+    const wb=iw*0.46*surv;
+    T(M.g-10,y+13,d.l,{"text-anchor":"end",class:"sv-txt-fort"},s);
+    E("rect",{x:M.g,y:y+3,width:iw*0.46,height:16,fill:"var(--surface-2)",rx:2},s);
+    E("rect",{x:M.g,y:y+3,width:Math.max(1.5,wb),height:16,rx:2,
+      fill:i===0?"var(--trait-fort)":(surv<0.35?"var(--serie-t)":"var(--accent)")},s);
+    if(i) T(M.g+iw*0.46+8,y+15,(surv*100).toFixed(1).replace(".",",")+" %",{},s);
+    T(W-M.d,y+15,d.n.toLocaleString("fr-FR")+"   ·   "
+      +d.p.toFixed(2).replace(".",",")+" %",{"text-anchor":"end"},s);
+  });
+  const lg=document.createElement("div"); lg.className="legende";
+  lg.innerHTML='<span><i style="background:var(--serie-t)"></i>garde qui retient moins d\'un tiers</span>'+
+    '<span><i style="background:var(--accent)"></i>les autres</span>';
+  document.getElementById("fig-entonnoir").appendChild(lg);
+})();
+
+/* ------------------------------------------------ 12. formes d'ouverture
+   LE CIEL ET LA ROCHE DOIVENT AVOIR DEUX TEINTES. Premiere version : la boite
+   entiere etait remplie de la couleur de roche, si bien qu'au-dessus du sol on
+   lisait de la roche aussi et qu'aucune des quatre coupes ne se comprenait.
+   Ici le fond est l'air, la roche est un polygone sous le profil du sol, et
+   les cavites sont creusees dedans a la couleur de l'air. */
+(function(){
+  const W=980,H=224;
+  const s=svg("fig-ouvertures",W,H);
+  const air="var(--surface)", trait="var(--trait-fort)";
+  const cases=[
+    {t:"Doline",  d:"plafond mince — il cède"},
+    {t:"Aven",    d:"plafond épais, terrain plat"},
+    {t:"Bouche",  d:"versant ≥ 35°, la garantie"},
+    {t:"Arche",   d:"percée dans une lame"}];
+  const wc=(W-5*14)/4, hb=140;
+  cases.forEach((c,i)=>{
+    const x=14+i*(wc+14), y=30, bas=y+hb, cx=x+wc/2;
+    const g=E("g",{},s);
+    const clip=E("clipPath",{id:"cl"+i},g);
+    E("rect",{x:x,y:y,width:wc,height:hb,rx:3},clip);
+    const gg=E("g",{"clip-path":"url(#cl"+i+")"},g);
+    E("rect",{x:x,y:y,width:wc,height:hb,fill:air},gg);
+    T(x,y-10,c.t,{class:"sv-txt-fort"},s);
+    T(x,bas+17,c.d,{},s);
+    const sol=y+50;
+    // LA ROCHE EST UN VOILE D ACCENT, PAS UNE TEINTE FIXE : en sombre,
+    // --surface et --surface-2 ne different que de dix valeurs, et la coupe
+    // devenait illisible. Un aplat d accent a seize pour cent tranche dans
+    // les deux themes.
+    const massif=d=>E("path",{d:d,fill:"var(--accent)","fill-opacity":.16,
+      stroke:trait,"stroke-width":1.4},gg);
+    const creux =d=>E("path",{d:d,fill:air,stroke:trait,"stroke-width":1.3},gg);
+
+    if(i===0){                       // doline : entonnoir, puits, salle
+      massif(`M${x} ${sol} L${cx-58} ${sol} L${cx-18} ${sol+26} L${cx+18} ${sol+26} `
+        +`L${cx+58} ${sol} L${x+wc} ${sol} L${x+wc} ${bas} L${x} ${bas} Z`);
+      creux(`M${cx-18} ${sol+24} L${cx+18} ${sol+24} L${cx+18} ${sol+50} `
+        +`A32 19 0 1 1 ${cx-18} ${sol+50} Z`);
+      T(cx,sol+62,"salle",{"text-anchor":"middle"},s);
+      T(cx,sol-10,"ouverture PLUS LARGE que la salle",{"text-anchor":"middle"},s);
+    } else if(i===1){                // aven : puits en cloche
+      massif(`M${x} ${sol} L${x+wc} ${sol} L${x+wc} ${bas} L${x} ${bas} Z`);
+      creux(`M${cx-7} ${sol-1} L${cx+7} ${sol-1} L${cx+7} ${sol+24} `
+        +`L${cx+26} ${sol+52} L${cx+26} ${sol+58} `
+        +`A30 18 0 1 1 ${cx-26} ${sol+58} L${cx-26} ${sol+52} L${cx-7} ${sol+24} Z`);
+      T(cx,sol-10,"puits en CLOCHE, dissous",{"text-anchor":"middle"},s);
+    } else if(i===2){                // bouche : entree horizontale dans un versant
+      massif(`M${x} ${sol+62} L${cx-30} ${sol+62} L${cx+20} ${sol-8} `
+        +`L${x+wc} ${sol-8} L${x+wc} ${bas} L${x} ${bas} Z`);
+      creux(`M${cx-9} ${sol+32} L${cx+46} ${sol+42} L${cx+46} ${sol+58} `
+        +`L${cx-20} ${sol+48} Z`);
+      T(x+10,bas-10,"on entre EN MARCHANT",{},s);
+    } else {                         // arche : lame de gres percee
+      massif(`M${x} ${sol+62} L${x+wc} ${sol+62} L${x+wc} ${bas} L${x} ${bas} Z`);
+      massif(`M${cx-52} ${sol+63} L${cx-52} ${sol+2} L${cx+52} ${sol+2} `
+        +`L${cx+52} ${sol+63} Z`);
+      creux(`M${cx-25} ${sol+63} L${cx-25} ${sol+40} `
+        +`A25 25 0 0 1 ${cx+25} ${sol+40} L${cx+25} ${sol+63} Z`);
+      E("line",{x1:cx-52,y1:sol+2,x2:cx+52,y2:sol+2,stroke:"var(--serie-t)",
+        "stroke-width":1},gg);
+      T(cx,sol-6,"pont de 7 à 12 m",{"text-anchor":"middle"},s);
+      T(cx,sol+56,"on voit le CIEL au travers",{"text-anchor":"middle"},s);
+    }
+    E("rect",{x:x,y:y,width:wc,height:hb,fill:"none",stroke:"var(--trait)",
+      "stroke-width":1,rx:3},g);
+  });
+  T(W/2,H-4,"la doline et l'aven se forment par géologie · la bouche est posée pour "
+    +"qu'aucun réseau ne reste muré · l'arche demande une lame",
+    {"text-anchor":"middle"},s);
+})();
+
 </script>
 
 </body>
