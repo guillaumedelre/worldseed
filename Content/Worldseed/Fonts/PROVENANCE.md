@@ -1,6 +1,12 @@
 # Material Symbols — la police d'icones du projet
 
-Toutes les icones de Worldseed — menu, carte, jeu — viennent de cette police.
+**LA REGLE EST DANS `.claude/rules/iconographie.md`**, et elle nomme DEUX
+sources : Material Symbols pour l'interface, game-icons.net pour le monde. Ce
+fichier-ci ne couvre que la premiere, et dit d'ou elle vient. (Il a longtemps
+porte « toutes les icones viennent de cette police » : c'etait vrai le jour ou
+elle est arrivee, et faux des qu'une seconde source a ete admise. Deux textes
+qui se contredisent valent moins qu'un seul.)
+
 Une police d'icones plutot que des images : un glyphe est vectoriel, donc net a
 toutes les tailles et a tous les facteurs DPI, il se teinte comme du texte, et
 il ne coute ni asset, ni atlas, ni import.
