@@ -41,8 +41,12 @@ Content/*
 # _Essai...) : ce sont autant de copies du graphe du pack.
 Content/Worldseed/Materials/M_WorldseedLandscape*.uasset
 
-# ACTEURS WORLD PARTITION : 363 Mo, dont 202 pour les quatre proxies de
-# terrain. Entierement regeneres par `rebuild_world.rebuild()`.
+# ACTEURS WORLD PARTITION DES ANCIENNES CARTES : 375 Mo, dont 202 pour les
+# quatre proxies de terrain. Entierement regeneres par `rebuild_world.rebuild()`.
+# LA CARTE DE JEU N'EN A AUCUN : L_Worldseed_Proc et L_Menu ne portent pas un
+# seul acteur persistant -- terrain voxel, ocean, ciel, tout est pondu a
+# l'execution. Ce dossier ne sert donc qu'a L_Worldseed (783 acteurs) et
+# L_Worldseed_Test (67), les deux cartes a Landscape que le depot conserve.
 Content/__ExternalActors__/
 Content/__ExternalObjects__/
 

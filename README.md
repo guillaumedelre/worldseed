@@ -80,10 +80,10 @@ utilisée par les scripts de `Tools/UE/`. Le jeu n'en a pas besoin.
 | `Source/`, `Config/`, `*.uproject` | ✅ | le projet et toute la chaîne de génération |
 | `ThirdParty/Transvoxel/` | ✅ | les tables de Lengyel, sous licence MIT, avec leur provenance |
 | `Tools/WorldGen/rules/` | ✅ | **de la donnée, pas du code** — les règles et les relevés terrestres |
-| `Tools/UE/` | ✅ | scripts d'éditeur visant l'ancienne carte `L_Worldseed` |
+| `Tools/UE/` | ✅ | scripts d'éditeur : dix visent l'ancienne carte `L_Worldseed`, deux exportent `Content/` en glTF pour Godot |
 | `Content/Worldseed/` | ✅ | notre contenu : cartes, matériaux, préréglages climatiques, police d'icônes |
 | packs payants sous `Content/` | ❌ | redistribution interdite — voir ci-dessus |
-| `Content/__ExternalActors__/` | ❌ | acteurs World Partition, régénérés |
+| `Content/__ExternalActors__/` | ❌ | acteurs World Partition des **anciennes** cartes — 375 Mo, régénérés par `rebuild_world` |
 | `Saved/`, `Intermediate/`, `Binaries/`, `DerivedDataCache/` | ❌ | caches et sorties |
 | `Plugins/` | ❌ | plugin tiers, dépôt séparé |
 
@@ -213,9 +213,12 @@ référence du calage métrique, dont `WorldseedVerticalScale` tire son rapport 
 trouvées égales, ce qui masquait la distinction.
 
 ⚠ **L'empreinte des règles est un MD5 du fichier entier.** Modifier un simple
-commentaire invalide tous les mondes en cache et force une régénération d'environ
-200 s. Le monde obtenu est identique ; il n'y a rien à relancer, juste à la payer
-une fois.
+commentaire invalide tous les mondes en cache et force une régénération complète —
+**260 s** mesurées le 24 septembre 2026 sur la grille du jeu. Le monde obtenu est
+identique, et cela se vérifie sans le croire : le corps du fichier de cache, tout
+sauf les 68 octets d'en-tête qui portent justement l'empreinte, rend le même MD5
+avant et après. Il n'y a donc rien à remesurer, juste à payer la régénération une
+fois.
 
 ---
 
