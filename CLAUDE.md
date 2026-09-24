@@ -654,77 +654,31 @@ flatterie. Etre pedagogue, c'est etre clair, pas etre long.
 
 ## A bis. Convention de commit : Conventional Commits
 
-**Regle posee par le proprietaire le 11 septembre 2026.** Tout commit de ce
-depot suit la specification Conventional Commits 1.0.0.
+**LA CONSIGNE A DEMENAGE DANS `.claude/rules/commits.md`**, le 24 septembre
+2026, a la demande du proprietaire. Ce fichier-ci est un REGISTRE : il raconte
+les pieges payes et les mesures qui ont tranche, et ce n'est pas un endroit ou
+l'on cherche une consigne. Une regle est courte, prescriptive, et doit se
+trouver du premier coup -- d'ou `.claude/rules/`, charge a chaque session.
 
-```
-<type>(<portee>): <description>
+**Aucune copie n'est gardee ici**, volontairement : deux textes qui se
+contredisent un jour valent moins qu'un seul. La regle porte le format, la
+table des types, les portees usuelles du projet, le sens precis du point
+d'exclamation dans un projet de rendu, et l'exigence de corps.
 
-<corps : le POURQUOI et la MESURE>
+Ce qui reste ici, parce que c'est du recit et non de la consigne :
 
-<pied : references, co-auteurs>
-```
-
-**La ligne de sujet** : type obligatoire, portee recommandee, description a
-l'imperatif, en minuscules, sans point final, 72 caracteres au plus. Elle doit
-completer la phrase « ce commit va... ».
-
-| type | quand l'employer |
-|---|---|
-| `feat` | une capacite nouvelle : un outil, une etape de la chaine, un acteur |
-| `fix` | un defaut corrige, y compris une valeur de reglage fausse |
-| `perf` | le rendu ou la generation vont plus vite, a resultat egal |
-| `refactor` | le comportement ne change pas, la structure si |
-| `docs` | README, CLAUDE.md, atlas, commentaires de regles |
-| `build` | dependances, .gitignore, .gitattributes, Git LFS, configuration du moteur |
-| `chore` | menage, suppression d'assets perimes, outillage annexe |
-| `test` | controles et diagnostics |
-| `revert` | annulation d'un commit precedent |
-
-**Portees usuelles du projet** : `worldgen`, `climate`, `tectonics`, `erosion`,
-`hydrology`, `biomes`, `surfaces`, `export` cote generateur ; `landscape`,
-`water`, `pcg`, `vegetation`, `uds`, `rvt`, `material` cote editeur ; `rules`
-pour `world_rules.json`, `docs`, `git`.
-
-**LE POINT D'EXCLAMATION A UN SENS PRECIS ICI.** Dans un projet de rendu, la
-rupture n'est pas une signature d'API : c'est **un changement qui oblige a
-refaire quelque chose de long**. On marque donc `type(portee)!:` et on ajoute un
-pied `BREAKING CHANGE:` des qu'un commit :
-
-- force a **regenerer le monde** (toute regle qui entre dans le climat avant les
-  precipitations, dans la tectonique ou dans l'erosion) ;
-- force a **reimporter dans l'editeur** (relief, couches peintes, carte des
-  biomes, recettes de vegetation) ;
-- change le **format d'un fichier echange** entre le generateur et l'editeur
-  (`manifest.json`, `uds_climate.json`, les tuiles).
-
-Le pied doit dire quoi relancer. Exemple :
-
-```
-fix(climate)!: ancrer la pluie sur la moyenne et non sur la mediane
-
-715 mm est la MOYENNE terrestre, pas la mediane, et la distribution des pluies
-est tres dissymetrique. Le monde etait 70 % trop humide -- moyenne mesuree
-1217 mm -- et portait 23,7 % de ses terres au-dessus de 2000 mm quand la Terre
-en a 7 a 8. Consequence visible : trop de forets, pas assez de prairies.
-
-BREAKING CHANGE: le monde doit etre regenere, puis re-tuile et reimporte.
-Relancer `python -m worldgen`, `tile_world.py`, puis `rebuild_world.rebuild()`.
-```
-*(EXEMPLE HISTORIQUE. Ces trois commandes n'existent plus : le monde se
-regenere desormais tout seul au lancement des que
-`WORLDSEED_PIPELINE_VERSION` change ou que l'empreinte de `world_rules.json`
-bouge. Le pied d'un commit qui casse doit donc dire quoi REMESURER, pas quoi
-relancer.)*
-```
-```
-
-**CE QUE LA CONVENTION NE CHANGE PAS, ET QUI COMPTE PLUS QU'ELLE.** Elle
-normalise la ligne de sujet ; elle n'autorise pas a raccourcir le corps. Les
-messages de ce depot expliquent le POURQUOI et citent la MESURE qui a tranche,
-y compris les pistes essayees puis rejetees pour qu'on ne les retente pas.
-C'est la partie qui a de la valeur six mois plus tard : un sujet bien forme au
-dessus d'un corps vide est une regression, pas un progres.
+- **Le pied d'un commit qui casse doit dire quoi REMESURER, pas quoi
+  relancer.** L'exemple d'origine de cette section finissait par
+  « Relancer `python -m worldgen`, `tile_world.py`, puis
+  `rebuild_world.rebuild()` ». Ces trois commandes n'existent plus : le monde
+  se regenere tout seul au lancement des que `WORLDSEED_PIPELINE_VERSION`
+  change ou que l'empreinte de `world_rules.json` bouge.
+- **Deux corps de commit de ce depot ont annonce plus qu'ils n'avaient
+  verifie**, et les deux ont ete corriges apres coup : « dix vues sur dix »
+  alors que cinq seulement avaient ete REGARDEES, et un gain de warp etabli en
+  comparant un chiffre du jour a un chiffre de la veille pris dans un autre
+  etat du CODE. Un fichier ecrit n'est pas une vue jugee, et un temoin se
+  refait dans l'etat courant.
 
 ## B. Pieges rencontres au passage du monde a 8 km (11 septembre 2026)
 
