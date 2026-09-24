@@ -229,6 +229,11 @@ une fois.
   climatique, ses formules, son calage terrestre, et le diagramme de Whittaker du
   projet avec les vingt-trois climats réels posés dessus. Fichier autonome : il
   s'ouvre par un double-clic, sans serveur.
+- **[`.claude/rules/`](.claude/rules/)** — les conventions, une par fichier.
+  `iconographie.md` dit d'où viennent les icônes des écrans : **Material Symbols**
+  pour l'interface, **game-icons.net** pour le monde — parce que le catalogue
+  Google n'a ni arche, ni grotte, ni canyon. Dans les deux cas, **aucun
+  `.uasset`** : le fichier brut est versionné et lu au démarrage.
 
 **Une réserve sur les chiffres.** Ceux de l'atlas sont des mesures prises sur une
 graine et une résolution données, et il le dit en tête. Un relevé sur une seule
