@@ -84,6 +84,54 @@ struct FWorldseedCoucheRecette
 	/** Part retenue dans les taches, dans [0..1]. */
 	float TacheSeuil = 0.0f;
 
+	/**
+	 * Nombre d'octaves du bruit de taches. UNE = le comportement d'avant.
+	 *
+	 * UNE OCTAVE N'A QU'UNE TAILLE, et c'est ce qui se lit comme regulier de
+	 * loin : les taches font toutes le meme diametre et se repartissent avec
+	 * la meme periode. Les octaves suivantes ajoutent du detail a la moitie
+	 * de la taille et au quart de l'amplitude -- le contour se decoupe, des
+	 * ilots se detachent, des trouees s'ouvrent dans les pleins.
+	 *
+	 * ⚠ MONTER LES OCTAVES DEPLACE LA COUVERTURE A SEUIL EGAL, ET PAS DANS UN
+	 * SEUL SENS. Une somme fractale se masse autour de sa MEDIANE : elle
+	 * retient donc PLUS sous un demi et MOINS au-dessus. Mesure, taille
+	 * 2600 cm :
+	 *
+	 *     seuil   1 octave   3 octaves
+	 *     0,35      82,1 %     92,7 %
+	 *     0,45      60,9 %     68,0 %
+	 *     0,55      38,8 %     33,0 %
+	 *     0,65      18,7 %      7,8 %
+	 *
+	 * J'AVAIS ECRIT « le meme seuil retient donc moins », ET C'ETAIT FAUX A
+	 * MOITIE : vrai au-dessus de la mediane, faux en dessous. C'est la table
+	 * qui l'a dit, pas le raisonnement. Ce depot a deja paye ce genre de
+	 * demi-verite sous le nom « un seuil n'est pas une part » -- un seuil
+	 * cense garder seize pour cent n'en gardait que 1,59.
+	 *
+	 * `Worldseed.Vegetation.LesTachesRetiennent` imprime cette table : on y
+	 * lit le seuil qui rend la couverture voulue, au lieu de la deviner.
+	 */
+	int32 TacheOctaves = 1;
+
+	/**
+	 * Largeur de la transition autour du seuil, en unites de bruit [0..1].
+	 * A ZERO, le seuil est franc -- le comportement d'avant, a l'identique.
+	 *
+	 * C'EST CE QUI REMPLACE UN OUI/NON PAR UNE DENSITE. Un seuil franc donne
+	 * des taches a BORD NET : dedans tout pousse, dehors rien, et la frontiere
+	 * se voit comme un decoupage. Avec une douceur, la probabilite de garder
+	 * un point monte progressivement -- dense au coeur de la tache, clairseme
+	 * sur ses marges, ce qui est la facon dont une clairiere se termine
+	 * vraiment.
+	 *
+	 * ELLE NE DEPLACE PAS LA COUVERTURE MOYENNE, ou tres peu : la transition
+	 * est centree sur le seuil, donc ce qu'elle retire d'un cote elle le rend
+	 * de l'autre. C'est le CONTRASTE qu'elle change, pas la quantite.
+	 */
+	float TacheDouceur = 0.0f;
+
 	TArray<FWorldseedEspece> Especes;
 
 	/** Somme des poids, precalculee pour le tirage. */

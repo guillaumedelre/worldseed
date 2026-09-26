@@ -169,7 +169,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.48,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.487,
             "taille" : 2200
           }
         },
@@ -368,7 +370,9 @@
           ],
           "spacing" : "rares",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -593,7 +597,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.58,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.553,
             "taille" : 900
           }
         },
@@ -623,7 +629,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.5,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.500,
             "taille" : 1600
           }
         },
@@ -683,7 +691,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -808,7 +818,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.58,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.553,
             "taille" : 900
           }
         },
@@ -838,7 +850,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.55,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.533,
             "taille" : 2200
           }
         },
@@ -868,7 +882,9 @@
           ],
           "spacing" : "arbres_epars",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 4000
           }
         },
@@ -902,7 +918,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -1019,7 +1037,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.58,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.553,
             "taille" : 900
           }
         },
@@ -1045,7 +1065,9 @@
           ],
           "spacing" : "arbres_epars",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 4000
           }
         },
@@ -1075,7 +1097,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -1200,7 +1224,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.58,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.553,
             "taille" : 900
           }
         },
@@ -1234,7 +1260,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.5,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.500,
             "taille" : 1600
           }
         },
@@ -1268,7 +1296,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -1494,7 +1524,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.58,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.553,
             "taille" : 900
           }
         },
@@ -1550,7 +1582,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2400
           }
         }
@@ -1683,7 +1717,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.55,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.533,
             "taille" : 1800
           }
         },
@@ -1875,7 +1911,9 @@
           ],
           "spacing" : "sousbois",
           "taches" : {
-            "seuil" : 0.5,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.500,
             "taille" : 3500
           }
         },
@@ -1901,7 +1939,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -2085,7 +2125,9 @@
           ],
           "spacing" : "sousbois",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 3000
           }
         },
@@ -2134,7 +2176,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -2191,7 +2235,9 @@
           ],
           "spacing" : "arbres_epars",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 4000
           }
         },
@@ -2266,7 +2312,9 @@
           ],
           "spacing" : "rares",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 2600
           }
         }
@@ -2419,7 +2467,9 @@
           ],
           "spacing" : "sousbois_clair",
           "taches" : {
-            "seuil" : 0.58,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.553,
             "taille" : 900
           }
         },
@@ -2457,7 +2507,9 @@
           ],
           "spacing" : "arbres_epars",
           "taches" : {
-            "seuil" : 0.45,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.467,
             "taille" : 4000
           }
         }
@@ -2530,7 +2582,9 @@
           ],
           "spacing" : "sousbois",
           "taches" : {
-            "seuil" : 0.42,
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.447,
             "taille" : 2200
           }
         },

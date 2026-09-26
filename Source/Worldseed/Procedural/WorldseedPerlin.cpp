@@ -359,6 +359,34 @@ namespace WorldseedPerlin
 		OutF2 = FMath::Sqrt(F2);
 	}
 
+	float FbmPoint(float X, float Y, float Frequency, int32 Octaves,
+		int32 Seed, float Lacunarity, float Gain)
+	{
+		if (Octaves < 1)
+		{
+			return 0.0f;
+		}
+
+		float Amplitude = 1.0f;
+		float Scale = Frequency;
+		float Sum = 0.0f;
+
+		for (int32 Octave = 0; Octave < Octaves; ++Octave)
+		{
+			// LE MEME DECALAGE DE GRAINE PAR OCTAVE que les autres sommes de
+			// ce fichier -- 7919. Deux octaves qui partagent leur graine se
+			// superposent au lieu de s'ajouter : leurs extrema tombent aux
+			// memes endroits, et l'on obtient des marches la ou l'on voulait
+			// du grain.
+			Sum += Amplitude * Perlin(X * Scale, Y * Scale, Seed + Octave * 7919);
+
+			Amplitude *= Gain;
+			Scale *= Lacunarity;
+		}
+
+		return Sum * OctaveNormalisation(Octaves, Gain);
+	}
+
 	float Fbm3D(float X, float Y, float Z, float Frequency, int32 Octaves,
 		int32 Seed, float Lacunarity, float Gain)
 	{

@@ -176,6 +176,20 @@ bool FWorldseedRecettes::Charger(FString& OutErreur)
 				{
 					Couche.TacheSeuil = static_cast<float>(V);
 				}
+				// LES DEUX SUIVANTES SONT NEUTRES PAR DEFAUT : une couche qui
+				// ne les connait pas se comporte exactement comme avant. Les
+				// cinquante-trois couches sans taches ne bougent pas non plus,
+				// puisque rien de tout ceci ne s'evalue sans `taille`.
+				if ((*Taches)->TryGetNumberField(TEXT("octaves"), V))
+				{
+					Couche.TacheOctaves = FMath::Clamp(
+						static_cast<int32>(V), 1, 8);
+				}
+				if ((*Taches)->TryGetNumberField(TEXT("douceur"), V))
+				{
+					Couche.TacheDouceur = FMath::Clamp(
+						static_cast<float>(V), 0.0f, 1.0f);
+				}
 			}
 
 			const TArray<TSharedPtr<FJsonValue>>* Especes = nullptr;

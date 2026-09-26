@@ -16,6 +16,7 @@
 #include "Tests/WorldseedTestMondeFictif.h"
 
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedRecettes.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedVegetation.h"
@@ -541,6 +542,198 @@ bool FWorldseedVegetationRocheTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("SANS gabarits, de l'herbe pousse bien dans la roche"),
 		DansLaRocheT > 0);
+	return true;
+}
+
+/**
+ * LES TACHES : CE QU'ELLES RETIENNENT VRAIMENT, ET CE QUE CHAQUE REGLAGE FAIT.
+ *
+ * UN SEUIL N'EST PAS UNE PART, et ce depot l'a paye trois fois -- le plus cher
+ * etant `diaclaseZoneSeuil`, ou un seuil cense garder seize pour cent n'en
+ * gardait que 1,59 parce qu'un Perlin ne se repartit pas uniformement. Monter
+ * les octaves deplace la meme chose : une somme fractale se masse plus pres de
+ * zero, donc le meme seuil retient MOINS.
+ *
+ * Ce test ne juge donc pas une valeur : il IMPRIME LA TABLE, pour qu'un
+ * reglage se lise au lieu de se deviner. Les assertions, elles, gardent les
+ * trois proprietes que le code promet.
+ *
+ * ET IL MESURE PAR LE SEMEUR LUI-MEME, jamais par une copie de sa decision :
+ * une regle recopiee dans un test valide la copie. On compare donc un semis
+ * AVEC taches a un semis SANS, sur la meme graine et la meme etendue.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedVegetationTachesTest,
+	"Worldseed.Vegetation.LesTachesRetiennent",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedVegetationTachesTest::RunTest(const FString& Parameters)
+{
+	const FWorldseedGeometry G = WorldseedTest::Geometrie();
+	const FWorldseedBiomeMap B = Carte(G, 3, EWorldseedCover::None);
+
+	// DOUZE CHUNKS DE COTE, SOIT 384 m. Une tache fait 26 m de diametre : sur
+	// un seul chunk de 32 m on mesurerait UNE tache, donc le hasard de sa
+	// position, et non une couverture. Il en faut une dizaine par axe.
+	constexpr int32 Cotes = 12;
+
+	auto Semis = [&](int32 Octaves, float Seuil, float Douceur) -> int32
+	{
+		FWorldseedRecettes R;
+		R.Catalogue.Add(TEXT("/Game/Test/Herbe.Herbe"));
+		R.EspeceObstacle.Add(false);
+
+		FWorldseedCoucheRecette C = Couche(TEXT("tapis"), 200.0f);
+		if (Seuil > 0.0f)
+		{
+			C.TacheTailleCm = 2600.0f;
+			C.TacheSeuil = Seuil;
+			C.TacheOctaves = Octaves;
+			C.TacheDouceur = Douceur;
+		}
+
+		FWorldseedBiomeRecette Biome;
+		Biome.Couches.Add(MoveTemp(C));
+		R.ParBiome.Add(3, MoveTemp(Biome));
+		R.NbCouches = 1;
+
+		int32 Total = 0;
+		for (int32 CX = 0; CX < Cotes; ++CX)
+		{
+			for (int32 CY = 0; CY < Cotes; ++CY)
+			{
+				const FVector Origine(CX * CoteCm, CY * CoteCm, 0.0);
+				const FWorldseedVoxelMesh Mesh = ChunkPlat(Origine, 500.0f);
+
+				TArray<FWorldseedPlante> Plantes;
+				FWorldseedVegetationReleve Releve;
+				WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
+					Regles(), 7, FVector2D::ZeroVector, Plantes, Releve);
+				Total += Plantes.Num();
+			}
+		}
+		return Total;
+	};
+
+	// LA REFERENCE EST LE SEMIS SANS TACHES : c'est lui qui donne le cent pour
+	// cent. Rapporter a une valeur theorique ferait mesurer les autres gardes
+	// -- pente, bords de chunk -- en meme temps que les taches.
+	const int32 Plein = Semis(1, 0.0f, 0.0f);
+	TestTrue(TEXT("le semis de reference pose des plantes"), Plein > 5000);
+
+	AddInfo(FString::Printf(TEXT("reference sans taches : %d plantes sur %d x %d chunks"),
+		Plein, Cotes, Cotes));
+	AddInfo(TEXT("  seuil  | 1 octave | 3 octaves | 1 oct. douceur 0,30"));
+
+	const float Seuils[] = { 0.35f, 0.45f, 0.55f, 0.65f };
+	float Cov1[4] = { 0.0f };
+	float Cov3[4] = { 0.0f };
+	float CovD[4] = { 0.0f };
+
+	for (int32 I = 0; I < 4; ++I)
+	{
+		Cov1[I] = 100.0f * Semis(1, Seuils[I], 0.0f) / Plein;
+		Cov3[I] = 100.0f * Semis(3, Seuils[I], 0.0f) / Plein;
+		CovD[I] = 100.0f * Semis(1, Seuils[I], 0.30f) / Plein;
+
+		AddInfo(FString::Printf(TEXT("   %.2f  |  %5.1f %% |   %5.1f %% |   %5.1f %%"),
+			Seuils[I], Cov1[I], Cov3[I], CovD[I]));
+	}
+
+	// --- LA TABLE D'EQUIVALENCE, POUR MONTER LES OCTAVES SANS DEGARNIR ----
+	//
+	// Passer une couche a trois octaves a seuil CONSTANT change la quantite
+	// autant que la forme -- deux choses a la fois, donc un reglage qu'on ne
+	// sait plus juger. Ce balayage donne, pour trois octaves, le seuil qui
+	// rend la couverture voulue : on change alors la FORME seule.
+	AddInfo(TEXT("equivalence a 3 octaves -- seuil -> couverture"));
+	for (int32 S = 30; S <= 70; S += 5)
+	{
+		const float Seuil = S / 100.0f;
+		AddInfo(FString::Printf(TEXT("   3 oct. seuil %.2f -> %5.1f %%"),
+			Seuil, 100.0f * Semis(3, Seuil, 0.0f) / Plein));
+	}
+
+	// --- TROIS PROPRIETES, ET CHACUNE A SON TEMOIN ------------------------
+
+	// 1. LE SEUIL MORD DANS LE BON SENS. Sans cela, un bruit constant -- donc
+	//    casse -- rendrait la meme couverture partout et passerait tout le
+	//    reste du test.
+	TestTrue(TEXT("un seuil plus haut retient moins"), Cov1[3] < Cov1[0] - 10.0f);
+	TestTrue(TEXT("le seuil le plus bas retient une vraie part"), Cov1[0] > 20.0f);
+
+	// 2. LES OCTAVES CHANGENT LA COUVERTURE, et c'est precisement l'avertissement
+	//    porte par `TacheOctaves` : a seuil egal, trois octaves retiennent
+	//    moins. Si les deux colonnes etaient identiques, le parametre ne serait
+	//    pas lu -- le defaut le plus probable, et le plus silencieux.
+	TestTrue(TEXT("trois octaves ne donnent pas la meme couverture qu'une"),
+		FMath::Abs(Cov3[1] - Cov1[1]) > 2.0f);
+
+	// 3. LA DOUCEUR CHANGE LE CONTRASTE, PAS LA QUANTITE. La transition est
+	//    centree sur le seuil : ce qu'elle retire d'un cote, elle le rend de
+	//    l'autre. C'est la promesse ecrite dans `TacheDouceur`, et elle se
+	//    verifie -- sinon le proprietaire reglerait deux choses en croyant
+	//    n'en regler qu'une.
+	for (int32 I = 0; I < 4; ++I)
+	{
+		TestTrue(*FString::Printf(
+			TEXT("la douceur ne deplace pas la couverture au seuil %.2f "
+				 "(%.1f %% contre %.1f %%)"), Seuils[I], CovD[I], Cov1[I]),
+			FMath::Abs(CovD[I] - Cov1[I]) < 8.0f);
+	}
+
+	return true;
+}
+
+/**
+ * UNE OCTAVE DOIT VALOIR LE PERLIN D'AVANT, ET C'EST TOUTE LA COMPATIBILITE.
+ *
+ * Les cinquante-trois couches qui ne demandent pas d'octaves ne doivent pas
+ * voir leur monde bouger : `FbmPoint` a une octave doit rendre exactement ce
+ * que `Perlin` rendait. Une normalisation qui s'appliquerait des la premiere
+ * octave -- l'erreur naturelle -- redistribuerait tout le decor du monde sans
+ * qu'aucun test ne le dise.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedFbmPointTest,
+	"Worldseed.Bruit.UneOctaveVautLePerlin",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedFbmPointTest::RunTest(const FString& Parameters)
+{
+	constexpr float F = 1.0f / 2600.0f;
+	double PireEcart = 0.0;
+	double Amplitude = 0.0;
+
+	for (int32 I = 0; I < 2000; ++I)
+	{
+		const float X = static_cast<float>(I) * 137.0f;
+		const float Y = static_cast<float>(I) * 91.0f;
+
+		const float A = WorldseedPerlin::Perlin(X * F, Y * F, 7);
+		const float Un = WorldseedPerlin::FbmPoint(X, Y, F, 1, 7);
+		PireEcart = FMath::Max(PireEcart, FMath::Abs<double>(A - Un));
+		Amplitude = FMath::Max(Amplitude, FMath::Abs<double>(A));
+	}
+
+	AddInfo(FString::Printf(
+		TEXT("une octave : pire ecart au Perlin %.9f, amplitude du signal %.3f"),
+		PireEcart, Amplitude));
+
+	// LE TEMOIN EST L'AMPLITUDE : sans lui, un bruit identiquement nul aurait
+	// un ecart nul et passerait ce test sans rien prouver.
+	TestTrue(TEXT("le bruit de reference varie"), Amplitude > 0.1);
+	TestTrue(TEXT("une octave vaut exactement le Perlin"), PireEcart < 1e-6);
+
+	// ET TROIS OCTAVES DOIVENT DIFFERER, sans quoi le parametre serait inerte.
+	double PireEcart3 = 0.0;
+	for (int32 I = 0; I < 2000; ++I)
+	{
+		const float X = static_cast<float>(I) * 137.0f;
+		const float Y = static_cast<float>(I) * 91.0f;
+		PireEcart3 = FMath::Max(PireEcart3, FMath::Abs<double>(
+			WorldseedPerlin::Perlin(X * F, Y * F, 7)
+			- WorldseedPerlin::FbmPoint(X, Y, F, 3, 7)));
+	}
+	TestTrue(TEXT("trois octaves donnent un autre bruit"), PireEcart3 > 0.05);
 	return true;
 }
 

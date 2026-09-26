@@ -510,14 +510,57 @@ void WorldseedVegetation::Semer(const FWorldseedVoxelMesh& Mesh,
 				// que les fleurs poussent des qu'il y a de l'herbe.
 				if (Couche.TacheTailleCm > 1.0f && Couche.TacheSeuil > 0.0f)
 				{
+					// UNE SOMME FRACTALE, ET A UNE OCTAVE C'EST LE PERLIN
+					// D'AVANT. Une seule octave n'a qu'une TAILLE : les taches
+					// font toutes le meme diametre et reviennent a la meme
+					// periode, ce qui se lit comme regulier des qu'on prend du
+					// recul. Les octaves suivantes decoupent le contour,
+					// detachent des ilots et ouvrent des trouees.
 					const float F = 1.0f / Couche.TacheTailleCm;
-					const float Bruit = WorldseedPerlin::Perlin(
-						static_cast<float>(CX) * F, static_cast<float>(CY) * F,
-						Graine + IdxCouche);
-					if (Bruit * 0.5f + 0.5f < Couche.TacheSeuil)
+					const float Bruit = WorldseedPerlin::FbmPoint(
+						static_cast<float>(CX), static_cast<float>(CY), F,
+						Couche.TacheOctaves, Graine + IdxCouche);
+					const float V = Bruit * 0.5f + 0.5f;
+
+					if (Couche.TacheDouceur <= 0.0f)
 					{
-						++Releve.Taches;
-						continue;
+						// LE SEUIL FRANC RESTE LE DEFAUT, a l'identique : une
+						// recette qui ne demande pas de douceur ne doit pas
+						// voir son monde bouger.
+						if (V < Couche.TacheSeuil)
+						{
+							++Releve.Taches;
+							continue;
+						}
+					}
+					else
+					{
+						// --- LA TACHE DEVIENT UNE DENSITE ------------------
+						//
+						// Un seuil franc donne un bord NET -- dedans tout
+						// pousse, dehors rien -- et cette frontiere se lit
+						// comme un decoupage. Ici la probabilite de garder
+						// monte en douceur a la traversee du seuil : dense au
+						// coeur de la tache, clairseme sur ses marges.
+						//
+						// LA TRANSITION EST CENTREE SUR LE SEUIL, donc ce
+						// qu'elle retire d'un cote elle le rend de l'autre :
+						// elle change le CONTRASTE, pas la couverture.
+						const float Bas = Couche.TacheSeuil - Couche.TacheDouceur * 0.5f;
+						const float T = FMath::Clamp(
+							(V - Bas) / Couche.TacheDouceur, 0.0f, 1.0f);
+						const float P = T * T * (3.0f - 2.0f * T);
+
+						// LE CANAL 6 EST LIBRE DANS LA FOULEE DE HUIT : 0 et 1
+						// portent le decalage dans la maille, 2 la densite,
+						// 3 l'espece, 4 l'echelle, 5 le lacet. En reprendre un
+						// APPARIERAIT deux tirages -- les plantes gardees
+						// seraient exactement celles d'une autre decision.
+						if (WorldseedParois::Tirage(MX, MY, Canal + 6, Graine) > P)
+						{
+							++Releve.Taches;
+							continue;
+						}
 					}
 				}
 

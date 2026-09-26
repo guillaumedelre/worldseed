@@ -34,6 +34,22 @@ namespace WorldseedPerlin
 	WORLDSEED_API float Perlin(float X, float Y, int32 Seed);
 
 	/**
+	 * Somme fractale 2D EN UN POINT, sans grille. Environ [-1..1].
+	 *
+	 * POURQUOI ELLE EXISTE A COTE DE `FBM`. Celle-ci remplit un tableau : elle
+	 * est faite pour un champ du monde, calcule une fois. Le semis de
+	 * vegetation, lui, interroge le bruit a des points EPARS -- un par maille
+	 * de semis, sur une grille qui n'est pas celle du monde -- et remplir un
+	 * tableau pour en lire un point serait absurde.
+	 *
+	 * A UNE OCTAVE, ELLE VAUT `Perlin` A LA NORMALISATION PRES, et c'est
+	 * voulu : c'est ce qui permet de monter les octaves d'une couche sans
+	 * deplacer celles qui restent a une.
+	 */
+	WORLDSEED_API float FbmPoint(float X, float Y, float Frequency,
+		int32 Octaves, int32 Seed, float Lacunarity = 2.0f, float Gain = 0.5f);
+
+	/**
 	 * Somme fractale sur une grille NX x NY indexee J * NX + I.
 	 * GridX / GridY fournissent des coordonnees deja deplacees ; a nullptr, la
 	 * grille normalisee est utilisee.
