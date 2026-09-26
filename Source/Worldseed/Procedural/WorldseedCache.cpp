@@ -424,7 +424,29 @@ namespace WorldseedCache
 		Header.NX = Geometry.NX;
 		Header.NY = Geometry.NY;
 		Header.HeightM = Geometry.HeightM;
-		FCStringAnsi::Strncpy(Header.RulesHash, TCHAR_TO_ANSI(*RulesHash), HashChars);
+		// --- LE HASH TIENT EXACTEMENT DANS LE CHAMP, SANS TERMINAISON -------
+		//
+		// `FCStringAnsi::Strncpy` GARANTIT LE ZERO FINAL, donc sur trente-deux
+		// octets elle n'ecrivait que TRENTE ET UN caracteres du MD5. Le hash
+		// relu n'a alors jamais pu egaler le hash courant, qui en compte
+		// trente-deux : `ListEntries` declarait TOUTE entree perimee, en
+		// permanence et depuis toujours.
+		//
+		// LE DEFAUT ETAIT INVISIBLE PARCE QUE LE CHARGEMENT NE LIT PAS CE
+		// CHAMP -- il ne verifie que `Magic` et `FormatVersion`, la cle du
+		// fichier portant deja le hash. Le cache se relisait donc tres bien
+		// pendant que l'inventaire le disait perime : « 3 perimee(s),
+		// produites par une autre version » au pied du menu, sur un cache
+		// parfaitement sain.
+		//
+		// Ce champ est un TABLEAU DE TAILLE FIXE, pas une chaine C : rien ne
+		// reclame de zero final, et `HashToString` lit bien `HashChars`.
+		FMemory::Memzero(Header.RulesHash, HashChars);
+		{
+			const auto HashAnsi = StringCast<ANSICHAR>(*RulesHash);
+			FMemory::Memcpy(Header.RulesHash, HashAnsi.Get(),
+				FMath::Min<int32>(HashChars, HashAnsi.Length()));
+		}
 
 		TArray<uint8> File;
 		File.Reserve(sizeof(FHeader) + Payload.Num());
