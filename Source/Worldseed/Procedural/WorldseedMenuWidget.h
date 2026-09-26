@@ -9,7 +9,6 @@
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGlobeBake.h"
-#include "Procedural/WorldseedTexturePack.h"
 #include "Procedural/WorldseedRules.h"
 #include "WorldseedMenuWidget.generated.h"
 
@@ -188,8 +187,6 @@ protected:
 	UFUNCTION()
 	void HandleSeedCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
-	UFUNCTION()
-	void HandlePackChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 
 	UFUNCTION()
 	void HandleLieuChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
@@ -222,20 +219,6 @@ protected:
 private:
 	UPROPERTY(Transient) TObjectPtr<UEditableTextBox> SeedBox;
 
-	/** Choix du pack de textures. */
-	UPROPERTY(Transient) TObjectPtr<UComboBoxString> PackCombo;
-
-	/** Ce que le pack couvre, affiche sous la liste. */
-	UPROPERTY(Transient) TObjectPtr<UTextBlock> PackHint;
-
-	/**
-	 * Pack choisi.
-	 *
-	 * CHANGER DE PACK NE RELANCE PAS LA GENERATION, contrairement a la taille :
-	 * le relief, le climat et les biomes sont identiques, seul l'habillage
-	 * change. Relancer ferait payer quinze secondes pour un choix de texture.
-	 */
-	EWorldseedTexturePack SelectedPack = EWorldseedTexturePack::BiomeColour;
 	UPROPERTY(Transient) TObjectPtr<UImage> PreviewImage;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> InfoText;
 	UPROPERTY(Transient) TObjectPtr<UButton> PlayButton;

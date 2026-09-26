@@ -11,7 +11,6 @@
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
-#include "Procedural/WorldseedTexturePack.h"
 #include "Procedural/WorldseedWorldData.h"
 #include "WorldseedTerrain.generated.h"
 
@@ -201,18 +200,20 @@ public:
 	TObjectPtr<UMaterialInterface> HorizonSeaMaterial;
 
 	/**
-	 * Un materiau par pack de textures.
+	 * Le materiau du sol : une instance portant les quatre textures.
 	 *
-	 * Ce sont des INSTANCES d'un meme materiau maitre, chacune avec ses quatre
-	 * textures. Changer de pack ne change donc ni le maillage ni les couleurs
-	 * de sommet : seul le materiau pose sur les chunks change.
+	 * IL N'Y EN A PLUS QU'UN. Cette propriete etait une TABLE, un materiau par
+	 * pack, et le menu laissait le joueur choisir parmi six habillages. Les
+	 * cinq autres ont ete abandonnes le 26 septembre 2026, decision du
+	 * proprietaire : le monde a son habillage, et un seul.
+	 *
+	 * Laisse VIDE, le terrain retombe sur `MI_WorldseedGround_Orasot` par
+	 * convention de nom -- ce qui fait marcher un clone frais sans qu'il faille
+	 * ouvrir l'editeur et sauvegarder le niveau pour un reglage invisible au
+	 * diff.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches")
-	TMap<EWorldseedTexturePack, TObjectPtr<UMaterialInterface>> PackMaterials;
-
-	/** Pack choisi dans le menu. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches")
-	EWorldseedTexturePack TexturePack = EWorldseedTexturePack::BiomeColour;
+	TObjectPtr<UMaterialInterface> GroundMaterial;
 
 	/**
 	 * Part d'eau melee a la couleur du biome, de 0 a 1.
@@ -483,7 +484,6 @@ protected:
 	UMaterialInterface* ChooseTerrainMaterial(const FWorldseedAppearance& Mode) const;
 
 	/** Applique `-WorldseedHabillage=<nom>` s'il est donne. Sans effet sinon. */
-	void AppliquerHabillageForce();
 
 	/**
 	 * Le materiau de la MER DU DECOR, section 1 de la nappe vue.

@@ -231,7 +231,6 @@ namespace
 	 */
 	constexpr float MargeEcran = 34.0f;
 	constexpr float LargeurGraine = 150.0f;
-	constexpr float LargeurHabillage = 230.0f;
 	constexpr float LargeurVolet = 270.0f;
 	constexpr float LargeurAction = 300.0f;
 
@@ -496,48 +495,12 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				}
 			}
 
-			// --- l'habillage du sol, a droite -----------------------------
-			{
-				UVerticalBox* Habillage = WidgetTree->ConstructWidget<UVerticalBox>(
-					UVerticalBox::StaticClass(), TEXT("HabillageGroupe"));
-				if (UHorizontalBoxSlot* S = Header->AddChildToHorizontalBox(Habillage))
-				{
-					S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
-					S->SetVerticalAlignment(VAlign_Center);
-				}
-
-				Habillage->AddChildToVerticalBox(
-					MakeSectionLabel(TEXT("PackLabel"), TEXT("HABILLAGE DU SOL")));
-
-				PackCombo = WidgetTree->ConstructWidget<UComboBoxString>(
-					UComboBoxString::StaticClass(), TEXT("PackCombo"));
-
-				// LA POLICE DE LA LISTE N'A AUCUN SETTER PUBLIC.
-				//
-				// UComboBoxString expose un getter, et rien pour ecrire :
-				// InitFont est PROTECTED -- prevu pour une classe derivee --
-				// et la propriete Font est publique mais depreciee « use the
-				// getter ». Il n'y a donc que trois voies : deriver une UCLASS
-				// entiere pour appeler InitFont, ecrire par reflexion, ou
-				// ecrire la propriete en assumant la depreciation. La
-				// troisieme est celle que le code du moteur emploie lui-meme,
-				// elle tient en une ligne, et elle DIT ce qu'elle fait.
-				//
-				// Elle doit rester ICI, avant que le widget Slate ne soit
-				// construit : la declaration previent que la valeur n'est lue
-				// qu'a la construction. Posee plus tard, elle serait ignoree
-				// en silence et la liste garderait la grosse police du style
-				// pendant que son voisin serait en douze.
-				PRAGMA_DISABLE_DEPRECATION_WARNINGS
-				PackCombo->Font = PoliceEcran(TypoControle);
-				PRAGMA_ENABLE_DEPRECATION_WARNINGS
-
-				if (UVerticalBoxSlot* S = Habillage->AddChildToVerticalBox(
-					MakeControlBox(TEXT("PackSize"), PackCombo, LargeurHabillage)))
-				{
-					S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
-				}
-			}
+			// L'HABILLAGE DU SOL N'EST PLUS UN CHOIX : le monde a le sien, et un
+			// seul. Le selecteur qui vivait ici proposait six packs -- couleurs
+			// de biome, Dreamscape, Village, Egypte, Melange, Orasot -- dont
+			// cinq n'ont pas ete retenus, decision du proprietaire du
+			// 26 septembre 2026. L'enumeration et ses libelles sont partis avec
+			// eux ; leur histoire est dans ce commit.
 
 			if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(MakeRule(TEXT("RuleTop"))))
 			{
@@ -939,23 +902,6 @@ void UWorldseedMenuWidget::NativeConstruct()
 		// Et cela montrait au passage que l'annulation n'interrompt PAS une
 		// passe de grottes en cours : la premiere generation est allee au bout
 		// malgre la seconde.
-	}
-
-	if (PackCombo)
-	{
-		PackCombo->ClearOptions();
-		for (int32 I = 0; I < static_cast<int32>(EWorldseedTexturePack::Count); ++I)
-		{
-			PackCombo->AddOption(
-				WorldseedTexturePack::Label(static_cast<EWorldseedTexturePack>(I)).ToString());
-		}
-		PackCombo->SetSelectedOption(WorldseedTexturePack::Label(SelectedPack).ToString());
-		PackCombo->OnSelectionChanged.AddDynamic(this, &UWorldseedMenuWidget::HandlePackChanged);
-
-		if (PackHint)
-		{
-			PackHint->SetText(WorldseedTexturePack::Description(SelectedPack));
-		}
 	}
 
 	if (SeedBox)
@@ -1996,28 +1942,6 @@ void UWorldseedMenuWidget::HandleSeedCommitted(const FText& Text, ETextCommit::T
 	StartGeneration();
 }
 
-void UWorldseedMenuWidget::HandlePackChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	for (int32 I = 0; I < static_cast<int32>(EWorldseedTexturePack::Count); ++I)
-	{
-		const EWorldseedTexturePack Pack = static_cast<EWorldseedTexturePack>(I);
-		if (WorldseedTexturePack::Label(Pack).ToString() == SelectedItem)
-		{
-			SelectedPack = Pack;
-			break;
-		}
-	}
-
-	if (PackHint)
-	{
-		PackHint->SetText(WorldseedTexturePack::Description(SelectedPack));
-	}
-
-	// AUCUNE REGENERATION : le monde est le meme, seul son habillage change.
-	UE_LOG(LogTemp, Log, TEXT("[Worldseed] habillage du sol : %s"),
-		*WorldseedTexturePack::Label(SelectedPack).ToString());
-}
-
 void UWorldseedMenuWidget::HandleCancelClicked()
 {
 	CancelGeneration();
@@ -2072,7 +1996,6 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 		ToPlay.Continentality = CachedContinentality;
 		ToPlay.Biomes = CachedBiomes;
 		ToPlay.LithologyId = CachedLithologyId;
-		ToPlay.TexturePack = SelectedPack;
 		ToPlay.SpawnXYM = DepartXYM;
 		ToPlay.bHasSpawn = bDepartChoisi;
 		ToPlay.Tables = CachedTables;
