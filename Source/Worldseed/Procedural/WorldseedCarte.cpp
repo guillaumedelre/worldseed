@@ -271,29 +271,19 @@ namespace
 	/** Le trait de cote, assez sombre pour tenir sur une plage comme sur une mer. */
 	const FColor CouleurLisere(18, 18, 24, 255);
 
-	/**
-	 * LES DEUX TRAITS DE FRONTIERE SE DISTINGUENT PAR L'OPACITE, PAS PAR LA
-	 * TEINTE -- et le premier jet faisait l'inverse, ce qui ne marchait pas.
-	 *
-	 * Il donnait au trait de region un gris CLAIR (214, 206, 196) a 45 % : sur
-	 * une foret sombre il se lisait, sur du sable a (230, 210, 150) il donnait
-	 * (223, 208, 171), c'est-a-dire RIEN. Mesure a l'image, agrandissement
-	 * quatre fois : aucune frontiere de region visible la ou le trait de pays
-	 * ressortait parfaitement. **Une couleur de trait doit se lire sur TOUS
-	 * les fonds de la carte, et celle-ci en porte vingt-et-un.**
-	 *
-	 * Les deux sont donc presque noirs, comme le trait de cote, et c'est
-	 * l'OPACITE qui porte la hierarchie -- exactement ce que font les cartes
-	 * reelles, ou une limite d'Etat est grasse et une limite de province
-	 * legere. Un fond sombre garde alors son trait, parce qu'un noir a 40 %
-	 * sur du vert fonce reste plus fonce que son voisin.
-	 *
-	 * ⚠ AUCUNE TEINTE FRANCHE ICI. Un rouge ou un bleu de frontiere se
-	 * confondrait avec la couleur d'un biome ; un presque-noir ne ressemble a
-	 * aucun terrain de ce monde.
-	 */
-	const FColor CouleurFrontierePays(16, 14, 20, 255);
-	const FColor CouleurFrontiereRegion(34, 30, 38, 255);
+	// LES COULEURS DE FRONTIERE ONT DISPARU, ET C'EST LE FOND DU CORRECTIF.
+	//
+	// Deux valeurs ont ete essayees ici, et les DEUX etaient des couleurs
+	// fixes. La premiere, un gris CLAIR (214, 206, 196) a 45 % : lisible sur
+	// une foret sombre, et sur du sable a (230, 210, 150) elle rendait
+	// (223, 208, 171), c'est-a-dire RIEN. La seconde, un presque-noir a
+	// opacite fixe : l'inverse, parfait sur le sable et invisible sur la
+	// foret -- et sur le globe, dont le terrain est OMBRE, invisible partout.
+	//
+	// **Aucune couleur fixe ne peut se lire sur les vingt-et-un fonds de
+	// cette carte.** Le trait se definit donc par son ECART au fond, et cette
+	// regle vit dans `WorldseedCarte.h` pour que le globe emploie la meme.
+	// Voir `ViserLEcart01` et `EcartFrontierePays01`.
 
 	/**
 	 * LUMIERE RASANTE DU NORD-OUEST -- l'eclairage conventionnel des cartes en
@@ -640,6 +630,10 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 				const int32 XD = bEnroule ? (PX + 1) % ResX : PX + 1;
 				const bool bEnBas = (PY + 1 < ResY);
 
+				const bool bAGauche = bEnroule || (PX > 0);
+				const int32 XG = bEnroule ? (PX + ResX - 1) % ResX : PX - 1;
+				const bool bEnHaut = (PY > 0);
+
 				bool bPays = false;
 				bool bRegion = false;
 
@@ -656,7 +650,23 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 				// pixels de PAYS, 0 de REGION ». A l'oeil, l'absence de trait
 				// de region s'expliquait tres bien par une couleur trop claire,
 				// et j'avais commence a corriger la couleur.
-				auto Comparer = [&](int32 IndexVoisin)
+				// L'EPAISSEUR EST LE SECOND PORTEUR DE LA HIERARCHIE, et elle
+				// n'est pas cosmetique : la carte est CUITE a 4096 et AFFICHEE
+				// dans dix-neuf cents pixels, donc un trait d'un seul texel est
+				// moyenne par les mips et perd la moitie de son contraste.
+				// Mesure : apres avoir garanti 0,55 d'ecart dans le peintre,
+				// DEUX TIERS des pixels de frontiere arrivaient encore a
+				// l'ecran sous 0,10 -- le trait etait juste, la reduction le
+				// mangeait. C'est le meme mecanisme qui faisait sortir le
+				// lisere de cote pointille.
+				//
+				// Un pays compare donc ses QUATRE cotes, ce qui marque les
+				// deux bords de la limite et donne deux texels ; une region
+				// n'en compare que deux et reste fine. Aucun pixel n'ecrit
+				// chez son voisin -- ce qui serait une course entre lignes
+				// paralleles : chacun ne marque que LUI-MEME, et l'epaisseur
+				// vient de ce que les deux cotes se reconnaissent.
+				auto Comparer = [&](int32 IndexVoisin, bool bCompteRegion)
 				{
 					const int32 Autre = RegionParPixel[IndexVoisin];
 
@@ -667,40 +677,71 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 					{
 						return;
 					}
-					bRegion = true;
+					bRegion |= bCompteRegion;
 					bPays |= (PaysParPixel[Index] != PaysParPixel[IndexVoisin]);
 				};
 
-				if (bADroite) { Comparer(PY * ResX + XD); }
-				if (bEnBas) { Comparer((PY + 1) * ResX + PX); }
+				if (bADroite) { Comparer(PY * ResX + XD, true); }
+				if (bEnBas) { Comparer((PY + 1) * ResX + PX, true); }
+				if (bAGauche) { Comparer(PY * ResX + XG, false); }
+				if (bEnHaut) { Comparer((PY - 1) * ResX + PX, false); }
 
 				// LE PAYS L'EMPORTE, et il le faut : toute frontiere de pays
 				// est aussi une frontiere de region -- un pays est un agregat
 				// de regions entieres -- donc sans priorite le trait fin
 				// recouvrirait le trait appuye selon l'ordre de parcours.
-				const FColor* Trait = nullptr;
-				if (bPays && P.bFrontieresPays) { Trait = &CouleurFrontierePays; }
-				else if (bRegion && P.bFrontieresRegions) { Trait = &CouleurFrontiereRegion; }
-				if (!Trait)
+				const bool bTracerPays = bPays && P.bFrontieresPays;
+				const bool bTracerRegion = !bTracerPays
+					&& bRegion && P.bFrontieresRegions;
+				if (!bTracerPays && !bTracerRegion)
 				{
 					continue;
 				}
 
 				uint8* const Pixel = PixelsBGRA + Index * 4;
-				// UN MELANGE, PAS UN APLAT. Une frontiere est une convention
-				// de lecture posee SUR un terrain, pas un mur : l'opacifier
-				// effacerait le relief et le biome qu'elle est censee
-				// delimiter. Le trait de pays pese plus lourd que celui de
-				// region, ce qui EST la hierarchie qu'on veut lire.
-				const float A = bPays ? 0.90f : 0.38f;
-				auto Melanger = [A](uint8 Fond, uint8 Trace) -> uint8
+
+				// UN ECART DE LUMINANCE, PAS UNE COULEUR FIXE.
+				//
+				// ⚠ LE TRAIT ETAIT UN PRESQUE-NOIR MELANGE A OPACITE FIXE, ET
+				// IL DISPARAISSAIT SUR LA MOITIE DU MONDE. Un noir a 38 % sur
+				// du sable clair se voit tres bien ; le meme sur une foret
+				// sombre ne change la luminance que de quelques unites, et sur
+				// le globe -- dont le terrain est OMBRE -- il ne se voit plus
+				// du tout. Le raisonnement d'origine, « un noir a 40 % sur du
+				// vert fonce reste plus fonce que son voisin », est vrai et
+				// insuffisant : plus fonce de trois unites ne se LIT pas.
+				//
+				// Le trait vise donc un ECART, et choisit son sens : il
+				// assombrit un fond clair, il eclaircit un fond sombre. Il
+				// reste NEUTRE -- aucune teinte franche, qui se confondrait
+				// avec un biome -- et la hierarchie pays/region passe de
+				// l'opacite a l'AMPLITUDE de cet ecart, ce qui est garanti sur
+				// tous les fonds au lieu de dependre d'eux.
+				constexpr float Inv255 = 1.0f / 255.0f;
+				const float Fond = Luminance01(
+					Pixel[2] * Inv255, Pixel[1] * Inv255, Pixel[0] * Inv255);
+
+				const float Ecart = bTracerPays
+					? EcartFrontierePays01 : EcartFrontiereRegion01;
+				const float Cible = ViserLEcart01(Fond, Ecart);
+
+				// L'OPACITE RESTE, MAIS ELLE NE PORTE PLUS LA LISIBILITE : elle
+				// garde au terrain un peu de sa couleur sous le trait, pour
+				// qu'une frontiere demeure une convention de lecture posee SUR
+				// une carte et non un mur peint dessus.
+				const float A = bTracerPays
+					? OpaciteFrontierePays : OpaciteFrontiereRegion;
+				const uint8 Gris = static_cast<uint8>(
+					FMath::Clamp(Cible * 255.0f, 0.0f, 255.0f));
+
+				auto Melanger = [A, Gris](uint8 Canal) -> uint8
 				{
 					return static_cast<uint8>(FMath::Clamp(
-						Fond * (1.0f - A) + Trace * A, 0.0f, 255.0f));
+						Canal * (1.0f - A) + Gris * A, 0.0f, 255.0f));
 				};
-				Pixel[0] = Melanger(Pixel[0], Trait->B);
-				Pixel[1] = Melanger(Pixel[1], Trait->G);
-				Pixel[2] = Melanger(Pixel[2], Trait->R);
+				Pixel[0] = Melanger(Pixel[0]);
+				Pixel[1] = Melanger(Pixel[1]);
+				Pixel[2] = Melanger(Pixel[2]);
 				// L'alpha du disque est conserve, comme pour le lisere.
 			}
 		});

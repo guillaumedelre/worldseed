@@ -220,6 +220,96 @@ namespace WorldseedCarte
 	/** Le point le plus bas du monde. Norme le degrade de bathymetrie. */
 	WORLDSEED_API float FondDuMonde(const TArray<float>& ElevationM);
 
+	// ------------------------------------------------- le trait de frontiere
+	//
+	// LA CARTE ET LE GLOBE PEIGNENT LEURS FRONTIERES SEPAREMENT -- l'une sur
+	// une projection a plat, l'autre par lancer de rayon -- mais la REGLE du
+	// trait doit etre unique, sans quoi la meme frontiere se lit autrement
+	// selon l'ecran qui la montre. C'est la regle de ce depot, et elle a deja
+	// ete payee plus d'une fois.
+	//
+	// ⚠ UN TRAIT DE COULEUR FIXE NE PEUT PAS ETRE LISIBLE PARTOUT. Le premier
+	// jet etait un presque-noir melange a opacite fixe : parfait sur du sable,
+	// invisible sur une foret sombre, et deux fois pire sur le globe, dont le
+	// terrain est OMBRE. Un trait ne se definit donc pas par sa couleur mais
+	// par son ECART a ce qu'il traverse.
+
+	/**
+	 * Luminance percue, canaux et resultat dans [0..1].
+	 *
+	 * Ponderation Rec. 601 : l'oeil voit le vert cinq fois plus que le bleu,
+	 * et une moyenne arithmetique rendrait un trait « lisible » sur le papier
+	 * et invisible a l'ecran.
+	 */
+	FORCEINLINE float Luminance01(float R, float G, float B)
+	{
+		return 0.299f * R + 0.587f * G + 0.114f * B;
+	}
+
+	/**
+	 * La luminance que doit prendre un trait pose sur ce fond.
+	 *
+	 * IL CHOISIT SON SENS : il assombrit un fond clair, il eclaircit un fond
+	 * sombre. C'est ce qui le rend lisible des deux cotes de la mediane --
+	 * une frontiere qui longe une cote traverse du sable a 0,8 et de la foret
+	 * a 0,2 dans la meme minute.
+	 *
+	 * Le fond ne laisse pas toujours la place : sur un blanc de calotte, il
+	 * n'y a rien au-dessus, donc on descend meme si l'ecart demande est grand.
+	 * La bascule se fait au MILIEU de la plage restante, jamais a 0,5 fixe,
+	 * pour que le trait garde son ecart au lieu d'etre ecrete contre 0 ou 1.
+	 */
+	FORCEINLINE float ViserLEcart01(float LumFond, float Ecart)
+	{
+		const bool bPlaceEnDessous = (LumFond >= Ecart);
+		const bool bPlaceAuDessus = (LumFond + Ecart <= 1.0f);
+
+		if (bPlaceEnDessous && bPlaceAuDessus)
+		{
+			// Les deux sens tiennent : on assombrit, parce qu'un trait sombre
+			// se lit comme un trait et un trait clair comme une route.
+			return LumFond - Ecart;
+		}
+		return bPlaceEnDessous ? (LumFond - Ecart) : (LumFond + Ecart);
+	}
+
+	/**
+	 * L'ecart de luminance d'un trait de PAYS, puis de REGION.
+	 *
+	 * C'EST ICI QUE VIT LA HIERARCHIE, et non plus dans l'opacite : une
+	 * limite d'Etat est grasse, une limite de province legere -- exactement ce
+	 * que fait une carte reelle. L'exprimer en ecart plutot qu'en opacite la
+	 * rend vraie sur TOUS les fonds ; en opacite, elle ne valait que sur les
+	 * fonds clairs.
+	 *
+	 * LES VALEURS SONT CALEES SUR CE QUE L'ANCIEN TRAIT ATTEIGNAIT DE MIEUX,
+	 * et non choisies a vue. Le presque-noir a opacite fixe donnait, en ecart
+	 * de luminance mesure :
+	 *
+	 *     fond             pays      region
+	 *     sable (0,745)    0,617     0,235      <- son meilleur cas
+	 *     foret (0,224)    0,147     0,037
+	 *     globe ombre      0,036     ~0,01      <- invisible, d'ou ce chantier
+	 *
+	 * Un premier jet a 0,38 et 0,20 rendait donc le trait PLUS PALE qu'avant
+	 * sur le sable -- vu a l'image, planche A/B agrandie : le pire cas etait
+	 * corrige et le meilleur degrade. Une correction qui ameliore un bout et
+	 * abime l'autre n'en est pas une.
+	 *
+	 * ⚠ L'OPACITE RABOTE L'ECART, et il faut en tenir compte : un trait pose
+	 * a 85 % ne deplace que 85 % du chemin. Les valeurs ci-dessous sont donc
+	 * les ecarts DEMANDES ; les ecarts OBTENUS valent 0,58 x 0,95 = 0,55 pour
+	 * un pays et 0,36 x 0,85 = 0,31 pour une region -- c'est-a-dire l'ancien
+	 * meilleur cas, desormais garanti partout au lieu de n'etre vrai que sur
+	 * les fonds clairs.
+	 */
+	constexpr float EcartFrontierePays01 = 0.58f;
+	constexpr float EcartFrontiereRegion01 = 0.36f;
+
+	/** Ce que le trait laisse voir du terrain qu'il traverse. */
+	constexpr float OpaciteFrontierePays = 0.95f;
+	constexpr float OpaciteFrontiereRegion = 0.85f;
+
 	/** Ce qu'un pixel trouve quand il recouvre plusieurs cellules. */
 	struct WORLDSEED_API FBlocCellule
 	{

@@ -2,6 +2,7 @@
 
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedCarte.h"
 #include "Procedural/WorldseedGrid.h"
 
 #include "Async/ParallelFor.h"
@@ -459,11 +460,16 @@ namespace WorldseedGlobe
 
 		if (bBordures)
 		{
-			// MEMES TEINTES ET MEMES OPACITES QUE LA CARTE. Deux jeux de
-			// valeurs finiraient par diverger, et l'ecart se verrait
-			// precisement la ou le globe et la carte montrent le meme endroit.
-			const FLinearColor TraitPays(0.06f, 0.05f, 0.08f);
-			const FLinearColor TraitRegion(0.13f, 0.12f, 0.15f);
+			// MEME REGLE DE TRAIT QUE LA CARTE, et elle vit dans UN SEUL
+			// endroit : `WorldseedCarte.h`. Deux jeux de valeurs finiraient
+			// par diverger, et l'ecart se verrait precisement la ou le globe
+			// et la carte montrent le meme endroit.
+			//
+			// ⚠ ICI LE FOND EST OMBRE, ET C'EST CE QUI TUAIT L'ANCIEN TRAIT.
+			// La carte est peinte a plat ; le globe, lui, applique un Lambert
+			// par pixel, donc la moitie de ce qu'on voit est assombrie et le
+			// limbe l'est totalement. Un presque-noir pose dessus ne changeait
+			// plus rien du tout -- il etait branche, compte, et invisible.
 
 			ParallelFor(Res, [&](int32 PY)
 			{
@@ -479,41 +485,65 @@ namespace WorldseedGlobe
 					bool bPays = false;
 					bool bRegion = false;
 
-					// LE VOISIN DROIT ET LE VOISIN BAS SEULEMENT : une
-					// frontiere separe DEUX regions, et regarder les quatre
-					// cotes la dessinerait en trait double.
-					auto Comparer = [&](int32 IndexVoisin)
+					// UN PAYS COMPARE SES QUATRE COTES, UNE REGION DEUX -- la
+					// meme regle que la carte, et pour la meme raison : le
+					// trait double marque les deux bords de la limite, donc il
+					// fait deux pixels au lieu d'un. Ici le globe n'est pas
+					// reduit par des mips, mais il est ETIRE : sa texture
+					// s'affiche plus grande qu'elle n'est, et un trait d'un
+					// pixel y devient une ligne pointillee des que le disque
+					// depasse la resolution.
+					//
+					// Chaque pixel ne marque que LUI-MEME : ecrire chez son
+					// voisin serait une course entre les lignes paralleles.
+					auto Comparer = [&](int32 IndexVoisin, bool bCompteRegion)
 					{
 						const int32 Autre = RegionParPixel[IndexVoisin];
 						if (Autre == INDEX_NONE || Autre == R)
 						{
 							return;
 						}
-						bRegion = true;
+						bRegion |= bCompteRegion;
 						bPays |= (PaysParPixel[Idx] != PaysParPixel[IndexVoisin]);
 					};
 
-					if (PX + 1 < Res) { Comparer(Idx + 1); }
-					if (PY + 1 < Res) { Comparer(Idx + Res); }
+					if (PX + 1 < Res) { Comparer(Idx + 1, true); }
+					if (PY + 1 < Res) { Comparer(Idx + Res, true); }
+					if (PX > 0) { Comparer(Idx - 1, false); }
+					if (PY > 0) { Comparer(Idx - Res, false); }
 
-					const FLinearColor* Trait = nullptr;
-					if (bPays) { Trait = &TraitPays; }
-					else if (bRegion) { Trait = &TraitRegion; }
-					if (!Trait)
+					if (!bPays && !bRegion)
 					{
 						continue;
 					}
 
-					const float A = bPays ? 0.90f : 0.38f;
 					const int32 Octet = Idx * 4;
-					auto Melanger = [A](uint8 Fond, float Trace) -> uint8
+					constexpr float Inv255 = 1.0f / 255.0f;
+
+					const float Fond = WorldseedCarte::Luminance01(
+						Pixels[Octet + 2] * Inv255,
+						Pixels[Octet + 1] * Inv255,
+						Pixels[Octet + 0] * Inv255);
+
+					const float Ecart = bPays
+						? WorldseedCarte::EcartFrontierePays01
+						: WorldseedCarte::EcartFrontiereRegion01;
+
+					const uint8 Gris = static_cast<uint8>(FMath::Clamp(
+						WorldseedCarte::ViserLEcart01(Fond, Ecart) * 255.0f,
+						0.0f, 255.0f));
+
+					const float A = bPays
+						? WorldseedCarte::OpaciteFrontierePays
+						: WorldseedCarte::OpaciteFrontiereRegion;
+					auto Melanger = [A, Gris](uint8 Canal) -> uint8
 					{
 						return static_cast<uint8>(FMath::Clamp(
-							Fond * (1.0f - A) + Trace * 255.0f * A, 0.0f, 255.0f));
+							Canal * (1.0f - A) + Gris * A, 0.0f, 255.0f));
 					};
-					Pixels[Octet + 0] = Melanger(Pixels[Octet + 0], Trait->B);
-					Pixels[Octet + 1] = Melanger(Pixels[Octet + 1], Trait->G);
-					Pixels[Octet + 2] = Melanger(Pixels[Octet + 2], Trait->R);
+					Pixels[Octet + 0] = Melanger(Pixels[Octet + 0]);
+					Pixels[Octet + 1] = Melanger(Pixels[Octet + 1]);
+					Pixels[Octet + 2] = Melanger(Pixels[Octet + 2]);
 					// L'alpha du disque est conserve : un trait opaque
 					// depasserait du fondu de bord.
 				}
