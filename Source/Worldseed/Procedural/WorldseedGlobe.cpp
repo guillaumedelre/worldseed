@@ -420,7 +420,11 @@ namespace WorldseedGlobe
 				// chose qu'on voit sur une forme ronde. `InvHalf` vaut deux
 				// sur la resolution, donc un pixel vaut `InvHalf / R` dans les
 				// coordonnees normalisees ou le rayon vaut 1.
-				const float Pixel = InvHalf / RayonDisque;
+				// Le rayon APPARENT, zoom compris : un disque agrandi a son
+				// bord plus loin du centre, donc un pixel y pese une fraction
+				// plus petite du rayon. Employer la constante donnerait un
+				// fondu six fois trop large a fond de zoom.
+				const float Pixel = InvHalf / Cadre.RayonApparent;
 				const float Opacite = FMath::Clamp((1.0f - Pointe.Rayon01) / Pixel, 0.0f, 1.0f);
 
 				const int32 Index = (PY * Res + PX) * 4;

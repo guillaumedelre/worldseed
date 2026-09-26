@@ -111,6 +111,21 @@ namespace WorldseedGlobe
 		 * calcul dont le resultat ne change jamais.
 		 */
 		float MaxLandM = 0.0f;
+
+		/**
+		 * Agrandissement du globe. 1 = le disque tient dans la texture.
+		 *
+		 * IL AGIT SUR CE QUE LE RENDU COUVRE, PAS SUR CE QU'IL PRODUIT : la
+		 * texture garde sa taille, et chacun de ses pixels devient un
+		 * echantillon d'une portion plus petite du globe. Le zoom est donc
+		 * GRATUIT -- le lance-de-rayon fait un travail constant par pixel --
+		 * et il reste net a toutes les echelles.
+		 *
+		 * Ce qui le borne n'est plus le rendu mais la DONNEE : au-dela de
+		 * `largeur du relief / (2 x largeur de texture)`, on sur-echantillonne
+		 * un relief qui n'a plus de detail a donner.
+		 */
+		float Zoom = 1.0f;
 	};
 
 	// ------------------------------------------------- la projection, et son inverse
@@ -148,6 +163,29 @@ namespace WorldseedGlobe
 		float CosTilt = 1.0f;
 		float SinTilt = 0.0f;
 		float LongitudeOffsetDeg = 0.0f;
+
+		/**
+		 * Rayon apparent du disque, zoom compris.
+		 *
+		 * ⚠ LE ZOOM VIT ICI, ET NULLE PART AILLEURS. Il a longtemps ete une
+		 * `SetRenderScale` posee sur l'image Slate, c'est-a-dire un
+		 * ETIREMENT de la texture apres coup : a six fois, un texel devenait
+		 * un carre de six pixels, et le globe partait en marches d'escalier.
+		 *
+		 * Le mettre dans le CADRE le rend gratuit et exact a la fois. Le
+		 * lance-de-rayon fait un travail CONSTANT par pixel -- son cout ne
+		 * depend que de la resolution de la texture, jamais de l'etendue
+		 * couverte -- donc dessiner une portion plus petite du globe sur le
+		 * meme nombre de pixels ne coute pas un cycle de plus, et chaque
+		 * pixel redevient un echantillon vrai.
+		 *
+		 * Et comme la projection et son INVERSE lisent ce meme champ, le
+		 * pointage a la souris suit sans qu'on ait rien a lui dire. C'est la
+		 * raison d'etre de cette paire de fonctions : deux ecritures de la
+		 * meme formule divergent, et l'ecart se verrait la ou le repere doit
+		 * tomber sous le curseur.
+		 */
+		float RayonApparent = RayonDisque;
 	};
 
 	FORCEINLINE FCadreGlobe CadreGlobe(const FGlobeSettings& Settings)
@@ -157,6 +195,7 @@ namespace WorldseedGlobe
 		C.CosTilt = FMath::Cos(Rad);
 		C.SinTilt = FMath::Sin(Rad);
 		C.LongitudeOffsetDeg = Settings.LongitudeOffsetDeg;
+		C.RayonApparent = RayonDisque * FMath::Max(Settings.Zoom, KINDA_SMALL_NUMBER);
 		return C;
 	}
 
@@ -189,8 +228,8 @@ namespace WorldseedGlobe
 	/** Un point du cadre normalise -> la sphere. */
 	FORCEINLINE FPointeGlobe PointerCadre(float CadreX, float CadreY, const FCadreGlobe& C)
 	{
-		const float NX = CadreX / RayonDisque;
-		const float NY = CadreY / RayonDisque;
+		const float NX = CadreX / C.RayonApparent;
+		const float NY = CadreY / C.RayonApparent;
 		const float R2 = NX * NX + NY * NY;
 
 		FPointeGlobe P;
@@ -244,8 +283,8 @@ namespace WorldseedGlobe
 		const float NY = AxisY * C.CosTilt + AxisZ * C.SinTilt;
 		const float NZ = -AxisY * C.SinTilt + AxisZ * C.CosTilt;
 
-		OutCadreX = NX * RayonDisque;
-		OutCadreY = NY * RayonDisque;
+		OutCadreX = NX * C.RayonApparent;
+		OutCadreY = NY * C.RayonApparent;
 		return NZ > 0.0f;
 	}
 

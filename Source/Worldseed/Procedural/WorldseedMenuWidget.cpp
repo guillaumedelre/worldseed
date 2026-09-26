@@ -879,6 +879,20 @@ void UWorldseedMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// `-WorldseedGlobeZoom=` : poser le zoom du globe sans toucher a la
+	// molette. Une capture d'ecran doit pouvoir etre prise a un zoom CONNU --
+	// c'est la seule facon de juger la nettete -- et ce depot a une note
+	// contre le pilotage de la souris pendant que le proprietaire travaille :
+	// plusieurs essais y ont ete perdus a expliquer des glissers parasites
+	// qui venaient de lui.
+	float Zoom = 0.0f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedGlobeZoom="), Zoom)
+		&& Zoom > 0.0f)
+	{
+		GlobeZoom = FMath::Clamp(Zoom, 1.0f, 6.0f);
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] globe : zoom force a %.2f"), GlobeZoom);
+	}
+
 	// --- le parcours complet, en une ligne de commande ---------------------
 	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedMenuAuto")))
 	{
@@ -1122,7 +1136,7 @@ void UWorldseedMenuWidget::PollGeneration()
 
 		// LA GEOMETRIE D'ABORD, ET C'EST PORTANT.
 		//
-		// `BakeGlobe` et `BuildPreviewField` commencent tous deux par
+		// `BakeGlobe` et `ReleverSommetDuMonde` commencent tous deux par
 		// comparer `CachedHeights.Num()` a `WorldGeometry.CellCount()`.
 		// Poser la geometrie APRES eux -- ce que faisait ce code -- leur
 		// donnait la geometrie du monde PRECEDENT face aux altitudes du
@@ -1155,9 +1169,10 @@ void UWorldseedMenuWidget::PollGeneration()
 		// mer -- et le joueur naitrait quelque part sans l'avoir choisi.
 		PoserDepart(0.0f, 0.0f, INDEX_NONE);
 
-		BuildPreviewField();
+		ReleverSommetDuMonde();
 
-		// La voie graphique ensuite ; BuildPreviewField n'aura servi qu'au repli.
+		// La voie graphique ensuite. Elle n'est PAS armee par defaut -- voir
+		// `-WorldseedGlobeGPU` -- et le lance-de-rayon reste le chemin nominal.
 		BakeGlobe();
 
 		Params.Resolution = PendingResult->Geometry.NY;
@@ -1577,25 +1592,28 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	// resolution de REFERENCE (4098 x 2049), alors que le menu genere a la
 	// resolution choisie. Prendre celle des regles rendait le heightfield
 	// incoherent avec sa geometrie, et le rendu abandonnait en silence.
-	// C'est le heightfield REDUIT qu'on dessine : voir PreviewHeights.
-	const bool bUsePreview = (PreviewGeometry.NX >= 2)
-		&& (PreviewHeights.Num() == PreviewGeometry.CellCount());
-
-	const TArray<float>& GlobeHeights = bUsePreview ? PreviewHeights : CachedHeights;
-	FWorldseedGeometry Geometry = bUsePreview ? PreviewGeometry : WorldGeometry;
+	//
+	// ⚠ LE GLOBE DESSINAIT UNE REDUCTION DU MONDE, ET ELLE A DISPARU. Un
+	// `BuildPreviewField` ramenait le relief de 4096 x 2048 a 1024 x 512, en
+	// permanence, pour economiser un cout qui n'etait pas le sien : ce que la
+	// lecture du relief plein coutait vraiment, c'etait le parcours complet
+	// que `FillPixels` refaisait par image pour retrouver le sommet du monde.
+	// Ce parcours releve, la reduction ne fait plus gagner que 0,22 ms sur
+	// 1,14 -- et elle jetait les quinze seiziemes de la donnee.
+	const TArray<float>& GlobeHeights = CachedHeights;
+	FWorldseedGeometry Geometry = WorldGeometry;
 
 	// LES BIOMES DONNENT SA COULEUR AU GLOBE. Sans eux il teintait par
 	// ALTITUDE, et cette teinte mentait : une calotte glaciaire posee a trente
 	// metres s'affichait au vert des plaines, et les sommets blancs n'etaient
 	// pas de la neige mais de la hauteur. Ils doivent decrire LA MEME grille
-	// que les altitudes, d'ou le meme choix apercu/plein.
-	const TArray<uint8>& GlobeBiomes = bUsePreview ? PreviewBiomes : CachedBiomes.Index;
+	// que les altitudes -- d'ou le controle de taille, qui est la seule chose
+	// qui le garantisse.
 	const TArray<uint8>* GlobeBiomesPtr =
-		(GlobeBiomes.Num() == GlobeHeights.Num()) ? &GlobeBiomes : nullptr;
+		(CachedBiomes.Index.Num() == GlobeHeights.Num()) ? &CachedBiomes.Index : nullptr;
 
-	const TArray<uint8>& GlobeCover = bUsePreview ? PreviewCover : CachedBiomes.Cover;
 	const TArray<uint8>* GlobeCoverPtr =
-		(GlobeCover.Num() == GlobeHeights.Num()) ? &GlobeCover : nullptr;
+		(CachedBiomes.Cover.Num() == GlobeHeights.Num()) ? &CachedBiomes.Cover : nullptr;
 
 	// LES FRONTIERES NE DEPENDENT PAS DE LA GRILLE DESSINEE, et c'est ce qui
 	// permet de les tracer sur l'apercu comme sur le monde plein : le
@@ -1641,6 +1659,9 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	// rester sans effet, jamais fausser la teinte.
 	GlobeSettings.MaxLandM = GlobeMaxLandM;
 
+	// LE ZOOM EST UNE FACON DE PROJETER, PAS UNE FACON D'AFFICHER.
+	GlobeSettings.Zoom = GlobeZoom;
+
 	// Premiere fois : on cree la texture. Ensuite on ne fait que reecrire ses
 	// pixels, sinon la rotation fabriquerait une UTexture2D par frame.
 	//
@@ -1651,19 +1672,30 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	// lance-de-rayon est le chemin NOMINAL, retenu le 20 septembre parce
 	// qu'il rendait nettement mieux pour 1,4 % d'un budget de trame.
 	//
-	// `-WorldseedGlobeRes=` change la resolution de la texture. Le cout du
-	// lance-de-rayon est en Res au carre et ne depend PAS de l'etendue
-	// couverte : chaque pixel fait un travail constant. C'est ce que cette
-	// surcharge sert a chiffrer.
+	// LA TEXTURE DOIT SUR-ECHANTILLONNER SON AFFICHAGE, SINON TOUT LE RESTE
+	// EST VAIN. Elle valait 512, et le disque n'y occupe que `RayonDisque` --
+	// soit 471 texels -- pour un globe affiche autour de 640 pixels : il
+	// etait deja etire d'un tiers AVANT tout zoom. A 1024 le disque porte 942
+	// texels, donc il reste sur-echantillonne jusqu'a un affichage de neuf
+	// cents pixels.
+	//
+	// Le cout est en Res au carre et ne depend PAS de l'etendue couverte :
+	// 0,913 ms a 512, 3,960 a 1024. Quatre millisecondes dans un ECRAN DE
+	// MENU, ou rien d'autre ne tourne et ou la rotation automatique s'arrete
+	// des la premiere prise en main.
+	//
+	// `-WorldseedGlobeRes=` rejoue l'A/B sans recompiler.
 	if (!PreviewTexture)
 	{
-		int32 Res = 512;
+		constexpr int32 ResParDefaut = 1024;
+		int32 Res = ResParDefaut;
 		FParse::Value(FCommandLine::Get(), TEXT("WorldseedGlobeRes="), Res);
 		Res = FMath::Clamp(Res, 128, 4096);
-		if (Res != 512)
+		if (Res != ResParDefaut)
 		{
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] globe : texture %dx%d (defaut 512)"), Res, Res);
+				TEXT("[Worldseed] globe : texture %dx%d (defaut %d)"),
+				Res, Res, ResParDefaut);
 		}
 
 		PreviewTexture = WorldseedGlobe::Render(
@@ -1691,10 +1723,8 @@ void UWorldseedMenuWidget::RedrawGlobe()
 		Geometry, GlobeSettings, GlobeBiomesPtr, GlobeCoverPtr, GlobeRegionsPtr);
 }
 
-void UWorldseedMenuWidget::BuildPreviewField()
+void UWorldseedMenuWidget::ReleverSommetDuMonde()
 {
-	PreviewHeights.Reset();
-	PreviewGeometry = FWorldseedGeometry();
 	GlobeMaxLandM = 0.0f;
 
 	if (WorldGeometry.NX < 2 || CachedHeights.Num() != WorldGeometry.CellCount())
@@ -1702,66 +1732,28 @@ void UWorldseedMenuWidget::BuildPreviewField()
 		return;
 	}
 
-	// LE SOMMET SE RELEVE ICI, UNE FOIS, SUR LE MONDE PLEIN. Le peintre du
-	// globe le refaisait a chaque image faute de le recevoir. Il est pris
-	// AVANT toute reduction : `Downsample` moyenne, donc le sommet du relief
-	// reduit est plus bas que celui du monde.
+	// LE SOMMET SE RELEVE ICI, UNE FOIS PAR MONDE. Le peintre du globe le
+	// refaisait a chaque image faute de le recevoir : 8,4 millions de
+	// flottants relus soixante fois par seconde pour retrouver le meme
+	// nombre, soit quatre millisecondes par redessin -- trois fois le cout du
+	// dessin lui-meme.
+	//
+	// ⚠ CETTE FONCTION S'APPELAIT `BuildPreviewField` ET REDUISAIT LE MONDE
+	// de 4096 x 2048 a 1024 x 512, en permanence, pour que le globe le lise
+	// plus vite. La reduction est partie avec la mesure qui la justifiait :
+	// une fois le parcours ci-dessus sorti de la boucle de rendu, lire le
+	// relief PLEIN ne coute plus que 0,22 ms de plus que lire sa reduction
+	// (1,135 contre 0,913), au lieu de 3,96. Elle jetait les quinze seiziemes
+	// de la donnee pour rien, et c'etait le premier des trois etages qui
+	// rendaient le zoom flou.
 	for (const float H : CachedHeights)
 	{
 		GlobeMaxLandM = FMath::Max(GlobeMaxLandM, H);
 	}
 
-	// `-WorldseedGlobePlein` : ne rien reduire, et laisser le globe lire le
-	// relief a sa resolution vraie. C'est la moitie « avant » de l'A/B qui
-	// chiffre ce que la reduction fait GAGNER -- et, depuis l'autre bout, ce
-	// que la nettete au zoom couterait. Une surcharge plutot qu'une edition
-	// du fichier de regles : son empreinte regenererait le monde entre les
-	// deux moities, et ce ne serait plus le meme monde.
-	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedGlobePlein")))
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] globe : relief PLEIN (%dx%d), aucune reduction"),
-			WorldGeometry.NX, WorldGeometry.NY);
-		return;
-	}
-
-	// Rien a reduire si le monde est deja plus fin que l'apercu ne le demande :
-	// on laisse alors le rendu lire le heightfield d'origine.
-	if (WorldGeometry.NX <= GlobePreviewMaxWidth)
-	{
-		return;
-	}
-
-	// Le rapport deux pour un de la carte est conserve : la correspondance
-	// latitude/ligne depend de V, pas du nombre de lignes, donc les bandes
-	// climatiques restent a leur place.
-	const int32 DstNX = GlobePreviewMaxWidth;
-	const int32 DstNY = FMath::Max(GlobePreviewMaxWidth / 2, 2);
-
-	const double StartTime = FPlatformTime::Seconds();
-
-	WorldseedGrid::Downsample(CachedHeights, WorldGeometry.NX, WorldGeometry.NY,
-		DstNX, DstNY, PreviewHeights);
-
-	// LES BIOMES SE REDUISENT AU PLUS PROCHE VOISIN, jamais par Downsample :
-	// celui-ci fait une MOYENNE, juste pour des altitudes et faux pour un code
-	// de biome -- la moyenne de « desert » et de « toundra » designe un biome
-	// qui n'existe nulle part sur la carte.
-	WorldseedGrid::DownsampleNearest(CachedBiomes.Index, WorldGeometry.NX,
-		WorldGeometry.NY, DstNX, DstNY, PreviewBiomes);
-	WorldseedGrid::DownsampleNearest(CachedBiomes.Cover, WorldGeometry.NX,
-		WorldGeometry.NY, DstNX, DstNY, PreviewCover);
-
-	PreviewGeometry = WorldGeometry;
-	PreviewGeometry.NX = DstNX;
-	PreviewGeometry.NY = DstNY;
-
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] apercu reduit : %dx%d -> %dx%d  (%.1f Mo -> %.1f Mo, %.0f ms)"),
-		WorldGeometry.NX, WorldGeometry.NY, DstNX, DstNY,
-		CachedHeights.Num() * sizeof(float) / (1024.0f * 1024.0f),
-		PreviewHeights.Num() * sizeof(float) / (1024.0f * 1024.0f),
-		(FPlatformTime::Seconds() - StartTime) * 1000.0);
+		TEXT("[Worldseed] globe : relief %dx%d lu en entier, sommet %.0f m"),
+		WorldGeometry.NX, WorldGeometry.NY, GlobeMaxLandM);
 }
 
 void UWorldseedMenuWidget::HandleGlobeTimer()
@@ -1992,16 +1984,25 @@ FReply UWorldseedMenuWidget::NativeOnMouseWheel(const FGeometry& InGeometry,
 
 void UWorldseedMenuWidget::ApplyGlobeZoom()
 {
-	if (!PreviewImage)
-	{
-		return;
-	}
-
-	// L'ECHELLE EST UNE TRANSFORMATION DE RENDU, donc elle ne touche pas a la
-	// mise en page : le cadre du globe garde sa taille et sa place, et la
-	// colonne des reglages ne bouge pas quand on zoome. C'est le SizeBox qui
-	// decoupe, ce qui donne un vrai hublot plutot qu'un globe qui deborde.
-	PreviewImage->SetRenderScale(FVector2D(GlobeZoom, GlobeZoom));
+	// ⚠ CETTE FONCTION POSAIT UNE `SetRenderScale`, ET C'ETAIT LA CAUSE DU
+	// FLOU. Une transformation de rendu ETIRE la texture deja peinte : a six
+	// fois, les 512 texels du globe s'etalaient sur plus de trois mille
+	// pixels, chaque texel devenant un carre de six. Les cotes partaient en
+	// escalier et les cercles de latitude en marches.
+	//
+	// Le zoom vit desormais dans la PROJECTION (`FCadreGlobe::RayonApparent`)
+	// et l'on REPEINT. Trois consequences, toutes gagnees d'un coup :
+	//   - chaque pixel redevient un echantillon vrai, a toutes les echelles ;
+	//   - le cout ne bouge pas, le lance-de-rayon faisant un travail constant
+	//     par pixel quelle que soit l'etendue couverte ;
+	//   - le globe ne DEBORDE plus de son cadre -- il grossit dans sa texture
+	//     au lieu de grossir a l'ecran -- alors que l'ancien commentaire
+	//     promettait un hublot que rien ne decoupait.
+	//
+	// Il FAUT repeindre ici, et non attendre le minuteur : la rotation
+	// automatique s'arrete a la premiere prise en main, donc le zoom resterait
+	// sans effet sur un globe immobile.
+	RedrawGlobe();
 }
 
 void UWorldseedMenuWidget::HandleSeedCommitted(const FText& Text, ETextCommit::Type CommitMethod)

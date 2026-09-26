@@ -296,44 +296,28 @@ private:
 	TArray<float> CachedHeights;
 
 	/**
-	 * Heightfield REDUIT, dedie au globe d'apercu.
+	 * Releve l'altitude maximale du monde. Une fois par generation.
 	 *
-	 * POURQUOI NE PAS LIRE DIRECTEMENT CachedHeights. Le globe fait cinq
-	 * echantillonnages bilineaires par pixel — vingt lectures dispersees — soit
-	 * cinq millions par image, quelle que soit la taille du monde. Tant que le
-	 * heightfield tient en cache, elles ne coutent rien ; a 32 Mo elles vont
-	 * chercher en memoire centrale et l'image passe de 1,7 a 8,0 ms. La
-	 * rotation saccadait pour cette seule raison.
+	 * ⚠ ELLE REMPLACE `BuildPreviewField`, QUI REDUISAIT LE MONDE de 4096 x
+	 * 2048 a 1024 x 512 pour que le globe le lise plus vite. Son argument
+	 * etait le suivant, et il avait sa mesure : « le globe fait cinq
+	 * echantillonnages bilineaires par pixel, soit cinq millions de lectures
+	 * dispersees par image ; a 32 Mo elles vont chercher en memoire centrale
+	 * et l'image passe de 1,7 a 8,0 ms ».
 	 *
-	 * Ce n'est pas une perte de detail : le globe fait 512 pixels de diametre
-	 * et n'en montre qu'un hemisphere, donc il ne peut resoudre qu'environ mille
-	 * colonnes. Reduire par MOYENNE ameliore meme le rendu, le point-sampling
-	 * d'avant faisant scintiller le relief pendant la rotation.
-	 */
-	TArray<float> PreviewHeights;
-
-	/**
-	 * Les biomes a la resolution de PreviewHeights, pour que le globe les
-	 * colore. Reduits au PLUS PROCHE VOISIN : on ne moyenne pas un identifiant.
-	 */
-	TArray<uint8> PreviewBiomes;
-
-	/** Les couvertures a la meme resolution : c'est elles qui portent la banquise. */
-	TArray<uint8> PreviewCover;
-
-	/** Geometrie correspondant a PreviewHeights. */
-	FWorldseedGeometry PreviewGeometry;
-
-	/**
-	 * Largeur maximale du heightfield d'apercu.
+	 * CE CHIFFRE NE TIENT PLUS, et il attribuait le cout au mauvais terme.
+	 * L'essentiel des six millisecondes n'etait pas la dispersion des
+	 * lectures : c'etait le parcours COMPLET du relief que `FillPixels`
+	 * refaisait a chaque image pour retrouver le sommet du monde. Une fois ce
+	 * parcours sorti de la boucle, A/B refait sur le meme binaire et le meme
+	 * monde : relief reduit 0,913 ms, relief PLEIN 1,135 ms. Vingt-deux
+	 * centiemes de milliseconde, pas six.
 	 *
-	 * Deux fois la largeur de la texture : de quoi rester sur-echantillonne
-	 * jusqu'au limbe, ou la sphere comprime les meridiens.
+	 * La reduction jetait donc les quinze seiziemes du relief pour presque
+	 * rien -- et c'etait le premier des trois etages qui rendaient le zoom du
+	 * globe flou.
 	 */
-	static constexpr int32 GlobePreviewMaxWidth = 1024;
-
-	/** Construit PreviewHeights depuis CachedHeights. */
-	void BuildPreviewField();
+	void ReleverSommetDuMonde();
 
 	/**
 	 * Altitude maximale du monde, relevee UNE FOIS par generation.

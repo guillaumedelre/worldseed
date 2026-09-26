@@ -2,25 +2,32 @@
 //
 // POURQUOI CE FICHIER EXISTE. `ProbePointage` eprouve deja l'aller-retour de la
 // projection -- latitude et longitude connues, projetees vers l'image puis
-// reinversees, 0,000069 degre sur 25 158 points hors limbe. Elle travaille dans
-// l'espace NORMALISE : ni widget, ni `FGeometry`, ni zoom.
+// reinversees, 0,000069 degre sur 25 158 points hors limbe. Mais elle travaille
+// a zoom 1, et le zoom est precisement ce qui a deja casse ce pointage une fois.
 //
-// ET LA SEULE PARTIE NON TESTEE ETAIT LA PARTIE FAUTIVE. `PointerSurLeGlobe`
-// defaisait le zoom une seconde fois, apres `AbsoluteToLocal` qui l'avait deja
-// defait : le reticule tombait a 1/Z de la distance du curseur au centre --
-// exact a zoom 1, faux d'un facteur quatre a zoom 4. Le commentaire d'origine
-// annoncait le defaut sans pouvoir le verifier : « si le reticule tombe sous le
-// curseur a zoom 1 mais derive a zoom 4, c'est ici qu'est la faute. »
+// ⚠ LE ZOOM A CHANGE DE NATURE, ET CE FICHIER AVEC LUI. Il fut une
+// `SetRenderScale` posee sur l'image Slate : un ETIREMENT de la texture deja
+// peinte, qui rendait le globe flou -- a six fois, un texel devenait un carre
+// de six pixels -- et que `PointerSurLeGlobe` defaisait une seconde fois apres
+// `AbsoluteToLocal`, si bien que le reticule tombait a 1/Z de la distance du
+// curseur au centre. Le test d'alors gardait cette chaine-la.
 //
-// CE QUI EST VERIFIE ICI EST UNE PREMISSE DU MOTEUR, et c'est deliberé : tout
-// repose sur le fait qu'`AbsoluteToLocal` applique l'inverse de la transformee
-// de RENDU accumulee, pivot compris. C'est cette prémisse qui a ete mal
-// comprise ; si une version d'Unreal la change, ce test doit crier plutot que
-// de laisser le reticule deriver en silence.
+// Le zoom vit desormais dans la PROJECTION (`FCadreGlobe::RayonApparent`) : on
+// ne dessine plus le meme globe plus gros, on dessine une portion plus petite
+// du globe sur le meme nombre de pixels. Chaque pixel redevient un echantillon
+// vrai, le cout ne bouge pas -- le lance-de-rayon fait un travail constant par
+// pixel -- et l'image Slate ne porte plus aucune transformee.
+//
+// CE QUI DOIT ETRE GARDE N'EST DONC PLUS LE MEME. Ce n'est plus « le texel lu
+// est celui vise malgre la RenderScale », c'est « la projection et son inverse
+// restent d'accord A TOUS LES ZOOMS ». Elles lisent le meme champ, donc elles
+// ne PEUVENT pas diverger -- mais c'est exactement le genre de propriete qu'on
+// croit acquise jusqu'au jour ou quelqu'un ecrit `RayonDisque` a la place.
 
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Layout/Geometry.h"
+#include "Procedural/WorldseedGlobe.h"
 
 #include "Misc/AutomationTest.h"
 
@@ -28,129 +35,194 @@ namespace
 {
 	/** Le cote du globe, en unites logiques. Voir `SetDesiredSizeOverride`. */
 	constexpr float CoteGlobe = 420.0f;
-
-	/**
-	 * La geometrie que `PreviewImage->GetCachedGeometry()` rend sous zoom.
-	 *
-	 * ON REPRODUIT LA CHAINE DU MENU, pas une geometrie quelconque : une racine
-	 * a l'echelle de l'ecran, puis l'image avec sa `RenderScale` et le pivot
-	 * central que `SetRenderScale` emploie par defaut. C'est ce que
-	 * `SScaleBox::OnArrangeChildren` construit en passant par la surcharge
-	 * `MakeChild(Widget, ...)`, laquelle injecte la transformee de rendu de
-	 * l'enfant.
-	 */
-	FGeometry CadreDuGlobe(float Zoom, float EchelleDPI, const FVector2f& Decalage)
-	{
-		const FGeometry Racine = FGeometry::MakeRoot(
-			FVector2f(1600.0f, 900.0f), FSlateLayoutTransform(EchelleDPI));
-
-		return Racine.MakeChild(
-			FVector2f(CoteGlobe, CoteGlobe),
-			FSlateLayoutTransform(Decalage),
-			FSlateRenderTransform(FScale2D(Zoom, Zoom)),
-			FVector2f(0.5f, 0.5f));
-	}
 }
 
 /**
- * LE TEXEL VISE NE DEPEND PAS DU ZOOM, ET C'EST TOUT LE DEFAUT CORRIGE.
+ * LA PROJECTION ET SON INVERSE RESTENT D'ACCORD A TOUS LES ZOOMS.
  *
- * On prend un texel connu du globe, on calcule ou il s'AFFICHE a un zoom donne
- * -- c'est-a-dire la position d'ecran ou le curseur se trouverait -- puis on
- * redemande au cadre quel texel cette position designe. La reponse doit etre le
- * texel de depart, a tous les zooms.
+ * On part d'une latitude et d'une longitude connues, on demande ou elles
+ * tombent dans le cadre, puis on redemande au cadre quelle position du globe
+ * cette place designe. La reponse doit etre le point de depart, que le globe
+ * soit dessine entier ou agrandi six fois.
  *
- * LE TEMOIN EST DANS LE TEST : on verifie aussi que l'ANCIENNE formule, elle,
- * echoue. Sans cela, un test qui passe ne prouverait pas qu'il regarde le bon
- * endroit -- ce depot a paye quatre fixtures muettes en une seule journee.
+ * LE TEMOIN EST DANS LE TEST, et il porte sur la faute qu'on peut REELLEMENT
+ * commettre ici : ecrire la constante `RayonDisque` la ou il faut le rayon
+ * APPARENT. C'est ce que faisaient les deux fonctions avant ce chantier, et
+ * cela donne un point qui derive d'un facteur Z -- donc, a zoom 6, un reticule
+ * a six fois la bonne distance du centre.
  */
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedPointageGlobeZoomTest,
-	"Worldseed.Globe.LePointageNeDependPasDuZoom",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedProjectionGlobeZoomTest,
+	"Worldseed.Globe.LaProjectionTientAToutZoom",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FWorldseedPointageGlobeZoomTest::RunTest(const FString& Parameters)
+bool FWorldseedProjectionGlobeZoomTest::RunTest(const FString& Parameters)
 {
-	// DES TEXELS EXCENTRES, jamais le centre : au centre, toute erreur d'echelle
-	// autour du centre est invisible par construction. C'est la meme raison qui
-	// fait choisir des cibles excentrees ailleurs dans ce depot.
-	const TArray<FVector2f> Texels = {
-		FVector2f(210.0f, 210.0f),   // le centre, temoin trivial
-		FVector2f(310.0f, 210.0f),
-		FVector2f(210.0f, 100.0f),
-		FVector2f(120.0f, 330.0f),
-		FVector2f(395.0f, 205.0f),   // pres du limbe
+	// DES POINTS EXCENTRES, jamais le seul centre : au centre, toute erreur
+	// d'echelle autour du centre est invisible par construction. On evite en
+	// revanche le limbe exact, mal conditionne PAR NATURE -- la derivee de
+	// l'arc sinus y diverge, et ce depot rend deja deux chiffres separes pour
+	// cette raison dans `ProbePointage`.
+	const TArray<TPair<float, float>> Points = {
+		{ 0.0f, 0.0f },       // le centre du disque a bascule nulle : temoin trivial
+		{ 12.0f, 25.0f },
+		{ -34.0f, 350.0f },
+		{ 58.0f, 95.0f },
+		{ -67.0f, 190.0f },
+		{ 5.0f, 300.0f },
 	};
 	const TArray<float> Zooms = { 1.0f, 1.5f, 2.0f, 4.0f, 6.0f };
 
-	// DEUX ECHELLES ET UN DECALAGE : le menu tourne a DPI 0,83 sur une fenetre
-	// 1600x900, et le globe n'est pas a l'origine de l'ecran -- il partage la
-	// ligne avec le panneau de gauche. Un test pose a l'origine et a DPI 1
-	// laisserait passer une faute de mise en page.
-	const TArray<float> Dpi = { 1.0f, 0.83f };
-	const FVector2f Decalage(190.0f, 120.0f);
-
 	int32 Verifies = 0;
-	double PireEcart = 0.0;
-	double PireEcartAncienneFormule = 0.0;
+	double PireEcartDeg = 0.0;
+	double PireEcartTemoin = 0.0;
 
-	for (const float Echelle : Dpi)
+	for (const float Zoom : Zooms)
 	{
-		for (const float Zoom : Zooms)
+		WorldseedGlobe::FGlobeSettings Reglages;
+		Reglages.Zoom = Zoom;
+		Reglages.TiltDeg = 18.0f;
+		Reglages.LongitudeOffsetDeg = 40.0f;
+
+		const WorldseedGlobe::FCadreGlobe Cadre = WorldseedGlobe::CadreGlobe(Reglages);
+
+		for (const TPair<float, float>& P : Points)
 		{
-			const FGeometry Cadre = CadreDuGlobe(Zoom, Echelle, Decalage);
-			const FVector2D Taille = FVector2D(Cadre.GetLocalSize());
-			const FVector2D Centre = Taille * 0.5;
-
-			for (const FVector2f& T : Texels)
+			float X = 0.0f;
+			float Y = 0.0f;
+			if (!WorldseedGlobe::CadreDepuisLatLon(P.Key, P.Value, Cadre, X, Y))
 			{
-				const FVector2D Texel(T);
-
-				// OU CE TEXEL S'AFFICHE-T-IL ? C'est la transformee de rendu
-				// accumulee qui le dit, celle-la meme que le moteur emploie
-				// pour dessiner. On ne recompose pas l'echelle a la main : ce
-				// serait supposer ce qu'on veut verifier.
-				const FVector2D Ecran = Cadre.LocalToAbsolute(Texel);
-
-				// Ce que le code corrige lit.
-				const FVector2D Lu = Cadre.AbsoluteToLocal(Ecran);
-				PireEcart = FMath::Max(PireEcart, (Lu - Texel).Size());
-
-				// Ce que l'ANCIENNE formule lisait, pour temoin.
-				const FVector2D Ancien = (Lu - Centre) / Zoom + Centre;
-				PireEcartAncienneFormule =
-					FMath::Max(PireEcartAncienneFormule, (Ancien - Texel).Size());
-
-				++Verifies;
+				// Face cachee : il n'y a rien a pointer, et c'est correct.
+				continue;
 			}
+
+			const WorldseedGlobe::FPointeGlobe Retour =
+				WorldseedGlobe::PointerCadre(X, Y, Cadre);
+
+			if (!TestTrue(TEXT("le point projete retombe sur le globe"),
+				Retour.bSurLeGlobe))
+			{
+				continue;
+			}
+
+			// La longitude s'enroule : 359,9 et 0,1 sont voisines.
+			double EcartLon = FMath::Abs(Retour.LongitudeDeg - P.Value);
+			EcartLon = FMath::Min(EcartLon, 360.0 - EcartLon);
+
+			PireEcartDeg = FMath::Max(PireEcartDeg,
+				FMath::Max(static_cast<double>(FMath::Abs(Retour.LatitudeDeg - P.Key)),
+					EcartLon));
+
+			// LE TEMOIN : la meme lecture faite avec la CONSTANTE au lieu du
+			// rayon apparent, c'est-a-dire la faute que ce chantier a otee.
+			WorldseedGlobe::FCadreGlobe Faux = Cadre;
+			Faux.RayonApparent = WorldseedGlobe::RayonDisque;
+			const WorldseedGlobe::FPointeGlobe Derive =
+				WorldseedGlobe::PointerCadre(X, Y, Faux);
+
+			double EcartFaux = FMath::Abs(Derive.LongitudeDeg - P.Value);
+			EcartFaux = FMath::Min(EcartFaux, 360.0 - EcartFaux);
+			PireEcartTemoin = FMath::Max(PireEcartTemoin,
+				FMath::Max(static_cast<double>(
+					FMath::Abs(Derive.LatitudeDeg - P.Key)), EcartFaux));
+
+			++Verifies;
 		}
 	}
 
-	TestEqual(TEXT("tous les cas ont ete parcourus"), Verifies,
-		Texels.Num() * Zooms.Num() * Dpi.Num());
+	AddInfo(FString::Printf(
+		TEXT("%d points verifies sur %d zooms, pire ecart %.6f deg"),
+		Verifies, Zooms.Num(), PireEcartDeg));
+
+	TestTrue(TEXT("des points ont ete verifies a chaque zoom"),
+		Verifies >= Zooms.Num() * 3);
 
 	TestTrue(FString::Printf(
-		TEXT("le texel lu est celui vise, a tous les zooms (pire ecart %.6f px)"),
-		PireEcart),
-		PireEcart < 0.01);
+		TEXT("l'aller-retour est exact a tous les zooms (pire ecart %.6f deg)"),
+		PireEcartDeg),
+		PireEcartDeg < 0.01);
 
-	// LE TEMOIN. L'ancienne formule doit echouer, et largement : a zoom 6 sur un
-	// texel au bord, elle se trompe de plusieurs dizaines d'unites logiques. Si
-	// ce controle venait a passer, c'est que la geometrie de test ne porte plus
-	// le zoom -- et le test entier ne mesurerait plus rien.
+	// SANS CE CONTROLE, LE TEST NE PROUVERAIT RIEN. Les deux fonctions lisent
+	// le meme champ : elles s'accorderaient meme sur une valeur absurde. Ce
+	// qu'on verifie ici, c'est que la valeur employee est bien celle qui porte
+	// le zoom -- donc qu'une regression vers la constante se verrait.
 	TestTrue(FString::Printf(
-		TEXT("l'ancienne formule, elle, derive bien (pire ecart %.2f px)"),
-		PireEcartAncienneFormule),
-		PireEcartAncienneFormule > 50.0);
+		TEXT("la constante, elle, ferait deriver le point (pire ecart %.2f deg)"),
+		PireEcartTemoin),
+		PireEcartTemoin > 5.0);
+	return true;
+}
+
+/**
+ * LE DISQUE GRANDIT AVEC LE ZOOM, ET C'EST TOUT CE QUE LE ZOOM FAIT.
+ *
+ * Un meme point du globe doit s'eloigner du centre du cadre proportionnellement
+ * au zoom. C'est la propriete qui distingue « agrandir le globe » de « tourner
+ * le globe » : si elle tombait, le zoom deplacerait la geometrie au lieu de la
+ * mettre a l'echelle, et le relief glisserait sous le reticule.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedGlobeZoomEchelleTest,
+	"Worldseed.Globe.LeZoomEstUneMiseALEchelle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedGlobeZoomEchelleTest::RunTest(const FString& Parameters)
+{
+	WorldseedGlobe::FGlobeSettings Base;
+	Base.TiltDeg = 18.0f;
+	Base.LongitudeOffsetDeg = 40.0f;
+
+	const WorldseedGlobe::FCadreGlobe Un = WorldseedGlobe::CadreGlobe(Base);
+
+	double PireEcartRelatif = 0.0;
+	int32 Verifies = 0;
+
+	for (const float Zoom : { 1.5f, 2.0f, 4.0f, 6.0f })
+	{
+		WorldseedGlobe::FGlobeSettings Zoome = Base;
+		Zoome.Zoom = Zoom;
+		const WorldseedGlobe::FCadreGlobe Cadre = WorldseedGlobe::CadreGlobe(Zoome);
+
+		for (int32 I = 0; I < 12; ++I)
+		{
+			const float Lat = -60.0f + I * 10.0f;
+			const float Lon = 20.0f + I * 7.0f;
+
+			float X1 = 0.0f, Y1 = 0.0f, XZ = 0.0f, YZ = 0.0f;
+			if (!WorldseedGlobe::CadreDepuisLatLon(Lat, Lon, Un, X1, Y1)
+				|| !WorldseedGlobe::CadreDepuisLatLon(Lat, Lon, Cadre, XZ, YZ))
+			{
+				continue;
+			}
+
+			const double R1 = FMath::Sqrt(X1 * X1 + Y1 * Y1);
+			const double RZ = FMath::Sqrt(XZ * XZ + YZ * YZ);
+			if (R1 < KINDA_SMALL_NUMBER)
+			{
+				// Le centre reste le centre : rien a mettre a l'echelle.
+				continue;
+			}
+
+			PireEcartRelatif = FMath::Max(PireEcartRelatif,
+				FMath::Abs(RZ / R1 - static_cast<double>(Zoom)) / Zoom);
+			++Verifies;
+		}
+	}
+
+	TestTrue(TEXT("des points ont ete verifies"), Verifies > 20);
+	TestTrue(FString::Printf(
+		TEXT("la distance au centre suit exactement le zoom (ecart relatif %.6f)"),
+		PireEcartRelatif),
+		PireEcartRelatif < 1e-4);
 	return true;
 }
 
 /**
  * `AbsoluteToLocal` DEFAIT LA TRANSFORMEE DE RENDU, PIVOT COMPRIS.
  *
- * C'est la premisse du correctif, et elle se verifie seule : un point d'ecran
- * obtenu par `LocalToAbsolute` doit revenir a l'identique. On l'eprouve avec un
- * pivot NON central en plus du pivot par defaut -- si une version du moteur
- * cessait de composer le pivot, ce cas-la tomberait le premier.
+ * C'est la premisse sur laquelle `PointerSurLeGlobe` repose pour passer de
+ * l'ecran au texel. Elle ne porte plus de zoom -- celui-ci a demenage dans la
+ * projection -- mais elle porte toujours l'echelle DPI et la mise en page, et
+ * une version du moteur qui cesserait de composer le pivot ferait deriver le
+ * reticule en silence.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedPointageGlobePivotTest,
 	"Worldseed.Globe.LaGeometrieDefaitLeRendu",
@@ -162,7 +234,7 @@ bool FWorldseedPointageGlobePivotTest::RunTest(const FString& Parameters)
 		FVector2f(1600.0f, 900.0f), FSlateLayoutTransform(0.83f));
 
 	const TArray<FVector2f> Pivots = {
-		FVector2f(0.5f, 0.5f),   // celui de SetRenderScale
+		FVector2f(0.5f, 0.5f),
 		FVector2f(0.0f, 0.0f),
 		FVector2f(0.25f, 0.75f),
 	};
