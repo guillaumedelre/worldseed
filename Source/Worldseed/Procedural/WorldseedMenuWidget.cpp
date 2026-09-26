@@ -2082,19 +2082,29 @@ bool UWorldseedMenuWidget::PointerSurLeGlobe(const FVector2D& PositionEcran,
 		return false;
 	}
 
-	const FVector2D Locale = Cadre.AbsoluteToLocal(PositionEcran);
-
-	// DEFAIRE LE ZOOM, ET C'EST LE POINT LE PLUS INCERTAIN DE TOUTE LA CHAINE.
-	// `SetRenderScale` est une transformation de RENDU : elle agrandit l'image
-	// autour de son pivot -- le centre par defaut -- sans toucher a la mise en
-	// page, donc sans toucher au cadre que `GetCachedGeometry` rend. Le texel
-	// T s'affiche en (T - centre) * zoom + centre ; on inverse.
+	// --- LE ZOOM EST DEJA DEFAIT ICI, ET IL L'A LONGTEMPS ETE DEUX FOIS -----
 	//
-	// Le controle qui tranche est a l'image : si le reticule tombe sous le
-	// curseur a zoom 1 mais derive a zoom 4, c'est ici qu'est la faute.
-	const FVector2D Centre = Taille * 0.5;
-	const float Zoom = FMath::Max(GlobeZoom, KINDA_SMALL_NUMBER);
-	const FVector2D Texel = (Locale - Centre) / static_cast<double>(Zoom) + Centre;
+	// `AbsoluteToLocal` applique l'inverse de la transformee de RENDU ACCUMULEE
+	// (`Geometry.h:433-437` du moteur), et celle-ci porte deja la `RenderScale`
+	// posee par `ApplyGlobeZoom` AINSI QUE son pivot : le constructeur de
+	// `FGeometry` compose `pivot^-1 . RenderTransform . pivot . LayoutTransform`
+	// (`Geometry.h:101-131`), et `SScaleBox::OnArrangeChildren` passe bien par
+	// la surcharge `MakeChild(Widget, ...)` qui injecte la transformee de rendu
+	// de l'enfant. La valeur rendue ici est donc DEJA le texel.
+	//
+	// CE QUE COUTAIT LA SECONDE COMPENSATION, et c'est arithmetique : le code
+	// calculait T' = (T - C)/Z + C, puis le reticule etait estampe en T' et
+	// affiche a l'echelle Z. Distance du curseur au centre : Z.|T - C| ;
+	// distance du reticule : Z.|T' - C| = |T - C|. Le reticule tombait donc a
+	// 1/Z de la distance du curseur au centre -- exact a zoom 1, faux d'un
+	// facteur quatre a zoom 4, et la latitude retenue avec lui.
+	//
+	// LE COMMENTAIRE D'ORIGINE AVAIT PREDIT SA PROPRE FAUTE : « si le reticule
+	// tombe sous le curseur a zoom 1 mais derive a zoom 4, c'est ici qu'est la
+	// faute. » Il l'avait ecrit sans pouvoir le verifier, parce que
+	// `ProbePointage` ne couvre que l'espace normalise -- ni widget, ni zoom,
+	// ni `FGeometry`. La seule partie non testee etait la partie fautive.
+	const FVector2D Texel = Cadre.AbsoluteToLocal(PositionEcran);
 
 	float CadreX = 0.0f;
 	float CadreY = 0.0f;
