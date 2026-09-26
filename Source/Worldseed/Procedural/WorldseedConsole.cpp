@@ -1,5 +1,6 @@
 // Worldseed - commandes console : aller quelque part, et savoir ou l'on est.
 
+#include "Procedural/WorldseedNoms.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
 
 #include "Camera/PlayerCameraManager.h"
@@ -148,4 +149,67 @@ namespace
 		TEXT("Worldseed.Lieux"),
 		TEXT("Les endroits du monde charge qui meritent d'etre vus."),
 		FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&Lieux));
+
+	/**
+	 * DES NOMS, POUR LES REGARDER.
+	 *
+	 * Les oracles de `Worldseed.Noms.*` etablissent que les tables sont
+	 * coherentes, que le tirage suit la graine et que rien ne sort vide. Aucun
+	 * ne dit qu'un nom SONNE BIEN -- et ce depot tient qu'une forme qu'on n'a
+	 * pas vue n'est pas validee. Celle-ci est la pour la voir, et elle servira
+	 * a choisir quel univers donner a quelle region.
+	 */
+	void Noms(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
+	{
+		const TArray<FString>& Ordre = WorldseedNoms::Ordre();
+		if (Ordre.Num() == 0)
+		{
+			FString Erreur;
+			WorldseedNoms::Charger(Erreur);
+			Ar.Logf(TEXT("aucune base : %s"), *Erreur);
+			return;
+		}
+
+		// Sans argument, on les passe toutes en revue ; avec, on s'attarde sur
+		// une. Le libelle est celui d'Azgaar -- « French », « Dwarven »... --
+		// et la casse compte.
+		TArray<FString> Vues = Ordre;
+		int32 Combien = 2;
+		if (Args.Num() > 0 && Ordre.Contains(Args[0]))
+		{
+			Vues = { Args[0] };
+			Combien = 10;
+		}
+		const int32 Graine = (Args.Num() > 1) ? FCString::Atoi(*Args[1]) : 1337;
+
+		Ar.Logf(TEXT("%-16s %-22s %-22s %-22s %s"),
+			TEXT("base"), TEXT("lieu"), TEXT("lieu court"), TEXT("ETAT"),
+			TEXT("personne"));
+
+		for (const FString& Cle : Vues)
+		{
+			// UNE GRAINE PAR LIGNE, DERIVEE DE LA GRAINE DONNEE : un flux
+			// unique ferait dependre le Ne nom de tous les precedents, donc
+			// changer `Combien` changerait les noms deja lus.
+			for (int32 I = 0; I < Combien; ++I)
+			{
+				FRandomStream A(Graine + I * 7919);
+				FRandomStream B(Graine + I * 7919 + 1);
+				FRandomStream C(Graine + I * 7919 + 2);
+				FRandomStream D(Graine + I * 7919 + 3);
+				Ar.Logf(TEXT("%-16s %-22s %-22s %-22s %s"),
+					(I == 0) ? *Cle : TEXT(""),
+					*WorldseedNoms::Mot(Cle, A),
+					*WorldseedNoms::MotCourt(Cle, B),
+					*WorldseedNoms::Etat(Cle, FString(), C),
+					*WorldseedNoms::Personne(Cle, true, D));
+			}
+		}
+	}
+
+	FAutoConsoleCommandWithWorldArgsAndOutputDevice GNoms(
+		TEXT("Worldseed.Noms"),
+		TEXT("Un echantillon de noms par base. Arguments optionnels : "
+			 "le libelle d'une base (French, Dwarven...), puis une graine."),
+		FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&Noms));
 }
