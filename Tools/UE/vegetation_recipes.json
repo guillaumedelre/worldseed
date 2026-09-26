@@ -76,39 +76,10 @@
     "ce ne sont pas des biomes terrestres."
   ],
   "_comment_echelles" : "Les echelles sont calculees sur la taille REELLE des maillages, relevee le 25 septembre 2026 : plafond de 3 m pour le sous-bois et 2 m pour ce qui rampe, l echelle maximale valant plafond / plus grande dimension du plus gros membre de la couche. Arbres, mineral et bois mort sont exemptes de plafond, mais ramenes a une taille credible. Copier l echelle d une autre couche sans verifier sa composition donne un mur : SFL:SM_Fern fait 3,06 m de large et SFL:SM_Bush_2 4,34 m.",
+  "_comment_estran" : "L ESTRAN N EST PAS UN BIOME, c est un SUBSTRAT (EWorldseedCover::Beach) : une plage de desert et une plage de foret tropicale sont toutes deux du sable nu, et leur climat decide de ce qui pousse DERRIERE, pas dessus. Tant que le semis ne lisait que le biome, une plage recevait le tapis d herbe de la foret voisine -- de l herbe sur le sable, signale en jeu le 26 septembre 2026. Cette recette REMPLACE celle du biome sur les cellules d estran, qui pesent 3,9 pour cent des terres. ELLE NE PORTE AUCUNE HERBE, A DESSEIN : une plage est nue, et c est le point de la demande. Le pas est `rares`, soit 40 m, donc environ 6 blocs a l hectare -- des galets et des rochers echoues, pas un eboulis. L echelle descend a 0,4 parce que ce qui roule sur une plage est plus petit que ce qui tombe d une falaise, et la pente est bornee a 20 degres : au-dela on n est plus sur l estran mais sur la dune ou la roche qui le domine. Vider ce tableau rend la plage entierement nue, ce qui reste plus juste que de l herbe.",
   "_comment_spacings" : "Le pas du TAPIS est cale sur GT_Grass du pack Orasot, mesure le 25 septembre 2026 sur M_5_Bioms_Showcase : deux varietes de SM_Grass a 65 et 70 instances par 100 m2, soit 1,35 brin au metre carre. A 75 cm de pas la couche rend 1,78 point/m2, dont trois quarts vont a SM_Grass par son poids -> 1,33/m2. La carte de demonstration tient cette densite GRATUITEMENT, par LandscapeGrassOutput : un monde voxel n a pas de Landscape, donc chaque brin est ici une instance reelle et se paie.",
   "_comment_tapis" : "LE TAPIS N EMPLOIE PAS SM_Grass DU DOSSIER Global, ET C EST MESURE. Les deux herbes du bundle portent le meme nom de maillage et le meme nom d instance de materiau -- piege deja paye : comparer des CHEMINS, jamais des noms. Global/SM_Grass passe par Global/Materials/M_Grass, qui echantillonne la Runtime Virtual Texture par DEUX noeuds et n expose aucun interrupteur pour s en passer (son seul switch est Tweak) : tant que la RVT n est pas alimentee, ses brins rendent NOIRS -- verifie a l image, et sans eclairage, donc c est bien une couleur. StylizedForestLandscape/SM_Grass passe par M_Master_Grass, qui n en lit AUCUNE, pour un gabarit equivalent : 0,77 m contre 0,66, 307 triangles contre 360, opaque et double face dans les deux cas.",
   "_palette" : "orasot-pur : UN seul des cinq biomes caracteristiques par biome Worldseed (jamais deux melanges), plus les fonds neutres du bundle (Global, LowPolyForest, StylizedForestLandscape). Calage arrete par le proprietaire le 25 septembre 2026, formulaire rempli : Green prend la foret tropicale humide, l alpin, le mediterraneen et la foret subtropicale humide ; Bamboo ne sert plus qu au marais, qui est INATTEIGNABLE depuis le retrait de l hydrologie -- donc aucun bambou dans le monde jouable. Biom_Red reste RESERVE a un futur biome d iles flottantes. La teinte jaune de la savane ne se peint pas : GLB:SM_Grass lit la RVT et prend le ton du sol.",
-  "_comment_estran" : "L ESTRAN N EST PAS UN BIOME, c est un SUBSTRAT (EWorldseedCover::Beach) : une plage de desert et une plage de foret tropicale sont toutes deux du sable nu, et leur climat decide de ce qui pousse DERRIERE, pas dessus. Tant que le semis ne lisait que le biome, une plage recevait le tapis d herbe de la foret voisine -- de l herbe sur le sable, signale en jeu le 26 septembre 2026. Cette recette REMPLACE celle du biome sur les cellules d estran, qui pesent 3,9 pour cent des terres. ELLE NE PORTE AUCUNE HERBE, A DESSEIN : une plage est nue, et c est le point de la demande. Le pas est `rares`, soit 40 m, donc environ 6 blocs a l hectare -- des galets et des rochers echoues, pas un eboulis. L echelle descend a 0,4 parce que ce qui roule sur une plage est plus petit que ce qui tombe d une falaise, et la pente est bornee a 20 degres : au-dela on n est plus sur l estran mais sur la dune ou la roche qui le domine. Vider ce tableau rend la plage entierement nue, ce qui reste plus juste que de l herbe.",
-  "estran" : [
-    {
-      "cull" : [
-        8000,
-        13000
-      ],
-      "meshes" : [
-        [
-          "LPF:SM_Env_scatter_rock_3",
-          1
-        ],
-        [
-          "LPF:SM_Env_scatter_rock_12",
-          1
-        ]
-      ],
-      "obstacle" : true,
-      "name" : "galets",
-      "pente" : [
-        0,
-        20
-      ],
-      "scale" : [
-        0.4,
-        0.9
-      ],
-      "spacing" : "rares"
-    }
-  ],
   "biomes" : {
     "alpin" : {
       "id" : 15,
@@ -137,7 +108,13 @@
             0.55,
             1.15
           ],
-          "spacing" : "tapis_clair"
+          "spacing" : "tapis_clair",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.47,
+            "taille" : 2000
+          }
         },
         {
           "cull" : [
@@ -236,8 +213,8 @@
               2
             ]
           ],
-          "obstacle" : true,
           "name" : "blocs",
+          "obstacle" : true,
           "scale" : [
             0.6,
             1.6
@@ -317,7 +294,13 @@
             0.7,
             1.2
           ],
-          "spacing" : "arbres_epars"
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.45,
+            "taille" : 8000
+          }
         },
         {
           "cull" : [
@@ -346,8 +329,8 @@
               1
             ]
           ],
-          "obstacle" : true,
           "name" : "rochers",
+          "obstacle" : true,
           "scale" : [
             0.5,
             1.4
@@ -411,7 +394,13 @@
             0.55,
             1.15
           ],
-          "spacing" : "tapis_clair"
+          "spacing" : "tapis_clair",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.55,
+            "taille" : 3000
+          }
         },
         {
           "cull" : [
@@ -466,8 +455,8 @@
               2
             ]
           ],
-          "obstacle" : true,
           "name" : "pierraille",
+          "obstacle" : true,
           "pente" : [
             20,
             90
@@ -545,7 +534,13 @@
             0.7,
             1.1
           ],
-          "spacing" : "arbres_denses"
+          "spacing" : "arbres_denses",
+          "taches" : {
+            "douceur" : 0.2,
+            "octaves" : 3,
+            "seuil" : 0.32,
+            "taille" : 3500
+          }
         },
         {
           "cull" : [
@@ -637,7 +632,7 @@
           "taches" : {
             "douceur" : 0.3,
             "octaves" : 3,
-            "seuil" : 0.500,
+            "seuil" : 0.5,
             "taille" : 1600
           }
         },
@@ -778,7 +773,13 @@
             0.8,
             1.3
           ],
-          "spacing" : "arbres_denses"
+          "spacing" : "arbres_denses",
+          "taches" : {
+            "douceur" : 0.2,
+            "octaves" : 3,
+            "seuil" : 0.4,
+            "taille" : 7000
+          }
         },
         {
           "cull" : [
@@ -985,7 +986,13 @@
             0.9,
             1.5
           ],
-          "spacing" : "arbres_denses"
+          "spacing" : "arbres_denses",
+          "taches" : {
+            "douceur" : 0.2,
+            "octaves" : 3,
+            "seuil" : 0.35,
+            "taille" : 8000
+          }
         },
         {
           "cull" : [
@@ -1176,7 +1183,13 @@
             0.7,
             1.1
           ],
-          "spacing" : "arbres_denses"
+          "spacing" : "arbres_denses",
+          "taches" : {
+            "douceur" : 0.2,
+            "octaves" : 3,
+            "seuil" : 0.3,
+            "taille" : 3000
+          }
         },
         {
           "cull" : [
@@ -1268,7 +1281,7 @@
           "taches" : {
             "douceur" : 0.3,
             "octaves" : 3,
-            "seuil" : 0.500,
+            "seuil" : 0.5,
             "taille" : 1600
           }
         },
@@ -1359,7 +1372,13 @@
             0.8,
             1.3
           ],
-          "spacing" : "arbres_epars"
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.45,
+            "taille" : 5000
+          }
         },
         {
           "cull" : [
@@ -1408,7 +1427,13 @@
             0.55,
             1.15
           ],
-          "spacing" : "tapis"
+          "spacing" : "tapis",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.42,
+            "taille" : 2500
+          }
         },
         {
           "cull" : [
@@ -1695,7 +1720,13 @@
             0.5,
             0.82
           ],
-          "spacing" : "sousbois"
+          "spacing" : "sousbois",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.5,
+            "taille" : 3000
+          }
         },
         {
           "cull" : [
@@ -1748,8 +1779,8 @@
               1
             ]
           ],
-          "obstacle" : true,
           "name" : "cailloutis",
+          "obstacle" : true,
           "scale" : [
             0.5,
             1.2
@@ -1810,8 +1841,8 @@
               1
             ]
           ],
-          "obstacle" : true,
           "name" : "galets",
+          "obstacle" : true,
           "pente" : [
             0,
             18
@@ -1820,7 +1851,7 @@
             0.4,
             1
           ],
-          "spacing" : "sousbois_clair"
+          "spacing" : "arbres_epars"
         }
       ]
     },
@@ -1877,7 +1908,13 @@
             1,
             1.5
           ],
-          "spacing" : "rares"
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "douceur" : 0.15,
+            "octaves" : 3,
+            "seuil" : 0.62,
+            "taille" : 9000
+          }
         },
         {
           "cull" : [
@@ -1919,7 +1956,7 @@
           "taches" : {
             "douceur" : 0.3,
             "octaves" : 3,
-            "seuil" : 0.500,
+            "seuil" : 0.5,
             "taille" : 3500
           }
         },
@@ -1980,7 +2017,13 @@
             0.55,
             1.15
           ],
-          "spacing" : "tapis_clair"
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "douceur" : 0.2,
+            "octaves" : 3,
+            "seuil" : 0.6,
+            "taille" : 1500
+          }
         },
         {
           "cull" : [
@@ -1997,8 +2040,8 @@
               2
             ]
           ],
-          "obstacle" : true,
           "name" : "falaises",
+          "obstacle" : true,
           "pente" : [
             32,
             90
@@ -2040,8 +2083,8 @@
               2
             ]
           ],
-          "obstacle" : true,
           "name" : "eboulis",
+          "obstacle" : true,
           "pente" : [
             25,
             90
@@ -2099,7 +2142,13 @@
             1,
             1.6
           ],
-          "spacing" : "rares"
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "douceur" : 0.15,
+            "octaves" : 3,
+            "seuil" : 0.6,
+            "taille" : 10000
+          }
         },
         {
           "cull" : [
@@ -2148,8 +2197,8 @@
               1
             ]
           ],
-          "obstacle" : true,
           "name" : "pierres",
+          "obstacle" : true,
           "pente" : [
             0,
             45
@@ -2213,7 +2262,13 @@
             0.55,
             1.15
           ],
-          "spacing" : "tapis_clair"
+          "spacing" : "tapis_clair",
+          "taches" : {
+            "douceur" : 0.3,
+            "octaves" : 3,
+            "seuil" : 0.45,
+            "taille" : 1200
+          }
         },
         {
           "cull" : [
@@ -2267,7 +2322,13 @@
             0.7,
             1.2
           ],
-          "spacing" : "sousbois"
+          "spacing" : "sousbois",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.45,
+            "taille" : 2500
+          }
         },
         {
           "cull" : [
@@ -2284,8 +2345,8 @@
               1
             ]
           ],
-          "obstacle" : true,
           "name" : "pierres",
+          "obstacle" : true,
           "pente" : [
             0,
             45
@@ -2399,7 +2460,13 @@
             0.8,
             1.4
           ],
-          "spacing" : "arbres_denses"
+          "spacing" : "arbres_denses",
+          "taches" : {
+            "douceur" : 0.2,
+            "octaves" : 3,
+            "seuil" : 0.42,
+            "taille" : 6000
+          }
         },
         {
           "cull" : [
@@ -2548,7 +2615,13 @@
             0.55,
             1.15
           ],
-          "spacing" : "tapis_clair"
+          "spacing" : "tapis_clair",
+          "taches" : {
+            "douceur" : 0.25,
+            "octaves" : 3,
+            "seuil" : 0.45,
+            "taille" : 1800
+          }
         },
         {
           "cull" : [
@@ -2633,8 +2706,8 @@
               1
             ]
           ],
-          "obstacle" : true,
           "name" : "blocs",
+          "obstacle" : true,
           "scale" : [
             0.5,
             1.4
@@ -2644,6 +2717,35 @@
       ]
     }
   },
+  "estran" : [
+    {
+      "cull" : [
+        8000,
+        13000
+      ],
+      "meshes" : [
+        [
+          "LPF:SM_Env_scatter_rock_3",
+          1
+        ],
+        [
+          "LPF:SM_Env_scatter_rock_12",
+          1
+        ]
+      ],
+      "name" : "galets",
+      "obstacle" : true,
+      "pente" : [
+        0,
+        20
+      ],
+      "scale" : [
+        0.4,
+        0.9
+      ],
+      "spacing" : "rares"
+    }
+  ],
   "materiaux_forces" : {},
   "roots" : {
     "BAM" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/StaticMeshes",
