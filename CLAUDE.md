@@ -9154,3 +9154,154 @@ terminaisons. Un oracle le garde.
 donc « Kellingen Openalbhau », qui sonne comme deux villages. C'est le
 comportement de l'original, sans consequence pour Worldseed dont le besoin
 porte sur les LIEUX ; a savoir le jour ou l'on nommera des gens.
+
+### Le globe, les frontieres et les noms : cinq defauts, une seule famille (26 septembre 2026)
+
+Session ouverte sur « il y a un soucis avec comment est projete la texture du
+monde sur le globe [...] pourrait-elle etre re-echantillonnee pour matcher le
+niveau de zoom ? ». Le proprietaire proposait de cuire une texture
+equirectangulaire. **La mesure a montre que ce n'etait pas necessaire**, et
+elle a trouve en chemin quatre autres defauts que personne ne cherchait.
+
+#### UN COUT CONSTANT TRAHIT UN TRAVAIL PAR CELLULE DANS UNE PASSE PAR PIXEL
+
+`FillPixels` recalculait l'altitude maximale du monde a CHAQUE redessin, par
+un parcours complet du relief : 8,4 millions de flottants, 33 Mo, relus
+soixante fois par seconde pour retrouver un nombre fige depuis la generation.
+
+**LE SIGNE QUI L'A DEMASQUE.** Le surcout du relief plein valait **+4 ms a
+512 comme a 1024** -- il ne dependait donc PAS du nombre de pixels dessines.
+Un cout constant ne sort pas d'une boucle par pixel. C'est un signe a ranger
+a cote des deux autres que ce depot connait : « deux mesures identiques pour
+deux reglages differents » et « frame_ms vaut EXACTEMENT gpu_ms ».
+
+    texture   relief         avant      apres
+    512       reduit 1024    1,138 ms   0,913 ms
+    512       PLEIN 4096     5,101 ms   1,135 ms
+    1024      PLEIN 4096     8,115 ms   4,152 ms
+    2048      PLEIN 4096    19,446 ms  15,759 ms
+
+**ET CE CHIFFRE A ANNULE UNE OPTIMISATION ENTIERE.** `BuildPreviewField`
+reduisait le relief de 4096 x 2048 a 1024 x 512 EN PERMANENCE, au motif que
+« le globe fait cinq echantillonnages bilineaires par pixel [...] a 32 Mo
+elles vont chercher en memoire centrale et l'image passe de 1,7 a 8,0 ms ».
+Le chiffre etait reel et attribuait le cout au mauvais terme. Une fois le
+parcours sorti de la boucle, lire le relief PLEIN ne coute plus que **0,22 ms
+de plus**. La reduction jetait les quinze seiziemes de la donnee pour rien.
+
+Meme lecon que le verrou 3 du streaming, resolu en deux constantes : **avant
+de remplacer un composant, mesurer ce qui coute REELLEMENT**.
+
+#### UN ZOOM SLATE ETIRE, IL NE REECHANTILLONNE PAS
+
+Le zoom du globe etait une `SetRenderScale` posee sur l'image : un ETIREMENT
+de la texture deja peinte. A six fois, les 512 texels s'etalaient sur plus de
+trois mille pixels -- un texel devenait un carre de six, et le globe partait
+en marches d'escalier.
+
+**LE FAIT QUI DEBLOQUE TOUT : le lance-de-rayon fait un travail CONSTANT par
+pixel.** Son cout est en Res au carre et ne depend PAS de l'etendue couverte
+-- propriete de CONSTRUCTION de la boucle, pas une mesure. Dessiner une
+portion plus petite du globe sur le meme nombre de pixels ne coute donc pas
+un cycle de plus. Mesure : **4,114 ms a zoom 1, 5,261 a zoom 4**, l'ecart
+venant de ce qu'on voit plus de TERRE et moins d'espace.
+
+Le zoom vit desormais dans `FCadreGlobe::RayonApparent`. Comme la projection
+et son INVERSE lisent ce meme champ, le pointage suit sans qu'on lui dise
+rien -- et l'image Slate ne porte plus aucune transformee, donc le globe ne
+deborde plus de son cadre.
+
+**CE QUI A ETE ECARTE, ET POURQUOI.** La texture equirectangulaire existe
+(`WorldseedGlobeBake`, 0,001 ms) et avait ete ecartee le 20 septembre pour la
+QUALITE. Son argument de cout ne vaut pas dans un ecran de menu ou rien
+d'autre ne tourne. Et l'argument « elle permettrait d'imprimer les noms »
+tombe aussi : un overlay Slate donne du texte vectoriel net, sans
+l'etirement qu'une projection equirectangulaire inflige aux hautes latitudes.
+
+#### UNE SONDE QUI FABRIQUE SES ENTREES NE VALIDE PAS LE CHEMIN REEL
+
+Les frontieres de region avaient ete mesurees -- 1667 pixels de pays, 15472
+de region -- et le chiffre etait juste. Mais il venait de `ProbeCarteEcran`,
+qui **GENERE SON PROPRE MONDE** : elle validait le PEINTRE et ne pouvait rien
+dire du transport.
+
+Or `HandlePlayClicked` compose le monde transmis au jeu champ par champ, et
+`Regions` n'y figurait pas. En jeu il n'y avait donc **ni frontieres ni
+noms**, et ce qu'on prenait pour des frontieres sur la carte etait le lisere
+de cote. Rien ne le signalait : un decoupage vide est un etat valide que tous
+les consommateurs degradent proprement.
+
+    REGLE : quand une donnee traverse plusieurs etages, le controle doit etre
+    pose SUR LE CHEMIN QUE LE JEU EMPRUNTE, pas sur une reconstitution.
+
+Meme famille que « serialiser ne suffit pas, il faut TRANSVASER » (22
+septembre). Le remede est le meme : un COMPTE journalise depuis le
+consommateur final -- ici « carte : noms -- decoupage present/ABSENT ».
+
+#### UN COMMENTAIRE FAUX PEUT COUPER UNE FONCTION EN PERMANENCE
+
+Les frontieres du globe etaient coupees a CHAQUE image par une condition
+`!bUsePreview` que j'avais posee moi-meme, sur une premisse fausse : je
+croyais l'apercu provisoire -- « une generation rapide a basse resolution »,
+disait mon commentaire -- alors que `BuildPreviewField` REDUISAIT le monde
+FINI, une fois et pour de bon. `bUsePreview` etait donc vrai EN PERMANENCE.
+
+**Le compte l'a trouve en une ligne** : un compteur qui distingue les deux
+causes OPPOSEES d'un trait absent -- la passe qui ne tourne pas, et la passe
+qui tourne sans rien trouver. Les deux n'appellent pas le meme remede, et a
+l'oeil elles sont indiscernables.
+
+Trois commentaires perimes ont ete corriges au passage, dont un qui annoncait
+le lance-de-rayon comme « un repli, il ne sert que si le materiau est
+introuvable » alors que le journal dit « rendu par le processeur » a chaque
+partie.
+
+#### LE CENTRE DE GRAVITE D'UNE FORME CONCAVE LUI EST EXTERIEUR
+
+Pour poser le NOM d'une region, le barycentre ne convient pas : un croissant,
+une region qui epouse une baie, un bassin en fer a cheval autour d'un massif
+ont leur centre DEHORS. Mesure : **6 regions sur 47 et 1 pays sur 8**, soit
+une etiquette sur huit en pleine mer ou chez la voisine.
+
+`FWorldseedRegion::AncrageM` vaut le centre quand il tombe dans la forme, et
+sinon la cellule la plus proche de lui. **Il ne traverse pas le cache**,
+comme les noms : il se recalcule dans `Nommer`, rejouee dans les DEUX
+branches -- ce qui evite un champ de plus et une regeneration pour tout le
+monde.
+
+**UN SEUIL D'AFFICHAGE SE POSE SUR LA FORME, PAS SUR L'ECHELLE.** Un seuil en
+metres par pixel ferait apparaitre les quarante-sept noms d'un coup ; on
+compare donc le diametre APPARENT de chaque forme a la place qu'un nom
+occupe. Une grande region apparait tot, une petite attend qu'on s'approche.
+Mesure : 12 noms a 33 m/px (le monde entier, donc surtout des pays), 9 a
+9 m/px (un continent, donc ses regions).
+
+**ET LA MINIMAP NE RECOIT PAS D'ETIQUETTES**, a dessein : son disque fait 224
+pixels pour un rayon de 1,5 km quand une region en fait 3,5, donc l'ancrage y
+est presque toujours hors cadre. Sur une carte on cherche « ou est-ce », sur
+une minimap « ou suis-je » : elle porte un bandeau « Region, Pays », qui
+repond toujours.
+
+**PAS DE NOMS SUR LE GLOBE**, a dessein : une sphere ecrase ses meridiens
+vers le limbe, un nom y serait comprime jusqu'a l'illisible, et la moitie du
+monde est de toute facon cachee.
+
+#### PIEGES D'OUTILLAGE
+
+- **L'ecran de configuration se capture SANS `-WorldseedMenuAuto`.** Le menu
+  appelle `StartGeneration` sans condition a sa construction : il genere donc
+  seul et RESTE affiche, au lieu d'enchainer dans le jeu. C'est ce qui
+  manquait pour photographier le globe, jamais vu jusque-la.
+- **Une capture prise trop tot ne montre pas ce qu'on croit.** Le script
+  attend la fenetre PUIS dort ; la premiere carte a ete capturee sept
+  secondes AVANT son ouverture, et l'image montrait le jeu. Controler
+  l'horodatage du journal contre celui de la capture.
+- **Le proprietaire peut manipuler l'ecran pendant une capture.** Deux globes
+  sont sortis zoomes sans qu'aucune molette ait ete pilotee, et une carte
+  s'est ouverte sans `-WorldseedCarteAuto`. Le depot a deja cette note pour
+  la souris ; elle vaut pour le clavier. D'ou `-WorldseedGlobeZoom=`, qui
+  permet de capturer a un zoom CONNU.
+- **Il n'y a pas de Python sur cette machine**, et `sed`/`perl` sur du C++
+  reste interdit -- employer l'editeur de fichiers. Un heredoc bash casse
+  aussi sur les apostrophes : pour ajouter un long texte a un fichier,
+  l'ecrire ailleurs puis le concatener.
