@@ -11,7 +11,9 @@
 #include "Procedural/WorldseedTrace.h"
 
 #include "Async/Async.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
@@ -295,6 +297,15 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		UploadsPerPass = FMath::Clamp(UploadsPerPass, 1, 256);
 		MaxJobsInFlight = FMath::Clamp(MaxJobsInFlight, 1, 256);
 		UpdatePeriod = FMath::Clamp(UpdatePeriod, 0.01f, 1.0f);
+
+		int32 Fondu = bFonduDesBiomes ? 1 : 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedFondu="), Fondu))
+		{
+			bFonduDesBiomes = (Fondu != 0);
+			UE_LOG(LogTemp, Log, TEXT("[Worldseed] voxel : fondu des biomes %s"),
+				bFonduDesBiomes ? TEXT("ACTIF") : TEXT("COUPE"));
+		}
+
 
 		// LE POIDS DE LA VERTICALE DANS LE CRITERE DE NIVEAU. A un, rien ne
 		// change -- c.est la propriete de surete de ce levier.
@@ -630,6 +641,96 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		}
 	}
 
+	// --- LES PAROIS, AVANT LA PREMIERE PASSE -------------------------------
+	//
+	// L'ORDRE COMPTE : `UpdateChunks` televerse des chunks, et un chunk
+	// televerse seme ses parois. Preparer les composants apres la premiere
+	// passe laisserait les premiers chunks sans falaise -- ceux qui entourent
+	// le joueur, donc exactement ceux qu'on regarde en arrivant.
+	//
+	// Une surcharge de lancement pour l'A/B, parce que le fichier de regles ne
+	// porte pas ces reglages et qu'un A/B qui demande de recompiler n'en est
+	// pas un.
+	{
+		float Densite = ParoiDensite;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParois="), Densite))
+		{
+			// LA SURCHARGE ARME AUSSI LE SEMIS, et c'est ce qui la rend
+			// utilisable. `bSemerParois` est pose par le TERRAIN d'apres
+			// l'habillage choisi au menu ; un PIE lance depuis l'editeur ne
+			// passe pas par le menu, donc le drapeau y est toujours faux et
+			// regler la seule densite ne produirait rien -- on mesurerait
+			// « zero paroi » en croyant mesurer un reglage.
+			ParoiDensite = FMath::Max(0.0f, Densite);
+			bSemerParois = (ParoiDensite > 0.0f);
+			if (bSemerParois && ParoiMaillages.Num() == 0)
+			{
+				ParoiMaillages = WorldseedParois::MaillagesParDefaut();
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] parois : densite forcee a %.2f par la ligne de commande"),
+				ParoiDensite);
+		}
+		float Montee = ParoiMonteeMaxFrac;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiMontee="), Montee))
+		{
+			ParoiMonteeMaxFrac = FMath::Clamp(Montee, 0.0f, 1.0f);
+		}
+		float Denivele = ParoiDeniveleMinM;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiDenivele="), Denivele))
+		{
+			ParoiDeniveleMinM = FMath::Max(0.0f, Denivele);
+		}
+		// L'ORIENTATION NE SE DEDUIT PAS, ELLE SE REGARDE. Voir `YawOffsetDeg` :
+		// se tromper de quatre-vingt-dix degres pose les pans de profil, et rien
+		// d'autre qu'une image ne le dira.
+		float Yaw = ParoiYawOffsetDeg;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiYaw="), Yaw))
+		{
+			ParoiYawOffsetDeg = Yaw;
+		}
+		float Pas = ParoiPasM;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiPas="), Pas))
+		{
+			ParoiPasM = FMath::Max(1.0f, Pas);
+		}
+	}
+	{
+		float Densite = VegetationDensite;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVegetation="), Densite))
+		{
+			VegetationDensite = FMath::Max(0.0f, Densite);
+			bSemerVegetation = (VegetationDensite > 0.0f);
+		}
+		float Pas = VegetationPasMultiplicateur;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVegetationPas="), Pas))
+		{
+			VegetationPasMultiplicateur = FMath::Max(0.1f, Pas);
+		}
+		float Rayon = VegetationRayonM;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVegetationRayon="), Rayon))
+		{
+			VegetationRayonM = FMath::Max(0.0f, Rayon);
+		}
+		float RayonEspeces = 0.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedEspeces="), RayonEspeces))
+		{
+			EspecesRayonM = FMath::Max(0.0f, RayonEspeces);
+		}
+		int32 ParChunk = bIsmParChunk ? 1 : 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedIsmParChunk="), ParChunk))
+		{
+			bIsmParChunk = (ParChunk != 0);
+		}
+	}
+	// LA RVT AVANT LES CHUNKS, ET L'ORDRE COMPTE : c'est au televersement d'un
+	// chunk qu'on lui dit d'ecrire dedans. Preparee apres la premiere passe,
+	// les premiers chunks -- ceux qui entourent le joueur a son arrivee -- n'y
+	// ecriraient pas, et leur feuillage resterait sans teinte.
+	PreparerRvt();
+	PreparerParois();
+	PreparerVegetation();
+
 	if (UWorld* const W = GetWorld())
 	{
 		W->GetTimerManager().SetTimer(UpdateTimer, this,
@@ -702,6 +803,20 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 	TotalUpdateMs += Ms;
 	++UpdateCount;
 	WorstUpdateMs = FMath::Max(WorstUpdateMs, Ms);
+
+	// --- LE RELEVE DES ESPECES, UNE FOIS LE MONDE REMPLI --------------------
+	//
+	// ON ATTEND LE REMPLISSAGE, ET C'EST LE PIEGE A EVITER. Fait a la premiere
+	// passe, le releve ne trouverait rien -- les chunks ne sont pas encore
+	// mailles, donc rien n'est seme -- et l'on conclurait « aucune espece ici »
+	// alors qu'on a seulement mesure trop tot. Ce depot a deja photographie une
+	// file d'attente en croyant photographier un monde.
+	if (EspecesRayonM > 0.0f && !bEspecesReleve && BuiltChunks > 300)
+	{
+		bEspecesReleve = true;
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"),
+			*EspecesAutour(StreamingOriginCm(), EspecesRayonM * WorldseedMetersToCm));
+	}
 }
 
 void AWorldseedVoxelTerrain::UpdateChunksInterne()
@@ -1189,7 +1304,9 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 		DensityRules.RockColourFadeM,
 		DensityRules.OverhangAmplitudeM + DensityRules.DetailAmplitudeM,
 		WorldSeed,
-		bCarteDesCauses
+		bCarteDesCauses,
+		bPoidsDeMatiere,
+		bFonduDesBiomes
 	};
 
 	FWorldseedPeintureReleve Releve;
@@ -1225,6 +1342,542 @@ void AWorldseedVoxelTerrain::PaintVertices(FWorldseedVoxelMesh& Mesh) const
 	{
 		PeintureParBanc[K] += Releve.ParBanc[K];
 	}
+}
+
+void AWorldseedVoxelTerrain::PreparerParois()
+{
+	ParoiComposants.Reset();
+	ParoiCatalogue.Reset();
+
+	if (!bSemerParois || ParoiMaillages.Num() == 0)
+	{
+		return;
+	}
+
+	for (const FSoftObjectPath& Chemin : ParoiMaillages)
+	{
+		UStaticMesh* Maillage = Cast<UStaticMesh>(Chemin.TryLoad());
+		if (!Maillage)
+		{
+			// UN ASSET ABSENT N'EST PAS UNE ERREUR FATALE ICI : `Content/` est
+			// exclu du depot, donc un clone frais n'a pas ces packs. On le dit
+			// et l'on continue avec ce qui reste.
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] parois : maillage introuvable, ignore -- %s"),
+				*Chemin.ToString());
+			continue;
+		}
+
+		const FName Nom(*FString::Printf(TEXT("Parois_%d"), ParoiComposants.Num()));
+		UInstancedStaticMeshComponent* ISM =
+			NewObject<UInstancedStaticMeshComponent>(this, Nom);
+		ISM->SetupAttachment(RootScene);
+		ISM->SetStaticMesh(Maillage);
+
+		// AUCUNE COLLISION, ET C'EST UN CHOIX A REPRENDRE. Les trois pans de
+		// falaise du pack n'ont aucune primitive de collision simple (releve du
+		// 25 septembre 2026 : `CollisionPrims = 0`), donc la seule collision
+		// possible serait le maillage complexe -- 3366 triangles par instance,
+		// cuits a chaque pose. Et surtout, leur donner une collision changerait
+		// LA OU LE JOUEUR POSE LE PIED selon l'habillage choisi, ce qui est le
+		// seul point par lequel un habillage toucherait a la jouabilite. Tant
+		// que ce n'est pas arbitre, elles sont du DECOR.
+		ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ISM->SetCastShadow(bOmbresChunks);
+		ISM->bAffectDistanceFieldLighting = false;
+
+		// LE MATERIAU DU PACK EST REMPLACE, ET IL LE FAUT. Voir `ParoiMateriau` :
+		// sans cela le dessus des pans rend un bleu fluo, faute de Runtime
+		// Virtual Texture dans ce niveau. On remplace TOUS les emplacements --
+		// ce modele n'en a qu'un, mais un catalogue enrichi pourrait en avoir
+		// plusieurs, et un emplacement oublie reste bleu sans rien signaler.
+		if (UMaterialInterface* SansRVT = Cast<UMaterialInterface>(ParoiMateriau.TryLoad()))
+		{
+			for (int32 S = 0; S < Maillage->GetStaticMaterials().Num(); ++S)
+			{
+				ISM->SetMaterial(S, SansRVT);
+			}
+		}
+		else if (!ParoiMateriau.IsNull())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] parois : materiau introuvable, le dessus des ")
+				TEXT("pans restera BLEU -- %s"), *ParoiMateriau.ToString());
+		}
+
+		ISM->RegisterComponent();
+		ParoiComposants.Add(ISM);
+
+		// LES BOITES SE RELEVENT SUR L'ASSET, PAS SUR LE PIVOT. Voir
+		// `FWorldseedParoiModele` : les pivots du pack sont incoherents entre
+		// modeles, le centre de la boite ne l'est pas.
+		const FBoxSphereBounds B = Maillage->GetBounds();
+		FWorldseedParoiModele M;
+		M.DemiTaille = B.BoxExtent;
+		M.Origine = B.Origin;
+		ParoiCatalogue.Add(M);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] parois : modele %d = %s, %.1f x %.1f x %.1f m"),
+			ParoiCatalogue.Num() - 1, *Maillage->GetName(),
+			2.0 * B.BoxExtent.X / WorldseedMetersToCm,
+			2.0 * B.BoxExtent.Y / WorldseedMetersToCm,
+			2.0 * B.BoxExtent.Z / WorldseedMetersToCm);
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] parois : %d modele(s) prets  |  REBORD = chute >= %.0f m ")
+		TEXT("et montee <= %.0f %% de la chute  |  pas %.0f m, yaw %+.0f deg, densite %.2f"),
+		ParoiCatalogue.Num(), ParoiDeniveleMinM, ParoiMonteeMaxFrac * 100.0f,
+		ParoiPasM, ParoiYawOffsetDeg, ParoiDensite);
+}
+
+void AWorldseedVoxelTerrain::SemerParoisDuChunk(const FWorldseedChunkKey& Key,
+	FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh)
+{
+	if (ParoiCatalogue.Num() == 0 || ParoiComposants.Num() != ParoiCatalogue.Num())
+	{
+		return;
+	}
+
+	const double Debut = FPlatformTime::Seconds();
+
+	FWorldseedParoiRegles Regles;
+	Regles.MonteeMaxFrac = ParoiMonteeMaxFrac;
+	Regles.DeniveleMinM = ParoiDeniveleMinM;
+	Regles.YawOffsetDeg = ParoiYawOffsetDeg;
+	Regles.PasM = ParoiPasM;
+	Regles.Densite = ParoiDensite;
+
+	// LE RELIEF MACRO EST CE QUI DIT LA HAUTEUR D'UNE PAROI. Le champ le tient
+	// deja -- c'est la meme fonction que la peinture des sommets emploie -- et
+	// il ne connait pas le decoupage en chunks, donc il voit une falaise de
+	// 138 m la ou un chunk de 32 m n'en voit qu'un morceau.
+	const FWorldseedDensity* const Champ = Density.Get();
+	if (!Champ)
+	{
+		return;
+	}
+	auto Relief = [Champ](double X, double Y) -> double
+	{
+		return static_cast<double>(Champ->SurfaceHeightM(X, Y));
+	};
+
+	// LE CHUNK SE BORNE PAR SA CLE, comme partout ailleurs dans cet acteur : le
+	// cote depend du NIVEAU d'anneau, et le recopier en dur ferait semer sur la
+	// mauvaise emprise des que les anneaux seraient armes.
+	const double CoteM = Diffusion.CoteM(Key.Niveau);
+	const FVector OrigineCm(
+		Key.C.X * CoteM * WorldseedMetersToCm,
+		Key.C.Y * CoteM * WorldseedMetersToCm,
+		Key.C.Z * CoteM * WorldseedMetersToCm);
+
+	TArray<FWorldseedParoiInstance> Instances;
+	WorldseedParois::Semer(Mesh, OrigineCm, CoteM * WorldseedMetersToCm,
+		ParoiCatalogue, Regles, WorldSeed, Relief, Instances);
+
+	for (const FWorldseedParoiInstance& I : Instances)
+	{
+		if (!ParoiComposants.IsValidIndex(I.Modele) || !ParoiComposants[I.Modele])
+		{
+			continue;
+		}
+		State.Parois.Emplace(I.Modele,
+			ParoiComposants[I.Modele]->AddInstanceById(I.Transform));
+	}
+
+	ParoisPosees += Instances.Num();
+	ParoisMs += (FPlatformTime::Seconds() - Debut) * 1000.0;
+}
+
+void AWorldseedVoxelTerrain::PreparerRvt()
+{
+	RvtComposants.Reset();
+	RvtTextures.Reset();
+
+	if (!bUtiliserRvt)
+	{
+		return;
+	}
+
+	FWorldseedRvtRegles Regles;
+
+	TArray<URuntimeVirtualTextureComponent*> Comps;
+	TArray<URuntimeVirtualTexture*> Textures;
+	const int32 Posees = WorldseedRvt::Poser(this, RootScene,
+		WorldseedRvt::AssetsParDefaut(), Regles,
+		static_cast<double>(Geometry.WidthM()),
+		static_cast<double>(Geometry.HeightM),
+		Comps, Textures);
+
+	for (URuntimeVirtualTextureComponent* const C : Comps)
+	{
+		RvtComposants.Add(C);
+	}
+	for (URuntimeVirtualTexture* const T : Textures)
+	{
+		RvtTextures.Add(T);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Worldseed] RVT : %d texture(s) posee(s)"), Posees);
+}
+
+void AWorldseedVoxelTerrain::PreparerVegetation()
+{
+	PlanteComposants.Reset();
+
+	if (!bSemerVegetation)
+	{
+		return;
+	}
+
+	FString Info;
+	if (!Recettes.Charger(Info))
+	{
+		// PAS FATAL, ET IL FAUT LE DIRE PLUTOT QUE DE SE TAIRE. `Content/` est
+		// exclu du depot : un clone frais n'a aucun des maillages cites, et un
+		// monde sans vegetation reste jouable.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] vegetation : recettes non chargees -- %s"), *Info);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] vegetation : recettes lues -- %d biomes, %d couches, ")
+		TEXT("%d especes  (%s)"),
+		Recettes.ParBiome.Num(), Recettes.NbCouches, Recettes.Catalogue.Num(),
+		*FPaths::GetCleanFilename(Info));
+
+	// --- UN COMPOSANT PAR ESPECE -------------------------------------------
+	//
+	// L'ISM SIMPLE ET NON LE HIERARCHIQUE, pour la meme raison que les parois :
+	// l'interface par identifiant, seule a donner des identifiants stables,
+	// porte « cannot be used on HISM » dans son propre contrat
+	// (InstancedStaticMeshComponent.h:288). Le culling GPU d'UE5 rend les deux
+	// comparables a ces volumes.
+	int32 Manquants = 0;
+	int32 RvtRemplaces = 0;
+	for (int32 I = 0; I < Recettes.Catalogue.Num(); ++I)
+	{
+		UStaticMesh* Maillage = Cast<UStaticMesh>(
+			FSoftObjectPath(Recettes.Catalogue[I]).TryLoad());
+
+		// ON CREE UN COMPOSANT MEME POUR UN MAILLAGE ABSENT -- a nul. Sans
+		// cela, l'index du catalogue ne correspondrait plus a celui du tableau
+		// de composants, et chaque plante serait posee sur la MAUVAISE espece :
+		// un defaut qui ne se voit qu'a l'image, et seulement si l'on connait
+		// les especes attendues.
+		if (!Maillage)
+		{
+			++Manquants;
+			PlanteComposants.Add(nullptr);
+			continue;
+		}
+
+		const FName Nom(*FString::Printf(TEXT("Plantes_%d"), I));
+		UInstancedStaticMeshComponent* ISM =
+			NewObject<UInstancedStaticMeshComponent>(this, Nom);
+		ISM->SetupAttachment(RootScene);
+		ISM->SetStaticMesh(Maillage);
+		ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ISM->SetCastShadow(bOmbresChunks);
+		ISM->bAffectDistanceFieldLighting = false;
+
+		// --- LE BLEU DE LA RVT SE REMPLACE ICI, EMPLACEMENT PAR EMPLACEMENT --
+		//
+		// Voir `FWorldseedRecettes::SansRVT`. On remplace par EMPLACEMENT et non
+		// en bloc parce qu'un maillage a plusieurs sections peut meler un
+		// materiau fautif -- l'ecorce -- et un materiau sain -- le feuillage ;
+		// remplacer les deux ecraserait le second par le premier.
+		for (int32 S = 0; S < Maillage->GetStaticMaterials().Num(); ++S)
+		{
+			const UMaterialInterface* const Origine = Maillage->GetMaterial(S);
+			if (!Origine)
+			{
+				continue;
+			}
+			// La table est indexee par le chemin du PAQUET, sans le suffixe
+			// d'objet : c'est ce que le script d'editeur y a ecrit.
+			FString Cle = Origine->GetPathName();
+			int32 Point = INDEX_NONE;
+			if (Cle.FindChar(TEXT('.'), Point))
+			{
+				Cle = Cle.Left(Point);
+			}
+			if (const FString* Remplacant = Recettes.SansRVT.Find(Cle))
+			{
+				if (UMaterialInterface* Sain = Cast<UMaterialInterface>(
+					FSoftObjectPath(*Remplacant).TryLoad()))
+				{
+					ISM->SetMaterial(S, Sain);
+					++RvtRemplaces;
+				}
+				else
+				{
+					// UN REMPLACANT INTROUVABLE DOIT CRIER, ET CE SILENCE A
+					// COUTE UN DIAGNOSTIC. Un temoin pose pour identifier un
+					// maillage fautif n'a rien remplace -- son chemin etait
+					// faux -- et le releve affichait le meme compte qu'avant :
+					// on a conclu que le maillage n'etait pas celui-la, alors
+					// qu'on n'avait rien teste du tout.
+					UE_LOG(LogTemp, Warning,
+						TEXT("[Worldseed] vegetation : remplacant INTROUVABLE pour %s ")
+						TEXT("-- le materiau du pack est garde : %s"),
+						*Cle, **Remplacant);
+				}
+			}
+		}
+
+		// NE PAS COUPER L'OMBRE PORTEE « PAR PRECAUTION » : fait une fois au
+		// passage a 6 200 instances a l'hectare, le verdict a l'image fut
+		// immediat -- les plantes ne touchent plus le sol, elles flottent. Et
+		// la mesure ne le justifiait pas : 105 FPS avec les ombres contre 114
+		// sans, soit 0,7 ms pour un budget de 16,67.
+		ISM->RegisterComponent();
+		PlanteComposants.Add(ISM);
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] vegetation : %d emplacement(s) de materiau passes en ")
+		TEXT("SANS RVT sur %d correspondances connues"),
+		RvtRemplaces, Recettes.SansRVT.Num());
+
+	if (Manquants > 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] vegetation : %d espece(s) sur %d introuvables ")
+			TEXT("-- leurs plantes ne seront pas posees"),
+			Manquants, Recettes.Catalogue.Num());
+	}
+}
+
+void AWorldseedVoxelTerrain::SemerVegetationDuChunk(const FWorldseedChunkKey& Key,
+	FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh)
+{
+	if (PlanteComposants.Num() == 0 || Recettes.EstVide())
+	{
+		return;
+	}
+
+	const double Debut = FPlatformTime::Seconds();
+
+	FWorldseedVegetationRegles Regles;
+	Regles.PasMultiplicateur = VegetationPasMultiplicateur;
+	Regles.Densite = VegetationDensite;
+	Regles.RayonSemisM = VegetationRayonM;
+
+	const double CoteM = Diffusion.CoteM(Key.Niveau);
+
+	// LE PLAFOND SUIT L'AIRE DU CHUNK, SINON IL CESSE D'ETRE UNE CEINTURE.
+	//
+	// Il est pose pour un chunk de 32 m ; or un chunk de niveau 3 en fait 256,
+	// soit soixante-quatre fois la surface. Un plafond FIXE y ecreterait donc
+	// un semis parfaitement legitime -- et le symptome serait une PLAQUE
+	// CHAUVE au-dela du premier anneau, d'autant plus visible que le tapis
+	// vient d'etre resserre a 75 cm. On garde la meme densite maximale par
+	// hectare a tous les niveaux.
+	Regles.PlafondParChunk = FMath::Clamp(
+		FMath::RoundToInt(Regles.PlafondParChunk * FMath::Square(CoteM / 32.0)),
+		Regles.PlafondParChunk, 1 << 20);
+
+	const FVector OrigineCm(
+		Key.C.X * CoteM * WorldseedMetersToCm,
+		Key.C.Y * CoteM * WorldseedMetersToCm,
+		Key.C.Z * CoteM * WorldseedMetersToCm);
+
+	const FVector OrigineDiffusionCm = StreamingOriginCm() - GetActorLocation();
+	const FVector2D OrigineM(
+		OrigineDiffusionCm.X / WorldseedMetersToCm,
+		OrigineDiffusionCm.Y / WorldseedMetersToCm);
+
+	TArray<FWorldseedPlante> Plantes;
+	WorldseedVegetation::Semer(Mesh, OrigineCm, CoteM * WorldseedMetersToCm,
+		Recettes, Biomes(), Geometry, Regles, WorldSeed, OrigineM,
+		Plantes, VegetationReleve);
+
+	// --- ON AJOUTE PAR LOT, PAS UNE PAR UNE --------------------------------
+	//
+	// C'EST LA DIFFERENCE D'ECHELLE AVEC LES PAROIS. Un chunk pose quelques
+	// dizaines de pans de falaise mais peut porter plusieurs centaines de
+	// plantes -- une couche de tapis au pas de 150 cm en met environ 455 sur un
+	// chunk de 32 m. Chaque `AddInstanceById` marque l'etat de rendu et fait
+	// grandir les tableaux du composant ; les grouper par espece transforme des
+	// centaines d'appels en un par espece presente.
+	TMap<int32, TArray<FTransform>> ParEspece;
+	for (const FWorldseedPlante& P : Plantes)
+	{
+		if (PlanteComposants.IsValidIndex(P.Espece) && PlanteComposants[P.Espece])
+		{
+			ParEspece.FindOrAdd(P.Espece).Add(P.Transform);
+		}
+	}
+
+	if (bIsmParChunk)
+	{
+		// --- CHAQUE CHUNK POSSEDE SES COMPOSANTS -------------------------
+		//
+		// Le composant global sert alors de MODELE et reste vide : il porte
+		// deja le maillage et les materiaux resolus -- dont les remplacements
+		// SANS RVT, qui demandent un `TryLoad` par materiau et qu'on ne veut
+		// surtout pas refaire a chaque chunk.
+		//
+		// LE NOM PORTE UN COMPTEUR, pour la meme raison que les composants de
+		// terrain : un nom deterministe reviendrait des qu'un chunk renait au
+		// meme endroit, et `NewObject` devrait ecraser un objet dont le fil de
+		// rendu n'a pas fini de liberer les ressources -- 17 811 ms d'attente
+		// cumulee mesurees sur soixante secondes avant que ce defaut ne soit
+		// corrige cote terrain.
+		State.PlantesISM.Reserve(ParEspece.Num());
+		for (const auto& Paire : ParEspece)
+		{
+			const UInstancedStaticMeshComponent* const Modele =
+				PlanteComposants[Paire.Key];
+
+			const FName Nom(*FString::Printf(TEXT("Plantes_%d_%llu"),
+				Paire.Key, ++CompteurComposantsChunk));
+			UInstancedStaticMeshComponent* const ISM =
+				NewObject<UInstancedStaticMeshComponent>(this, Nom);
+			ISM->SetupAttachment(RootScene);
+			ISM->SetStaticMesh(Modele->GetStaticMesh());
+			ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ISM->SetCastShadow(bOmbresChunks);
+			ISM->bAffectDistanceFieldLighting = false;
+
+			// LES MATERIAUX SE RECOPIENT DEPUIS LE MODELE, JAMAIS DEPUIS LE
+			// MAILLAGE : c'est le modele qui porte les remplacements sans RVT,
+			// et repartir du maillage rendrait le bleu fluo des rochers.
+			for (int32 S = 0; S < Modele->GetNumMaterials(); ++S)
+			{
+				ISM->SetMaterial(S, Modele->GetMaterial(S));
+			}
+
+			// EN UN SEUL LOT, ET AVANT L'ENREGISTREMENT : le composant n'est
+			// pas encore dans la scene, donc rien n'est marque sale.
+			ISM->AddInstances(Paire.Value, /*bShouldReturnIndices*/ false);
+			ISM->RegisterComponent();
+			State.PlantesISM.Add(ISM);
+		}
+	}
+	else
+	{
+		for (const auto& Paire : ParEspece)
+		{
+			const TArray<FPrimitiveInstanceId> Ids =
+				PlanteComposants[Paire.Key]->AddInstancesById(Paire.Value);
+			for (const FPrimitiveInstanceId Id : Ids)
+			{
+				State.Plantes.Emplace(Paire.Key, Id);
+			}
+		}
+	}
+
+	VegetationMs += (FPlatformTime::Seconds() - Debut) * 1000.0;
+}
+
+FString AWorldseedVoxelTerrain::EspecesAutour(const FVector& CentreCm,
+	double RayonCm) const
+{
+	struct FTrouve
+	{
+		FString Maillage;
+		FString Materiaux;
+		int32 Nombre = 0;
+		double PlusProcheCm = TNumericLimits<double>::Max();
+		bool bParoi = false;
+	};
+
+	TArray<FTrouve> Trouves;
+
+	auto Examiner = [&](const UInstancedStaticMeshComponent* ISM, bool bParoi)
+	{
+		if (!ISM || !ISM->GetStaticMesh())
+		{
+			return;
+		}
+
+		// LE COMPOSANT SAIT DEJA REPONDRE : inutile de parcourir toutes les
+		// instances a la main, il tient un arbre pour cela.
+		const TArray<int32> Index = ISM->GetInstancesOverlappingSphere(
+			CentreCm, RayonCm, /*bSphereInWorldSpace*/ true);
+		if (Index.Num() == 0)
+		{
+			return;
+		}
+
+		FTrouve T;
+		T.Maillage = ISM->GetStaticMesh()->GetName();
+		T.Nombre = Index.Num();
+		T.bParoi = bParoi;
+
+		for (const int32 I : Index)
+		{
+			FTransform Xf;
+			if (ISM->GetInstanceTransform(I, Xf, /*bWorldSpace*/ true))
+			{
+				T.PlusProcheCm = FMath::Min(T.PlusProcheCm,
+					FVector::Dist(Xf.GetLocation(), CentreCm));
+			}
+		}
+
+		// LE MATERIAU EFFECTIF, EMPLACEMENT PAR EMPLACEMENT. C'est lui qui dit
+		// si la substitution sans RVT a mordu ici -- le nom de l'asset, lui, ne
+		// le dirait pas.
+		TArray<FString> Mats;
+		for (int32 S = 0; S < ISM->GetNumMaterials(); ++S)
+		{
+			const UMaterialInterface* const M = ISM->GetMaterial(S);
+			Mats.Add(M ? M->GetName() : TEXT("-"));
+		}
+		T.Materiaux = FString::Join(Mats, TEXT(" + "));
+
+		Trouves.Add(MoveTemp(T));
+	};
+
+	// LES PLANTES NE SONT PLUS TOUTES AU MEME ENDROIT, et cet outil l'ignorait :
+	// en mode « un ISM par chunk », les composants globaux restent VIDES et ce
+	// releve rendait « 0 espece » au milieu de vingt-cinq mille instances. Un
+	// compteur qui rend zero sur un cas dont on connait la reponse ne mesure
+	// rien -- ce depot l'a deja paye sur l'herbe de Landscape, ou la demo du
+	// pack rendait le meme zero que notre monde.
+	for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& C : Chunks)
+	{
+		for (const TObjectPtr<UInstancedStaticMeshComponent>& ISM : C.Value.PlantesISM)
+		{
+			Examiner(ISM, false);
+		}
+	}
+	for (const UInstancedStaticMeshComponent* ISM : PlanteComposants)
+	{
+		Examiner(ISM, false);
+	}
+	for (const UInstancedStaticMeshComponent* ISM : ParoiComposants)
+	{
+		Examiner(ISM, true);
+	}
+
+	Trouves.Sort([](const FTrouve& A, const FTrouve& B)
+	{
+		return A.PlusProcheCm < B.PlusProcheCm;
+	});
+
+	FString Sortie = FString::Printf(
+		TEXT("especes dans %.0f m de (%.0f, %.0f, %.0f) m : %d\n"),
+		RayonCm / WorldseedMetersToCm,
+		CentreCm.X / WorldseedMetersToCm, CentreCm.Y / WorldseedMetersToCm,
+		CentreCm.Z / WorldseedMetersToCm, Trouves.Num());
+
+	for (const FTrouve& T : Trouves)
+	{
+		Sortie += FString::Printf(TEXT("  %7.1f m  x%-4d  %-34s %s%s\n"),
+			T.PlusProcheCm / WorldseedMetersToCm, T.Nombre, *T.Maillage,
+			*T.Materiaux, T.bParoi ? TEXT("   [paroi]") : TEXT(""));
+	}
+
+	if (Trouves.Num() == 0)
+	{
+		Sortie += TEXT("  (rien : hors du rayon de semis, ou biome sans recette)\n");
+	}
+	return Sortie;
 }
 
 void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
@@ -1339,8 +1992,30 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	{
 		// LE NIVEAU ENTRE DANS LE NOM : sans lui, deux chunks de niveaux
 		// differents mais de memes indices porteraient le meme nom de composant.
-		const FName Nom(*FString::Printf(TEXT("Voxel_L%d_%d_%d_%d"),
-			Key.Niveau, Key.C.X, Key.C.Y, Key.C.Z));
+		//
+		// --- ET UN COMPTEUR, PARCE QU'UN NOM QUI REVIENT FAIT ATTENDRE -------
+		//
+		// LE NOM ETAIT PUREMENT DETERMINISTE, DONC IL REVENAIT. En avancant, un
+		// chunk est relache puis redemande -- c'est le cas NOMINAL du streaming,
+		// pas un cas limite. `NewObject` retombait alors sur le nom d'un
+		// composant dont le fil de rendu n'avait pas fini de liberer les
+		// ressources, et devait l'ECRASER : le fil de jeu attend alors le fil de
+		// rendu, et le moteur le dit lui-meme --
+		//   « Gamethread hitch waiting for resource cleanup on a UObject
+		//     (ProceduralMeshComponent ... Voxel_L1_-257_29_0) overwrite took
+		//     21.11ms. Fix the higher level code so that this does not happen. »
+		//
+		// MESURE, A/B a vitesse imposee sur 60 s de vol : 263 attentes pour
+		// 17 811 ms CUMULEES, dont une de 624 ms -- sur soixante secondes de jeu.
+		// Ce n'est pas du calcul, c'est de l'attente pure, et elle ne se
+		// parallelise pas : c'est ce qui rend le pire televersement (625 ms)
+		// indiscernable du pire a-coup.
+		//
+		// LE COMPTEUR NE REMPLACE PAS LE NOM, IL LE SUFFIXE, pour que l'outliner
+		// et les messages du moteur restent lisibles -- c'est par ce nom qu'on a
+		// identifie le coupable ici meme.
+		const FName Nom(*FString::Printf(TEXT("Voxel_L%d_%d_%d_%d_%d"),
+			Key.Niveau, Key.C.X, Key.C.Y, Key.C.Z, ++CompteurComposantsChunk));
 		State.Mesh = NewObject<UProceduralMeshComponent>(this, Nom);
 		State.Mesh->SetupAttachment(RootScene);
 		State.Mesh->bUseAsyncCooking = true;
@@ -1354,6 +2029,21 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 		if (TerrainMaterial)
 		{
 			State.Mesh->SetMaterial(0, TerrainMaterial);
+		}
+
+		// LE TERRAIN ECRIT DANS LA RVT, ET C'EST LUI SEUL QUI LE FAIT. Le
+		// feuillage la LIT : s'il y ecrivait aussi, il se teinterait de
+		// lui-meme et la boucle n'aurait aucun sens. C'est le sol qui donne le
+		// ton, comme dans la carte de demonstration du pack.
+		if (RvtTextures.Num() > 0)
+		{
+			TArray<URuntimeVirtualTexture*> Brutes;
+			Brutes.Reserve(RvtTextures.Num());
+			for (const TObjectPtr<URuntimeVirtualTexture>& T : RvtTextures)
+			{
+				Brutes.Add(T.Get());
+			}
+			WorldseedRvt::FaireEcrire(State.Mesh, Brutes);
 		}
 	}
 
@@ -1374,11 +2064,26 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	// Un chunk qu'on voit est un chunk qu'on peut atteindre, et le rayon de
 	// CHARGEMENT borne deja le travail. Si la cuisson coute trop cher, la
 	// reponse est de la faire de facon asynchrone, pas de laisser un trou.
+	// LES CANAUX DE TEINTE DOIVENT PASSER, SINON LA PEINTURE NE SERT A RIEN.
+	// L'appel ne donnait AUCUN UV : la teinte de biome que la peinture calcule
+	// n'atteignait donc jamais le materiau, et un pack de textures se retrouvait
+	// a melanger ses quatre matieres sans savoir de quelle couleur les faire --
+	// une savane rendait comme une prairie. La convention est celle de la nappe
+	// d'horizon, qui la tient depuis toujours : UV0 le placage, UV1 la teinte
+	// RG, UV2 la teinte B. Les trois tableaux sont vides en mode couleur de
+	// biome, ou `M_WorldseedBiome` lit tout dans RGBA.
 	State.Mesh->CreateMeshSection_LinearColor(0, Job->Mesh.Positions,
 		Job->Mesh.Triangles, Job->Mesh.Normals, TArray<FVector2D>(),
+		Job->Mesh.TintRG, Job->Mesh.TintB, TArray<FVector2D>(),
 		Job->Mesh.Colours, TArray<FProcMeshTangent>(), true);
 
 	State.bHasCollision = true;
+
+	// LES PAROIS SE SEMENT ICI, ET APRES LA SECTION : elles lisent les normales
+	// du maillage pour savoir ou est la roche raide, donc elles ne peuvent pas
+	// etre posees avant qu'il existe.
+	SemerParoisDuChunk(Key, State, Job->Mesh);
+	SemerVegetationDuChunk(Key, State, Job->Mesh);
 
 	const double UploadMs = (FPlatformTime::Seconds() - DebutUpload) * 1000.0;
 	TotalUploadMs += UploadMs;
@@ -1410,6 +2115,70 @@ void AWorldseedVoxelTerrain::ReleaseChunk(const FWorldseedChunkKey& Key)
 	{
 		State->Mesh->DestroyComponent();
 	}
+
+	// LES PAROIS PARTENT AVEC LEUR CHUNK. Sans cela elles resteraient posees
+	// dans un monde ou le sol qui les portait n'existe plus -- et comme le
+	// composant d'instances, lui, est GLOBAL, rien ne les nettoierait jamais.
+	//
+	// ON TRIE PAR COMPOSANT AVANT DE RETIRER : voir `FWorldseedVoxelChunkState`
+	// -- un identifiant ne vaut que pour le composant qui l'a emis.
+	if (State->Parois.Num() > 0)
+	{
+		TArray<FPrimitiveInstanceId> Lot;
+		for (int32 Modele = 0; Modele < ParoiComposants.Num(); ++Modele)
+		{
+			UInstancedStaticMeshComponent* ISM = ParoiComposants[Modele];
+			if (!ISM)
+			{
+				continue;
+			}
+			Lot.Reset();
+			for (const TPair<int32, FPrimitiveInstanceId>& P : State->Parois)
+			{
+				if (P.Key == Modele)
+				{
+					Lot.Add(P.Value);
+				}
+			}
+			if (Lot.Num() > 0)
+			{
+				ISM->RemoveInstancesById(Lot);
+			}
+		}
+		State->Parois.Reset();
+	}
+
+	// EN MODE « UN ISM PAR CHUNK », LE RETRAIT EST UNE DESTRUCTION. Rien a
+	// retirer d'un gros composant, donc rien a retraiter pour le fil de rendu :
+	// c'est tout l'objet de ce mode.
+	for (const TObjectPtr<UInstancedStaticMeshComponent>& ISM : State->PlantesISM)
+	{
+		if (ISM)
+		{
+			ISM->DestroyComponent();
+		}
+	}
+	State->PlantesISM.Reset();
+
+	// LES PLANTES AUSSI PARTENT AVEC LEUR CHUNK, et par lot : un chunk en porte
+	// des centaines, et les retirer une par une ferait autant d'appels.
+	if (State->Plantes.Num() > 0)
+	{
+		TMap<int32, TArray<FPrimitiveInstanceId>> ParEspece;
+		for (const TPair<int32, FPrimitiveInstanceId>& P : State->Plantes)
+		{
+			ParEspece.FindOrAdd(P.Key).Add(P.Value);
+		}
+		for (const auto& Paire : ParEspece)
+		{
+			if (PlanteComposants.IsValidIndex(Paire.Key) && PlanteComposants[Paire.Key])
+			{
+				PlanteComposants[Paire.Key]->RemoveInstancesById(Paire.Value);
+			}
+		}
+		State->Plantes.Reset();
+	}
+
 	Chunks.Remove(Key);
 }
 
@@ -1958,6 +2727,99 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			TEXT("  |  %d feuilles ajoutees par l'equilibrage 2:1"),
 			ParNiveau[0], ParNiveau[1], ParNiveau[2], ParNiveau[3], ParNiveau[4],
 			AvecTransition, Diffusion.AjoutsDeLEquilibrage());
+	}
+
+	// LE COMPTE TRANCHE, PAS LE TEMPS. Quand un semis ne produit rien, son cout
+	// tend vers zero par construction et l'on croit a une optimisation : ce
+	// depot a deja paye la lecon sur les sites de tables relus du cache, ou la
+	// colonne de chronometre affichait zero que le transvasement marche ou non.
+	// C'est le NOMBRE D'INSTANCES qui dit si le chemin s'execute.
+	if (bSemerParois)
+	{
+		int32 Vivantes = 0;
+		for (const UInstancedStaticMeshComponent* ISM : ParoiComposants)
+		{
+			if (ISM)
+			{
+				Vivantes += ISM->GetNumInstances();
+			}
+		}
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] parois : %d posees au total, %d vivantes, ")
+			TEXT("%d modele(s), semis %.2f ms cumulees"),
+			ParoisPosees, Vivantes, ParoiCatalogue.Num(), ParoisMs);
+	}
+
+	// LE COMPTE TRANCHE, PAS LE TEMPS -- meme raison que pour les parois. Et le
+	// releve distingue les trois facons de ne rien poser : hors du rayon de
+	// semis, biome sans recette, ou plafond atteint. Un seul chiffre « zero
+	// plante » ne dirait pas laquelle, et l'on chercherait au mauvais endroit.
+	if (bSemerVegetation)
+	{
+		int32 Vivantes = 0;
+		int32 Especes = 0;
+
+		// LES INSTANCES NE VIVENT PAS AU MEME ENDROIT SELON LE MODE, et ne
+		// compter que les composants globaux rendrait ZERO en mode par chunk --
+		// un zero qui se lirait comme « le semis ne produit rien ». Ce depot a
+		// deja perdu une heure sur un compteur qui ne mesurait pas ce qu'on
+		// croyait, et le cas temoin rendait le meme zero.
+		int32 Composants = 0;
+		for (const TPair<FWorldseedChunkKey, FWorldseedVoxelChunkState>& C : Chunks)
+		{
+			for (const TObjectPtr<UInstancedStaticMeshComponent>& ISM : C.Value.PlantesISM)
+			{
+				if (ISM)
+				{
+					++Composants;
+					Vivantes += ISM->GetNumInstances();
+				}
+			}
+		}
+
+		for (const UInstancedStaticMeshComponent* ISM : PlanteComposants)
+		{
+			if (ISM)
+			{
+				++Especes;
+				Vivantes += ISM->GetNumInstances();
+			}
+		}
+		// LE RELEVE DIT DE QUELLE CONFIGURATION IL EST. Sans cela deux releves
+		// ne se comparent a rien six mois plus tard -- et ce depot a deja
+		// compare deux mesures prises dans deux etats differents du code.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] vegetation : %d posees, %d vivantes, %d especes chargees")
+			TEXT("  |  chunks : %d hors rayon, %d sans recette, %d plafonnes, ")
+			TEXT("%d sous la mer")
+			TEXT("  |  %s (%d composants de chunk)")
+			TEXT("  |  semis %.0f ms cumulees"),
+			VegetationReleve.Posees, Vivantes, Especes,
+			VegetationReleve.HorsRayon, VegetationReleve.SansRecette,
+			VegetationReleve.Plafonnees, VegetationReleve.ChunksSousLaMer,
+			bIsmParChunk ? TEXT("UN ISM PAR CHUNK") : TEXT("un ISM global par espece"),
+			Composants,
+			VegetationMs);
+
+		// L'ENTONNOIR, PORTE PAR PORTE. Voir `FWorldseedVegetationReleve` : un
+		// seul total ne dit pas QUELLE garde etrangle le semis, et ce depot a
+		// deja regle quatre fois le mauvais bouton faute de ce detail.
+		const int64 T = FMath::Max<int64>(1, VegetationReleve.Testes);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] vegetation : entonnoir sur %lld points testes  |  ")
+			TEXT("hors chunk %.1f %%  case vide %.1f %%  tranche Z %.1f %%  ")
+			TEXT("sous la mer %.1f %%  substrat %.1f %%  ")
+			TEXT("pente %.1f %%  taches %.1f %%  densite %.1f %%  ->  POSEES %.1f %%"),
+			VegetationReleve.Testes,
+			100.0 * VegetationReleve.HorsChunk / T,
+			100.0 * VegetationReleve.CaseVide / T,
+			100.0 * VegetationReleve.TrancheZ / T,
+			100.0 * VegetationReleve.SousLaMer / T,
+			100.0 * VegetationReleve.Substrat / T,
+			100.0 * VegetationReleve.Pente / T,
+			100.0 * VegetationReleve.Taches / T,
+			100.0 * VegetationReleve.Densite / T,
+			100.0 * VegetationReleve.Posees / T);
 	}
 
 	const double Moyenne = (BuiltChunks + EmptyChunks) > 0

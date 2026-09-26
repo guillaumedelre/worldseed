@@ -120,4 +120,27 @@ namespace WorldseedApparence
 		int32 Cell, float HeightM, const FVector& Normal,
 		const FWorldseedAppearance& Mode,
 		FLinearColor& OutColour, FVector2D& OutTintRG, FVector2D& OutTintB);
+
+	/**
+	 * UNE TEINTE DE BIOME RAMENEE A LUMINANCE UN, POUR QUE LE MATERIAU SE
+	 * CONTENTE D'UN MULTIPLIE.
+	 *
+	 * Sans cette normalisation, multiplier la texture par la couleur de
+	 * reference d'un biome -- qui vaut autour de 0,4 -- assombrirait le sol :
+	 * une savane aurait une herbe plus sombre qu'une prairie, alors qu'elle
+	 * doit seulement etre plus JAUNE. Le calcul delicat se lit et se verifie
+	 * ici, en C++, pas dans un graphe de shader.
+	 *
+	 * ELLE EST PUBLIQUE PARCE QU'ELLE A DEUX APPELANTS, et que le depot
+	 * interdit de recopier une formule dans deux fichiers : la nappe
+	 * d'horizon la lit par `Sommet`, le terrain VOXEL par `WorldseedPeinture`.
+	 * Deux copies divergeraient, et la difference se verrait exactement la ou
+	 * les deux maillages se rencontrent -- le defaut que ce depot a deja paye
+	 * en gardant deux calculs d'apparence.
+	 *
+	 * La borne haute de 2,5 n'est pas cosmetique : un biome tres sombre et
+	 * tres sature donnerait sinon un facteur enorme sur un seul canal, donc un
+	 * sol fluo.
+	 */
+	WORLDSEED_API FLinearColor TeinteNormalisee(const FLinearColor& Teinte);
 }

@@ -35,6 +35,24 @@ enum class EWorldseedTexturePack : uint8
 	/** Le meilleur de chaque pack. Complet, mais de styles melanges. */
 	Mixed			UMETA(DisplayName = "Melange"),
 
+	/**
+	 * Orasot : le sol du pack, ET des parois de falaise en GEOMETRIE.
+	 *
+	 * SEUL HABILLAGE QUI POSE DES MAILLAGES, et c'est une decision du
+	 * proprietaire prise le 25 septembre 2026. Les autres packs ne changent
+	 * que le materiau du terrain ; celui-ci seme en plus des pans de falaise
+	 * sur les faces raides, pour retrouver le rendu de l'ile flottante de
+	 * `M_5_Bioms_Showcase`.
+	 *
+	 * CE QUE CELA NE CHANGE PAS : LE CHAMP DE DENSITE. Le relief, la carte et
+	 * les sondes restent identiques d'un habillage a l'autre -- les falaises
+	 * sont posees PAR-DESSUS, elles ne creusent rien. L'invariant « meme
+	 * graine, meme relief » tient donc, et c'est ce qui rend ce choix sur.
+	 * Le seul point qu'il deplace est la COLLISION, si on la leur donne : le
+	 * joueur ne poserait plus le pied au meme endroit selon l'habillage.
+	 */
+	Orasot			UMETA(DisplayName = "Orasot"),
+
 	Count			UMETA(Hidden)
 };
 

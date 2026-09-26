@@ -22,6 +22,7 @@ struct WORLDSEED_API FWorldseedVoxelMesh
 
 	/** Remplies par l'appelant, depuis ComputeVertexAppearance. */
 	TArray<FLinearColor> Colours;
+
 	TArray<FVector2D> TintRG;
 	TArray<FVector2D> TintB;
 

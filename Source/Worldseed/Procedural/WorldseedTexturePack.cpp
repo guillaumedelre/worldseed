@@ -17,6 +17,7 @@ namespace WorldseedTexturePack
 		case EWorldseedTexturePack::Village:     return LOCTEXT("PackVillage", "Village");
 		case EWorldseedTexturePack::Egypt:       return LOCTEXT("PackEgypt", "Egypte");
 		case EWorldseedTexturePack::Mixed:       return LOCTEXT("PackMixed", "Melange");
+		case EWorldseedTexturePack::Orasot:      return LOCTEXT("PackOrasot", "Orasot");
 		default:                                 return FText::GetEmpty();
 		}
 	}
@@ -44,6 +45,9 @@ namespace WorldseedTexturePack
 			return LOCTEXT("PackEgyptDesc", "Sable, roche, mousse. Pas d'herbe : mondes arides.");
 		case EWorldseedTexturePack::Mixed:
 			return LOCTEXT("PackMixedDesc", "Les quatre matieres, puisees dans les trois packs.");
+		case EWorldseedTexturePack::Orasot:
+			return LOCTEXT("PackOrasotDesc",
+				"Le sol du pack, et le SEUL qui pose des parois de falaise en geometrie.");
 		default:
 			return FText::GetEmpty();
 		}

@@ -476,6 +476,13 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 		// gris par defaut, qui ne lit pas la couleur de sommet : le relief
 		// proche devenait uniformement gris pendant que le sol de fond, lui,
 		// gardait ses couleurs de biome. La difference se voyait a l'horizon.
+		// L.HABILLAGE FORCE S.APPLIQUE ICI, sur les DEUX chemins de chargement.
+		// Pose plus haut, dans la seule branche « monde repris du menu », il ne
+		// servait jamais en lancement direct -- exactement le defaut deja paye
+		// sur le point de naissance : ce chemin-la n.est pris que si personne ne
+		// donne de monde au voxel.
+		AppliquerHabillageForce();
+
 		FWorldseedAppearance Mode;
 		Mode.bTexturePack = (Colouring == EWorldseedTerrainColouring::TexturePack)
 			&& (TexturePack != EWorldseedTexturePack::BiomeColour)
@@ -486,6 +493,28 @@ void AWorldseedTerrain::SpawnVoxelTerrain()
 		if (UMaterialInterface* Material = ChooseTerrainMaterial(Mode))
 		{
 			VoxelTerrain->TerrainMaterial = Material;
+		}
+
+		// ET LE VOXEL DOIT SAVOIR CE QU'IL VIENT DE RECEVOIR. Le materiau seul
+		// ne le dit pas : `M_WorldseedBiome` et `M_WorldseedGround` prennent
+		// tous deux une couleur de sommet, mais l'un y lit une COULEUR et
+		// l'autre les POIDS de ses quatre matieres. Sans ce drapeau, la
+		// peinture ecrivait une couleur de biome pour un materiau qui attendait
+		// des poids -- une foret recevait deux a trois fois plus d'aride que
+		// d'herbe, et le sol sortait sableux sans qu'aucune erreur ne soit
+		// levee. Voir `FWorldseedPeintureContexte::bPoidsDeMatiere`.
+		VoxelTerrain->bPoidsDeMatiere = Mode.bTexturePack;
+
+		// L'HABILLAGE ORASOT EST LE SEUL QUI POSE DES MAILLAGES, et cela se
+		// decide ici pour la meme raison que le materiau : c'est ce terrain qui
+		// a consomme l'instance de jeu et qui connait le pack. Le voxel, lui,
+		// ne lit la GameInstance que si personne ne lui donne de monde -- un
+		// PIE lance sans passer par le menu -- et ce chemin ne sert jamais en
+		// partie normale (defaut deja paye sur le point de naissance).
+		VoxelTerrain->bSemerParois = (TexturePack == EWorldseedTexturePack::Orasot);
+		if (VoxelTerrain->bSemerParois && VoxelTerrain->ParoiMaillages.Num() == 0)
+		{
+			VoxelTerrain->ParoiMaillages = WorldseedParois::MaillagesParDefaut();
 		}
 
 		VoxelTerrain->FinishSpawning(GetActorTransform());
@@ -724,6 +753,51 @@ UMaterialInterface* AWorldseedTerrain::ChoisirMateriauMerDecor(
 	return Repli;
 }
 
+void AWorldseedTerrain::AppliquerHabillageForce()
+{
+	FString Demande;
+	if (!FParse::Value(FCommandLine::Get(), TEXT("WorldseedHabillage="), Demande)
+		|| Demande.IsEmpty())
+	{
+		return;
+	}
+
+	// ON COMPARE SUR L'ENUMERATION, JAMAIS SUR UN LIBELLE. Les libelles portent
+	// des accents -- « Egypte » -- et ce depot a deja paye la lecon en portant
+	// le bulletin terrestre : quatre releves sur vingt-trois passaient, tous
+	// ceux dont le nom n'avait pas d'accent.
+	const UEnum* const Enumeration = StaticEnum<EWorldseedTexturePack>();
+	for (int32 I = 0; I < static_cast<int32>(EWorldseedTexturePack::Count); ++I)
+	{
+		const FString Nom = Enumeration->GetNameStringByValue(I);
+		if (Nom.Equals(Demande, ESearchCase::IgnoreCase))
+		{
+			TexturePack = static_cast<EWorldseedTexturePack>(I);
+
+			// LE MODE DE COLORATION SUIT, ET C'EST LUI QUI DECIDE VRAIMENT.
+			// Poser le seul `TexturePack` ne suffit pas : `ChooseTerrainMaterial`
+			// n'ouvre la branche des packs que si `Mode.bTexturePack` est vrai,
+			// et celui-ci est bati depuis `Colouring`. Sans cette ligne,
+			// l'habillage etait bien journalise comme force et le terrain
+			// restait en couleurs de biome a plat -- un reglage qui « ne prend
+			// pas » alors que le journal affirme le contraire.
+			Colouring = (TexturePack == EWorldseedTexturePack::BiomeColour)
+				? EWorldseedTerrainColouring::BiomeColour
+				: EWorldseedTerrainColouring::TexturePack;
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] habillage FORCE par la ligne de commande : %s"),
+				*Nom);
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] habillage « %s » inconnu -- ignore. Attendus : "
+			 "BiomeColour, Dreamscape, Village, Egypt, Mixed, Orasot"),
+		*Demande);
+}
+
 UMaterialInterface* AWorldseedTerrain::ChooseTerrainMaterial(
 	const FWorldseedAppearance& Mode) const
 {
@@ -740,6 +814,34 @@ UMaterialInterface* AWorldseedTerrain::ChooseTerrainMaterial(
 				return Found->Get();
 			}
 		}
+
+		// --- REPLI PAR CONVENTION DE NOM ------------------------------------
+		//
+		// `PackMaterials` est rempli SUR L'ACTEUR, donc dans la carte -- et une
+		// carte est un binaire. Un habillage neuf demanderait alors d'ouvrir
+		// l'editeur et de sauvegarder le niveau, ce qui ne se voit pas dans un
+		// diff et se perd au premier conflit. La convention
+		// `MI_WorldseedGround_<Habillage>` laisse le reglage du niveau primer
+		// quand il existe, et fonctionne sans lui sur un clone frais.
+		const FString Nom = StaticEnum<EWorldseedTexturePack>()
+			->GetNameStringByValue(static_cast<int64>(TexturePack));
+		const FString Chemin = FString::Printf(
+			TEXT("/Game/Worldseed/Materials/MI_WorldseedGround_%s.MI_WorldseedGround_%s"),
+			*Nom, *Nom);
+
+		if (UMaterialInterface* Convention =
+			Cast<UMaterialInterface>(FSoftObjectPath(Chemin).TryLoad()))
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] sol : habillage %s -> %s (par convention de nom)"),
+				*Nom, *Convention->GetName());
+			return Convention;
+		}
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] sol : aucun materiau pour l'habillage %s -- ni dans ")
+			TEXT("PackMaterials, ni a %s. Le terrain gardera ses couleurs de biome."),
+			*Nom, *Chemin);
 	}
 
 	if (Mode.bColourByBiome)
@@ -811,6 +913,8 @@ void AWorldseedTerrain::BuildGroundProxy()
 		TEXT("[Worldseed] sol de fond : retrait %.1f m (plancher du reglage %.1f, ")
 		TEXT("deplacement du champ compris)"),
 		NR.RetraitM, GroundProxyDropM);
+
+	AppliquerHabillageForce();
 
 	FWorldseedAppearance Mode;
 	Mode.bTexturePack = (Colouring == EWorldseedTerrainColouring::TexturePack)

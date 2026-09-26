@@ -5,6 +5,18 @@
 
 namespace WorldseedApparence
 {
+FLinearColor TeinteNormalisee(const FLinearColor& Teinte)
+{
+	const float Luminance = FMath::Max(
+		0.299f * Teinte.R + 0.587f * Teinte.G + 0.114f * Teinte.B, 0.01f);
+
+	return FLinearColor(
+		FMath::Min(Teinte.R / Luminance, 2.5f),
+		FMath::Min(Teinte.G / Luminance, 2.5f),
+		FMath::Min(Teinte.B / Luminance, 2.5f),
+		1.0f);
+}
+
 void Sommet(const FWorldseedWorldData& Monde, const FWorldseedSurfaceRegles& Regles,
 	int32 Cell, float HeightM, const FVector& Normal,
 	const FWorldseedAppearance& Mode,
@@ -127,23 +139,11 @@ void Sommet(const FWorldseedWorldData& Monde, const FWorldseedSurfaceRegles& Reg
 			}
 		}
 
-		// LA TEINTE PART DEJA NORMALISEE EN LUMINANCE.
-		//
-		// Le materiau se contente alors d'un multiplie : c'est ici, en
-		// C++, que le calcul delicat se lit et se verifie, pas dans un
-		// graphe de shader. Sans cette normalisation, multiplier par la
-		// couleur de reference d'un biome — qui vaut autour de 0,4 —
-		// assombrirait le sol : une savane aurait une herbe plus sombre
-		// qu'une prairie, alors qu'elle doit seulement etre plus jaune.
-		const float Luminance = FMath::Max(
-			0.299f * Tint.R + 0.587f * Tint.G + 0.114f * Tint.B, 0.01f);
-
-		// Borne haute : un biome tres sombre et tres sature donnerait
-		// sinon un facteur enorme sur un seul canal, et un sol fluo.
-		const FLinearColor Normalised(
-			FMath::Min(Tint.R / Luminance, 2.5f),
-			FMath::Min(Tint.G / Luminance, 2.5f),
-			FMath::Min(Tint.B / Luminance, 2.5f));
+		// LA TEINTE PART DEJA NORMALISEE EN LUMINANCE, et le calcul vit
+		// desormais dans `TeinteNormalisee` : il a DEUX appelants -- cette
+		// nappe et la peinture du terrain voxel -- et le depot interdit de
+		// recopier une formule dans deux fichiers.
+		const FLinearColor Normalised = WorldseedApparence::TeinteNormalisee(Tint);
 
 		OutTintRG = FVector2D(Normalised.R, Normalised.G);
 		OutTintB = FVector2D(Normalised.B, 0.0f);

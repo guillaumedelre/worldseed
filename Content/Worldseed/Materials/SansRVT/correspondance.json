@@ -1,0 +1,24 @@
+{
+  "_comment": "materiau d'origine -> instance corrigee (RVT absente et textures parasites du pack). Genere par Tools/UE.",
+  "table": {
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/Material_Instances/MI_Bamboo": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_922dc4_Bamboo",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/Material_Instances/MI_Bamboo_Sapling": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_c337b6_Bamboo_Sapling",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/Material_Instances/MI_Rock_1": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_06b613_Rock_1",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/Material_Instances/MI_Rock_2": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_61c5cb_Rock_2",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/Material_Instances/MI_Rock_3": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_161b54_Rock_3",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/Material_Instances/MI_Rock_5": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_f101a0_Rock_5",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/Material_Instances/MI_Tree_Bark": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_2d3a59_Tree_Bark",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Gray_Rock_1": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_6a5f4f_Gray_Rock_1",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Gray_Rock_2": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_f718f0_Gray_Rock_2",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Palm_Bark": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_ddebf6_Palm_Bark",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Rock_1": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_03a26a_Rock_1",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Rock_2": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_5063c7_Rock_2",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Rock_4": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_ad3e80_Rock_4",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/Material_Instances/MI_Rock_5": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_11aba2_Rock_5",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/Material_Instances/MI_Cliff_1": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_a563f5_Cliff_1",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/Material_Instances/MI_Cliff_2": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_67f462_Cliff_2",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/Material_Instances/MI_Cliff_3": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_626e5b_Cliff_3",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/Material_Instances/MI_Rock_1": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_90944a_Rock_1",
+    "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/Material_Instances/MI_Bark": "/Game/Worldseed/Materials/SansRVT/MI_SansRVT_cf182b_Bark"
+  }
+}

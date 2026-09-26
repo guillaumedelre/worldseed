@@ -1,5 +1,5 @@
 {
-  "_comment": [
+  "_comment" : [
     "Recettes de vegetation Worldseed : une par biome, a partir de biome_index.",
     "Ce fichier est fait pour etre RETOUCHE A LA MAIN : c'est lui qui decide de",
     "l'aspect du monde, pas le code de vegetation.py.",
@@ -75,104 +75,2536 @@
     "Les identifiants 0 (ocean), 1 (lac) et 2 (riviere) n'ont pas de recette :",
     "ce ne sont pas des biomes terrestres."
   ],
-  "roots": {
-    "LPF": "/Game/Orasot_Bundle/LowPolyForestVol2/StaticMeshes/Environment",
-    "SFL": "/Game/Orasot_Bundle/StylizedForestLandscape/Meshes",
-    "BAM": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/StaticMeshes",
-    "DRK": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/StaticMeshes",
-    "DES": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/StaticMeshes",
-    "GRN": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/StaticMeshes",
-    "RED": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/StaticMeshes",
-    "KOB": "/Game/Kobo_Nature/Meshes",
-    "SNW": "/Game/Stylized_Environments/Snow_Forest/Models",
-    "PIR": "/Game/Stylized_Environments/Pirates_Theme/Models",
-    "EGP": "/Game/Stylized_Egypt/Meshes/plants",
-    "EGS": "/Game/Stylized_Egypt/Meshes/stones",
-    "SFP": "/Game/Stylized_Forest/Meshes/plants",
-    "SFT": "/Game/Stylized_Forest/Meshes/trees",
-    "SFS": "/Game/Stylized_Forest/Meshes/stones",
-    "SRK": "/Game/Stylized_Rocks",
-    "SRF": "/Game/Stylized_Rocks_Free",
-    "DSF": "/Game/DreamscapeSeries/DreamscapeMeadows/Meshes/Foliage",
-    "DST": "/Game/DreamscapeSeries/DreamscapeMeadows/Meshes/Trees",
-    "DSR": "/Game/DreamscapeSeries/DreamscapeMeadows/Meshes/Rocks",
-    "SVF": "/Game/Stylized_Village/Assets/Foliage"
-  },
-  "spacings": {
-    "tapis": 150,
-    "tapis_clair": 400,
-    "sousbois": 250,
-    "sousbois_clair": 600,
-    "arbres_denses": 800,
-    "arbres_epars": 1800,
-    "rares": 4000
-  },
-  "biomes": {
-    "calotte": {
-      "id": 3,
-      "layers": []
+  "_comment_echelles" : "Les echelles sont calculees sur la taille REELLE des maillages, relevee le 25 septembre 2026 : plafond de 3 m pour le sous-bois et 2 m pour ce qui rampe, l echelle maximale valant plafond / plus grande dimension du plus gros membre de la couche. Arbres, mineral et bois mort sont exemptes de plafond, mais ramenes a une taille credible. Copier l echelle d une autre couche sans verifier sa composition donne un mur : SFL:SM_Fern fait 3,06 m de large et SFL:SM_Bush_2 4,34 m.",
+  "_comment_spacings" : "Le pas du TAPIS est cale sur GT_Grass du pack Orasot, mesure le 25 septembre 2026 sur M_5_Bioms_Showcase : deux varietes de SM_Grass a 65 et 70 instances par 100 m2, soit 1,35 brin au metre carre. A 75 cm de pas la couche rend 1,78 point/m2, dont trois quarts vont a SM_Grass par son poids -> 1,33/m2. La carte de demonstration tient cette densite GRATUITEMENT, par LandscapeGrassOutput : un monde voxel n a pas de Landscape, donc chaque brin est ici une instance reelle et se paie.",
+  "_comment_tapis" : "LE TAPIS N EMPLOIE PAS SM_Grass DU DOSSIER Global, ET C EST MESURE. Les deux herbes du bundle portent le meme nom de maillage et le meme nom d instance de materiau -- piege deja paye : comparer des CHEMINS, jamais des noms. Global/SM_Grass passe par Global/Materials/M_Grass, qui echantillonne la Runtime Virtual Texture par DEUX noeuds et n expose aucun interrupteur pour s en passer (son seul switch est Tweak) : tant que la RVT n est pas alimentee, ses brins rendent NOIRS -- verifie a l image, et sans eclairage, donc c est bien une couleur. StylizedForestLandscape/SM_Grass passe par M_Master_Grass, qui n en lit AUCUNE, pour un gabarit equivalent : 0,77 m contre 0,66, 307 triangles contre 360, opaque et double face dans les deux cas.",
+  "_palette" : "orasot-pur : UN seul des cinq biomes caracteristiques par biome Worldseed (jamais deux melanges), plus les fonds neutres du bundle (Global, LowPolyForest, StylizedForestLandscape). Calage arrete par le proprietaire le 25 septembre 2026, formulaire rempli : Green prend la foret tropicale humide, l alpin, le mediterraneen et la foret subtropicale humide ; Bamboo ne sert plus qu au marais, qui est INATTEIGNABLE depuis le retrait de l hydrologie -- donc aucun bambou dans le monde jouable. Biom_Red reste RESERVE a un futur biome d iles flottantes. La teinte jaune de la savane ne se peint pas : GLB:SM_Grass lit la RVT et prend le ton du sol.",
+  "_comment_estran" : "L ESTRAN N EST PAS UN BIOME, c est un SUBSTRAT (EWorldseedCover::Beach) : une plage de desert et une plage de foret tropicale sont toutes deux du sable nu, et leur climat decide de ce qui pousse DERRIERE, pas dessus. Tant que le semis ne lisait que le biome, une plage recevait le tapis d herbe de la foret voisine -- de l herbe sur le sable, signale en jeu le 26 septembre 2026. Cette recette REMPLACE celle du biome sur les cellules d estran, qui pesent 3,9 pour cent des terres. ELLE NE PORTE AUCUNE HERBE, A DESSEIN : une plage est nue, et c est le point de la demande. Le pas est `rares`, soit 40 m, donc environ 6 blocs a l hectare -- des galets et des rochers echoues, pas un eboulis. L echelle descend a 0,4 parce que ce qui roule sur une plage est plus petit que ce qui tombe d une falaise, et la pente est bornee a 20 degres : au-dela on n est plus sur l estran mais sur la dune ou la roche qui le domine. Vider ce tableau rend la plage entierement nue, ce qui reste plus juste que de l herbe.",
+  "estran" : [
+    {
+      "cull" : [
+        8000,
+        13000
+      ],
+      "meshes" : [
+        [
+          "LPF:SM_Env_scatter_rock_3",
+          1
+        ],
+        [
+          "LPF:SM_Env_scatter_rock_12",
+          1
+        ]
+      ],
+      "name" : "galets",
+      "pente" : [
+        0,
+        20
+      ],
+      "scale" : [
+        0.4,
+        0.9
+      ],
+      "spacing" : "rares"
+    }
+  ],
+  "biomes" : {
+    "alpin" : {
+      "id" : 15,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Flower_1",
+              2
+            ],
+            [
+              "GRN:SM_Flower_2",
+              2
+            ],
+            [
+              "GRN:SM_Flower_3",
+              1
+            ]
+          ],
+          "name" : "fleurs_alpines",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.45,
+            0.75
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.48,
+            "taille" : 2200
+          }
+        },
+        {
+          "cull" : [
+            35000,
+            55000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Pine",
+              3
+            ],
+            [
+              "SFL:SM_Pine_2",
+              3
+            ],
+            [
+              "LPF:SM_Env_Pine_Tree_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_death_tree_3",
+              1
+            ]
+          ],
+          "name" : "coniferes_epars",
+          "pente" : [
+            0,
+            45
+          ],
+          "scale" : [
+            0.6,
+            1.1
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            12000,
+            20000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Rock_1",
+              2
+            ],
+            [
+              "GRN:SM_Rock_6",
+              2
+            ],
+            [
+              "SFL:SM_Big_Rock_1",
+              1
+            ],
+            [
+              "LPF:SM_Env_rock_4",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_14",
+              2
+            ]
+          ],
+          "name" : "blocs",
+          "scale" : [
+            0.6,
+            1.6
+          ],
+          "spacing" : "sousbois_clair"
+        }
+      ]
     },
-    "toundra": {
-      "id": 4,
-      "layers": []
+    "calotte" : {
+      "id" : 3,
+      "layers" : []
     },
-    "taiga": {
-      "id": 5,
-      "layers": []
+    "desert_chaud" : {
+      "id" : 11,
+      "layers" : [
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_PalmTree",
+              2
+            ],
+            [
+              "DES:SM_PalmTree_Bend",
+              2
+            ],
+            [
+              "DES:SM_PalmTree_Slightly_Bend",
+              2
+            ],
+            [
+              "DES:SM_Hero_Tree_1_with_Roots",
+              1
+            ]
+          ],
+          "name" : "palmiers",
+          "pente" : [
+            0,
+            28
+          ],
+          "scale" : [
+            0.9,
+            1.4
+          ],
+          "spacing" : "rares"
+        },
+        {
+          "cull" : [
+            20000,
+            32000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Bush_Yellow",
+              3
+            ],
+            [
+              "DES:SM_Bush_many_2",
+              2
+            ]
+          ],
+          "name" : "buissons_secs",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            10000,
+            16000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Rock_1",
+              2
+            ],
+            [
+              "DES:SM_Rock_2",
+              2
+            ],
+            [
+              "DES:SM_Rock_4",
+              2
+            ],
+            [
+              "DES:SM_Rock_5",
+              2
+            ],
+            [
+              "DES:SM_Gray_Rock_1",
+              1
+            ]
+          ],
+          "name" : "rochers",
+          "scale" : [
+            0.5,
+            1.4
+          ],
+          "spacing" : "sousbois_clair"
+        },
+        {
+          "cull" : [
+            20000,
+            32000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Mid_Bush_1",
+              2
+            ]
+          ],
+          "name" : "buissons_secs_haut",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.526,
+            0.877
+          ],
+          "spacing" : "rares",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "foret_temperee": {
-      "id": 6,
-      "layers": []
+    "desert_froid" : {
+      "id" : 10,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            25000,
+            40000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_death_tree_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_death_tree_4",
+              2
+            ],
+            [
+              "LPF:SM_Env_death_tree_small_2",
+              1
+            ]
+          ],
+          "name" : "bois_mort",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Gray_Rock_1",
+              2
+            ],
+            [
+              "DES:SM_Gray_Rock_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_7",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_16",
+              2
+            ]
+          ],
+          "name" : "pierraille",
+          "pente" : [
+            20,
+            90
+          ],
+          "scale" : [
+            0.5,
+            1.3
+          ],
+          "spacing" : "sousbois_clair"
+        }
+      ]
     },
-    "foret_temperee_humide": {
-      "id": 7,
-      "layers": []
+    "foret_subtropicale_humide" : {
+      "id" : 20,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            35000,
+            55000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Tree_1",
+              3
+            ],
+            [
+              "GRN:SM_Tree_2",
+              3
+            ],
+            [
+              "SFL:SM_Oak_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Oak_Tree_2",
+              2
+            ],
+            [
+              "SFL:SM_Poplar_Tree",
+              2
+            ]
+          ],
+          "name" : "feuillus",
+          "pente" : [
+            0,
+            42
+          ],
+          "scale" : [
+            0.7,
+            1.1
+          ],
+          "spacing" : "arbres_denses"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Fern",
+              2
+            ],
+            [
+              "SFL:SM_Fern_2",
+              2
+            ],
+            [
+              "GRN:SM_Plant_1",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_berry_3",
+              1
+            ]
+          ],
+          "name" : "sous_bois",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.55,
+            0.95
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_mushroom_12",
+              1
+            ]
+          ],
+          "name" : "champignons",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.58,
+            "taille" : 900
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Flower_1",
+              1
+            ],
+            [
+              "GRN:SM_Flower_3",
+              1
+            ]
+          ],
+          "name" : "fleurs_sous_bois",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.45,
+            0.75
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.5,
+            "taille" : 1600
+          }
+        },
+        {
+          "cull" : [
+            15000,
+            25000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_treestump_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_fallen_tree",
+              1
+            ]
+          ],
+          "name" : "bois_mort",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Bush",
+              2
+            ],
+            [
+              "SFL:SM_Bush_2",
+              2
+            ],
+            [
+              "SFL:SM_Ivy",
+              1
+            ]
+          ],
+          "name" : "sous_bois_haut",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.415,
+            0.691
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "prairie": {
-      "id": 8,
-      "layers": []
+    "foret_temperee" : {
+      "id" : 6,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Oak_Tree",
+              3
+            ],
+            [
+              "SFL:SM_Oak_Tree_2",
+              3
+            ],
+            [
+              "SFL:SM_Birch_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Birch_Tree_2",
+              2
+            ],
+            [
+              "SFL:SM_Poplar_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Poplar_Tree_2",
+              2
+            ],
+            [
+              "SFL:SM_Pine",
+              1
+            ]
+          ],
+          "name" : "feuillus",
+          "pente" : [
+            0,
+            42
+          ],
+          "scale" : [
+            0.8,
+            1.3
+          ],
+          "spacing" : "arbres_denses"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_bush_berry_5",
+              1
+            ]
+          ],
+          "name" : "sous_bois",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.3
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_mushroom_7",
+              1
+            ]
+          ],
+          "name" : "champignons",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.58,
+            "taille" : 900
+          }
+        },
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Flower",
+              1
+            ],
+            [
+              "SFL:SM_Damdelion",
+              1
+            ]
+          ],
+          "name" : "fleurs_sous_bois",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.3
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.55,
+            "taille" : 2200
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_treestump_5",
+              1
+            ],
+            [
+              "LPF:SM_Env_fallen_tree",
+              1
+            ]
+          ],
+          "name" : "bois_mort",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 4000
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Bush",
+              2
+            ],
+            [
+              "SFL:SM_Bush_2",
+              2
+            ],
+            [
+              "SFL:SM_Fern",
+              2
+            ]
+          ],
+          "name" : "sous_bois_haut",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.415,
+            0.691
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "steppe": {
-      "id": 9,
-      "layers": []
+    "foret_temperee_humide" : {
+      "id" : 7,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_plant_2",
+              1
+            ],
+            [
+              "SFL:SM_Ivy",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Oak_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Birch_Tree_2",
+              2
+            ]
+          ],
+          "name" : "feuillus_denses",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.9,
+            1.5
+          ],
+          "spacing" : "arbres_denses"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Ivy",
+              1
+            ],
+            [
+              "LPF:SM_Env_plant_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_plant_5",
+              2
+            ]
+          ],
+          "name" : "fougeres",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.8,
+            1.5
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_mushroom_14",
+              1
+            ],
+            [
+              "LPF:SM_Env_mushroom_collection_1",
+              1
+            ]
+          ],
+          "name" : "champignons",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.58,
+            "taille" : 900
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_treestump_3",
+              1
+            ]
+          ],
+          "name" : "bois_mort",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 4000
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Fern",
+              3
+            ],
+            [
+              "SFL:SM_Fern_2",
+              3
+            ]
+          ],
+          "name" : "fougeres_haut",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.588,
+            0.98
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "desert_froid": {
-      "id": 10,
-      "layers": []
+    "foret_tropicale_humide" : {
+      "id" : 14,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            35000,
+            55000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Tree_1",
+              3
+            ],
+            [
+              "GRN:SM_Tree_2",
+              3
+            ],
+            [
+              "GRN:SM_Mid_Tree_1",
+              2
+            ],
+            [
+              "SFL:SM_Oak_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Oak_Tree_2",
+              2
+            ]
+          ],
+          "name" : "canopee",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.1
+          ],
+          "spacing" : "arbres_denses"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Fern",
+              3
+            ],
+            [
+              "SFL:SM_Fern_2",
+              2
+            ],
+            [
+              "GRN:SM_Plant_1",
+              2
+            ]
+          ],
+          "name" : "sous_bois_humide",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.55,
+            0.95
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_mushroom_16",
+              1
+            ]
+          ],
+          "name" : "champignons",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.58,
+            "taille" : 900
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Flower_1",
+              1
+            ],
+            [
+              "GRN:SM_Flower_2",
+              1
+            ],
+            [
+              "GRN:SM_Flower_3",
+              1
+            ]
+          ],
+          "name" : "fleurs_sous_bois",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.45,
+            0.75
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.5,
+            "taille" : 1600
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Bush",
+              2
+            ],
+            [
+              "SFL:SM_Bush_2",
+              2
+            ],
+            [
+              "SFL:SM_Ivy",
+              2
+            ]
+          ],
+          "name" : "sous_bois_haut",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.415,
+            0.691
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "desert_chaud": {
-      "id": 11,
-      "layers": []
+    "foret_tropicale_seche" : {
+      "id" : 13,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_PalmTree",
+              1
+            ]
+          ],
+          "name" : "arbres",
+          "pente" : [
+            0,
+            42
+          ],
+          "scale" : [
+            0.8,
+            1.3
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Bush_Yellow",
+              1
+            ]
+          ],
+          "name" : "sous_bois",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.3
+          ],
+          "spacing" : "sousbois"
+        }
+      ]
     },
-    "savane": {
-      "id": 12,
-      "layers": []
+    "marais" : {
+      "id" : 18,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Ivy_2",
+              2
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            35000,
+            55000
+          ],
+          "meshes" : [
+            [
+              "BAM:SM_Bamboo",
+              3
+            ],
+            [
+              "BAM:SM_Bamboo_2",
+              3
+            ],
+            [
+              "BAM:SM_Bamboo_Sapling",
+              2
+            ]
+          ],
+          "name" : "bambous_palustres",
+          "pente" : [
+            0,
+            20
+          ],
+          "scale" : [
+            0.7,
+            1.1
+          ],
+          "spacing" : "arbres_denses"
+        },
+        {
+          "cull" : [
+            25000,
+            40000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_death_tree_small_3",
+              2
+            ],
+            [
+              "LPF:SM_Env_death_tree_5",
+              2
+            ],
+            [
+              "LPF:SM_Env_fallen_tree",
+              1
+            ],
+            [
+              "SFL:SM_Log",
+              2
+            ],
+            [
+              "SFL:SM_Log_2",
+              2
+            ]
+          ],
+          "name" : "bois_noye",
+          "pente" : [
+            0,
+            18
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "BAM:SM_Fern_1",
+              2
+            ],
+            [
+              "LPF:SM_Env_plant_3",
+              2
+            ],
+            [
+              "SFL:SM_Ivy_2",
+              1
+            ]
+          ],
+          "name" : "palustre",
+          "pente" : [
+            0,
+            20
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Mushroom",
+              1
+            ]
+          ],
+          "name" : "champignons",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.58,
+            "taille" : 900
+          }
+        },
+        {
+          "cull" : [
+            15000,
+            25000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_treestump_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_treestump_6",
+              1
+            ]
+          ],
+          "name" : "bois_mort",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "BAM:SM_Ivy",
+              2
+            ],
+            [
+              "SFL:SM_Fern_2",
+              1
+            ]
+          ],
+          "name" : "palustre_haut",
+          "pente" : [
+            0,
+            20
+          ],
+          "scale" : [
+            0.659,
+            1.099
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2400
+          }
+        }
+      ]
     },
-    "foret_tropicale_seche": {
-      "id": 13,
-      "layers": []
+    "mediterraneen" : {
+      "id" : 19,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              2
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.5,
+            1.05
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            35000,
+            55000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Oak_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Oak_Tree_Accent",
+              2
+            ],
+            [
+              "SFL:SM_Pine",
+              2
+            ],
+            [
+              "GRN:SM_Mid_Tree_1",
+              1
+            ]
+          ],
+          "name" : "arbres_epars",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Bush_Yellow",
+              2
+            ],
+            [
+              "GRN:SM_Bush_Red",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_5",
+              2
+            ],
+            [
+              "SFL:SM_Bush",
+              1
+            ]
+          ],
+          "name" : "maquis",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.5,
+            0.82
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "GRN:SM_Flower_2",
+              1
+            ],
+            [
+              "SFL:SM_Damdelion",
+              1
+            ]
+          ],
+          "name" : "fleurs",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.5,
+            1
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.55,
+            "taille" : 1800
+          }
+        },
+        {
+          "cull" : [
+            12000,
+            20000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_scatter_rock_3",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_9",
+              2
+            ],
+            [
+              "GRN:SM_Rock_1",
+              1
+            ]
+          ],
+          "name" : "cailloutis",
+          "scale" : [
+            0.5,
+            1.2
+          ],
+          "spacing" : "sousbois_clair"
+        }
+      ]
     },
-    "foret_tropicale_humide": {
-      "id": 14,
-      "layers": []
+    "plage" : {
+      "id" : 17,
+      "layers" : [
+        {
+          "cull" : [
+            35000,
+            55000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_PalmTree_Bend",
+              3
+            ],
+            [
+              "DES:SM_PalmTree",
+              2
+            ],
+            [
+              "DES:SM_PalmTree_Small",
+              2
+            ]
+          ],
+          "name" : "palmiers_littoraux",
+          "pente" : [
+            0,
+            20
+          ],
+          "scale" : [
+            0.9,
+            1.3
+          ],
+          "spacing" : "rares"
+        },
+        {
+          "cull" : [
+            8000,
+            13000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_scatter_rock_4",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_13",
+              2
+            ],
+            [
+              "SFL:SM_Rock_Scatter_2",
+              1
+            ]
+          ],
+          "name" : "galets",
+          "pente" : [
+            0,
+            18
+          ],
+          "scale" : [
+            0.4,
+            1
+          ],
+          "spacing" : "sousbois_clair"
+        }
+      ]
     },
-    "alpin": {
-      "id": 15,
-      "layers": []
+    "prairie" : {
+      "id" : 8,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Oak_Tree_Accent",
+              2
+            ],
+            [
+              "SFL:SM_Poplar_Tree",
+              1
+            ]
+          ],
+          "name" : "arbres_isoles",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            1,
+            1.5
+          ],
+          "spacing" : "rares"
+        },
+        {
+          "cull" : [
+            8000,
+            13000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Damdelion",
+              3
+            ],
+            [
+              "SFL:SM_Flower",
+              2
+            ],
+            [
+              "SFL:SM_Red_Flower",
+              2
+            ],
+            [
+              "SFL:SM_Pink_Flower",
+              2
+            ],
+            [
+              "SFL:SM_Wheat",
+              2
+            ]
+          ],
+          "name" : "fleurs",
+          "pente" : [
+            0,
+            28
+          ],
+          "scale" : [
+            0.8,
+            1.3
+          ],
+          "spacing" : "sousbois",
+          "taches" : {
+            "seuil" : 0.5,
+            "taille" : 3500
+          }
+        },
+        {
+          "cull" : [
+            8000,
+            13000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Flower_2",
+              2
+            ]
+          ],
+          "name" : "fleurs_haut",
+          "pente" : [
+            0,
+            28
+          ],
+          "scale" : [
+            0.256,
+            0.427
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "roche_nue": {
-      "id": 16,
-      "layers": []
+    "roche_nue" : {
+      "id" : 16,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Big_Rock_2",
+              2
+            ],
+            [
+              "SFL:SM_Big_Rock_3",
+              2
+            ]
+          ],
+          "name" : "falaises",
+          "pente" : [
+            32,
+            90
+          ],
+          "scale" : [
+            0.9,
+            1.8
+          ],
+          "spacing" : "rares"
+        },
+        {
+          "cull" : [
+            12000,
+            20000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_rock_1",
+              2
+            ],
+            [
+              "LPF:SM_Env_rock_6",
+              2
+            ],
+            [
+              "LPF:SM_Env_rock_9",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_8",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_17",
+              2
+            ]
+          ],
+          "name" : "eboulis",
+          "pente" : [
+            25,
+            90
+          ],
+          "scale" : [
+            0.5,
+            1.5
+          ],
+          "spacing" : "sousbois_clair"
+        }
+      ]
     },
-    "plage": {
-      "id": 17,
-      "layers": []
+    "savane" : {
+      "id" : 12,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Wheat",
+              4
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Hero_Tree_1_with_Roots",
+              3
+            ]
+          ],
+          "name" : "arbres_isoles",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            1,
+            1.6
+          ],
+          "spacing" : "rares"
+        },
+        {
+          "cull" : [
+            9000,
+            14000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Wheat",
+              3
+            ],
+            [
+              "DES:SM_Bush_Yellow",
+              2
+            ],
+            [
+              "DES:SM_Bush_many_2",
+              1
+            ]
+          ],
+          "name" : "herbes_hautes",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.8,
+            1.3
+          ],
+          "spacing" : "sousbois",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 3000
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            14000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_scatter_rock_11",
+              1
+            ]
+          ],
+          "name" : "pierres",
+          "pente" : [
+            0,
+            45
+          ],
+          "scale" : [
+            0.5,
+            1.2
+          ],
+          "spacing" : "sousbois_clair"
+        },
+        {
+          "cull" : [
+            9000,
+            14000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Mid_Bush_1",
+              1
+            ]
+          ],
+          "name" : "herbes_hautes_haut",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.552,
+            0.92
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
     },
-    "marais": {
-      "id": 18,
-      "layers": []
+    "steppe" : {
+      "id" : 9,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Wheat",
+              4
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            20000,
+            32000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Bush_Yellow",
+              3
+            ],
+            [
+              "DES:SM_Bush_many_2",
+              2
+            ]
+          ],
+          "name" : "buissons",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 4000
+          }
+        },
+        {
+          "cull" : [
+            8000,
+            13000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Wheat",
+              3
+            ]
+          ],
+          "name" : "herbes_seches",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            8000,
+            13000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_scatter_rock_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_12",
+              1
+            ]
+          ],
+          "name" : "pierres",
+          "pente" : [
+            0,
+            45
+          ],
+          "scale" : [
+            0.5,
+            1.2
+          ],
+          "spacing" : "sousbois_clair"
+        },
+        {
+          "cull" : [
+            20000,
+            32000
+          ],
+          "meshes" : [
+            [
+              "DES:SM_Mid_Bush_1",
+              2
+            ]
+          ],
+          "name" : "buissons_haut",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.623,
+            1.038
+          ],
+          "spacing" : "rares",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
+        }
+      ]
+    },
+    "taiga" : {
+      "id" : 5,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_plant_5",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis"
+        },
+        {
+          "cull" : [
+            40000,
+            60000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_Pine_Tree_1",
+              3
+            ],
+            [
+              "LPF:SM_Env_Pine_Tree_2",
+              3
+            ],
+            [
+              "LPF:SM_Env_Pine_Tree_3",
+              3
+            ],
+            [
+              "SFL:SM_Pine",
+              1
+            ],
+            [
+              "SFL:SM_Pine_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_death_tree_1",
+              1
+            ],
+            [
+              "SFL:SM_Birch_Tree",
+              2
+            ],
+            [
+              "SFL:SM_Birch_Tree_2",
+              2
+            ]
+          ],
+          "name" : "coniferes",
+          "pente" : [
+            0,
+            42
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "arbres_denses"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_bush_1",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_4",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_6",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_berry_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_berry_1",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_berry_4",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_berry_7",
+              1
+            ]
+          ],
+          "name" : "sous_bois",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.7,
+            1.3
+          ],
+          "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_mushroom_3",
+              1
+            ],
+            [
+              "LPF:SM_Env_mushroom_11",
+              1
+            ]
+          ],
+          "name" : "champignons",
+          "pente" : [
+            0,
+            30
+          ],
+          "scale" : [
+            0.8,
+            1.4
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.58,
+            "taille" : 900
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_treestump_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_fallen_branch_4",
+              1
+            ],
+            [
+              "SFL:SM_Birch_Stump",
+              1
+            ],
+            [
+              "SFL:SM_Log_Birch_2",
+              1
+            ]
+          ],
+          "name" : "bois_mort",
+          "pente" : [
+            0,
+            32
+          ],
+          "scale" : [
+            0.7,
+            1.2
+          ],
+          "spacing" : "arbres_epars",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 4000
+          }
+        }
+      ]
+    },
+    "toundra" : {
+      "id" : 4,
+      "layers" : [
+        {
+          "cull" : [
+            5000,
+            8000
+          ],
+          "meshes" : [
+            [
+              "SFL:SM_Grass",
+              3
+            ],
+            [
+              "LPF:SM_Env_Grass_small",
+              1
+            ]
+          ],
+          "name" : "tapis",
+          "pente" : [
+            0,
+            38
+          ],
+          "scale" : [
+            0.55,
+            1.15
+          ],
+          "spacing" : "tapis_clair"
+        },
+        {
+          "cull" : [
+            7000,
+            12000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_bush_berry_1",
+              3
+            ],
+            [
+              "LPF:SM_Env_bush_berry_4",
+              3
+            ],
+            [
+              "LPF:SM_Env_bush_berry_7",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_2",
+              2
+            ],
+            [
+              "LPF:SM_Env_bush_5",
+              2
+            ]
+          ],
+          "name" : "arbrisseaux",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.25,
+            0.5
+          ],
+          "spacing" : "sousbois",
+          "taches" : {
+            "seuil" : 0.42,
+            "taille" : 2200
+          }
+        },
+        {
+          "cull" : [
+            9000,
+            16000
+          ],
+          "meshes" : [
+            [
+              "LPF:SM_Env_scatter_rock_1",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_5",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_9",
+              2
+            ],
+            [
+              "LPF:SM_Env_scatter_rock_12",
+              2
+            ],
+            [
+              "SFL:SM_Rock_3",
+              2
+            ],
+            [
+              "SFL:SM_Rock_5",
+              2
+            ],
+            [
+              "DRK:SM_Rock_2",
+              1
+            ],
+            [
+              "LPF:SM_Env_bush_1",
+              1
+            ]
+          ],
+          "name" : "blocs",
+          "scale" : [
+            0.5,
+            1.4
+          ],
+          "spacing" : "sousbois_clair"
+        }
+      ]
     }
   },
-  "materiaux_forces": {},
-  "_palette": "nu"
+  "materiaux_forces" : {},
+  "roots" : {
+    "BAM" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/StaticMeshes",
+    "DES" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Desert/StaticMeshes",
+    "DRK" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Dark/StaticMeshes",
+    "DSF" : "/Game/DreamscapeSeries/DreamscapeMeadows/Meshes/Foliage",
+    "DSR" : "/Game/DreamscapeSeries/DreamscapeMeadows/Meshes/Rocks",
+    "DST" : "/Game/DreamscapeSeries/DreamscapeMeadows/Meshes/Trees",
+    "EGP" : "/Game/Stylized_Egypt/Meshes/plants",
+    "EGS" : "/Game/Stylized_Egypt/Meshes/stones",
+    "GLB" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/StaticMeshes",
+    "GRN" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Green/StaticMeshes",
+    "KOB" : "/Game/Kobo_Nature/Meshes",
+    "LPF" : "/Game/Orasot_Bundle/LowPolyForestVol2/StaticMeshes/Environment",
+    "PIR" : "/Game/Stylized_Environments/Pirates_Theme/Models",
+    "RED" : "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Red/StaticMeshes",
+    "SFL" : "/Game/Orasot_Bundle/StylizedForestLandscape/Meshes",
+    "SFP" : "/Game/Stylized_Forest/Meshes/plants",
+    "SFS" : "/Game/Stylized_Forest/Meshes/stones",
+    "SFT" : "/Game/Stylized_Forest/Meshes/trees",
+    "SNW" : "/Game/Stylized_Environments/Snow_Forest/Models",
+    "SRF" : "/Game/Stylized_Rocks_Free",
+    "SRK" : "/Game/Stylized_Rocks",
+    "SVF" : "/Game/Stylized_Village/Assets/Foliage"
+  },
+  "spacings" : {
+    "arbres_denses" : 800,
+    "arbres_epars" : 1800,
+    "rares" : 4000,
+    "sousbois" : 250,
+    "sousbois_clair" : 600,
+    "tapis" : 75,
+    "tapis_clair" : 200
+  }
 }

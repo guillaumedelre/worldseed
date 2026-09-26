@@ -4,13 +4,17 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "InstanceDataTypes.h"   // FPrimitiveInstanceId
 
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedDensity.h"
 #include "Procedural/WorldseedDiffusion.h"
+#include "Procedural/WorldseedParois.h"
 #include "Procedural/WorldseedPlateau.h"
+#include "Procedural/WorldseedRvt.h"
+#include "Procedural/WorldseedVegetation.h"
 #include "Procedural/WorldseedStrata.h"
 #include "Procedural/WorldseedVoxelChunk.h"
 #include "Procedural/WorldseedWorldData.h"
@@ -19,8 +23,10 @@
 
 #include "WorldseedVoxelTerrain.generated.h"
 
+class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UProceduralMeshComponent;
+class UStaticMesh;
 
 /**
  * Un maillage de chunk en cours de fabrication sur un fil de travail.
@@ -81,6 +87,60 @@ struct FWorldseedVoxelChunkState
 	FWorldseedVoxelStats::ECause Cause = FWorldseedVoxelStats::ECause::Maille;
 	int32 Seeds = 0;
 	int32 Tris = 0;
+
+	/**
+	 * Les pans de falaise que ce chunk a semes : le MODELE, puis l'identifiant.
+	 *
+	 * L'INDEX D'UNE INSTANCE N'EST PAS STABLE : retirer l'instance 3 d'un lot
+	 * decale toutes celles qui la suivent, si bien que les index retenus par
+	 * les autres chunks designeraient soudain d'autres falaises. Le moteur
+	 * expose pour cela une interface par identifiant (`AddInstanceById` /
+	 * `RemoveInstancesById`), dont le contrat porte une restriction qu'il faut
+	 * connaitre : « cannot be used on HISM »
+	 * (InstancedStaticMeshComponent.h:288). C'est ce qui interdit le composant
+	 * HIERARCHIQUE ici, et impose l'ISM simple -- que le culling GPU d'UE5
+	 * rend de toute facon comparable a ces volumes.
+	 *
+	 * ET L'IDENTIFIANT NE SUFFIT PAS : IL FAUT SAVOIR DE QUEL COMPOSANT IL EST.
+	 * Les identifiants sont LOCAUX a chaque composant et commencent tous a
+	 * zero ; `RemoveInstancesById` ne verifie aucune appartenance, il fait
+	 * `IdToIndex(Id)` qui, en mode identite, rend l'identifiant TEL QUEL
+	 * (InstanceDataSceneProxy.h:41). Passer la liste entiere a chaque
+	 * composant, en comptant sur lui pour ignorer ce qui n'est pas a lui,
+	 * supprimerait donc des falaises au hasard chez les autres -- et
+	 * deborderait le tableau pour un identifiant plus grand que leur compte.
+	 */
+	TArray<TPair<int32, FPrimitiveInstanceId>> Parois;
+
+	/**
+	 * Les plantes semees par ce chunk : l'espece, puis l'identifiant.
+	 *
+	 * MEME DISCIPLINE QUE LES PAROIS, et pour la meme raison : un identifiant
+	 * d'instance est LOCAL a son composant et commence a zero, `RemoveInstancesById`
+	 * ne verifie aucune appartenance (InstanceDataSceneProxy.h:41). Retenir
+	 * l'espece avec l'identifiant est ce qui interdit d'arracher la plante d'un
+	 * voisin en retirant les siennes.
+	 */
+	TArray<TPair<int32, FPrimitiveInstanceId>> Plantes;
+
+	/**
+	 * Les composants d'instances que CE chunk possede, un par espece presente.
+	 *
+	 * L'AUTRE FACON DE SEMER, ET ELLE EXISTE POUR UNE MESURE. Avec un ISM
+	 * GLOBAL par espece, chaque chunk qui nait ou meurt met a jour un composant
+	 * qui porte jusqu'a un million d'instances, et le fil de rendu le retraite
+	 * en entier. Mesure, A/B a trajet fixe sur soixante secondes de vol :
+	 * 46,88 ms de trame avec le semis contre 4,74 sans, le fil de RENDU a
+	 * 51,82 contre 4,51 -- alors qu'A L'ARRET les memes instances ne coutent
+	 * que 2,5 ms. Le cout n'est donc pas le dessin, c'est la mise a jour.
+	 *
+	 * Ici le composant naît et meurt AVEC son chunk : plus aucune mise a jour
+	 * d'un gros composant, et le retrait devient une destruction au lieu d'un
+	 * `RemoveInstancesById`. On paie en nombre de primitives ce qu'on economise
+	 * en retraitement -- c'est precisement l'arbitrage que la mesure doit
+	 * trancher.
+	 */
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> PlantesISM;
 };
 
 /**
@@ -482,6 +542,164 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
 	TObjectPtr<UMaterialInterface> TerrainMaterial;
 
+	/**
+	 * Ce materiau melange-t-il QUATRE TEXTURES, ou lit-il une couleur ?
+	 *
+	 * IL FAUT LE SAVOIR AVANT DE PEINDRE, parce que les deux attendent des
+	 * choses opposees dans le MEME canal : `M_WorldseedBiome` lit RGBA comme
+	 * une couleur, `M_WorldseedGround` le lit comme les poids de ses quatre
+	 * matieres. Peindre une couleur pour un materiau qui attend des poids
+	 * donne un melange absurde -- deux a trois fois plus d'aride que d'herbe
+	 * sous une foret -- et rien ne le signale : le sol est simplement du
+	 * mauvais materiau. Voir `FWorldseedPeintureContexte::bPoidsDeMatiere`.
+	 *
+	 * POSE PAR `AWorldseedTerrain`, qui a consomme l'instance de jeu et connait
+	 * l'habillage. Le voxel ne lit la GameInstance que si personne ne lui donne
+	 * de monde, et ce chemin ne sert jamais en partie normale.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
+	bool bPoidsDeMatiere = false;
+
+	/**
+	 * Fondre la teinte du sol entre biomes voisins. `-WorldseedFondu=0/1`.
+	 *
+	 * Voir `FWorldseedPeintureContexte::bMelangerLesBiomes` : sans lui, la
+	 * frontiere de deux biomes suit une arete de triangle.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Voxel")
+	bool bFonduDesBiomes = true;
+
+
+	// ----------------------------------------------------------- parois
+
+	/**
+	 * Poser des pans de falaise sur les faces raides.
+	 *
+	 * ARME PAR L'HABILLAGE, ET PAR LUI SEUL. Le terrain le transmet depuis le
+	 * pack choisi au menu, comme il transmet deja le materiau. Faux partout
+	 * ailleurs : les autres habillages ne posent aucun maillage.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	bool bSemerParois = false;
+
+	/**
+	 * Les maillages a poser, par chemin d'asset.
+	 *
+	 * DES CHEMINS ET NON DES REFERENCES DURES : `Content/` est exclu du depot
+	 * par `.gitignore`, donc un clone frais n'a pas ces assets. Une reference
+	 * dure ferait echouer le chargement de la classe entiere ; un chemin qui
+	 * ne resout pas se signale au journal et le semis s'eteint tout seul.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	TArray<FSoftObjectPath> ParoiMaillages;
+
+	/**
+	 * Materiau pose sur les pans, a la place de celui du pack.
+	 *
+	 * SANS LUI LE DESSUS DES PANS EST BLEU FLUO, et ce n'est pas une question
+	 * de gout : `MI_Cliff_2` herite de trois switchs statiques de Runtime
+	 * Virtual Texture -- `UseRVT`, `UseTopLayerRvt`, `UseTopVertexRVTMask` --
+	 * dont deux sont a VRAI chez le pack. Le niveau `L_Worldseed_Proc` n'a
+	 * aucune RVT depuis que le Landscape a disparu : la couche du dessus
+	 * echantillonne du vide et rend un bleu pur. Defaut deja consigne au
+	 * registre pour les rochers de desert, les palmiers et les bambous.
+	 *
+	 * `MI_WorldseedParoi` est une instance de `MI_Cliff_2` dont ces trois
+	 * switchs sont surcharges a faux. Verification : le parent rend `UseRVT
+	 * = True` la ou l'instance rend `False` -- c'est la comparaison AU PARENT
+	 * qui le prouve, un `get` seul rendant `False` aussi bien pour une
+	 * surcharge posee que pour un parametre jamais surcharge.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	FSoftObjectPath ParoiMateriau = FSoftObjectPath(
+		TEXT("/Game/Worldseed/Materials/MI_WorldseedParoi.MI_WorldseedParoi"));
+
+	/** Les reglages du semis. Voir `FWorldseedParoiRegles`. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	float ParoiMonteeMaxFrac = 0.35f;
+
+	/** Chute minimale pour qu'un point merite un pan, en metres. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	float ParoiDeniveleMinM = 45.0f;
+
+	/** Quel axe local du pan regarde le vide. Se regle A L'IMAGE. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	float ParoiYawOffsetDeg = -90.0f;
+
+	// ------------------------------------------------------- vegetation
+
+	/**
+	 * Semer la vegetation.
+	 *
+	 * ARME PAR DEFAUT, CONTRAIREMENT AUX PAROIS. La vegetation n'appartient pas
+	 * a un habillage : elle est ce que le monde porte. C'est meme 97 % de ce
+	 * qu'on voit dans la carte de demonstration du pack -- 155 257 brins
+	 * d'herbe sur 160 552 instances de foliage -- et un monde nu ne ressemble a
+	 * rien, quel que soit son relief.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Vegetation")
+	bool bSemerVegetation = true;
+
+	/** Multiplie tous les pas de grille. Au-dela de 1, le monde s'eclaircit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Vegetation")
+	float VegetationPasMultiplicateur = 1.0f;
+
+	/** A zero, aucun semis. Temoin sans recompiler. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Vegetation")
+	float VegetationDensite = 1.0f;
+
+	/** Distance au joueur au-dela de laquelle on ne seme plus, en metres. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Vegetation")
+	float VegetationRayonM = 350.0f;
+
+	/**
+	 * Vrai : chaque chunk possede ses propres composants d'instances.
+	 * Faux : un composant GLOBAL par espece, garni et vide par les chunks.
+	 *
+	 * ARME PAR `-WorldseedIsmParChunk=0/1`, pour que l'A/B se fasse sur le MEME
+	 * binaire. Le depot a une regle contre les A/B qui demandent de rouvrir le
+	 * fichier de regles -- son empreinte regenererait le monde entre les deux
+	 * moities, et ce ne serait plus le meme monde.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Vegetation")
+	bool bIsmParChunk = true;
+
+	/**
+	 * Journaliser ce qui pousse autour du joueur, une fois le monde rempli.
+	 *
+	 * ARME PAR `-WorldseedEspeces=<rayon en metres>`, et zero autrement. La
+	 * commande console `Worldseed.Especes` fait la meme chose a la demande et
+	 * vise plus juste -- mais la console d'Unreal s'ouvre sur `VK_OEM_3`, qui
+	 * est la touche `u accent grave` en AZERTY : elle laisse son caractere dans
+	 * la ligne, la commande devient « uWorldseed.Especes » et ne s'execute
+	 * jamais. Defaut deja paye par ce depot pour `Worldseed.Aller`.
+	 */
+	float EspecesRayonM = 0.0f;
+
+	/** Vrai une fois le releve fait : il ne vaut que la premiere fois. */
+	bool bEspecesReleve = false;
+
+	// ------------------------------------------------------------- RVT
+
+	/**
+	 * Poser les Runtime Virtual Textures du pack et les faire suivre le joueur.
+	 *
+	 * ARME PAR DEFAUT, parce que sans elles certains materiaux du pack rendent
+	 * un BLEU ELECTRIQUE et qu'aucune instance ne peut les corriger : `M_Grass`
+	 * echantillonne la RVT en dur, son seul parametre statique s'appelle
+	 * `Tweak`. Voir `WorldseedRvt`.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|RVT")
+	bool bUtiliserRvt = true;
+
+
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	float ParoiPasM = 130.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	float ParoiDensite = 1.0f;
+
 	// ------------------------------------------------------------ monde
 
 	/**
@@ -630,6 +848,84 @@ private:
 
 	/** Couleur et teinte d'un sommet, depuis la carte des biomes. */
 	void PaintVertices(FWorldseedVoxelMesh& Mesh) const;
+
+	// ----------------------------------------------------------- parois
+
+	/**
+	 * Charge les maillages de falaise et cree un composant d'instances par
+	 * modele. Sans effet si l'habillage ne demande pas de parois.
+	 */
+	void PreparerParois();
+
+	/** Seme les pans de falaise d'un chunk qui vient d'etre televerse. */
+	void SemerParoisDuChunk(const FWorldseedChunkKey& Key,
+		FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh);
+
+	/** Un composant d'instances par modele, dans l'ordre du catalogue. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> ParoiComposants;
+
+	/** Ce que chaque modele mesure. Releve une fois, au chargement. */
+	TArray<FWorldseedParoiModele> ParoiCatalogue;
+
+	/** Releve du semis, pour que le journal dise ce qui a ete pose. */
+	mutable int32 ParoisPosees = 0;
+	mutable double ParoisMs = 0.0;
+
+	// ------------------------------------------------------- vegetation
+
+	/** Charge les recettes et cree un composant d'instances par espece. */
+	void PreparerVegetation();
+
+	/** Seme la vegetation d'un chunk qui vient d'etre televerse. */
+	void SemerVegetationDuChunk(const FWorldseedChunkKey& Key,
+		FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh);
+
+public:
+	/**
+	 * Ce qui est pose autour d'un point : maillage, materiaux, distance.
+	 *
+	 * POURQUOI CETTE SONDE EXISTE. Un defaut d'aspect signale en jeu -- « ce
+	 * rocher porte un damier » -- ne se diagnostique pas si l'on ne sait pas
+	 * QUEL maillage on regarde. Ce depot a passe trois tours a le deviner : on
+	 * inspectait les materiaux des especes qu'on CROYAIT presentes, on les
+	 * corrigeait, et le defaut restait -- parce que le maillage fautif n'etait
+	 * pas dans la liste supposee.
+	 *
+	 * Le composant d'instances sait pourtant repondre : `GetInstancesOverlappingSphere`
+	 * rend exactement ce qui est pose dans un rayon. Il n'y avait qu'a le lui
+	 * demander.
+	 *
+	 * ET ELLE DIT LE MATERIAU EFFECTIF, pas celui de l'asset : c'est la seule
+	 * facon de voir si la substitution « sans RVT » a bien ete appliquee a cet
+	 * emplacement-la.
+	 */
+	FString EspecesAutour(const FVector& CentreCm, double RayonCm) const;
+
+private:
+	/** Un composant d'instances par espece, dans l'ordre du catalogue. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> PlanteComposants;
+
+	/** Les recettes lues une fois au demarrage. */
+	FWorldseedRecettes Recettes;
+
+	/** Releve cumule du semis de vegetation. */
+	mutable FWorldseedVegetationReleve VegetationReleve;
+	mutable double VegetationMs = 0.0;
+
+	// ------------------------------------------------------------- RVT
+
+	/** Pose les composants de RVT. Sans effet si `bUtiliserRvt` est faux. */
+	void PreparerRvt();
+
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URuntimeVirtualTextureComponent>> RvtComposants;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URuntimeVirtualTexture>> RvtTextures;
+
 
 public:
 	/**
@@ -1015,6 +1311,19 @@ private:
 	double TotalUploadMs = 0.0;
 	double WorstUploadMs = 0.0;
 	int32 UploadCount = 0;
+
+	/**
+	 * Suffixe des noms de composants de chunk, monotone et jamais remis a zero.
+	 *
+	 * IL EXISTE POUR QU'UN NOM NE REVIENNE JAMAIS. Le nom etait deterministe --
+	 * niveau et indices -- donc un chunk relache puis redemande, ce qui est le
+	 * cas NOMINAL du streaming, reclamait le nom d un composant dont le fil de
+	 * rendu n avait pas fini de liberer les ressources. `NewObject` devait
+	 * l ecraser, et le fil de jeu attendait le fil de rendu. Mesure sur
+	 * soixante secondes de vol : 17 811 ms d attente cumulee, dont une de
+	 * 624 ms. Voir le commentaire au point de creation.
+	 */
+	uint64 CompteurComposantsChunk = 0;
 
 	/**
 	 * Temps passe sur le FIL DE JEU a peindre les sommets, et le nombre peint.

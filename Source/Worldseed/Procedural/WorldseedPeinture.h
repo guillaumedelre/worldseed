@@ -87,6 +87,48 @@ struct WORLDSEED_API FWorldseedPeintureContexte
 
 	/** Peindre par BRANCHE au lieu de par matiere. A regarder sans eclairage. */
 	bool bCarteDesCauses = false;
+
+	/**
+	 * RGBA PORTE LES POIDS DES QUATRE MATIERES, ET NON UNE COULEUR.
+	 *
+	 * CE DRAPEAU CORRIGE UN CONTRAT VIOLE, ET LE DEFAUT SE VOYAIT. Un materiau
+	 * de pack -- `MI_WorldseedGround_<Habillage>` -- melange quatre textures
+	 * (herbe, aride, roche, mousse) en lisant la couleur de sommet comme leurs
+	 * POIDS ; c'est ce que `WorldseedApparence` fait depuis toujours pour la
+	 * nappe d'horizon, et son commentaire le dit en toutes lettres. Cette
+	 * peinture-ci, elle, y ecrivait la COULEUR du biome. Le materiau melangeait
+	 * donc ses quatre textures avec les canaux d'une teinte, ce qui n'a aucun
+	 * sens -- et l'arithmetique explique exactement ce qu'on voyait a l'ecran :
+	 *
+	 *     biome                  voulu (matieres)   obtenu (couleur / 255)
+	 *     foret temperee         herbe 0,90         herbe 0,27  aride 0,50
+	 *     foret tropicale hum.   herbe 0,80         herbe 0,12  aride 0,43
+	 *     desert chaud           aride 1,00         herbe 0,84  aride 0,75
+	 *
+	 * Les deux forets recevaient donc DEUX A TROIS FOIS PLUS D'ARIDE QUE
+	 * D'HERBE -- d'ou le sol sableux signale sous la foret tropicale -- et le
+	 * desert chaud recevait plus d'herbe que de sable, soit l'inverse exact.
+	 *
+	 * A FAUX, le comportement est celui d'avant : la couleur de biome part
+	 * dans RGBA, ce qu'attend `M_WorldseedBiome`. C'est le mode « couleurs de
+	 * biome », qui ne lit aucune texture.
+	 */
+	bool bPoidsDeMatiere = false;
+
+	/**
+	 * Fondre la teinte et les poids entre cellules de biome voisines.
+	 *
+	 * LA CARTE A UNE MAILLE DE 15,6 m, LE MAILLAGE UN SOMMET AU METRE. Lue au
+	 * plus proche voisin, la frontiere de deux biomes tombe donc sur une arete
+	 * de triangle et se lit comme un escalier -- signale en jeu : « des
+	 * coupures polygonales, comme si le sol portait encore la teinte du
+	 * biome ». Le fondu etale la transition sur toute la maille.
+	 *
+	 * IL NE TOUCHE JAMAIS A L'IDENTIFIANT, seulement aux grandeurs continues
+	 * qui en derivent -- couleur et poids de matiere. `-WorldseedFondu=0` le
+	 * coupe, pour que l'A/B ne demande pas de recompiler.
+	 */
+	bool bMelangerLesBiomes = true;
 };
 
 /**

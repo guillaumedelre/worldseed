@@ -482,6 +482,9 @@ protected:
 	/** Le materiau correspondant au mode d'apparence courant. */
 	UMaterialInterface* ChooseTerrainMaterial(const FWorldseedAppearance& Mode) const;
 
+	/** Applique `-WorldseedHabillage=<nom>` s'il est donne. Sans effet sinon. */
+	void AppliquerHabillageForce();
+
 	/**
 	 * Le materiau de la MER DU DECOR, section 1 de la nappe vue.
 	 *
