@@ -208,6 +208,7 @@ void WorldseedVegetation::Semer(const FWorldseedVoxelMesh& Mesh,
 	const FWorldseedBiomeMap& Biomes, const FWorldseedGeometry& Geo,
 	const FWorldseedVegetationRegles& Regles, int32 Graine,
 	const FVector2D& OrigineM,
+	const TArray<FWorldseedEmpriseParoi>& Parois,
 	TArray<FWorldseedPlante>& Out, FWorldseedVegetationReleve& Releve)
 {
 	if (Recettes.EstVide() || Regles.Densite <= 0.0f || Mesh.Positions.Num() == 0)
@@ -607,6 +608,36 @@ void WorldseedVegetation::Semer(const FWorldseedVoxelMesh& Mesh,
 				// rayon du feuillage creuserait un anneau nu bien plus visible
 				// que le debord qu'il corrige.
 				const FVector2D PointCm(CX, CY);
+
+				// --- LES PANS DE FALAISE, POSES AVANT CE SEMIS -------------
+				//
+				// Ils sont semes par une passe a part, dans le meme chunk et
+				// AVANT celle-ci. Sans ce test, l'herbe pousse au travers --
+				// signale en jeu, et c'est le meme defaut que la roche a
+				// l'echelle du pan.
+				//
+				// ON RAMENE LE POINT DANS LE REPERE DU PAN plutot que de
+				// tourner la boite : un test de boite ALIGNEE sur une forme
+				// qui ne l'est pas exclurait sa diagonale, soit bien plus que
+				// le pan lui-meme.
+				bool bSousLaParoi = false;
+				for (const FWorldseedEmpriseParoi& P : Parois)
+				{
+					const FVector2D D = PointCm - P.CentreCm;
+					const double LX = D.X * P.CosLacet + D.Y * P.SinLacet;
+					const double LY = -D.X * P.SinLacet + D.Y * P.CosLacet;
+					if (FMath::Abs(LX) <= P.DemiCm.X && FMath::Abs(LY) <= P.DemiCm.Y)
+					{
+						bSousLaParoi = true;
+						break;
+					}
+				}
+				if (bSousLaParoi)
+				{
+					++Releve.SousLaParoi;
+					continue;
+				}
+
 				if (Emprises.Num() > 0)
 				{
 					bool bOccupe = false;

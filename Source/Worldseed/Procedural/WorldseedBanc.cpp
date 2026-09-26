@@ -492,12 +492,70 @@ void UWorldseedBanc::Conclure()
 		FVector RochePlusProche = FVector::ZeroVector;
 		double MeilleureDist = TNumericLimits<double>::Max();
 
+		// --- LES PANS DE FALAISE SE COMPTENT A PART -----------------------
+		//
+		// Ils viennent d'une AUTRE passe et d'un autre composant, et ils sont
+		// enormes -- 76,8 x 54,9 x 44,5 m releves pour `SM_Cliff_2`. Les
+		// melanger aux rochers du semis rendrait un chiffre dont on ne saurait
+		// plus lequel des deux il decrit.
+		int32 Pans = 0;
+		int32 PansSolides = 0;
+		int32 PansCorps = 0;
+		FVector PanDemi = FVector(500.0, 500.0, 500.0);
+		FVector PanPlusProche = FVector::ZeroVector;
+		double MeilleurePan = TNumericLimits<double>::Max();
+
 		if (T)
 		{
 			TArray<UInstancedStaticMeshComponent*> Ism;
 			T->GetComponents<UInstancedStaticMeshComponent>(Ism);
 			for (const UInstancedStaticMeshComponent* const C : Ism)
 			{
+				if (C && C->GetName().StartsWith(TEXT("Parois_")))
+				{
+					const bool bDur =
+						(C->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
+
+					// ON VISE LE CENTRE DE LA BOITE, PAS LE PIVOT, et ce
+					// depot le savait deja : « les pivots du pack sont
+					// incoherents entre modeles, le centre de la boite ne
+					// l'est pas ». Une sphere posee sur le pivot d'un pan de
+					// 77 m peut tomber entierement DEHORS -- elle rend zero,
+					// et l'on conclut que le pan ne bloque pas alors qu'on
+					// n'a rien touche.
+					const UStaticMesh* const M = C->GetStaticMesh();
+					const FVector Locale = M ? M->GetBounds().Origin : FVector::ZeroVector;
+					if (M) { PanDemi = M->GetBounds().BoxExtent; }
+
+					// LE COMPTE DES CORPS TRANCHE CE QUE LA SPHERE NE SAIT PAS
+					// DIRE. « Zero touche » a deux causes opposees : aucun
+					// corps n'a ete cree -- un ISM ne sait peut-etre pas faire
+					// de corps sans primitive SIMPLE -- ou le corps existe et
+					// la sonde a vise a cote. Le moteur expose la liste, on la
+					// lit plutot que de deviner.
+					for (const FBodyInstance* const Corps : C->GetInstanceBodies())
+					{
+						if (Corps && Corps->IsValidBodyInstance()) { ++PansCorps; }
+					}
+
+					for (int32 K = 0; K < C->GetInstanceCount(); ++K)
+					{
+						FTransform Tr;
+						if (!C->GetInstanceTransform(K, Tr, true)) { continue; }
+						++Pans;
+						if (bDur) { ++PansSolides; }
+
+						const FVector Centre = Tr.TransformPosition(Locale);
+						const double D = FVector::Dist(Centre,
+							Pion->GetActorLocation());
+						if (D < MeilleurePan)
+						{
+							MeilleurePan = D;
+							PanPlusProche = Centre;
+						}
+					}
+					continue;
+				}
 				if (!C || !C->GetName().StartsWith(TEXT("Plantes_"))) { continue; }
 				++CompoTotal;
 				const bool bSolide =
@@ -524,6 +582,53 @@ void UWorldseedBanc::Conclure()
 						RochePlusProche = Tr.GetLocation();
 					}
 				}
+			}
+		}
+
+		// --- LES PANS, EPROUVES COMME LES ROCHES --------------------------
+		if (Pans == 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   PANS DE FALAISE : aucun dans le monde charge"));
+		}
+		else
+		{
+			// SA PROPRE BOITE, ET NON UNE SPHERE ARBITRAIRE.
+			//
+			// UNE SPHERE DE CINQ METRES SUR LE CENTRE RENDAIT ZERO, et ce
+			// n'etait toujours pas la collision : `SM_Cliff_2` est une COQUE
+			// -- une face de falaise de 77 m -- dont le centre de boite tombe
+			// dans le VIDE, derriere la paroi. La sonde ne touchait rien parce
+			// qu'il n'y a rien a cet endroit.
+			//
+			// Une boite aux dimensions du maillage, elle, ne peut pas le
+			// manquer : le corps est contenu dedans par definition.
+			TArray<FOverlapResult> TouchesPan;
+			FCollisionQueryParams ParamsPan(TEXT("WorldseedPans"), false, Pion);
+			GetWorld()->OverlapMultiByChannel(TouchesPan, PanPlusProche,
+				FQuat::Identity, ECC_WorldStatic,
+				FCollisionShape::MakeBox(FVector3f(PanDemi)), ParamsPan);
+
+			int32 PansTouches = 0;
+			for (const FOverlapResult& O : TouchesPan)
+			{
+				const UPrimitiveComponent* const C = O.GetComponent();
+				if (C && C->GetName().StartsWith(TEXT("Parois_"))) { ++PansTouches; }
+			}
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   PANS DE FALAISE : %d pose(s), %d SOLIDES, ")
+				TEXT("%d CORPS physiques crees -- le plus proche a %.0f m, une ")
+				TEXT("boite de %.0f x %.0f x %.0f m sur lui rencontre %d composant(s)"),
+				Pans, PansSolides, PansCorps, MeilleurePan / 100.0,
+				PanDemi.X * 2.0 / 100.0, PanDemi.Y * 2.0 / 100.0,
+				PanDemi.Z * 2.0 / 100.0, PansTouches);
+
+			if (PansTouches == 0)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed]   le pan le plus proche NE REPOND PAS a la ")
+					TEXT("physique -- on le traverse"));
 			}
 		}
 

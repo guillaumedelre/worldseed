@@ -242,7 +242,7 @@
             0.6,
             1.6
           ],
-          "spacing" : "sousbois_clair"
+          "spacing" : "arbres_epars"
         }
       ]
     },
@@ -285,7 +285,13 @@
             0.9,
             1.4
           ],
-          "spacing" : "rares"
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "douceur" : 0.12,
+            "octaves" : 3,
+            "seuil" : 0.65,
+            "taille" : 20000
+          }
         },
         {
           "cull" : [
@@ -346,7 +352,7 @@
             0.5,
             1.4
           ],
-          "spacing" : "sousbois_clair"
+          "spacing" : "arbres_epars"
         },
         {
           "cull" : [
@@ -2633,7 +2639,7 @@
             0.5,
             1.4
           ],
-          "spacing" : "sousbois_clair"
+          "spacing" : "arbres_epars"
         }
       ]
     }

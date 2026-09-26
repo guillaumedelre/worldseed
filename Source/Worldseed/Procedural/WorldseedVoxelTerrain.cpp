@@ -673,6 +673,22 @@ void AWorldseedVoxelTerrain::BeginPlay()
 				TEXT("[Worldseed] parois : densite forcee a %.2f par la ligne de commande"),
 				ParoiDensite);
 		}
+		// `-WorldseedParoiPack=1` : garder le materiau du PACK au lieu de
+		// l'instance sans RVT.
+		//
+		// POURQUOI CETTE SURCHARGE EXISTE. Le remplacement a ete pose quand le
+		// niveau n'avait AUCUNE Runtime Virtual Texture -- la couche du dessus
+		// echantillonnait du vide et rendait un bleu pur. Depuis,
+		// `WorldseedRvt` en pose deux. La premisse a donc change, et le
+		// remplacement pourrait bien etre ce qui APLATIT le pan : signale en
+		// jeu, « un gros bloc de pierre qui n'a pas la texture de l'asset de
+		// base ». On ne le suppose pas, on le compare.
+		int32 Pack = bParoiMateriauDuPack ? 1 : 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiPack="), Pack))
+		{
+			bParoiMateriauDuPack = (Pack != 0);
+		}
+
 		float Montee = ParoiMonteeMaxFrac;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiMontee="), Montee))
 		{
@@ -1376,15 +1392,49 @@ void AWorldseedVoxelTerrain::PreparerParois()
 		ISM->SetupAttachment(RootScene);
 		ISM->SetStaticMesh(Maillage);
 
-		// AUCUNE COLLISION, ET C'EST UN CHOIX A REPRENDRE. Les trois pans de
-		// falaise du pack n'ont aucune primitive de collision simple (releve du
-		// 25 septembre 2026 : `CollisionPrims = 0`), donc la seule collision
-		// possible serait le maillage complexe -- 3366 triangles par instance,
-		// cuits a chaque pose. Et surtout, leur donner une collision changerait
-		// LA OU LE JOUEUR POSE LE PIED selon l'habillage choisi, ce qui est le
-		// seul point par lequel un habillage toucherait a la jouabilite. Tant
-		// que ce n'est pas arbitre, elles sont du DECOR.
-		ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		// --- UNE PAROI EST UNE ROCHE, ET ELLE ARRETE ----------------------
+		//
+		// ELLE ETAIT DU DECOR, ET C'ETAIT MON ERREUR DE PERIMETRE. J'avais
+		// laisse les pans hors du chantier « les roches sont des obstacles »
+		// en me fiant a leur NOM -- « parois » et non « roches » -- alors que
+		// c'est la meme chose pour qui joue. Signale en jeu : « il s'agit d'un
+		// rocher sur lequel je devrais pouvoir marcher et je passe encore a
+		// travers ». Une distinction qui n'existe que dans le code n'est pas
+		// une distinction.
+		//
+		// LE MAILLAGE N'A PEUT-ETRE AUCUNE PRIMITIVE SIMPLE -- releve du
+		// 25 septembre : `CollisionPrims = 0` sur les pans du pack. On bascule
+		// alors l'asset en COMPLEXE-COMME-SIMPLE, a l'execution : c'est le
+		// seul chemin qui survive a un clone, `Orasot_Bundle` n'etant pas
+		// versionne. Le cout est reel -- le maillage de collision porte les
+		// triangles du pan -- et il est mesure au journal.
+		if (UBodySetup* const Corps = Maillage->GetBodySetup())
+		{
+			const int32 Prims = Corps->AggGeom.GetElementCount();
+			if (Prims == 0 && Corps->CollisionTraceFlag != CTF_UseComplexAsSimple)
+			{
+				Corps->CollisionTraceFlag = CTF_UseComplexAsSimple;
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed] parois : %s n'a aucune primitive simple, ")
+					TEXT("bascule en COMPLEXE-COMME-SIMPLE pour qu'elle bloque"),
+					*Chemin.ToString());
+			}
+			else
+			{
+				// ON DIT LES DEUX, et il le faut : « 0 primitive simple » sans
+				// le mode de trace laisse croire que rien ne bloquera, alors
+				// que complexe-comme-simple bloque justement sans primitive.
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed] parois : %s porte %d primitive(s) simple(s), ")
+					TEXT("mode de trace %s"),
+					*Chemin.ToString(), Prims,
+					Corps->CollisionTraceFlag == CTF_UseComplexAsSimple
+						? TEXT("COMPLEXE-COMME-SIMPLE") : TEXT("simple"));
+			}
+		}
+
+		ISM->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ISM->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 		ISM->SetCastShadow(bOmbresChunks);
 		ISM->bAffectDistanceFieldLighting = false;
 
@@ -1393,7 +1443,13 @@ void AWorldseedVoxelTerrain::PreparerParois()
 		// Virtual Texture dans ce niveau. On remplace TOUS les emplacements --
 		// ce modele n'en a qu'un, mais un catalogue enrichi pourrait en avoir
 		// plusieurs, et un emplacement oublie reste bleu sans rien signaler.
-		if (UMaterialInterface* SansRVT = Cast<UMaterialInterface>(ParoiMateriau.TryLoad()))
+		if (bParoiMateriauDuPack)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] parois : materiau du PACK garde, le remplacement ")
+				TEXT("sans RVT est coupe"));
+		}
+		else if (UMaterialInterface* SansRVT = Cast<UMaterialInterface>(ParoiMateriau.TryLoad()))
 		{
 			for (int32 S = 0; S < Maillage->GetStaticMaterials().Num(); ++S)
 			{
@@ -1435,8 +1491,11 @@ void AWorldseedVoxelTerrain::PreparerParois()
 }
 
 void AWorldseedVoxelTerrain::SemerParoisDuChunk(const FWorldseedChunkKey& Key,
-	FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh)
+	FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh,
+	TArray<FWorldseedEmpriseParoi>& OutEmprises)
 {
+	OutEmprises.Reset();
+
 	if (ParoiCatalogue.Num() == 0 || ParoiComposants.Num() != ParoiCatalogue.Num())
 	{
 		return;
@@ -1486,6 +1545,26 @@ void AWorldseedVoxelTerrain::SemerParoisDuChunk(const FWorldseedChunkKey& Key,
 		}
 		State.Parois.Emplace(I.Modele,
 			ParoiComposants[I.Modele]->AddInstanceById(I.Transform));
+
+		// --- L'EMPRISE AU SOL, POUR QUE RIEN N'Y POUSSE -------------------
+		//
+		// LA BOITE SE PREND SUR L'ASSET, PAS SUR LE PIVOT : les pivots du pack
+		// sont incoherents entre modeles, le centre de la boite ne l'est pas.
+		// C'est deja ce que fait `ParoiCatalogue`, et l'ignorer ici decalerait
+		// l'emprise de la moitie d'un pan.
+		const FWorldseedParoiModele& M = ParoiCatalogue[I.Modele];
+		const FVector Echelle = I.Transform.GetScale3D();
+		const FVector CentreMonde = I.Transform.TransformPosition(M.Origine);
+		const double Lacet = FMath::DegreesToRadians(
+			I.Transform.GetRotation().Rotator().Yaw);
+
+		FWorldseedEmpriseParoi E;
+		E.CentreCm = FVector2D(CentreMonde.X, CentreMonde.Y);
+		E.DemiCm = FVector2D(M.DemiTaille.X * Echelle.X,
+			M.DemiTaille.Y * Echelle.Y);
+		E.CosLacet = static_cast<float>(FMath::Cos(Lacet));
+		E.SinLacet = static_cast<float>(FMath::Sin(Lacet));
+		OutEmprises.Add(E);
 	}
 
 	ParoisPosees += Instances.Num();
@@ -1727,7 +1806,8 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 }
 
 void AWorldseedVoxelTerrain::SemerVegetationDuChunk(const FWorldseedChunkKey& Key,
-	FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh)
+	FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh,
+	const TArray<FWorldseedEmpriseParoi>& Parois)
 {
 	if (PlanteComposants.Num() == 0 || Recettes.EstVide())
 	{
@@ -1768,7 +1848,7 @@ void AWorldseedVoxelTerrain::SemerVegetationDuChunk(const FWorldseedChunkKey& Ke
 	TArray<FWorldseedPlante> Plantes;
 	WorldseedVegetation::Semer(Mesh, OrigineCm, CoteM * WorldseedMetersToCm,
 		Recettes, Biomes(), Geometry, Regles, WorldSeed, OrigineM,
-		Plantes, VegetationReleve);
+		Parois, Plantes, VegetationReleve);
 
 	// --- ON AJOUTE PAR LOT, PAS UNE PAR UNE --------------------------------
 	//
@@ -2170,8 +2250,11 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	// LES PAROIS SE SEMENT ICI, ET APRES LA SECTION : elles lisent les normales
 	// du maillage pour savoir ou est la roche raide, donc elles ne peuvent pas
 	// etre posees avant qu'il existe.
-	SemerParoisDuChunk(Key, State, Job->Mesh);
-	SemerVegetationDuChunk(Key, State, Job->Mesh);
+	// L'ORDRE EST PORTANT : les pans donnent leur emprise, la vegetation s'en
+	// ecarte. Les inverser remettrait l'herbe au travers des pans.
+	TArray<FWorldseedEmpriseParoi> EmprisesParois;
+	SemerParoisDuChunk(Key, State, Job->Mesh, EmprisesParois);
+	SemerVegetationDuChunk(Key, State, Job->Mesh, EmprisesParois);
 
 	const double UploadMs = (FPlatformTime::Seconds() - DebutUpload) * 1000.0;
 	TotalUploadMs += UploadMs;
@@ -2898,7 +2981,7 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			TEXT("hors chunk %.1f %%  case vide %.1f %%  tranche Z %.1f %%  ")
 			TEXT("sous la mer %.1f %%  substrat %.1f %%  ")
 			TEXT("pente %.1f %%  taches %.1f %%  densite %.1f %%  ")
-			TEXT("dans la roche %.1f %%  ->  POSEES %.1f %%"),
+			TEXT("dans la roche %.1f %%  sous un pan %.1f %%  ->  POSEES %.1f %%"),
 			VegetationReleve.Testes,
 			100.0 * VegetationReleve.HorsChunk / T,
 			100.0 * VegetationReleve.CaseVide / T,
@@ -2909,6 +2992,7 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			100.0 * VegetationReleve.Taches / T,
 			100.0 * VegetationReleve.Densite / T,
 			100.0 * VegetationReleve.SousLaRoche / T,
+			100.0 * VegetationReleve.SousLaParoi / T,
 			100.0 * VegetationReleve.Posees / T);
 	}
 

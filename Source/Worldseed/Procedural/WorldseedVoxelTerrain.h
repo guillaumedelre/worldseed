@@ -614,6 +614,17 @@ public:
 	FSoftObjectPath ParoiMateriau = FSoftObjectPath(
 		TEXT("/Game/Worldseed/Materials/MI_WorldseedParoi.MI_WorldseedParoi"));
 
+	/**
+	 * Garder le materiau du PACK plutot que l'instance sans RVT.
+	 *
+	 * LA PREMISSE DU REMPLACEMENT A CHANGE. Il a ete pose quand le niveau
+	 * n'avait aucune Runtime Virtual Texture ; `WorldseedRvt` en pose deux
+	 * aujourd'hui. `-WorldseedParoiPack=1` permet de comparer les deux au lieu
+	 * de decider sur un commentaire qui decrit un monde d'avant.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	bool bParoiMateriauDuPack = false;
+
 	/** Les reglages du semis. Voir `FWorldseedParoiRegles`. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
 	float ParoiMonteeMaxFrac = 0.35f;
@@ -857,9 +868,16 @@ private:
 	 */
 	void PreparerParois();
 
-	/** Seme les pans de falaise d'un chunk qui vient d'etre televerse. */
+	/**
+	 * Seme les pans de falaise d'un chunk qui vient d'etre televerse.
+	 *
+	 * ELLE REND LEUR EMPRISE AU SOL, et c'est le semis de vegetation qui la
+	 * consomme : sans elle, l'herbe pousse au travers des pans -- signale en
+	 * jeu. Les deux passes tournent sur le MEME chunk, celle-ci d'abord.
+	 */
 	void SemerParoisDuChunk(const FWorldseedChunkKey& Key,
-		FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh);
+		FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh,
+		TArray<FWorldseedEmpriseParoi>& OutEmprises);
 
 	/** Un composant d'instances par modele, dans l'ordre du catalogue. */
 	UPROPERTY(Transient)
@@ -879,7 +897,8 @@ private:
 
 	/** Seme la vegetation d'un chunk qui vient d'etre televerse. */
 	void SemerVegetationDuChunk(const FWorldseedChunkKey& Key,
-		FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh);
+		FWorldseedVoxelChunkState& State, const FWorldseedVoxelMesh& Mesh,
+		const TArray<FWorldseedEmpriseParoi>& Parois);
 
 public:
 	/**

@@ -10,6 +10,32 @@ struct FWorldseedBiomeMap;
 struct FWorldseedGeometry;
 struct FWorldseedVoxelMesh;
 
+/**
+ * L'emprise au sol d'un pan de falaise, en centimetres.
+ *
+ * UNE BOITE ORIENTEE, PAS UN DISQUE -- contrairement aux roches du semis. Un
+ * pan est long et mince : le disque qui le contiendrait degarnirait tout
+ * autour de lui, et celui qui tiendrait dedans laisserait de l'herbe traverser
+ * ses deux extremites. Une roche, elle, recoit un lacet ALEATOIRE et n'a donc
+ * pas d'axe privilegie -- le disque y est le bon equivalent.
+ *
+ * ELLE VIENT DU TERRAIN, PAS DU SEMEUR. Les pans sont poses par une passe a
+ * part, AVANT la vegetation du meme chunk ; le semeur ne les connaitrait
+ * jamais si on ne les lui donnait pas -- et c'est exactement ce qui a mis de
+ * l'herbe au travers d'un pan, signale en jeu.
+ */
+struct FWorldseedEmpriseParoi
+{
+	FVector2D CentreCm = FVector2D::ZeroVector;
+
+	/** Demi-cotes dans le repere du pan, echelle comprise. */
+	FVector2D DemiCm = FVector2D::ZeroVector;
+
+	/** Le lacet, precalcule : la boucle du semis est la plus chaude du module. */
+	float CosLacet = 1.0f;
+	float SinLacet = 0.0f;
+};
+
 /** Une plante a poser : quelle espece, ou, et comment. */
 struct FWorldseedPlante
 {
@@ -159,6 +185,17 @@ struct FWorldseedVegetationReleve
 	 */
 	int64 SousLaRoche = 0;
 
+	/**
+	 * Rejetes parce que leur point tombe sous un PAN DE FALAISE.
+	 *
+	 * COMPTE A PART DE LA ROCHE, et ce depot sait pourquoi : un agregat sur
+	 * deux populations ne se corrige pas, il se decompose. Les pans viennent
+	 * d'une autre passe, ils font 77 m et il y en a quelques dizaines quand
+	 * les rochers se comptent par milliers -- un seul chiffre ne dirait pas
+	 * laquelle des deux gardes a mordu.
+	 */
+	int64 SousLaParoi = 0;
+
 	int32 Posees = 0;
 	int32 Plafonnees = 0;
 	int32 HorsRayon = 0;
@@ -205,5 +242,6 @@ namespace WorldseedVegetation
 		const FWorldseedBiomeMap& Biomes, const FWorldseedGeometry& Geo,
 		const FWorldseedVegetationRegles& Regles, int32 Graine,
 		const FVector2D& OrigineM,
+		const TArray<FWorldseedEmpriseParoi>& Parois,
 		TArray<FWorldseedPlante>& Out, FWorldseedVegetationReleve& Releve);
 }

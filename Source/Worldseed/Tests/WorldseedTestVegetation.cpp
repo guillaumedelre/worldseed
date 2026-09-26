@@ -125,6 +125,15 @@ namespace
 		return B;
 	}
 
+	/**
+	 * Pas de pan de falaise dans ces fixtures.
+	 *
+	 * NOMMEE PLUTOT QU'UN `{}` ANONYME : un tableau vide passe en temporaire
+	 * ne dit pas s'il est vide PAR CHOIX ou par oubli, et ces six appels
+	 * testent autre chose. L'emprise des pans a son propre test.
+	 */
+	const TArray<FWorldseedEmpriseParoi> SansParoi;
+
 	FWorldseedVegetationRegles Regles()
 	{
 		FWorldseedVegetationRegles R;
@@ -177,7 +186,7 @@ bool FWorldseedVegetationDoublonTest::RunTest(const FString& Parameters)
 			TArray<FWorldseedPlante> Plantes;
 			FWorldseedVegetationReleve Releve;
 			WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
-				Regles(), 1234, FVector2D::ZeroVector, Plantes, Releve);
+				Regles(), 1234, FVector2D::ZeroVector, SansParoi, Plantes, Releve);
 
 			for (const FWorldseedPlante& P : Plantes)
 			{
@@ -236,7 +245,7 @@ bool FWorldseedVegetationMerTest::RunTest(const FString& Parameters)
 
 		TArray<FWorldseedPlante> Plantes;
 		WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
-			Regles(), 1234, FVector2D::ZeroVector, Plantes, Releve);
+			Regles(), 1234, FVector2D::ZeroVector, SansParoi, Plantes, Releve);
 		return Plantes.Num();
 	};
 
@@ -287,7 +296,7 @@ bool FWorldseedVegetationEstranTest::RunTest(const FString& Parameters)
 		TArray<FWorldseedPlante> Plantes;
 		FWorldseedVegetationReleve Releve;
 		WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
-			Regles(), 1234, FVector2D::ZeroVector, Plantes, Releve);
+			Regles(), 1234, FVector2D::ZeroVector, SansParoi, Plantes, Releve);
 
 		OutBiome = 0;
 		OutEstran = 0;
@@ -350,7 +359,7 @@ bool FWorldseedVegetationDeterminismeTest::RunTest(const FString& Parameters)
 		TArray<FWorldseedPlante> Plantes;
 		FWorldseedVegetationReleve Releve;
 		WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
-			Regles(), Graine, FVector2D::ZeroVector, Plantes, Releve);
+			Regles(), Graine, FVector2D::ZeroVector, SansParoi, Plantes, Releve);
 		return Plantes;
 	};
 
@@ -462,7 +471,7 @@ bool FWorldseedVegetationRocheTest::RunTest(const FString& Parameters)
 		TArray<FWorldseedPlante> Plantes;
 		FWorldseedVegetationReleve Releve;
 		WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
-			Regles(), 4242, FVector2D::ZeroVector, Plantes, Releve);
+			Regles(), 4242, FVector2D::ZeroVector, SansParoi, Plantes, Releve);
 
 		TArray<FVector2D> Roches;
 		for (const FWorldseedPlante& P : Plantes)
@@ -607,7 +616,7 @@ bool FWorldseedVegetationTachesTest::RunTest(const FString& Parameters)
 				TArray<FWorldseedPlante> Plantes;
 				FWorldseedVegetationReleve Releve;
 				WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
-					Regles(), 7, FVector2D::ZeroVector, Plantes, Releve);
+					Regles(), 7, FVector2D::ZeroVector, SansParoi, Plantes, Releve);
 				Total += Plantes.Num();
 			}
 		}
@@ -734,6 +743,198 @@ bool FWorldseedFbmPointTest::RunTest(const FString& Parameters)
 			- WorldseedPerlin::FbmPoint(X, Y, F, 3, 7)));
 	}
 	TestTrue(TEXT("trois octaves donnent un autre bruit"), PireEcart3 > 0.05);
+	return true;
+}
+
+/**
+ * COMBIEN CHAQUE BIOME PORTE, A L'HECTARE. Une table, pas un verdict.
+ *
+ * SIGNALE EN JEU : « dans le desert la densite du foliage n'est pas realiste
+ * (trop de vegetation, trop de roche partout) ». Regler un pas de grille a
+ * l'intuition, c'est exactement ce que ce depot a paye trois fois -- un
+ * plafond de pente a 25 degres qui ne gardait que 36 % des terres, un seuil de
+ * diaclase cense garder 16 % qui en gardait 1,59, une part littorale a 0,45
+ * qui n'a JAMAIS morde. On mesure donc d'abord.
+ *
+ * ELLE PASSE PAR LE SEMEUR REEL, sur les recettes REELLES lues du disque :
+ * recalculer la densite depuis les pas de grille validerait une copie de la
+ * regle, et manquerait tout ce que les gardes retirent -- les taches surtout,
+ * qui coupent de moitie certaines couches.
+ *
+ * ⚠ C'EST UN TEST DE CALAGE, comme le bulletin terrestre : il depend du
+ * fichier de recettes et DOIT rouvrir la question quand on le retouche.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedVegetationDensiteTest,
+	"Worldseed.Vegetation.DensiteParBiome",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedVegetationDensiteTest::RunTest(const FString& Parameters)
+{
+	FWorldseedRecettes R;
+	FString Info;
+	if (!R.Charger(Info))
+	{
+		// PAS UN ECHEC : `Content/` est exclu du depot, un clone frais n'a pas
+		// le fichier. On le DIT plutot que de faire tomber la suite.
+		AddInfo(FString::Printf(TEXT("recettes non lues, table impossible -- %s"), *Info));
+		return true;
+	}
+
+	const FWorldseedGeometry G = WorldseedTest::Geometrie();
+
+	// QUATRE CHUNKS PAR BIOME, SOIT 64 x 64 m. Assez pour que les taches --
+	// 9 a 40 m de diametre -- soient representees plusieurs fois.
+	constexpr int32 Cotes = 2;
+	const double AireHa = FMath::Square(Cotes * CoteM) / 10000.0;
+
+	AddInfo(FString::Printf(
+		TEXT("densite mesuree sur %.2f ha de sol PLAT par biome (%s)"),
+		AireHa, *FPaths::GetCleanFilename(Info)));
+	AddInfo(TEXT("  biome | plantes/ha | dont roche/ha | couches"));
+
+	TArray<int32> Ids;
+	R.ParBiome.GetKeys(Ids);
+	Ids.Sort();
+
+	int32 PlusDense = 0;
+	int32 PlusDenseId = INDEX_NONE;
+
+	for (const int32 Id : Ids)
+	{
+		const FWorldseedBiomeRecette& Recette = R.ParBiome[Id];
+		const FWorldseedBiomeMap B = Carte(G, static_cast<uint8>(Id),
+			EWorldseedCover::None);
+
+		int32 Total = 0;
+		int32 Roches = 0;
+		for (int32 CX = 0; CX < Cotes; ++CX)
+		{
+			for (int32 CY = 0; CY < Cotes; ++CY)
+			{
+				const FVector Origine(CX * CoteCm, CY * CoteCm, 0.0);
+				const FWorldseedVoxelMesh Mesh = ChunkPlat(Origine, 500.0f);
+
+				TArray<FWorldseedPlante> Plantes;
+				FWorldseedVegetationReleve Releve;
+				WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
+					Regles(), 1337, FVector2D::ZeroVector, SansParoi,
+					Plantes, Releve);
+
+				Total += Plantes.Num();
+				for (const FWorldseedPlante& P : Plantes)
+				{
+					if (R.EspeceObstacle.IsValidIndex(P.Espece)
+						&& R.EspeceObstacle[P.Espece])
+					{
+						++Roches;
+					}
+				}
+			}
+		}
+
+		const int32 ParHa = FMath::RoundToInt(Total / AireHa);
+		const int32 RocheParHa = FMath::RoundToInt(Roches / AireHa);
+		AddInfo(FString::Printf(TEXT("   %-26s | %6d | %6d | %d"),
+			WorldseedBiomes::Name(static_cast<EWorldseedBiome>(Id)),
+			ParHa, RocheParHa, Recette.Couches.Num()));
+
+		if (ParHa > PlusDense) { PlusDense = ParHa; PlusDenseId = Id; }
+	}
+
+	AddInfo(FString::Printf(TEXT("le plus dense : %s a %d plantes/ha"),
+		PlusDenseId != INDEX_NONE
+			? WorldseedBiomes::Name(static_cast<EWorldseedBiome>(PlusDenseId))
+			: TEXT("--"),
+		PlusDense));
+
+	// LE TEMOIN, ET IL EST DANS L'ASSERTION : une table de zeros passerait
+	// n'importe quelle lecture. On exige que le semis produise quelque chose.
+	TestTrue(TEXT("au moins un biome porte de la vegetation"), PlusDense > 100);
+	return true;
+}
+
+/**
+ * RIEN NE POUSSE SOUS UN PAN DE FALAISE.
+ *
+ * SIGNALE EN JEU, EN MEME TEMPS QUE LA COLLISION : « la vegetation est posee
+ * au meme endroit que le rocher ». Les pans viennent d'une AUTRE passe que le
+ * semis ; celui-ci ne les connaitrait jamais si le terrain ne lui donnait pas
+ * leur emprise, et c'est exactement ce qui mettait de l'herbe au travers.
+ *
+ * UNE BOITE ORIENTEE, ET LE TEST LE VERIFIE PAR OU CA COMPTE. Un pan fait
+ * 77 x 55 m : le disque qui le contiendrait degarnirait tout autour, celui
+ * qui tiendrait dedans laisserait de l'herbe a ses deux bouts. On pose donc le
+ * pan EN BIAIS -- quarante-cinq degres -- pour qu'un test de boite alignee ne
+ * puisse pas passer par hasard.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedVegetationPanTest,
+	"Worldseed.Vegetation.RienNePousseSousUnPan",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedVegetationPanTest::RunTest(const FString& Parameters)
+{
+	const FWorldseedGeometry G = WorldseedTest::Geometrie();
+	const FWorldseedRecettes R = RecettesDeTest(3, false);
+	const FWorldseedBiomeMap B = Carte(G, 3, EWorldseedCover::None);
+	const FVector Origine(0.0, 0.0, 0.0);
+	const FWorldseedVoxelMesh Mesh = ChunkPlat(Origine, 500.0f);
+
+	// UN PAN EN BIAIS AU MILIEU DU CHUNK : 16 m par 6, tourne de 45 degres.
+	const double Milieu = CoteCm * 0.5;
+	FWorldseedEmpriseParoi Pan;
+	Pan.CentreCm = FVector2D(Milieu, Milieu);
+	Pan.DemiCm = FVector2D(800.0, 300.0);
+	Pan.CosLacet = FMath::Cos(PI / 4.0);
+	Pan.SinLacet = FMath::Sin(PI / 4.0);
+
+	TArray<FWorldseedEmpriseParoi> Pans;
+	Pans.Add(Pan);
+
+	auto Semis = [&](const TArray<FWorldseedEmpriseParoi>& P) -> TArray<FWorldseedPlante>
+	{
+		TArray<FWorldseedPlante> Plantes;
+		FWorldseedVegetationReleve Releve;
+		WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
+			Regles(), 909, FVector2D::ZeroVector, P, Plantes, Releve);
+		return Plantes;
+	};
+
+	// LE MEME COMPTE, DANS LE REPERE DU PAN : on verifie une propriete
+	// geometrique du resultat, pas la ligne de code qui l'a produite.
+	auto Dedans = [&](const TArray<FWorldseedPlante>& Plantes) -> int32
+	{
+		int32 N = 0;
+		for (const FWorldseedPlante& Pl : Plantes)
+		{
+			const FVector T = Pl.Transform.GetLocation();
+			const FVector2D D = FVector2D(T.X, T.Y) - Pan.CentreCm;
+			const double LX = D.X * Pan.CosLacet + D.Y * Pan.SinLacet;
+			const double LY = -D.X * Pan.SinLacet + D.Y * Pan.CosLacet;
+			if (FMath::Abs(LX) <= Pan.DemiCm.X && FMath::Abs(LY) <= Pan.DemiCm.Y)
+			{
+				++N;
+			}
+		}
+		return N;
+	};
+
+	const TArray<FWorldseedPlante> Avec = Semis(Pans);
+	const TArray<FWorldseedPlante> Sans = Semis(TArray<FWorldseedEmpriseParoi>());
+
+	AddInfo(FString::Printf(
+		TEXT("avec le pan : %d plantes dont %d dessous  |  temoin sans pan : %d dont %d"),
+		Avec.Num(), Dedans(Avec), Sans.Num(), Dedans(Sans)));
+
+	// LE TEMOIN EST LE SEMIS SANS PAN : sans lui, « zero dessous » serait vrai
+	// d'un chunk ou rien ne pousse, et ne prouverait rien du tout.
+	TestTrue(TEXT("sans pan, des plantes tombent bien a cet endroit"),
+		Dedans(Sans) > 10);
+	TestEqual(TEXT("avec le pan, aucune plante dessous"), Dedans(Avec), 0);
+
+	// ET LE RESTE DU CHUNK NE DOIT PAS BOUGER : une garde qui viderait tout
+	// passerait le test precedent sans rien valoir.
+	TestTrue(TEXT("le pan n'emporte que son emprise"),
+		Avec.Num() >= Sans.Num() - Dedans(Sans) - 2);
 	return true;
 }
 
