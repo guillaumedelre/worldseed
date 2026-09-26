@@ -9,6 +9,7 @@
 #include "Procedural/WorldseedCache.h"
 #include "Procedural/WorldseedGlobe.h"
 #include "Procedural/WorldseedGrid.h"
+#include "Procedural/WorldseedIcones.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Procedural/WorldseedPipeline.h"
@@ -28,6 +29,7 @@
 #include "Components/Border.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScaleBox.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -191,10 +193,16 @@ namespace
 	/**
 	 * LA TAILLE D'UNE ICONE N'EST PAS UNE TAILLE DE TEXTE, et elle n'ecorne
 	 * donc pas le bareme : un glyphe pictural doit se LIRE COMME UN DESSIN,
-	 * pas s'aligner sur la hauteur d'x des mots voisins. A douze points le de
-	 * serait un pate ; a dix-huit on distingue ses points.
+	 * pas s'aligner sur la hauteur d'x des mots voisins.
+	 *
+	 * ⚠ MATERIAL SYMBOLS OCCUPE TOUT SON CADRATIN, contrairement a une fonte
+	 * de texte dont les lettres n'en remplissent guere plus de la moitie.
+	 * Dix-huit points -- la valeur qui convenait au caractere Unicode « ⚄ » --
+	 * donnent donc vingt-quatre pixels de dessin dans un bouton qui en fait
+	 * trente, moins ses marges : le de DEBORDAIT de son fond, vu a l'image.
+	 * Treize points tiennent, et le bouton reste lisible.
 	 */
-	constexpr int32 TypoIcone = 18;
+	constexpr int32 TypoIcone = 13;
 
 	/**
 	 * La hauteur commune des controles de l'en-tete.
@@ -223,6 +231,16 @@ namespace
 	const FLinearColor ColVolet(0.030f, 0.035f, 0.048f, 0.85f);
 
 	/**
+	 * Le fond du bandeau, PLUS OPAQUE que celui du volet.
+	 *
+	 * Il porte les trois actions de l'ecran, et une action doit se lire du
+	 * premier coup d'oeil : le volet se consulte, le bandeau se vise. Et ce
+	 * qu'il recouvre est le bas du globe -- la calotte sud, donc le blanc le
+	 * plus franc de l'image, celui sur lequel un texte clair disparait.
+	 */
+	const FLinearColor ColBandeau(0.024f, 0.028f, 0.040f, 0.93f);
+
+	/**
 	 * Les largeurs de l'ecran. AUCUNE NE BORNE LE GLOBE -- il prend ce qui
 	 * reste, et c'est tout le propos de la disposition.
 	 *
@@ -232,7 +250,20 @@ namespace
 	constexpr float MargeEcran = 34.0f;
 	constexpr float LargeurGraine = 150.0f;
 	constexpr float LargeurVolet = 270.0f;
-	constexpr float LargeurAction = 300.0f;
+	constexpr float LargeurAction = 230.0f;
+	constexpr float LargeurLieux = 230.0f;
+	constexpr float LargeurNote = 260.0f;
+
+	/**
+	 * La hauteur que le bandeau prend sur le globe.
+	 *
+	 * ELLE N'IMPOSE RIEN AU BANDEAU -- il se dimensionne sur son contenu --
+	 * et ne sert qu'a ECARTER le volet, qui flotte sur le meme globe et
+	 * passerait sinon derriere lui. Si la ligne du bandeau grossit un jour,
+	 * c'est ce nombre qu'il faut suivre, et le controle est a l'image : les
+	 * deux boutons du cache doivent rester visibles au pied du volet.
+	 */
+	constexpr float HauteurBandeau = 96.0f;
 
 	/**
 	 * La taille NATURELLE du globe, celle que le `UScaleBox` met ensuite a
@@ -289,12 +320,70 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			return T;
 		};
 
-		auto MakeButton = [this, &MakeText](const TCHAR* Name, const TCHAR* LabelName,
-			const FString& Label, int32 Size, const FLinearColor& Tint) -> UButton*
+		/**
+		 * Un bouton qui porte un GLYPHE, et au besoin un mot a cote.
+		 *
+		 * UNE ICONE SEULE NE SE LIT PAS, et c'est le prix du dessin : le mot
+		 * « De » disait ce que faisait le bouton, le glyphe demande d'avoir
+		 * reconnu un de ET devine ce qu'il fait ici. L'infobulle rend cette
+		 * phrase sans reprendre la place que l'icone vient de liberer -- elle
+		 * est donc OBLIGATOIRE des que le libelle est vide, et la fonction le
+		 * rappelle a qui l'oublierait.
+		 *
+		 * LE PARTAGE RETENU, arbitre par le proprietaire : icone seule pour ce
+		 * qui est secondaire ou repetable -- tirer une graine, purger, vider
+		 * -- et icone AVEC mot pour ce qui engage, c'est-a-dire generer et
+		 * entrer dans le monde. Deux mots sur six boutons suffisent a lever
+		 * toute ambiguite, et l'ecran garde sa silhouette de jeu.
+		 */
+		auto MakeIconButton = [this, &MakeText](const TCHAR* Name, uint32 Codepoint,
+			const FString& Label, int32 Size, const FLinearColor& Tint,
+			const FString& Infobulle) -> UButton*
 		{
-			UButton* B = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+			UButton* B = WidgetTree->ConstructWidget<UButton>(
+				UButton::StaticClass(), Name);
 			B->SetBackgroundColor(Tint);
-			B->AddChild(MakeText(LabelName, Label, Size, ColTextPrimary));
+
+			// Le glyphe porte sa PROPRE police : celle de l'ecran ne contient
+			// pas ces codepoints, et un caractere absent sort en rectangle
+			// vide -- visible, donc pris pour un defaut de rendu.
+			UTextBlock* Icone = MakeText(*(FString(Name) + TEXT("Glyphe")),
+				WorldseedIcones::Glyphe(Codepoint).ToString(), Size, ColTextPrimary);
+			// TROIS POINTS DE PLUS QUE LE MOT, et pas davantage : un glyphe
+			// de Material Symbols remplit son cadratin quand une lettre n'en
+			// occupe que la hauteur d'x, si bien qu'a taille EGALE le dessin
+			// parait deja plus gros que le texte. Au-dela, il deborde du
+			// bouton -- c'est ce qui est arrive au de.
+			Icone->SetFont(WorldseedIcones::Police(static_cast<float>(Size) + 3.0f));
+
+			if (Label.IsEmpty())
+			{
+				B->AddChild(Icone);
+			}
+			else
+			{
+				UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
+					UHorizontalBox::StaticClass(), *(FString(Name) + TEXT("Row")));
+
+				if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Icone))
+				{
+					S->SetVerticalAlignment(VAlign_Center);
+					S->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+				}
+
+				UTextBlock* Mot = MakeText(*(FString(Name) + TEXT("Label")),
+					Label, Size, ColTextPrimary);
+				if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Mot))
+				{
+					S->SetVerticalAlignment(VAlign_Center);
+				}
+				B->AddChild(Row);
+			}
+
+			if (!Infobulle.IsEmpty())
+			{
+				B->SetToolTipText(FText::FromString(Infobulle));
+			}
 			return B;
 		};
 
@@ -391,6 +480,30 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			S->SetOffsets(FMargin(MargeEcran));
 		}
 
+		// ============================================================ BANDEAU
+		//
+		// IL EST CONSTRUIT ICI ET POSE PLUS BAS, et ce n'est pas un desordre :
+		// un parent Slate accepte ses enfants avant d'entrer lui-meme dans
+		// l'arbre, et c'est l'ordre des `AddChild` sur le SHELL qui decide de
+		// ce qui est en haut. Le declarer maintenant permet aux trois groupes
+		// qu'il porte -- la graine, le depart, l'entree -- de rester ecrits
+		// aupres de ce qui les explique, au lieu d'etre rassembles ici en un
+		// pave de deux cents lignes.
+		//
+		// LE BANDEAU FLOTTE SUR LE GLOBE plutot que de lui prendre sa
+		// hauteur : le globe est carre, donc sur un ecran 16:9 il laisse deux
+		// larges bandes vides a gauche et a droite, et rien en haut ni en bas.
+		// Une barre posee SOUS lui le retrecirait d'autant ; posee DESSUS,
+		// elle occupe une place qui ne servait a rien.
+		Bandeau = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("Bandeau"));
+		Bandeau->SetBrushColor(ColBandeau);
+		Bandeau->SetPadding(FMargin(22.0f, 14.0f));
+
+		UHorizontalBox* BandeauRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(), TEXT("BandeauRow"));
+		Bandeau->AddChild(BandeauRow);
+
 		// =========================================================== EN-TETE
 		{
 			UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>(
@@ -418,17 +531,34 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				}
 			}
 
-			// --- la graine, a droite --------------------------------------
+			// --- les mesures, repliees derriere un bouton -------------------
 			//
-			// Intitule AU-DESSUS du champ et non a cote : les deux reglages de
-			// l'en-tete gardent ainsi la meme silhouette, et un intitule pose
-			// a gauche obligerait a reserver la largeur du plus long des deux.
+			// LES CHIFFRES ETAIENT UN OUTIL DE MISE AU POINT, et ils ont servi :
+			// c'est en les comparant d'une generation a l'autre qu'on a cale
+			// les parts de biomes et les altitudes. Mais un ecran d'entree
+			// n'est pas un tableau de bord -- ce qu'on y cherche est une
+			// graine, un point de depart et la porte. Le volet garde tout,
+			// sans rien prendre a l'image tant qu'on ne le demande pas.
+			DetailsButton = MakeIconButton(TEXT("DetailsButton"),
+				WorldseedIcone::Reglages, FString(), TypoIcone, ColBoutonNeutre,
+				TEXT("Afficher les mesures du monde"));
+			if (UHorizontalBoxSlot* S = Header->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("DetailsBox"), DetailsButton, LargeurBoutonDe)))
+			{
+				S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+
+			// --- la graine, dans le bandeau --------------------------------
+			//
+			// Intitule AU-DESSUS du champ et non a cote : les trois groupes du
+			// bandeau gardent ainsi la meme silhouette, et un intitule pose a
+			// gauche obligerait a reserver la largeur du plus long des trois.
 			{
 				UVerticalBox* Graine = WidgetTree->ConstructWidget<UVerticalBox>(
 					UVerticalBox::StaticClass(), TEXT("GraineGroupe"));
-				if (UHorizontalBoxSlot* S = Header->AddChildToHorizontalBox(Graine))
+				if (UHorizontalBoxSlot* S = BandeauRow->AddChildToHorizontalBox(Graine))
 				{
-					S->SetPadding(FMargin(24.0f, 0.0f, 0.0f, 0.0f));
 					S->SetVerticalAlignment(VAlign_Center);
 				}
 
@@ -461,15 +591,15 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 					S->SetVerticalAlignment(VAlign_Center);
 				}
 
-				RandomButton = MakeButton(TEXT("RandomButton"), TEXT("RandomLabel"),
-					TEXT("⚄"), TypoIcone, ColBoutonNeutre);
-				// UNE ICONE SEULE NE SE LIT PAS, et c'est le prix du glyphe :
-				// le mot « De » disait ce que faisait le bouton, le dessin
-				// demande d'avoir reconnu un de ET devine ce qu'il fait ici.
-				// L'infobulle rend cette phrase, sans reprendre la place que
-				// l'icone vient de liberer.
-				RandomButton->SetToolTipText(
-					FText::FromString(TEXT("Tirer une graine au hasard")));
+				// LE DE VIENT DE LA POLICE D'ICONES, et non plus du caractere
+				// UNICODE « ⚄ » : celui-ci depend de la fonte du systeme, donc
+				// il se dessine autrement d'une machine a l'autre et peut
+				// manquer tout a fait. Material Symbols est LIVREE avec le
+				// jeu, et l'oracle des icones confronte son codepoint au
+				// catalogue.
+				RandomButton = MakeIconButton(TEXT("RandomButton"),
+					WorldseedIcone::Des, FString(), TypoIcone, ColBoutonNeutre,
+					TEXT("Tirer une graine au hasard"));
 
 				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(
 					MakeControlBox(TEXT("RandomBox"), RandomButton, LargeurBoutonDe)))
@@ -482,11 +612,10 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				// relance la generation -- mais rien ne le disait, et le seul
 				// declencheur visible, le de, impose une graine tiree au sort.
 				// Qui voulait LA SIENNE n'avait aucun bouton a viser.
-				GenerateButton = MakeButton(TEXT("GenerateButton"),
-					TEXT("GenerateLabel"), TEXT("Générer"), TypoControle,
-					ColBoutonPrimaire);
-				GenerateButton->SetToolTipText(
-					FText::FromString(TEXT("Generer le monde avec la graine saisie")));
+				GenerateButton = MakeIconButton(TEXT("GenerateButton"),
+					WorldseedIcone::Generer, TEXT("Générer"), TypoControle,
+					ColBoutonPrimaire,
+					TEXT("Generer le monde avec la graine saisie"));
 				if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(
 					MakeControlBox(TEXT("GenerateBox"), GenerateButton, 0.0f)))
 				{
@@ -547,17 +676,23 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 
 		// --- les statistiques, en surimpression a droite --------------------
 		{
-			UBorder* Volet = WidgetTree->ConstructWidget<UBorder>(
+			Volet = WidgetTree->ConstructWidget<UBorder>(
 				UBorder::StaticClass(), TEXT("Volet"));
 			// LE FOND EST SEMI-TRANSPARENT A DESSEIN : opaque, il ferait une
 			// colonne posee sur l'image ; absent, le texte clair disparaitrait
 			// sur la calotte glaciaire et sur les deserts.
 			Volet->SetBrushColor(ColVolet);
 			Volet->SetPadding(FMargin(18.0f, 16.0f));
+			// IL S'ARRETE AU-DESSUS DU BANDEAU. Les deux flottent sur le meme
+			// globe, et sans ce retrait le volet passerait DERRIERE : ses
+			// dernieres lignes -- le cache et ses deux boutons -- etaient
+			// cachees par le bandeau, donc inatteignables. Vu a l'image, pas
+			// deduit du code.
 			if (UOverlaySlot* S = Body->AddChildToOverlay(Volet))
 			{
 				S->SetHorizontalAlignment(HAlign_Right);
 				S->SetVerticalAlignment(VAlign_Fill);
+				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, HauteurBandeau));
 			}
 
 			USizeBox* VoletSize = WidgetTree->ConstructWidget<USizeBox>(
@@ -565,9 +700,18 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			VoletSize->SetWidthOverride(LargeurVolet);
 			Volet->AddChild(VoletSize);
 
+			// LE VOLET DEFILE, et il le faut : son contenu grandit avec le
+			// REGISTRE -- une ligne par biome, vingt-et-une entrees
+			// aujourd'hui -- alors que sa hauteur est celle de la fenetre.
+			// Sans defilement, ajouter un biome ferait disparaitre le bas du
+			// volet, et rien ne le signalerait.
+			UScrollBox* VoletDefile = WidgetTree->ConstructWidget<UScrollBox>(
+				UScrollBox::StaticClass(), TEXT("VoletDefile"));
+			VoletSize->AddChild(VoletDefile);
+
 			UVerticalBox* Side = WidgetTree->ConstructWidget<UVerticalBox>(
 				UVerticalBox::StaticClass(), TEXT("Side"));
-			VoletSize->AddChild(Side);
+			VoletDefile->AddChild(Side);
 
 			// --- mesures --------------------------------------------------
 			// Un tableau intitule/valeur plutot qu'une phrase : on compare d'un
@@ -604,12 +748,12 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
 			}
 
-			// --- depart du joueur -----------------------------------------
+			// --- depart du joueur, le detail chiffre -----------------------
 			//
-			// IL VIENT AVANT LES BIOMES, et pas apres : la liste des biomes
-			// fait quinze lignes et pousserait ce bloc hors de l'ecran, alors
-			// que c'est une ACTION -- la derniere avant d'entrer dans le
-			// monde -- et qu'une action qu'on ne voit pas n'existe pas.
+			// LE CHOIX est dans le bandeau -- c'est une ACTION, et une action
+			// qu'on ne voit pas n'existe pas. Ne restent ici que les trois
+			// MESURES du point retenu, qui relevent du meme registre que le
+			// reste du volet : on les consulte, on n'agit pas dessus.
 			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(MakeRule(TEXT("RuleDepart"))))
 			{
 				S->SetPadding(FMargin(0.0f, 18.0f, 0.0f, 14.0f));
@@ -618,46 +762,12 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 			Side->AddChildToVerticalBox(MakeSectionLabel(
 				TEXT("DepartLabel"), TEXT("DEPART DU JOUEUR")));
 
-			// La note DIT quoi faire tant que rien n'est choisi, et POURQUOI
-			// quand un clic est refuse. Sans elle, un clic en mer ne
-			// produirait rien du tout et se lirait comme un ecran casse.
-			DepartHint = MakeText(TEXT("DepartHint"),
-				TEXT("cliquez une terre sur le globe"), TypoLegende, ColTextMuted);
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(DepartHint))
-			{
-				S->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
-			}
-
 			DepartLatValue = AddStat(TEXT("RowDepLat"), TEXT("LblDepLat"),
 				TEXT("ValDepLat"), TEXT("Latitude"));
 			DepartBiomeValue = AddStat(TEXT("RowDepBio"), TEXT("LblDepBio"),
 				TEXT("ValDepBio"), TEXT("Biome"));
 			DepartAltValue = AddStat(TEXT("RowDepAlt"), TEXT("LblDepAlt"),
 				TEXT("ValDepAlt"), TEXT("Altitude"));
-
-			// La liste des lieux que la chaine a nommes : arches, avens,
-			// dolines, tables. Choisir une entree pose le repere et amene le
-			// lieu face a l'observateur.
-			LieuxCombo = WidgetTree->ConstructWidget<UComboBoxString>(
-				UComboBoxString::StaticClass(), TEXT("LieuxCombo"));
-
-			// Meme contrainte que le selecteur d'habillage : la police doit
-			// etre posee AVANT la construction du widget Slate, et le seul
-			// chemin public est la propriete depreciee.
-			PRAGMA_DISABLE_DEPRECATION_WARNINGS
-			LieuxCombo->Font = PoliceEcran(TypoControle);
-			PRAGMA_ENABLE_DEPRECATION_WARNINGS
-
-			LieuxCombo->AddOption(TEXT("-- au hasard --"));
-			LieuxCombo->SetSelectedIndex(0);
-			LieuxCombo->OnSelectionChanged.AddDynamic(
-				this, &UWorldseedMenuWidget::HandleLieuChanged);
-
-			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(
-				MakeControlBox(TEXT("LieuxSize"), LieuxCombo, 0.0f)))
-			{
-				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
-			}
 
 			// --- statistiques du monde ------------------------------------
 			//
@@ -771,6 +881,175 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				BiomeValues.Add(Val);
 				BiomeBars.Add(Bar);
 			}
+
+			// --- le cache, tout en bas du volet ---------------------------
+			//
+			// IL A QUITTE LE PIED DE L'ECRAN, ou il tenait la moitie de la
+			// largeur pour une operation qu'on fait trois fois par mois. Le
+			// volet est sa place : c'est de la MAINTENANCE, du meme ordre que
+			// les mesures, et l'ecran d'entree n'a plus a lui donner un rang
+			// que son usage ne justifie pas.
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(MakeRule(TEXT("RuleCache"))))
+			{
+				S->SetPadding(FMargin(0.0f, 18.0f, 0.0f, 14.0f));
+			}
+
+			Side->AddChildToVerticalBox(MakeSectionLabel(
+				TEXT("CacheLabel"), TEXT("MONDES EN CACHE")));
+
+			CacheText = MakeText(TEXT("CacheText"), TEXT(""), TypoLegende, ColTextMuted);
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(CacheText))
+			{
+				S->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+			}
+
+			UHorizontalBox* CacheRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+				UHorizontalBox::StaticClass(), TEXT("CacheRow"));
+			if (UVerticalBoxSlot* S = Side->AddChildToVerticalBox(CacheRow))
+			{
+				S->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 0.0f));
+			}
+
+			ClearObsoleteButton = MakeIconButton(TEXT("ClearObsoleteButton"),
+				WorldseedIcone::Effacer, FString(), TypoIcone, ColBoutonNeutre,
+				TEXT("Purger les entrees perimees"));
+			if (UHorizontalBoxSlot* S = CacheRow->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("ClearObsoleteBox"), ClearObsoleteButton,
+					LargeurBoutonDe)))
+			{
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+
+			ClearAllButton = MakeIconButton(TEXT("ClearAllButton"),
+				WorldseedIcone::Annuler, FString(), TypoIcone, ColBoutonDanger,
+				TEXT("Tout vider -- y compris les mondes encore valides"));
+			if (UHorizontalBoxSlot* S = CacheRow->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("ClearAllBox"), ClearAllButton, LargeurBoutonDe)))
+			{
+				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+
+			// LE VOLET ARRIVE REPLIE. C'est tout l'objet du bouton : l'ecran
+			// s'ouvre sur le monde, et les chiffres viennent quand on les
+			// demande. `Collapsed` et non `Hidden` -- le second garderait la
+			// place reservee, donc le globe resterait decentre pour rien.
+			Volet->SetVisibility(ESlateVisibility::Collapsed);
+		}
+
+		// ------------------------------------- le depart, dans le bandeau ---
+		//
+		// LE CHOIX DU DEPART EST UNE ACTION, et il se tient donc a cote des
+		// deux autres -- la graine a sa gauche, la porte a sa droite. Les
+		// trois chiffres qu'il produit restent au volet : on agit ici, on
+		// verifie la-bas.
+		{
+			UVerticalBox* DepartGroupe = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("DepartGroupe"));
+			if (UHorizontalBoxSlot* S = BandeauRow->AddChildToHorizontalBox(DepartGroupe))
+			{
+				S->SetPadding(FMargin(28.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+
+			DepartGroupe->AddChildToVerticalBox(MakeSectionLabel(
+				TEXT("DepartBandeauLabel"), TEXT("DEPART DU JOUEUR")));
+
+			UHorizontalBox* DepartRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+				UHorizontalBox::StaticClass(), TEXT("DepartRow"));
+			if (UVerticalBoxSlot* S = DepartGroupe->AddChildToVerticalBox(DepartRow))
+			{
+				S->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+			}
+
+			// La note DIT quoi faire tant que rien n'est choisi, et POURQUOI
+			// quand un clic est refuse. Sans elle, un clic en mer ne
+			// produirait rien du tout et se lirait comme un ecran casse.
+			// SA LARGEUR EST IMPOSEE, et ce n'est pas de la mise en page pour
+			// elle-meme : ce texte CHANGE -- « cliquez une terre sur le
+			// globe », puis « en mer (438 m de fond) -- le depart precedent
+			// est garde ». Laisse libre, il pousserait la liste des lieux de
+			// plusieurs centimetres a chaque clic refuse, et l'on viserait un
+			// controle qui s'echappe.
+			DepartHint = MakeText(TEXT("DepartHint"),
+				TEXT("cliquez une terre sur le globe"), TypoTexte, ColTextMuted);
+			DepartHint->SetAutoWrapText(true);
+
+			USizeBox* HintBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("DepartHintBox"));
+			HintBox->SetWidthOverride(LargeurNote);
+			HintBox->AddChild(DepartHint);
+
+			if (UHorizontalBoxSlot* S = DepartRow->AddChildToHorizontalBox(HintBox))
+			{
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+
+			// La liste des lieux que la chaine a nommes : arches, avens,
+			// dolines, tables. Choisir une entree pose le repere et amene le
+			// lieu face a l'observateur.
+			LieuxCombo = WidgetTree->ConstructWidget<UComboBoxString>(
+				UComboBoxString::StaticClass(), TEXT("LieuxCombo"));
+
+			// La police doit etre posee AVANT la construction du widget Slate,
+			// et le seul chemin public est la propriete depreciee.
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			LieuxCombo->Font = PoliceEcran(TypoControle);
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
+
+			LieuxCombo->AddOption(TEXT("-- au hasard --"));
+			LieuxCombo->SetSelectedIndex(0);
+			LieuxCombo->OnSelectionChanged.AddDynamic(
+				this, &UWorldseedMenuWidget::HandleLieuChanged);
+
+			if (UHorizontalBoxSlot* S = DepartRow->AddChildToHorizontalBox(
+				MakeControlBox(TEXT("LieuxSize"), LieuxCombo, LargeurLieux)))
+			{
+				S->SetPadding(FMargin(14.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+		}
+
+		// ------------------------------------ la porte, a droite du bandeau -
+		//
+		// ELLE EST AU BOUT DE LA LIGNE parce que c'est la que le regard finit
+		// sa course, et parce que c'est le dernier geste : on choisit une
+		// graine, on choisit ou naitre, on entre.
+		{
+			// LE VIDE POUSSE LA PORTE AU BORD DROIT. C'est lui, et non un
+			// alignement, qui tient les trois groupes en place quelle que soit
+			// la largeur de la fenetre : la graine et le depart gardent la
+			// leur, et tout ce qui reste tombe entre eux et l'action.
+			UTextBlock* Vide = MakeText(TEXT("BandeauVide"), TEXT(""),
+				TypoLegende, ColTextMuted);
+			if (UHorizontalBoxSlot* S = BandeauRow->AddChildToHorizontalBox(Vide))
+			{
+				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+
+			USizeBox* PlayBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("PlayBox"));
+			PlayBox->SetHeightOverride(52.0f);
+			PlayBox->SetWidthOverride(LargeurAction);
+
+			PlayButton = MakeIconButton(TEXT("PlayButton"), WorldseedIcone::Jouer,
+				TEXT("ENTRER"), TypoAction, ColBoutonAction, FString());
+			PlayBox->AddChild(PlayButton);
+
+			if (UHorizontalBoxSlot* S = BandeauRow->AddChildToHorizontalBox(PlayBox))
+			{
+				S->SetPadding(FMargin(28.0f, 0.0f, 0.0f, 0.0f));
+				S->SetVerticalAlignment(VAlign_Center);
+			}
+		}
+
+		// Le bandeau entre dans l'arbre EN DERNIER parmi les enfants du corps :
+		// dans un overlay, c'est l'ordre d'ajout qui decide de ce qui passe
+		// devant. Pose avant le volet, il glisserait dessous.
+		if (UOverlaySlot* S = Body->AddChildToOverlay(Bandeau))
+		{
+			S->SetHorizontalAlignment(HAlign_Fill);
+			S->SetVerticalAlignment(VAlign_Bottom);
 		}
 
 		// -------------------------------------------------- barre d'etat ---
@@ -807,69 +1086,17 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				S->SetVerticalAlignment(VAlign_Center);
 			}
 
-			CancelButton = MakeButton(TEXT("CancelButton"), TEXT("CancelLabel"),
-				TEXT("Annuler"), TypoControle, ColBoutonDanger);
+			CancelButton = MakeIconButton(TEXT("CancelButton"),
+				WorldseedIcone::Annuler, TEXT("Annuler"), TypoControle,
+				ColBoutonDanger, FString());
 			StatusRow->AddChildToHorizontalBox(
 				MakeControlBox(TEXT("CancelBox"), CancelButton, 0.0f));
 		}
 
-		// ============================================================== PIED
-		//
-		// Le cache est de la MAINTENANCE et l'entree dans le monde est
-		// l'ACTION ; les mettre sur la meme ligne n'en fait pas des egaux --
-		// c'est la taille et la couleur qui les departagent, et le bord droit
-		// qui porte l'action, la ou le regard finit sa course.
-		{
-			if (UVerticalBoxSlot* S = Shell->AddChildToVerticalBox(MakeRule(TEXT("RuleFooter"))))
-			{
-				S->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
-			}
-
-			UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(
-				UHorizontalBox::StaticClass(), TEXT("Footer"));
-			Shell->AddChildToVerticalBox(Footer);
-
-			CacheText = MakeText(TEXT("CacheText"), TEXT(""), TypoLegende, ColTextMuted);
-			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(CacheText))
-			{
-				S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-				S->SetVerticalAlignment(VAlign_Center);
-			}
-
-			ClearObsoleteButton = MakeButton(TEXT("ClearObsoleteButton"),
-				TEXT("ClearObsoleteLabel"), TEXT("Purger les perimees"),
-				TypoControle, ColBoutonNeutre);
-			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(
-				MakeControlBox(TEXT("ClearObsoleteBox"), ClearObsoleteButton, 0.0f)))
-			{
-				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
-				S->SetVerticalAlignment(VAlign_Center);
-			}
-
-			ClearAllButton = MakeButton(TEXT("ClearAllButton"), TEXT("ClearAllLabel"),
-				TEXT("Tout vider"), TypoControle, ColBoutonDanger);
-			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(
-				MakeControlBox(TEXT("ClearAllBox"), ClearAllButton, 0.0f)))
-			{
-				S->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
-				S->SetVerticalAlignment(VAlign_Center);
-			}
-
-			USizeBox* PlayBox = WidgetTree->ConstructWidget<USizeBox>(
-				USizeBox::StaticClass(), TEXT("PlayBox"));
-			PlayBox->SetHeightOverride(52.0f);
-			PlayBox->SetWidthOverride(LargeurAction);
-
-			PlayButton = MakeButton(TEXT("PlayButton"), TEXT("PlayLabel"),
-				TEXT("ENTRER DANS LE MONDE"), TypoAction, ColBoutonAction);
-			PlayBox->AddChild(PlayButton);
-
-			if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(PlayBox))
-			{
-				S->SetPadding(FMargin(28.0f, 0.0f, 0.0f, 0.0f));
-				S->SetVerticalAlignment(VAlign_Center);
-			}
-		}
+		// LE PIED A DISPARU. Il portait le cache -- parti au volet -- et la
+		// porte du monde -- partie au bandeau, aupres des deux autres actions.
+		// Ce qu'il tenait encore etait une ligne vide et un filet, c'est-a-dire
+		// de la hauteur prise au globe pour ne rien montrer.
 	}
 
 	return Super::RebuildWidget();
@@ -891,6 +1118,17 @@ void UWorldseedMenuWidget::NativeConstruct()
 	{
 		GlobeZoom = FMath::Clamp(Zoom, 1.0f, 6.0f);
 		UE_LOG(LogTemp, Log, TEXT("[Worldseed] globe : zoom force a %.2f"), GlobeZoom);
+	}
+
+	// `-WorldseedMenuVolet` : ouvrir le volet des mesures des l'arrivee. Il
+	// est REPLIE par defaut, donc la seule facon de le photographier serait
+	// d'aller cliquer le bouton ⚙ -- et ce depot a une note contre le
+	// pilotage de la souris pendant que le proprietaire travaille. La regle
+	// du depot est explicite : quand une verification demande un reglage qui
+	// n'a pas de surcharge, on AJOUTE la surcharge.
+	if (Volet && FParse::Param(FCommandLine::Get(), TEXT("WorldseedMenuVolet")))
+	{
+		HandleDetailsClicked();
 	}
 
 	// --- le parcours complet, en une ligne de commande ---------------------
@@ -960,6 +1198,16 @@ void UWorldseedMenuWidget::NativeConstruct()
 	{
 		ClearAllButton->OnClicked.AddDynamic(
 			this, &UWorldseedMenuWidget::HandleClearAllClicked);
+	}
+
+	// LA LIAISON EST ICI ET NON DANS `RebuildWidget`, avec les six autres :
+	// l'arbre peut etre rebati, et `AddDynamic` empilerait alors un second
+	// abonnement -- le volet se replierait puis se deplierait aussitot, ce
+	// qui se lirait comme un bouton mort.
+	if (DetailsButton)
+	{
+		DetailsButton->OnClicked.AddDynamic(
+			this, &UWorldseedMenuWidget::HandleDetailsClicked);
 	}
 
 	// Sans cela le widget est SelfHitTestInvisible et ne recoit aucun evenement
@@ -1278,6 +1526,33 @@ void UWorldseedMenuWidget::HandleClearAllClicked()
 {
 	WorldseedCache::ClearAll();
 	UpdateCacheInfo();
+}
+
+void UWorldseedMenuWidget::HandleDetailsClicked()
+{
+	if (!Volet)
+	{
+		return;
+	}
+
+	// `Collapsed` ET NON `Hidden` : le second garde la place reservee, donc le
+	// globe resterait decentre de la largeur du volet alors qu'on vient
+	// justement de le refermer pour lui rendre l'ecran.
+	const bool bOuvert = Volet->GetVisibility() != ESlateVisibility::Collapsed;
+	Volet->SetVisibility(bOuvert
+		? ESlateVisibility::Collapsed
+		: ESlateVisibility::Visible);
+
+	// L'INFOBULLE DIT CE QUE LE CLIC VA FAIRE, pas l'etat courant. Un bouton
+	// qui annoncerait « les mesures sont affichees » laisserait deviner si le
+	// clic ouvre ou ferme -- et c'est la seule question qu'on se pose devant
+	// une icone seule.
+	if (DetailsButton)
+	{
+		DetailsButton->SetToolTipText(FText::FromString(bOuvert
+			? TEXT("Afficher les mesures du monde")
+			: TEXT("Masquer les mesures du monde")));
+	}
 }
 
 void UWorldseedMenuWidget::UpdateInfoText()
@@ -1868,6 +2143,17 @@ FReply UWorldseedMenuWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
+	// LE BANDEAU ET LE VOLET RECOUVRENT LE GLOBE, et le globe repond au clic :
+	// sans cette garde, appuyer sur le fond du bandeau poserait un repere sur
+	// la terre qu'il CACHE, et un glisser parti de la ferait tourner le monde.
+	// Les deux panneaux sont des bordures, qui ne consomment pas l'evenement
+	// et le laissent remonter jusqu'ici -- leurs boutons, eux, le consomment
+	// et n'arrivent jamais dans cette fonction.
+	if (SurUnPanneau(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
 	bDraggingGlobe = true;
 	bGlobePrisEnMain = true;
 	LastDragPosition = InMouseEvent.GetScreenSpacePosition();
@@ -1922,6 +2208,15 @@ FReply UWorldseedMenuWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
 	const FPointerEvent& InMouseEvent)
 {
 	if (InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+	}
+
+	// UN RELACHEMENT SANS APPUI N'EST PAS UN CLIC SUR LE GLOBE. La pression
+	// refusee juste au-dessus ne demarre aucun glisser ; sans ce controle, le
+	// relachement qui la suit trouverait `CumulGlisse` a zero -- la valeur du
+	// geste precedent -- et poserait quand meme le repere.
+	if (!bDraggingGlobe)
 	{
 		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 	}
@@ -2171,6 +2466,26 @@ FWorldseedGeometry UWorldseedMenuWidget::GeometrieCarte() const
 	FWorldseedGeometry G = WorldGeometry;
 	AppliquerLatitudes(G);
 	return G;
+}
+
+bool UWorldseedMenuWidget::SurUnPanneau(const FVector2D& PositionEcran) const
+{
+	// `IsUnderLocation` prend une position ABSOLUE, c'est-a-dire celle que les
+	// evenements de souris portent -- pas une position locale. Et la geometrie
+	// en cache d'un widget REPLIE est vide, donc le volet ferme ne barre rien
+	// sans qu'on ait a tester sa visibilite.
+	auto Recouvre = [&PositionEcran](const UWidget* Panneau) -> bool
+	{
+		if (!Panneau)
+		{
+			return false;
+		}
+		const FGeometry& Cadre = Panneau->GetCachedGeometry();
+		return Cadre.GetLocalSize().X > KINDA_SMALL_NUMBER
+			&& Cadre.IsUnderLocation(PositionEcran);
+	};
+
+	return Recouvre(Bandeau) || Recouvre(Volet);
 }
 
 bool UWorldseedMenuWidget::PointerSurLeGlobe(const FVector2D& PositionEcran,

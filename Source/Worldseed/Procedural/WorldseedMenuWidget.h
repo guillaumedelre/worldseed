@@ -12,6 +12,7 @@
 #include "Procedural/WorldseedRules.h"
 #include "WorldseedMenuWidget.generated.h"
 
+class UBorder;
 class UButton;
 class UComboBoxString;
 class UProgressBar;
@@ -166,6 +167,16 @@ protected:
 	bool PointerSurLeGlobe(const FVector2D& PositionEcran,
 		float& OutLatitudeDeg, float& OutLongitudeDeg, int32& OutCellule) const;
 
+	/**
+	 * Vrai si la position tombe sur le bandeau ou sur le volet.
+	 *
+	 * LES DEUX FLOTTENT SUR LE GLOBE, et le globe repond au clic : sans ce
+	 * controle, appuyer sur le fond du bandeau poserait un repere sur la terre
+	 * qu'il cache. Une bordure ne consomme pas l'evenement -- seuls ses
+	 * boutons le font -- donc c'est bien ici que la question se pose.
+	 */
+	bool SurUnPanneau(const FVector2D& PositionEcran) const;
+
 	/** La cellule de la carte sous une latitude et une longitude. */
 	int32 CelluleDe(float LatitudeDeg, float LongitudeDeg) const;
 
@@ -226,6 +237,16 @@ protected:
 	UFUNCTION()
 	void HandleClearAllClicked();
 
+	/**
+	 * Replie ou deplie le volet des mesures.
+	 *
+	 * IL ARRIVE REPLIE, et c'est un arbitrage du proprietaire : les chiffres
+	 * ont servi a caler le monde, ils n'ont plus a occuper l'ecran d'entree.
+	 * Ce qu'on y cherche est une graine, un point de depart et la porte.
+	 */
+	UFUNCTION()
+	void HandleDetailsClicked();
+
 	/** Relit l inventaire du cache et met a jour la ligne correspondante. */
 	void UpdateCacheInfo();
 
@@ -240,7 +261,18 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UButton> CancelButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> ClearObsoleteButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> ClearAllButton;
+	UPROPERTY(Transient) TObjectPtr<UButton> DetailsButton;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> CacheText;
+
+	/**
+	 * Les deux panneaux poses SUR le globe.
+	 *
+	 * Ils sont gardes parce que deux choses les interrogent : le bouton ⚙,
+	 * qui replie et deplie le volet, et le pointage, qui doit savoir qu'un
+	 * clic tombe dessus plutot que sur la terre qu'ils recouvrent.
+	 */
+	UPROPERTY(Transient) TObjectPtr<UBorder> Volet;
+	UPROPERTY(Transient) TObjectPtr<UBorder> Bandeau;
 
 	/** Bloc « depart du joueur » : la note, le tableau, et la liste des lieux. */
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> DepartHint;
