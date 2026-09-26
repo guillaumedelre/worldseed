@@ -1157,6 +1157,128 @@ void WorldseedRegions::Nommer(FWorldseedRegions& Regions, int32 Seed)
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Worldseed] regions nommees : %d regions, %d pays"),
-		Regions.Regions.Num(), Regions.Pays.Num());
+	AncrerLesEtiquettes(Regions);
+}
+
+void WorldseedRegions::AncrerLesEtiquettes(FWorldseedRegions& Regions)
+{
+	// OU POSER LE NOM D'UNE REGION ? PAS SUR SON CENTRE DE GRAVITE.
+	//
+	// Le barycentre d'une forme CONCAVE lui est EXTERIEUR -- un croissant, une
+	// region qui epouse une baie, un bassin en fer a cheval autour d'un
+	// massif. Mesure sur le monde de reference : **6 regions sur 47**, soit
+	// une etiquette sur huit qui serait tombee en pleine mer ou chez la
+	// voisine, designant le mauvais endroit sans que rien ne le signale.
+	//
+	// ON NE CHERCHE PAS LE POLE D'INACCESSIBILITE -- le point le plus eloigne
+	// de tout bord, qui serait le placement ideal. Il demande une transformee
+	// de distance sur toute la grille pour un gain invisible : ce qu'on veut
+	// est un point DANS la region et proche de son centre, pas le meilleur
+	// point possible.
+	//
+	// UNE SEULE PASSE POUR TOUTES LES REGIONS. Balayer la grille une fois par
+	// region a recaler serait O(regions x cellules) ; on garde au contraire,
+	// pour chaque region, la meilleure cellule vue en chemin.
+	//
+	// ⚠ CE CALCUL EST ICI, DANS `Nommer`, ET NON DANS `Construire`. Le second
+	// ne tourne PAS quand le monde revient du cache -- seul le nommage est
+	// rejoue dans les deux branches. C'est aussi ce qui dispense d'ecrire
+	// l'ancrage dans le fichier : il se refait, comme les noms.
+	const int32 NbRegions = Regions.Regions.Num();
+	const int32 NbPays = Regions.Pays.Num();
+
+	TArray<double> MeilleureDist;
+	MeilleureDist.Init(TNumericLimits<double>::Max(), NbRegions);
+	TArray<bool> ARecaler;
+	ARecaler.Init(false, NbRegions);
+
+	int32 Dehors = 0;
+	for (FWorldseedRegion& Reg : Regions.Regions)
+	{
+		Reg.AncrageM = Reg.CentreM;
+		if (Regions.RegionEn(Reg.CentreM.X, Reg.CentreM.Y) != Reg.Id
+			&& ARecaler.IsValidIndex(Reg.Id))
+		{
+			ARecaler[Reg.Id] = true;
+			++Dehors;
+		}
+	}
+
+	TArray<double> MeilleureDistPays;
+	MeilleureDistPays.Init(TNumericLimits<double>::Max(), NbPays);
+	TArray<bool> PaysARecaler;
+	PaysARecaler.Init(false, NbPays);
+
+	int32 DehorsPays = 0;
+	for (FWorldseedPays& P : Regions.Pays)
+	{
+		P.AncrageM = P.CentreM;
+		if (Regions.PaysEn(P.CentreM.X, P.CentreM.Y) != P.Id
+			&& PaysARecaler.IsValidIndex(P.Id))
+		{
+			PaysARecaler[P.Id] = true;
+			++DehorsPays;
+		}
+	}
+
+	if (Dehors > 0 || DehorsPays > 0)
+	{
+		const double LargeurM = static_cast<double>(Regions.LargeurM);
+		const double HauteurM = static_cast<double>(Regions.HauteurM);
+
+		for (int32 J = 0; J < Regions.NY; ++J)
+		{
+			const double Y = ((static_cast<double>(J) + 0.5) / Regions.NY - 0.5) * HauteurM;
+
+			for (int32 I = 0; I < Regions.NX; ++I)
+			{
+				const int32 R = Regions.Id[J * Regions.NX + I];
+				if (R < 0 || !Regions.Regions.IsValidIndex(R))
+				{
+					continue;
+				}
+
+				const double X = ((static_cast<double>(I) + 0.5) / Regions.NX - 0.5) * LargeurM;
+
+				// LA LONGITUDE S'ENROULE : sans ce repli, une region a cheval
+				// sur le meridien de bordure verrait ses cellules a une demi
+				// circonference de leur propre centre, et l'ancrage partirait
+				// a l'oppose du monde.
+				auto Distance2 = [&](const FVector2D& Centre) -> double
+				{
+					double DX = X - Centre.X;
+					if (DX > LargeurM * 0.5) { DX -= LargeurM; }
+					else if (DX < -LargeurM * 0.5) { DX += LargeurM; }
+					const double DY = Y - Centre.Y;
+					return DX * DX + DY * DY;
+				};
+
+				if (ARecaler[R])
+				{
+					const double D2 = Distance2(Regions.Regions[R].CentreM);
+					if (D2 < MeilleureDist[R])
+					{
+						MeilleureDist[R] = D2;
+						Regions.Regions[R].AncrageM = FVector2D(X, Y);
+					}
+				}
+
+				const int32 Pa = Regions.Regions[R].Pays;
+				if (PaysARecaler.IsValidIndex(Pa) && PaysARecaler[Pa])
+				{
+					const double D2 = Distance2(Regions.Pays[Pa].CentreM);
+					if (D2 < MeilleureDistPays[Pa])
+					{
+						MeilleureDistPays[Pa] = D2;
+						Regions.Pays[Pa].AncrageM = FVector2D(X, Y);
+					}
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] regions nommees : %d regions, %d pays -- "
+			"%d region(s) et %d pays recales (centre de gravite hors de soi)"),
+		NbRegions, NbPays, Dehors, DehorsPays);
 }

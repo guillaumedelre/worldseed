@@ -309,6 +309,10 @@ void UWorldseedMinimap::Construire()
 		.VAlign(VAlign_Top)
 		.Padding(FMargin(0.0f, WorldseedMini::MargePx, WorldseedMini::MargePx, 0.0f))
 		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot().AutoHeight()
+			[
 			SNew(SBox)
 			.WidthOverride(WorldseedMini::CoteEcran)
 			.HeightOverride(WorldseedMini::CoteEcran)
@@ -340,6 +344,33 @@ void UWorldseedMinimap::Construire()
 				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom)[ Cardinal(TEXT("S")) ]
 				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center)[ Cardinal(TEXT("E")) ]
 				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center)[ Cardinal(TEXT("O")) ]
+			]
+			]
+
+			// --- OU SUIS-JE ---------------------------------------------
+			//
+			// UN BANDEAU, ET NON UNE ETIQUETTE POSEE SUR LA CARTE. Sur la
+			// carte plein ecran, un nom se pose a l'ANCRAGE de sa region et
+			// designe une etendue qu'on embrasse du regard. Ici le disque
+			// fait moins de deux cents pixels pour un rayon de 1,5 km,
+			// quand une region en fait 3,5 : son ancrage est presque
+			// toujours HORS CADRE, et une etiquette flottante ne
+			// s'afficherait que par accident.
+			//
+			// Ce qu'on veut d'une minimap n'est d'ailleurs pas la meme
+			// chose : sur une carte on cherche « ou est-ce », sur une
+			// minimap « ou suis-je ». Le bandeau repond a la seconde, et il
+			// repond TOUJOURS.
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+			.Padding(FMargin(0.0f, 4.0f, 0.0f, 0.0f))
+			[
+				SNew(STextBlock)
+				.Text(MakeAttributeUObject(this, &UWorldseedMinimap::TexteDuLieu))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
+				.ColorAndOpacity(FSlateColor(Encre))
+				.ShadowOffset(FVector2D(1.0f, 1.0f))
+				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f))
+				.Justification(ETextJustify::Center)
 			]
 		];
 
@@ -508,6 +539,38 @@ void UWorldseedMinimap::Rafraichir()
 
 			const FWorldseedRegions* const Reg = T->MondePartage().IsValid()
 				? &T->MondePartage()->Regions : nullptr;
+
+			// LE LIBELLE NE SE REFAIT QU'AU CHANGEMENT DE REGION. Il n'a rien
+			// a faire par image : il tient dans la meme garde que la
+			// repeinture du fond, qui ne se declenche deja qu'au changement de
+			// cellule.
+			//
+			// LA MER N'A PAS DE NOM, et l'on ne met rien plutot qu'un tiret :
+			// une minimap en pleine mer n'a aucun lieu a nommer, et un
+			// libelle vide se lit tout de suite comme tel.
+			if (Reg && Reg->EstValide())
+			{
+				const int32 Ou = Reg->RegionEn(Repere.Xm, Repere.Ym);
+				if (Ou != DerniereRegion)
+				{
+					DerniereRegion = Ou;
+					if (Reg->Regions.IsValidIndex(Ou))
+					{
+						const FWorldseedRegion& R = Reg->Regions[Ou];
+						const FString Pays = Reg->Pays.IsValidIndex(R.Pays)
+							? Reg->Pays[R.Pays].Nom : FString();
+
+						LieuCourant = Pays.IsEmpty()
+							? FText::FromString(R.Nom)
+							: FText::FromString(
+								FString::Printf(TEXT("%s, %s"), *R.Nom, *Pays));
+					}
+					else
+					{
+						LieuCourant = FText::GetEmpty();
+					}
+				}
+			}
 
 			uint8* const Pixels = new uint8[Octets];
 			WorldseedCarte::PeindreFenetre(T->MondeGeometrie(), T->MondeAltitudes(),

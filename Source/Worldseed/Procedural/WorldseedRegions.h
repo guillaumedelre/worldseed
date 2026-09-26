@@ -44,6 +44,24 @@ struct WORLDSEED_API FWorldseedRegion
 	/** Centre de gravite, en metres monde. */
 	FVector2D CentreM = FVector2D::ZeroVector;
 
+	/**
+	 * Ou POSER SON NOM, en metres monde.
+	 *
+	 * LE CENTRE DE GRAVITE NE CONVIENT PAS, et ce n'est pas un detail : le
+	 * barycentre d'une forme CONCAVE lui est EXTERIEUR -- un croissant, une
+	 * region qui epouse une baie, un bassin en fer a cheval autour d'un
+	 * massif. Mesure sur le monde de reference : **6 regions sur 47**, soit
+	 * une etiquette sur huit posee en pleine mer ou chez la voisine.
+	 *
+	 * L'ancrage vaut le centre de gravite quand il tombe DANS la region, et
+	 * sinon la cellule de la region la plus proche de lui.
+	 *
+	 * ⚠ IL NE TRAVERSE PAS LE CACHE, et c'est deliberé -- comme les noms. Il
+	 * se recalcule dans `Nommer`, qui est rejoue dans les DEUX branches ;
+	 * l'ecrire n'ajouterait que du poids et une occasion de le figer.
+	 */
+	FVector2D AncrageM = FVector2D::ZeroVector;
+
 	float AireKm2 = 0.0f;
 	float AltitudeMoyenneM = 0.0f;
 	float TemperatureMoyenneC = 0.0f;
@@ -64,6 +82,16 @@ struct WORLDSEED_API FWorldseedPays
 	FString Univers;
 
 	FVector2D CentreM = FVector2D::ZeroVector;
+
+	/**
+	 * Ou poser son nom. Meme raison que pour une region, en pire : un pays
+	 * agrege plusieurs regions et peut enjamber une mer interieure, donc son
+	 * barycentre a plus de chances encore de tomber a l'eau.
+	 *
+	 * Ne traverse pas le cache : recalcule par `Nommer`.
+	 */
+	FVector2D AncrageM = FVector2D::ZeroVector;
+
 	float AireKm2 = 0.0f;
 
 	TArray<int32> Regions;
@@ -215,6 +243,18 @@ namespace WorldseedRegions
 	 * region renommerait toutes les suivantes.
 	 */
 	WORLDSEED_API void Nommer(FWorldseedRegions& Regions, int32 Seed);
+
+	/**
+	 * Decide ou poser le nom de chaque region et de chaque pays.
+	 *
+	 * Le centre de gravite quand il tombe dans la forme, la cellule la plus
+	 * proche de lui sinon -- une forme concave a son barycentre DEHORS, et
+	 * l'etiquette s'y retrouverait en mer. Voir `FWorldseedRegion::AncrageM`.
+	 *
+	 * Appelee par `Nommer`, donc rejouee dans les deux branches du cache.
+	 * Publique parce qu'un test doit pouvoir l'eprouver seule.
+	 */
+	WORLDSEED_API void AncrerLesEtiquettes(FWorldseedRegions& Regions);
 
 	/** Le libelle d'un caractere, pour les releves. */
 	WORLDSEED_API const TCHAR* NomDuCaractere(EWorldseedRegionCaractere C);

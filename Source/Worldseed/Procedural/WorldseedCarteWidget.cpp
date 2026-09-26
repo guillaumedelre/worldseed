@@ -4,6 +4,7 @@
 
 #include "Procedural/WorldseedCarte.h"
 #include "Procedural/WorldseedCarteEcran.h"
+#include "Procedural/WorldseedEtiquettes.h"
 #include "Procedural/WorldseedIcones.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
 
@@ -321,6 +322,95 @@ int32 SWorldseedCarte::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		}
 	}
 
+	// --- les noms de pays et de region --------------------------------------
+	//
+	// APRES LES MARQUEURS, DONC PAR-DESSUS : un nom est une legende du
+	// territoire, pas un objet pose dessus, et il doit rester lisible quand il
+	// croise une icone.
+	//
+	// ILS NE SONT PAS SUR LE GLOBE, a dessein. Une sphere ecrase ses
+	// meridiens vers le limbe : un nom y serait comprime jusqu'a
+	// l'illisible, et la moitie du monde est de toute facon cachee.
+	// LE COMPTE, UNE SEULE FOIS. Un nom absent a trois causes qui ne se
+	// ressemblent pas -- pas de decoupage, aucun candidat retenu par le seuil,
+	// ou tous rejetes par le recouvrement -- et elles n'appellent pas le meme
+	// remede. Ce depot a deja paye la confusion sur les frontieres du globe.
+	static bool bDitUneFois = false;
+	int32 Candidats = 0;
+	int32 Posees = 0;
+	bool bDecoupage = false;
+
+	if (const AWorldseedVoxelTerrain* const T = C->Terrain())
+	{
+		if (T->MondePartage().IsValid())
+		{
+			const FWorldseedRegions& Reg = T->MondePartage()->Regions;
+			bDecoupage = Reg.EstValide();
+
+			const FSlateFontInfo NomPays =
+				FCoreStyle::GetDefaultFontStyle("Bold", 15);
+			const FSlateFontInfo NomRegion =
+				FCoreStyle::GetDefaultFontStyle("Regular", 11);
+
+			// L'ANTI-RECOUVREMENT, ET IL EST INDISPENSABLE. Rien n'empeche
+			// deux ancrages d'etre voisins a l'ecran -- deux petites regions
+			// mitoyennes, ou un pays et sa plus grande region, qui partagent
+			// souvent le meme centre. Deux noms superposes ne sont pas deux
+			// noms a moitie lisibles : ce sont deux noms illisibles.
+			TArray<FBox2D> Occupes;
+
+			const TArray<WorldseedEtiquettes::FEtiquette> Choix =
+				WorldseedEtiquettes::Choisir(Reg, Vue, LargeurMonde);
+			Candidats = Choix.Num();
+
+			for (const WorldseedEtiquettes::FEtiquette& E : Choix)
+			{
+				const FSlateFontInfo& PoliceNom = E.bPays ? NomPays : NomRegion;
+				const FVector2D Dim = Mesure->Measure(E.Texte, PoliceNom);
+
+				// Centre sur l'ancrage, contrairement a une epingle : un nom
+				// designe une ETENDUE, pas un point.
+				const FVector2D Coin = E.PositionPx - Dim * 0.5;
+
+				// La marge evite que deux noms se touchent sans se recouvrir,
+				// ce qui se lit comme un seul mot compose.
+				const FVector2D Marge(6.0, 3.0);
+				if (!WorldseedEtiquettes::Accepter(Occupes,
+					FBox2D(Coin - Marge, Coin + Dim + Marge)))
+				{
+					continue;
+				}
+
+				// L'OMBRE D'ABORD, comme pour les glyphes : un nom clair sur
+				// une calotte ou un nom sombre sur un ocean disparait sans
+				// elle, et la carte porte les deux fonds.
+				FSlateDrawElement::MakeText(OutDrawElements, CoucheMarqueurs + 4,
+					AllottedGeometry.ToPaintGeometry(Dim,
+						FSlateLayoutTransform(Coin + FVector2D(1.5, 1.5))),
+					E.Texte, PoliceNom, ESlateDrawEffect::None,
+					FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+
+				FSlateDrawElement::MakeText(OutDrawElements, CoucheMarqueurs + 5,
+					AllottedGeometry.ToPaintGeometry(Dim,
+						FSlateLayoutTransform(Coin)),
+					E.Texte, PoliceNom, ESlateDrawEffect::None,
+					E.bPays ? FLinearColor(1.0f, 0.96f, 0.88f)
+						: FLinearColor(0.88f, 0.88f, 0.84f, 0.92f));
+				++Posees;
+			}
+		}
+	}
+
+	if (!bDitUneFois)
+	{
+		bDitUneFois = true;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] carte : noms -- decoupage %s, %d candidat(s), "
+				"%d pose(s) a %.1f m/px"),
+			bDecoupage ? TEXT("present") : TEXT("ABSENT"),
+			Candidats, Posees, C->MetresParPixel);
+	}
+
 	// --- la legende ----------------------------------------------------------
 	//
 	// ELLE DIT AUSSI CE QU'ON NE VOIT PAS, ET C'EST SA RAISON D'ETRE. Un genre
@@ -328,7 +418,7 @@ int32 SWorldseedCarte::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 	// porte aucun, ou le zoom les cache. Les taire toutes les deux laisse croire
 	// a la premiere -- et l'on cherche un defaut de generation pour ce qui n'est
 	// qu'une echelle.
-	const int32 CoucheLegende = CoucheMarqueurs + 4;
+	const int32 CoucheLegende = CoucheMarqueurs + 6;
 	const FSlateFontInfo Libelle = FCoreStyle::GetDefaultFontStyle("Regular", 11);
 	const FSlateFontInfo Petit = FCoreStyle::GetDefaultFontStyle("Italic", 9);
 

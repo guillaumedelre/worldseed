@@ -162,6 +162,21 @@ private:
 	/** Le padding que Slate redemande : la position de l'epingle. */
 	FMargin MargeRepere() const;
 
+	/**
+	 * Ou le joueur se trouve : « Region, Pays ».
+	 *
+	 * Lue par un attribut Slate, donc appelee a chaque image : elle ne fait
+	 * que rendre le texte deja calcule. Le calcul, lui, vit dans le tick et
+	 * ne refait le tour du decoupage que lorsque le joueur change de cellule.
+	 */
+	FText TexteDuLieu() const { return LieuCourant; }
+
+	/** Le libelle du lieu, recalcule quand le joueur change de region. */
+	FText LieuCourant;
+
+	/** La derniere region traversee, pour ne pas refaire le libelle par image. */
+	int32 DerniereRegion = INDEX_NONE;
+
 	/** Demi-portee courante, en metres. */
 	float DemiPorteeM = 2000.0f;
 

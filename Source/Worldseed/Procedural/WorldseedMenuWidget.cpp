@@ -2063,6 +2063,27 @@ void UWorldseedMenuWidget::HandlePlayClicked()
 		ToPlay.SeasonalAmpC = CachedSeasonalAmpC;
 		ToPlay.Continentality = CachedContinentality;
 		ToPlay.Biomes = CachedBiomes;
+
+		// ⚠ LE DECOUPAGE VOYAGE AVEC LE MONDE, ET IL A ETE OUBLIE ICI.
+		//
+		// Sans cette ligne le menu garde ses regions pour lui : le jeu recoit
+		// un monde sans decoupage, donc ni frontieres ni noms sur la minimap
+		// et sur la carte plein ecran -- et RIEN ne le signale, `Regions`
+		// vide etant un etat valide que tous les consommateurs degradent
+		// proprement.
+		//
+		// LE DEFAUT A SURVECU A SA PROPRE MESURE, et c'est la lecon. Les
+		// frontieres avaient ete comptees -- 1667 pixels de pays, 15472 de
+		// region -- par `ProbeCarteEcran`, qui GENERE SON PROPRE MONDE et
+		// n'emprunte donc pas ce transport. La sonde disait vrai sur le
+		// peintre et ne pouvait rien dire du chemin reel. Ce qu'on prenait
+		// pour des frontieres sur la carte de jeu etait le lisere de cote.
+		//
+		// Meme famille que « serialiser ne suffit pas, il faut TRANSVASER »
+		// (22 septembre) : la donnee existait, elle etait juste, et personne
+		// ne la faisait passer d'un bout a l'autre.
+		ToPlay.Regions = CachedRegions;
+
 		ToPlay.LithologyId = CachedLithologyId;
 		ToPlay.SpawnXYM = DepartXYM;
 		ToPlay.bHasSpawn = bDepartChoisi;
