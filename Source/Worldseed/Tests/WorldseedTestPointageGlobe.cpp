@@ -153,6 +153,142 @@ bool FWorldseedProjectionGlobeZoomTest::RunTest(const FString& Parameters)
 }
 
 /**
+ * DU PIXEL CLIQUE AU PIXEL DU RETICULE, LA BOUCLE COMPLETE.
+ *
+ * C'est le trajet reel d'un repere, et aucun test ne le parcourait :
+ *
+ *     pixel -> CadreDepuisUV -> PointerCadre -> lat/lon        (le clic)
+ *     lat/lon -> CadreDepuisLatLon -> PixelDepuisCadre         (le dessin)
+ *
+ * Le repere n'est PAS garde en pixels -- le globe tourne et se zoome, donc un
+ * pixel retenu serait faux des la trame suivante -- il est garde en latitude
+ * et longitude, et redessine. Le reticule ne tombe donc sous le curseur que
+ * si les deux moities emploient LE MEME CADRE.
+ *
+ * ⚠ CE TEST N'AURAIT PAS ATTRAPE LE DEFAUT QU'IL DOCUMENTE, et il faut le
+ * dire. Celui-ci etait que `PointerSurLeGlobe` fabriquait son cadre en
+ * recopiant des champs a la main et OUBLIAIT le zoom : les deux moities
+ * etaient justes, elles ne parlaient simplement pas du meme globe. Un test
+ * qui pose lui-meme le cadre ne peut pas voir cela -- c'est la limite de
+ * toute mesure qui fabrique ses entrees. Ce que ce test garde est la chaine
+ * de CONVERSION, jamais eprouvee ; ce qui garde l'autre defaut est
+ * structurel, `UWorldseedMenuWidget::PoserLaProjection`.
+ *
+ * LE TEMOIN, lui, chiffre ce que l'oubli coutait : la meme boucle avec le
+ * cadre du zoom UN pour le clic et le cadre zoome pour le dessin.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedReticuleBoucleTest,
+	"Worldseed.Globe.LeReticuleRevientAuPixelClique",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedReticuleBoucleTest::RunTest(const FString& Parameters)
+{
+	constexpr int32 Res = 1024;
+
+	// DES PIXELS EXCENTRES, mais dans le disque : au centre, toute erreur
+	// d'echelle autour du centre est invisible par construction.
+	const TArray<FVector2f> Pixels = {
+		FVector2f(512.0f, 512.0f),
+		FVector2f(640.0f, 470.0f),
+		FVector2f(430.0f, 600.0f),
+		FVector2f(512.0f, 330.0f),
+		FVector2f(700.0f, 700.0f),
+	};
+
+	double PireEcart = 0.0;
+	double PireEcartTemoin = 0.0;
+	int32 Verifies = 0;
+
+	for (const float Zoom : { 1.0f, 2.0f, 4.0f, 6.0f })
+	{
+		WorldseedGlobe::FGlobeSettings Reglages;
+		Reglages.Zoom = Zoom;
+		Reglages.TiltDeg = 18.0f;
+		Reglages.LongitudeOffsetDeg = 40.0f;
+
+		const WorldseedGlobe::FCadreGlobe Cadre = WorldseedGlobe::CadreGlobe(Reglages);
+
+		// Le cadre que l'ancien pointage fabriquait : tout sauf le zoom.
+		WorldseedGlobe::FGlobeSettings Oublie = Reglages;
+		Oublie.Zoom = 1.0f;
+		const WorldseedGlobe::FCadreGlobe CadreOublie =
+			WorldseedGlobe::CadreGlobe(Oublie);
+
+		for (const FVector2f& P : Pixels)
+		{
+			// --- le clic ---------------------------------------------------
+			float CX = 0.0f;
+			float CY = 0.0f;
+			WorldseedGlobe::CadreDepuisUV(
+				P.X / static_cast<float>(Res - 1),
+				P.Y / static_cast<float>(Res - 1), CX, CY);
+
+			const WorldseedGlobe::FPointeGlobe Vise =
+				WorldseedGlobe::PointerCadre(CX, CY, Cadre);
+			if (!Vise.bSurLeGlobe)
+			{
+				continue;   // l'espace autour du disque : rien a poser
+			}
+
+			// --- le dessin -------------------------------------------------
+			float RX = 0.0f;
+			float RY = 0.0f;
+			if (!TestTrue(TEXT("le point vise se redessine sur la face visible"),
+				WorldseedGlobe::CadreDepuisLatLon(
+					Vise.LatitudeDeg, Vise.LongitudeDeg, Cadre, RX, RY)))
+			{
+				continue;
+			}
+
+			float PX = 0.0f;
+			float PY = 0.0f;
+			WorldseedGlobe::PixelDepuisCadre(RX, RY, Res, PX, PY);
+			PireEcart = FMath::Max(PireEcart,
+				static_cast<double>(FVector2f(PX - P.X, PY - P.Y).Size()));
+
+			// LE TEMOIN : le clic lu sur le cadre NON zoome, le dessin sur le
+			// bon. C'est exactement ce que faisait le menu.
+			const WorldseedGlobe::FPointeGlobe Derive =
+				WorldseedGlobe::PointerCadre(CX, CY, CadreOublie);
+			float TX = 0.0f;
+			float TY = 0.0f;
+			if (Derive.bSurLeGlobe
+				&& WorldseedGlobe::CadreDepuisLatLon(
+					Derive.LatitudeDeg, Derive.LongitudeDeg, Cadre, TX, TY))
+			{
+				float QX = 0.0f;
+				float QY = 0.0f;
+				WorldseedGlobe::PixelDepuisCadre(TX, TY, Res, QX, QY);
+				PireEcartTemoin = FMath::Max(PireEcartTemoin,
+					static_cast<double>(FVector2f(QX - P.X, QY - P.Y).Size()));
+			}
+
+			++Verifies;
+		}
+	}
+
+	AddInfo(FString::Printf(
+		TEXT("%d points verifies, pire ecart %.4f px ; zoom oublie : %.1f px"),
+		Verifies, PireEcart, PireEcartTemoin));
+
+	TestTrue(TEXT("des points ont ete verifies"), Verifies >= 8);
+
+	// Un demi-pixel : le reticule fait une vingtaine de pixels de rayon, donc
+	// c'est trois ordres de grandeur sous ce qui se verrait.
+	TestTrue(FString::Printf(
+		TEXT("le reticule revient au pixel clique (%.4f px)"), PireEcart),
+		PireEcart < 0.5);
+
+	// SANS CE CONTROLE LE TEST NE PROUVERAIT RIEN : les deux moities lisent le
+	// meme cadre, donc elles s'accorderaient meme sur un cadre absurde.
+	TestTrue(FString::Printf(
+		TEXT("oublier le zoom deplace bien le reticule (%.1f px)"),
+		PireEcartTemoin),
+		PireEcartTemoin > 20.0);
+	return true;
+}
+
+/**
  * LE DISQUE GRANDIT AVEC LE ZOOM, ET C'EST TOUT CE QUE LE ZOOM FAIT.
  *
  * Un meme point du globe doit s'eloigner du centre du cadre proportionnellement

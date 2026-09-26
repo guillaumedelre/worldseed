@@ -95,6 +95,19 @@ protected:
 	void ApplyGlobeZoom();
 
 	/**
+	 * Pose les champs que la PROJECTION du globe lit, et rien d'autre.
+	 *
+	 * DEUX CHEMINS DESSINENT LE MEME GLOBE : le rendu et le pointage a la
+	 * souris. Tant que chacun recopiait ces champs a la main, il suffisait
+	 * qu'un seul en oublie un pour qu'ils cessent de parler du meme globe.
+	 * C'est arrive avec le zoom, et le reticule a cesse de tomber sous le
+	 * curseur des qu'on agrandissait.
+	 *
+	 * Tout champ ajoute a `WorldseedGlobe::CadreGlobe` s'ajoute ICI.
+	 */
+	void PoserLaProjection(WorldseedGlobe::FGlobeSettings& Reglages) const;
+
+	/**
 	 * Lance une generation EN TACHE DE FOND. Toute generation deja en cours est
 	 * annulee : c'est ce qui permet de rechanger les parametres sans attendre.
 	 */

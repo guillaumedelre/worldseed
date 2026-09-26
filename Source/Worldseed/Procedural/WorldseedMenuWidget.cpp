@@ -1649,8 +1649,11 @@ void UWorldseedMenuWidget::RedrawGlobe()
 		GlobeSettings.DeepOceanM = static_cast<float>(
 			Rules->Num(TEXT("world"), TEXT("minElevationM"), -300.0));
 	}
-	GlobeSettings.LongitudeOffsetDeg = GlobeLongitudeDeg;
-	GlobeSettings.TiltDeg = GlobeTiltDeg;
+	// LES TROIS CHAMPS DE PROJECTION VIENNENT D'UN SEUL ENDROIT. Voir
+	// `PoserLaProjection` : le pointage appelle la meme methode, et c'est la
+	// seule facon de garantir qu'il vise ce que l'on dessine.
+	PoserLaProjection(GlobeSettings);
+
 	GlobeSettings.Repere = Repere;
 	GlobeSettings.bShowBorders = true;
 
@@ -1658,9 +1661,6 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	// lui-meme, et c'est le bon comportement -- une donnee absente doit
 	// rester sans effet, jamais fausser la teinte.
 	GlobeSettings.MaxLandM = GlobeMaxLandM;
-
-	// LE ZOOM EST UNE FACON DE PROJETER, PAS UNE FACON D'AFFICHER.
-	GlobeSettings.Zoom = GlobeZoom;
 
 	// Premiere fois : on cree la texture. Ensuite on ne fait que reecrire ses
 	// pixels, sinon la rotation fabriquerait une UTexture2D par frame.
@@ -1982,6 +1982,30 @@ FReply UWorldseedMenuWidget::NativeOnMouseWheel(const FGeometry& InGeometry,
 	return FReply::Handled();
 }
 
+void UWorldseedMenuWidget::PoserLaProjection(
+	WorldseedGlobe::FGlobeSettings& Reglages) const
+{
+	// CES TROIS CHAMPS SONT EXACTEMENT CEUX QUE `CadreGlobe` LIT, et c'est ce
+	// qui donne son sens a cette methode : tant qu'ils sont recopies a la main
+	// par chaque appelant, il suffit qu'un seul en oublie un pour que le
+	// pointage et le dessin cessent de parler du meme globe -- sans erreur,
+	// sans message, et de facon invisible tant qu'on ne touche pas au champ
+	// oublie.
+	//
+	// C'est arrive : le pointage posait la longitude et la bascule, et pas le
+	// zoom. Tant que le zoom vivait dans Slate cela ne se voyait pas ; le jour
+	// ou il est entre dans la projection, le reticule a cesse de tomber sous
+	// le curseur des qu'on agrandissait.
+	//
+	// AJOUTER UN CHAMP A `CadreGlobe` OBLIGE A L'AJOUTER ICI, et nulle part
+	// ailleurs. C'est le seul garde-fou qui tienne, faute de pouvoir eprouver
+	// cette chaine depuis un test -- elle demande un widget, donc un monde.
+	Reglages.LongitudeOffsetDeg = GlobeLongitudeDeg;
+	Reglages.TiltDeg = GlobeTiltDeg;
+	Reglages.Zoom = GlobeZoom;
+}
+
+
 void UWorldseedMenuWidget::ApplyGlobeZoom()
 {
 	// ⚠ CETTE FONCTION POSAIT UNE `SetRenderScale`, ET C'ETAIT LA CAUSE DU
@@ -2201,9 +2225,27 @@ bool UWorldseedMenuWidget::PointerSurLeGlobe(const FVector2D& PositionEcran,
 		static_cast<float>(Texel.X / Taille.X),
 		static_cast<float>(Texel.Y / Taille.Y), CadreX, CadreY);
 
+	// ⚠ CE BLOC RECOMPOSAIT SES REGLAGES A LA MAIN, ET IL A OUBLIE LE ZOOM.
+	//
+	// Il posait la longitude et la bascule, pas `Zoom` -- donc il pointait
+	// toujours le globe tel qu'il serait a l'echelle UN, pendant que l'ecran
+	// en montrait un agrandi. A quatre fois, le point designe tombait quatre
+	// fois trop loin du centre : « lorsque je zoom et que je place un repere,
+	// ce dernier n'apparait pas a l'endroit clique ».
+	//
+	// LE DEFAUT EST NE D'UNE AFFIRMATION, PAS D'UN OUBLI DE FRAPPE. En
+	// deplacant le zoom de Slate vers la projection, j'ai ecrit que « comme la
+	// projection et son inverse lisent le meme champ, le pointage suit sans
+	// qu'on ait rien a lui dire ». C'est vrai de `PointerCadre` et faux de son
+	// APPELANT, qui fabriquait le cadre a partir de champs recopies un a un.
+	//
+	// ET AUCUN ORACLE NE POUVAIT LE VOIR : `LaProjectionTientAToutZoom` pose
+	// lui-meme le zoom qu'il teste, donc il valide la projection et ne dit
+	// rien du chemin que le menu emprunte. C'est la lecon deja ecrite au
+	// registre le matin meme -- une mesure qui fabrique ses entrees ne valide
+	// pas le chemin reel -- et je viens de la repayer.
 	WorldseedGlobe::FGlobeSettings Reglages;
-	Reglages.LongitudeOffsetDeg = GlobeLongitudeDeg;
-	Reglages.TiltDeg = GlobeTiltDeg;
+	PoserLaProjection(Reglages);
 
 	const WorldseedGlobe::FPointeGlobe Pointe = WorldseedGlobe::PointerCadre(
 		CadreX, CadreY, WorldseedGlobe::CadreGlobe(Reglages));
