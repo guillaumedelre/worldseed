@@ -200,6 +200,19 @@ protected:
 	UFUNCTION()
 	void HandleClearObsoleteClicked();
 
+	/**
+	 * Retire du cache les mondes devenus incompatibles, et rend leur nombre.
+	 *
+	 * APPELEE A L'OUVERTURE DU MENU, pas seulement par le bouton. Un cache
+	 * perime ne sert a RIEN -- il ne peut plus etre relu, puisque c'est
+	 * justement son empreinte de regles ou sa version de chaine qui ne
+	 * correspond plus -- et il occupe le disque en donnant a croire que le
+	 * monde est deja calcule. Trois entrees sur trois etaient dans ce cas apres
+	 * un simple commit de commentaires, `world_rules.json` etant hache en
+	 * ENTIER.
+	 */
+	int32 PurgerPerimees();
+
 	UFUNCTION()
 	void HandleClearAllClicked();
 

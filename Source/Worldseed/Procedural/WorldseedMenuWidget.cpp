@@ -1008,7 +1008,26 @@ void UWorldseedMenuWidget::NativeConstruct()
 	SetVisibility(ESlateVisibility::Visible);
 
 	SetProgressVisible(false);
-	UpdateCacheInfo();
+
+	// --- LE MENAGE SE FAIT EN ARRIVANT, PAS SUR DEMANDE --------------------
+	//
+	// AVANT `UpdateCacheInfo` ET `StartGeneration`, et l'ordre compte : la
+	// premiere doit afficher l'etat APRES menage -- sinon le pied de page
+	// annonce des perimees qui n'existent plus -- et la seconde peut demander
+	// un monde dont l'entree vient de partir.
+	//
+	// UN CACHE PERIME N'EST PAS UNE RESERVE, C'EST DU POIDS MORT : il ne peut
+	// plus etre relu, puisque c'est son empreinte de regles ou sa version de
+	// chaine qui a change. Mesure du jour : trois entrees sur trois perimees
+	// et 157,8 Mo immobilises apres un commit qui ne touchait QUE des
+	// commentaires de `world_rules.json` -- le fichier est hache en entier.
+	if (const int32 Retirees = PurgerPerimees())
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] menu : %d carte(s) perimee(s) retiree(s) du cache"),
+			Retirees);
+	}
+
 	StartGeneration();
 
 	if (UWorld* World = GetWorld())
@@ -1264,16 +1283,33 @@ void UWorldseedMenuWidget::UpdateCacheInfo()
 	if (ClearAllButton) { ClearAllButton->SetIsEnabled(Entries.Num() > 0); }
 }
 
-void UWorldseedMenuWidget::HandleClearObsoleteClicked()
+int32 UWorldseedMenuWidget::PurgerPerimees()
 {
+	// UNE SEULE IMPLEMENTATION, DEUX APPELANTS : le bouton et l'ouverture du
+	// menu. La recopier ferait diverger les deux le jour ou la regle change --
+	// c'est la regle du depot, et elle a deja servi pour l'amplitude
+	// saisonniere, recalculee de son cote par l'export des prereglages.
 	FString RulesHash;
 	FString Error;
 	if (UWorldseedRules* LoadedRules = WorldseedPipeline::GetRules(Error))
 	{
 		RulesHash = LoadedRules->SourceHash;
 	}
-	WorldseedCache::ClearObsolete(RulesHash);
+
+	// UNE EMPREINTE VIDE EST SANS DANGER, ET IL FAUT L'AVOIR VERIFIE :
+	// `ListEntries` la traite comme « ne compare pas les regles » et non comme
+	// « aucune ne correspond » -- une entree n'est alors perimee que par son
+	// format ou sa version de chaine. J'avais pose ici une garde fondee sur le
+	// raisonnement inverse ; elle etait inutile, et son commentaire affirmait
+	// le contraire du code.
+	const int32 Retirees = WorldseedCache::ClearObsolete(RulesHash);
 	UpdateCacheInfo();
+	return Retirees;
+}
+
+void UWorldseedMenuWidget::HandleClearObsoleteClicked()
+{
+	PurgerPerimees();
 }
 
 void UWorldseedMenuWidget::HandleClearAllClicked()
