@@ -8758,3 +8758,202 @@ C'est exactement le controle qui avait servi le matin meme, quand les sondes
 annoncaient un sommet a 2032 m et la generation fraiche 1842 : deux mondes en
 apparence, un seul en fait. **Devant un cache dont la cle a bouge sans que le
 code change, comparer les CORPS et non les noms de fichier.**
+
+### Le cout d'un semis est sa MISE A JOUR, pas son dessin (26 septembre 2026)
+
+Signale : « depuis que nous avons ajoute les roches et le foliage les FPS sont
+descendus drastiquement, utilisent-ils le multithreading ? ». La question etait
+juste, la reponse est non -- et le multithreading n'etait pas le levier.
+
+**MESURE QUI TRANCHE, et il a fallu trois protocoles pour l'obtenir.** A
+l'ARRET, au meme point et sur une scene identique au chiffre pres (3054 chunks,
+4 433 118 triangles des deux cotes), 477 257 instances DESSINEES coutent
+**2,5 ms** -- 6,82 contre 4,31 -- et le fil de JEU ne bouge pas d'un centieme
+(2,04 contre 2,05). EN MOUVEMENT, la meme vegetation coute **42 ms**. Facteur
+quatorze entre dessiner et mettre a jour.
+
+**LE BANC MESURE A L'ARRET ; LE JOUEUR, LUI, MARCHE.** C'est tout le piege de
+protocole : les quatre premieres mesures donnaient 200 a 218 images par seconde
+et ne reproduisaient rien. Le regime reel est le STREAMING ACTIF, ou des chunks
+naissent et meurent en permanence -- 9565 en soixante secondes de vol.
+
+**L'ISM PAR CHUNK EST LA REPONSE.** Un ISM GLOBAL par espece oblige le fil de
+rendu a retraiter un composant qui porte jusqu'a un million d'instances, a
+chaque chunk pose ou relache. A/B a trajet fixe, meme binaire, 60 s de vol :
+
+    par chunk    7,75 ms   129 img/s   fil de rendu  6,73 ms
+    global      57,89 ms    17 img/s   fil de rendu 60,73 ms
+
+Le surcout de la vegetation passe de **53 a 3 ms**. Prix : 6 282 composants de
+plus, et un semis un peu plus cher (4 934 contre 2 964 ms cumulees).
+`-WorldseedIsmParChunk=0/1` rejoue l'A/B.
+
+**UN NOM DE COMPOSANT DETERMINISTE FAIT ATTENDRE LE FIL DE JEU.** Les chunks
+s'appelaient `Voxel_L<niveau>_<x>_<y>_<z>`, donc le nom REVENAIT des qu'un chunk
+renaissait -- le cas NOMINAL du streaming. `NewObject` devait alors ecraser un
+objet dont le fil de rendu n'avait pas fini de liberer les ressources, et le
+moteur le dit lui-meme : « Gamethread hitch waiting for resource cleanup on a
+UObject ... overwrite took 21.11ms ». Mesure : **263 attentes, 17 811 ms
+CUMULEES sur soixante secondes**, dont une de 624 ms. Un compteur monotone
+suffixe au nom : **zero**, verifie sur deux passes.
+
+**DEUX PISTES ESSAYEES ET RETIREES, pour qu'on ne les retente pas :**
+- *les distances de coupe* des recettes, lues depuis toujours et jamais
+  appliquees. Posees sur 120 especes sur 120 : **aucun effet**. Elles agissent
+  sur les 2,5 ms de DESSIN, jamais sur les 42 de mise a jour. Et le maximum par
+  espece portait la borne a 600 m pour un rayon de semis de 350, donc elle ne
+  mordait sur rien -- le garde-fou journalise l'a dit tout seul.
+- *`SetUseConservativeBounds` + `SetRemoveSwap`*, qui traitent deux termes en
+  O(n) bien reels de `CalcBoundsImpl` : fil de rendu **inchange a 51,82 ms**.
+  Les deux visaient le fil de JEU, qui n'etait pas le goulot.
+
+**LA LECON DE METHODE.** J'ai affirme, sur la foi de la mesure a l'arret, que
+paralleliser le semis ne rendrait rien -- « 75 ms cumulees ». En marche il en
+coute 3 267. **La conclusion etait juste, la mesure qui la soutenait ne l'etait
+pas** : c'est le regime, pas le chiffre, qu'il fallait choisir d'abord.
+
+### Un cache toujours perime : `Strncpy` mange un caractere (26 septembre 2026)
+
+`WorldseedCache.cpp` ecrivait l'empreinte des regles par
+`FCStringAnsi::Strncpy(Header.RulesHash, ..., HashChars)`. Cette fonction
+**GARANTIT LE ZERO FINAL** : sur les trente-deux octets du champ, elle n'en
+ecrivait que **trente et un**. Le hash relu ne pouvait donc jamais egaler le
+hash courant, et `ListEntries` declarait TOUTE entree perimee -- en permanence,
+et depuis toujours.
+
+    stocke : 752173241ad26ff9f361c08013edeee   + un octet nul
+    attendu: 752173241ad26ff9f361c08013edeee0
+
+**LE DEFAUT ETAIT INVISIBLE PARCE QUE LE CHARGEMENT NE LIT PAS CE CHAMP.**
+`Load` ne verifie que `Magic` et `FormatVersion`, la cle du fichier portant deja
+le hash. Le cache se relisait donc parfaitement pendant que l'inventaire le
+disait perime : « 3 perimee(s), produites par une autre version » au pied du
+menu, sur un cache sain. **J'ai d'abord attribue ce message a un commit de
+commentaires de `world_rules.json` -- c'etait faux.**
+
+**TROUVE EN MONTANT UN TEMOIN, ET C'EST TOUT L'INTERET DU TEMOIN.** Pour
+eprouver la purge automatique ajoutee le meme jour, une entree a ete corrompue
+volontairement (`PipelineVersion` a 99, en-tete restant LISIBLE donc perimee et
+non illisible). Le releve a rendu **deux** suppressions pour une seule
+corruption : le cache sain etait parti avec elle. Sans ce temoin, la purge a
+l'ouverture du menu aurait vide tout le cache a chaque lancement.
+
+**ET UNE GARDE POSEE SUR UN RAISONNEMENT FAUX A ETE RETIREE.** J'avais protege
+la purge contre une empreinte VIDE, en croyant qu'elle declarerait tout perime.
+C'est l'inverse : `ListEntries` traite une empreinte vide comme « ne compare pas
+les regles ». La garde etait inutile, et son commentaire affirmait le contraire
+du code -- ce qui est pire que pas de commentaire.
+
+### L'estran est un SUBSTRAT, et il porte sa propre recette (26 septembre 2026)
+
+Signale : « sur les plages le foliage beaucoup moins dense, de l'herbe ne pousse
+pas sur la plage, on y trouve quelques roches par contre ».
+
+**LA NOTION EXISTAIT DEJA, ET C'EST CE QUI A RENDU LA CORRECTION COURTE.**
+`EWorldseedCover::Beach` -- « une forme, pas un climat » -- couvre 3,9 % des
+terres et vit dans `FWorldseedBiomeMap::Cover`, que le semis recevait DEJA. Il
+ne lisait que `Index`, le biome, donc une plage heritait du tapis d'herbe de la
+foret qui la borde.
+
+**LA RECETTE D'ESTRAN REMPLACE CELLE DU BIOME, elle ne s'y ajoute pas.** Une
+plage de desert et une plage de foret tropicale sont toutes deux du sable nu ;
+le climat decide de ce qui pousse DERRIERE. L'ajouter comme couche a chacun des
+dix-sept biomes aurait recopie la meme liste dix-sept fois.
+
+**LE SUBSTRAT SE LIT AU POINT, PAS AU CENTRE DU CHUNK** -- contrairement au
+biome, et c'est delibere : une bande littorale fait de l'ordre de 37 m quand un
+chunk en fait 32. Trancher au centre donnerait un trait de cote en MARCHES
+D'ESCALIER de trente-deux metres. Le biome, lui, varie a l'echelle du climat et
+supporte tres bien la maille du chunk.
+
+Mesure : **30 057 -> 25 585 instances**, la garde substrat rejetant **3,8 %** des
+points -- ce qui recoupe les 3,9 % d'estran releves. Vu a l'image : sable nu au
+bord de l'eau, galets isoles a 17, 36, 54 et 60 m, la dune gardant sa vegetation.
+
+**RESTE OUVERT** : les PAROIS ne lisent pas le substrat, donc un pan de falaise
+peut encore apparaitre sur l'estran ; et la recette d'estran est la meme partout,
+donc une plage de toundra porte les memes galets qu'une plage tropicale.
+
+### Un compteur qui rend zero ne mesure rien -- troisieme fois (26 septembre 2026)
+
+L'ISM par chunk a vide les composants globaux, et `EspecesAutour` les parcourait
+toujours : il annoncait **« 0 espece »** au milieu de 25 585 instances vivantes.
+Meme famille que le comptage de composants d'herbe de Landscape, ou la demo du
+pack rendait le meme zero que notre monde.
+
+**LA PARADE EST LA MEME A CHAQUE FOIS** : valider la metrique sur un cas dont on
+connait la reponse. Ici, le releve global disait « 25 585 vivantes » pendant que
+l'outil disait zero -- les deux ne pouvaient pas avoir raison.
+
+**ET UN RELEVE DOIT PORTER SA CONFIGURATION.** La ligne de vegetation dit
+desormais quel mode tourne (« UN ISM PAR CHUNK » ou « un ISM global par
+espece ») et combien de composants de chunk existent. Sans cela deux releves ne
+se comparent a rien six mois plus tard.
+
+### Trois pieges de protocole payes le meme jour (26 septembre 2026)
+
+- **DECOUPER PAR BORNES DE LIGNES NE TIENT PAS**, et le registre le disait deja
+  pour le refactor des sondes. Refait : les `sed -i` successifs sur
+  `WorldseedMenuWidget.h` ont laisse un `UFUNCTION()` ORPHELIN et perdu une
+  declaration, parce que chaque suppression decale les suivantes. Restaure
+  depuis le commit, refait a l'editeur bloc par bloc. **Pour du C++, l'editeur
+  de fichiers ; jamais une suppression par numero de ligne.**
+- **UN FICHIER PRESENT N'EST PAS UN FICHIER FRAIS.** Le releve des tests a ete
+  lu dans `Worldseed_2.log`, qui datait de six minutes avant la compilation : on
+  aurait valide un refactor sur les chiffres d'AVANT. Controler l'horodatage,
+  ou supprimer la cible avant de relancer.
+- **UN A/B EN MOUVEMENT EXIGE UN TRAJET FIXE.** Deux passes de banc ont parcouru
+  9 698 m et 733 m -- le personnage etant tombe dans un cas -- et leurs chiffres
+  ont ete compares comme s'ils mesuraient la meme chose. `-WorldseedDepartX/Y`
+  plus `-WorldseedVol=` rendent les deux moities comparables ; sans cela on
+  mesure la chute, pas le reglage.
+
+### Ce que les tests couvrent, et ce qu'ils ne couvrent pas (26 septembre 2026)
+
+**91 -> 100 oracles.** Le trou etait exactement la ou le travail etait le plus
+recent : `WorldseedVegetation` (517 lignes), `WorldseedPlateau` (729),
+`WorldseedRecettes` (335) et `WorldseedParois` (275) n'avaient **aucun** test.
+
+Le critere de choix n'est pas « quelle fonction n'est pas couverte » mais
+**« quel defaut passerait inapercu »** : une plante posee deux fois se confond
+avec une plante posee une fois, de l'herbe sous la mer ne se remarque qu'en
+nageant, et un semis qui cesse d'etre deterministe fait SAUTER la vegetation a
+chaque remaillage -- un scintillement qu'on met sur le compte du streaming.
+
+**DEUX TEMOINS MONTES POUR DE VRAI, PUIS RETIRES.** Un test qui passe du premier
+coup n'est pas prouve discriminant :
+
+    garde du doublon desarmee  -> attendu 0 doublon, obtenu 12
+    garde du substrat desarmee -> 0 galet hors estran contre 256
+                                  0 plante de biome sur l'estran contre 256
+
+Dans les deux cas les AUTRES tests sont restes verts, ce qui montre que chacun
+vise bien sa garde.
+
+**RESTE SANS ORACLE** : `AWorldseedVoxelTerrain` (3337 lignes, mais c'est un
+acteur et il demande un monde), `WorldseedRvt`, l'erosion et le sapement -- dont
+les invariants sont des ecarts de PENTE, donc statistiques et lies au calage --
+et tout le rendu, qui ne se juge qu'a l'image.
+
+### L'habillage du sol n'est plus un choix (26 septembre 2026)
+
+Decision du proprietaire : des six habillages proposes par `L_Menu` -- couleurs
+de biome, Dreamscape, Village, Egypte, Melange, Orasot -- **seul Orasot reste**.
+C'est le seul qui pose des MAILLAGES, les pans de falaise, et celui
+qu'accompagne tout le travail d'habillage.
+
+`WorldseedTexturePack.h/.cpp` est supprime en entier, avec le selecteur, le
+champ transporte par le monde, `AppliquerHabillageForce` et
+`-WorldseedHabillage=`. **`EWorldseedTerrainColouring` survit a dessein** : c'est
+un mode de VISUALISATION -- poids de couches, couleur de biome, pack de textures
+-- qui sert au diagnostic.
+
+**LA PALETTE DE VEGETATION SUIT LA MEME LOGIQUE, et le README le disait a
+l'envers.** Il listait Dreamscape, Village et Egypte comme necessaires et
+rangeait `Orasot_Bundle` parmi les packs qui « ne servent plus ». La palette en
+vigueur est `orasot-pur` : les 217 maillages viennent tous de ce pack.
+
+**NON-REGRESSION** : 91 tests au vert avant comme apres le retrait, et le rendu
+inchange -- 11,9 % de pixels differents pour un ecart moyen de 6,3 sur 765,
+**tres en deca des 82 %** que ce depot mesure entre deux lancements REPUTES
+IDENTIQUES sous eclairage.

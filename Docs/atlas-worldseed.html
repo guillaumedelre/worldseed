@@ -260,7 +260,7 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
 
 <div class="note">
   <span class="etiq">Le principe qui gouverne tout le reste</span>
-  <p>Une valeur ne se règle pas à l'œil. Chaque réglage est justifié par une mesure, et <strong>les mesures rejetées sont conservées</strong> dans le commentaire pour qu'on ne les retente pas. Quatre-vingt-onze tests échouent tout seuls ; vingt-cinq sondes répondent chacune à une question ; un banc mesure la trame dans le jeu ; et une tournée photo va regarder, parce qu'une forme qui n'a pas été vue n'est pas validée.</p>
+  <p>Une valeur ne se règle pas à l'œil. Chaque réglage est justifié par une mesure, et <strong>les mesures rejetées sont conservées</strong> dans le commentaire pour qu'on ne les retente pas. Cent tests échouent tout seuls ; vingt-cinq sondes répondent chacune à une question ; un banc mesure la trame dans le jeu ; et une tournée photo va regarder, parce qu'une forme qui n'a pas été vue n'est pas validée.</p>
 </div>
 
 <div class="note">
@@ -624,14 +624,14 @@ footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--trait);
 
 <h3>Quatre instruments, et ils ne se remplacent pas</h3>
 <div class="fiches">
-  <div class="fiche"><div class="nom">Les tests</div><div class="quoi"><strong>Les seuls qui échouent tout seuls.</strong> Quatre-vingt-onze oracles, sans rendu : bruit, tectonique, érosion, drainage, littoral, cavités, Transvoxel, diffusion, carte, cache, et le bulletin terrestre.</div></div>
+  <div class="fiche"><div class="nom">Les tests</div><div class="quoi"><strong>Les seuls qui échouent tout seuls.</strong> Cent oracles, sans rendu : bruit, tectonique, érosion, drainage, littoral, cavités, Transvoxel, diffusion, carte, cache, le semis de végétation, les recettes, les mesas, et le bulletin terrestre.</div></div>
   <div class="fiche"><div class="nom">Les sondes</div><div class="quoi">Vingt-cinq, et chacune répond à <em>une</em> question. Elles ne jugent pas. Elles prennent une <strong>graine</strong> et une <strong>taille</strong> en paramètres, ce qui permet d'itérer sans payer le monde de production.</div></div>
   <div class="fiche"><div class="nom">Le banc</div><div class="quoi">Trame, quatre fils, chunks, triangles, mémoire, remplissage. Il mesure <strong>dans le jeu</strong>, ce qui le met à l'abri du piège le plus coûteux du projet — voir la dernière section.</div></div>
   <div class="fiche"><div class="nom">La tournée photo</div><div class="quoi">Elle se pose devant chaque forme et la photographie. Parce qu'<strong>une forme qui n'a pas été vue n'est pas validée</strong> : les parois de canyon étaient mesurées justes et rendaient une surface qui ne ressemblait pas à de la roche.</div></div>
 </div>
 
 <h3>Les lancer</h3>
-<div class="cmd"><span class="c"># les 91 oracles, sans rendu</span>
+<div class="cmd"><span class="c"># les 100 oracles, sans rendu</span>
 UnrealEditor-Cmd.exe Worldseed.uproject -nullrhi -unattended -nopause -nosplash `
     -ExecCmds="Automation RunTests Worldseed;Quit"
 
@@ -1074,7 +1074,7 @@ function svg(hote, w, h) {
   const s=svg("fig-archi",W,H);
   const col=[
     {x:16,w:186,titre:"L_Menu",sous:"ce que le joueur choisit",c:"var(--sable)",
-     items:["une graine","un point de naissance","un jeu de textures"]},
+     items:["une graine","un point de naissance"]},
     {x:250,w:216,titre:"WorldseedPipeline",sous:"C++, hors du fil de jeu",c:"var(--accent)",
      items:["tectonique · lithologie","climat · érosion","littoral · plateaux","biomes · glace","cavités"]},
     {x:514,w:190,titre:"Le cache",sous:"78,6 Mo, par empreinte",c:"var(--sable)",

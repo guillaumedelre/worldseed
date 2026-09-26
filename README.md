@@ -30,11 +30,14 @@ propre diagramme de Whittaker à chaque exécution des tests.
 
 ## Ce que l'on voit en jouant
 
-`L_Menu` est le point d'entrée. On y choisit **une graine**, **un point de
+`L_Menu` est le point d'entrée. On y choisit **une graine** et **un point de
 naissance** — au clic sur un globe qui montre le monde que cette graine produit,
-ou dans une liste de lieux remarquables : arches, canyons, gouffres — et **un
-jeu de textures de sol**. Puis le monde se génère et l'on entre dans
-`L_Worldseed_Proc`.
+ou dans une liste de lieux remarquables : arches, canyons, gouffres. Puis le
+monde se génère et l'on entre dans `L_Worldseed_Proc`.
+
+Le sol n'a **plus qu'un seul habillage**, et il n'y a donc plus à le choisir :
+l'écran en proposait six jusqu'au 26 septembre 2026, dont cinq n'ont pas été
+retenus.
 
 En jeu : une **minimap** avec ses points cardinaux et son cône de visée, une
 **carte plein écran** (Tab) où l'on pose un repère et où Ctrl+clic téléporte, un
@@ -54,19 +57,26 @@ Ce qu'ils coûtent dépend de ce que l'on veut voir :
 | pack | ce qu'on perd sans lui |
 |---|---|
 | **Ultra Dynamic Sky** | le ciel, le soleil physique, la météo et le cycle jour/nuit |
-| **DreamscapeSeries**, **Stylized_Village**, **Stylized_Egypt** | les textures de sol — il reste les dix-neuf couleurs de biome, à plat |
+| **Orasot_Bundle** | l'habillage du sol, les pans de falaise, et **toute la végétation** |
 
 **Le jeu tourne sans eux, et c'est délibéré.** `FWorldseedUdsBridge` est le seul
 endroit du projet qui connaisse Ultra Dynamic Sky, et il le joint **par
 réflexion** : si le pack manque, on renvoie faux et le jeu continue sans ciel
-piloté. Aucune ligne de C++ ne nomme un pack. Le mode de sol par défaut,
-« Couleurs de biome », ne demande aucune texture.
+piloté. Sans `Orasot_Bundle`, le terrain retombe sur les couleurs de biome à
+plat et le semis ne pose rien — un monde nu, mais jouable, et le relevé le dit
+plutôt que de se taire.
 
-**Deux packs ne servent plus au monde actuel** et n'apparaissent donc plus
-ci-dessus : `Orasot_Bundle`, dont le matériau à dix couches habillait le
-Landscape de l'ancienne carte, et `Stylized_PBR_Nature`, **retiré du projet le
-14 septembre 2026**. Ils restent nécessaires à `L_Worldseed`, l'ancienne carte,
-que le dépôt conserve.
+**Ce tableau a changé le 26 septembre 2026, et dans les deux sens.** Il listait
+`DreamscapeSeries`, `Stylized_Village` et `Stylized_Egypt` comme nécessaires aux
+textures de sol, et rangeait `Orasot_Bundle` parmi les packs qui « ne servent
+plus ». Les deux affirmations sont tombées le même jour : l'écran ne propose
+plus qu'un seul habillage — Orasot, le seul qui pose aussi des maillages — et la
+palette de végétation en vigueur est `orasot-pur`, dont les deux cent dix-sept
+maillages viennent tous de ce pack.
+
+Les autres packs restent **cités par le catalogue** `vegetation_recipes.complet.json`,
+qui garde les neuf familles visuelles, et reviennent en une ligne si la palette
+change. Ils ne sont pas nécessaires au monde tel qu'il est aujourd'hui.
 
 S'ajoute un composant gratuit : le plugin **VibeUE**, qui expose l'API Python
 utilisée par les scripts de `Tools/UE/`. Le jeu n'en a pas besoin.
@@ -123,7 +133,7 @@ UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc -game 
 # Le banc : trame, fils, chunks, triangles, mémoire, remplissage.
 UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc -game -WorldseedBanc -WorldseedQuitter -windowed -resx=1600 -resy=900
 
-# Les tests -- 91 oracles, sans rendu.
+# Les tests -- 100 oracles, sans rendu.
 UnrealEditor-Cmd.exe Worldseed.uproject -ExecCmds="Automation RunTests Worldseed;Quit" -unattended -nopause -nosplash -nullrhi
 ```
 
@@ -182,7 +192,7 @@ et il se lit station par station : un simple compte laisserait passer un
 échange, ce qui s'est déjà produit — l'ajout de la forêt subtropicale humide a
 fait passer deux relevés et basculer deux autres, pour un score inchangé.
 
-Les quatre-vingt-onze oracles ne remplacent pas le regard. Une règle du dépôt :
+Les cent oracles ne remplacent pas le regard. Une règle du dépôt :
 **une forme qui n'a pas été vue n'est pas validée.** Les terrasses des parois de
 canyon étaient mesurées justes — écart de pente dur contre tendre de +8,17° — et
 rendaient à l'écran une surface qui ne ressemblait pas à de la roche.
