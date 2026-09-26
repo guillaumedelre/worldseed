@@ -348,6 +348,18 @@ private:
 	/** Carte des biomes du monde affiche. */
 	FWorldseedBiomeMap CachedBiomes;
 
+	/**
+	 * Decoupage en regions et en pays du monde affiche.
+	 *
+	 * ⚠ IL N'EXISTE QUE POUR LE MONDE PLEIN, jamais pour l'APERCU. L'apercu
+	 * est une generation rapide a basse resolution, faite pour montrer une
+	 * silhouette pendant que le vrai monde se calcule ; il n'en sort aucun
+	 * decoupage. Le globe trace donc ses frontieres quand le monde est pret,
+	 * et pas avant -- ce qui est aussi le bon moment : des frontieres sur une
+	 * silhouette qui va changer induiraient en erreur.
+	 */
+	FWorldseedRegions CachedRegions;
+
 	/** Geometrie effective du monde en cache : NX = 2 NY. */
 	FWorldseedGeometry WorldGeometry;
 

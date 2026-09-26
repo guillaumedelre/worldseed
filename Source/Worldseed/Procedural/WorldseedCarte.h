@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedRegions.h"
 #include "Procedural/WorldseedRules.h"
 
 /**
@@ -72,6 +73,27 @@ namespace WorldseedCarte
 
 		/** Souligne le trait de cote. */
 		bool bLisereCote = true;
+
+		/**
+		 * Trace les frontieres de REGION, en trait fin.
+		 *
+		 * MEME MECANIQUE QUE LE LISERE DE COTE, et pour la meme raison : une
+		 * seconde passe qui lit un tableau retenu par pixel et n'ecrit que son
+		 * propre pixel. Souligner en place propagerait le trait de proche en
+		 * proche, chaque pixel marque devenant a son tour une frontiere.
+		 */
+		bool bFrontieresRegions = false;
+
+		/**
+		 * Trace les frontieres de PAYS, en trait appuye.
+		 *
+		 * ELLES L'EMPORTENT SUR CELLES DES REGIONS quand les deux tombent au
+		 * meme endroit -- ce qui est le cas de TOUTE frontiere de pays, un
+		 * pays etant un agregat de regions entieres. Sans cette priorite, le
+		 * trait fin recouvrirait le trait appuye une fois sur deux selon
+		 * l'ordre de parcours, et la hierarchie des deux ne se lirait plus.
+		 */
+		bool bFrontieresPays = false;
 
 		/**
 		 * Ecart, en cellules, entre les voisins que l'ombrage compare.
@@ -268,10 +290,17 @@ namespace WorldseedCarte
 	 * regle qui en est sortie tient en une ligne : rien ne doit tenir ce qui
 	 * peut mourir avant lui. Ici la peinture est synchrone et ne retient rien.
 	 * C'est aussi le decoupage de `WorldseedGlobe::Render`.
+	 *
+	 * ⚠ `Regions` EST LE SEUL POINTEUR, et il est nullable a dessein : un monde
+	 * peut n'en porter aucune -- cache d'une version anterieure, monde sans
+	 * terre, fixture de test -- et c'est un ETAT VALIDE, pas une erreur. Les
+	 * deux drapeaux de frontiere sont alors sans effet plutot que de faire
+	 * crier la peinture. Il ne survit pas a l'appel, comme les trois autres.
 	 */
 	WORLDSEED_API void PeindreFenetre(const FWorldseedGeometry& Geo,
 		const TArray<float>& ElevationM, const FWorldseedBiomeMap& Biomes,
-		const FParamsFenetre& P, uint8* PixelsBGRA);
+		const FParamsFenetre& P, uint8* PixelsBGRA,
+		const FWorldseedRegions* Regions = nullptr);
 
 	/**
 	 * La pyramide de reduction d'une image BGRA : les niveaux 1 a N.

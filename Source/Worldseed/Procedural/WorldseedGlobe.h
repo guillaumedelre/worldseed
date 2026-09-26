@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Procedural/WorldseedRegions.h"
 #include "Procedural/WorldseedRules.h"
 
 class UTexture2D;
@@ -56,6 +57,22 @@ namespace WorldseedGlobe
 
 		/** Trace equateur, tropiques et cercles polaires. */
 		bool bShowLatitudeLines = true;
+
+		/**
+		 * Trace les frontieres de region et de pays.
+		 *
+		 * SANS EFFET TANT QUE `Render` NE RECOIT PAS DE DECOUPAGE : un monde
+		 * peut n'en porter aucun -- cache d'une version anterieure, apercu
+		 * sans terres -- et c'est un etat valide, pas une erreur.
+		 *
+		 * ⚠ ELLES NE SE LISENT PAS COMME SUR UNE CARTE, et c'est la sphere qui
+		 * le veut : vers le limbe, un pixel couvre de plus en plus de
+		 * longitude, donc le trait s'y epaissit et finit par se confondre avec
+		 * ses voisins. C'est le meme phenomene qui ecrase les continents au
+		 * bord du disque, et il n'a pas de remede -- une frontiere y est aussi
+		 * illisible qu'un trait de cote.
+		 */
+		bool bShowBorders = false;
 
 		/** Tropique et cercle polaire, en degres (issus de world_rules.json). */
 		float TropicDeg = 23.44f;
@@ -240,7 +257,8 @@ namespace WorldseedGlobe
 	WORLDSEED_API UTexture2D* Render(const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
 		int32 PreviewResolution, const TArray<uint8>* BiomeIndex = nullptr,
-		const TArray<uint8>* CoverIndex = nullptr);
+		const TArray<uint8>* CoverIndex = nullptr,
+		const FWorldseedRegions* Regions = nullptr);
 
 	/**
 	 * Redessine dans une texture existante. C'est cette voie qu'utilise la
@@ -261,5 +279,6 @@ namespace WorldseedGlobe
 	WORLDSEED_API bool RenderInto(UTexture2D* Texture, const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
 		const TArray<uint8>* BiomeIndex = nullptr,
-		const TArray<uint8>* CoverIndex = nullptr);
+		const TArray<uint8>* CoverIndex = nullptr,
+		const FWorldseedRegions* Regions = nullptr);
 }

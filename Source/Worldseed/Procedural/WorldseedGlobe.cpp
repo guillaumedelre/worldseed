@@ -173,8 +173,24 @@ namespace WorldseedGlobe
 	void FillPixels(uint8* Pixels, int32 Res, const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry,
 		const FGlobeSettings& Settings, const TArray<uint8>* BiomeIndex,
-		const TArray<uint8>* CoverIndex)
+		const TArray<uint8>* CoverIndex, const FWorldseedRegions* Regions)
 	{
+		// LES FRONTIERES SE TRACENT EN DEUX TEMPS, comme sur la carte : on
+		// retient l'identifiant par pixel pendant la boucle, puis une seconde
+		// passe compare les voisins. Marquer en place propagerait le trait de
+		// proche en proche, chaque pixel marque devenant a son tour une
+		// frontiere.
+		const bool bBordures = Settings.bShowBorders
+			&& (Regions != nullptr) && Regions->EstValide();
+
+		TArray<int32> RegionParPixel;
+		TArray<int32> PaysParPixel;
+		if (bBordures)
+		{
+			RegionParPixel.Init(INDEX_NONE, Res * Res);
+			PaysParPixel.Init(INDEX_NONE, Res * Res);
+		}
+
 		// Les biomes ne servent que s'ils decrivent LA MEME grille : une carte
 		// d'une autre resolution peindrait des couleurs decalees, et rien ne
 		// le signalerait.
@@ -252,6 +268,20 @@ namespace WorldseedGlobe
 					const int32 CellY = FMath::Clamp(
 						static_cast<int32>(V * Geometry.NY), 0, Geometry.NY - 1);
 					const int32 Cell = CellY * Geometry.NX + CellX;
+
+					// LE GLOBE LIT LA REGION EN UV, PAS EN METRES. Il ne
+					// connait que la latitude et la longitude ; lui faire
+					// convertir ses UV en metres pour que la lecture les
+					// reconvertisse en UV n'ajouterait qu'une occasion de se
+					// tromper de convention.
+					if (bBordures && Height >= 0.0f)
+					{
+						const int32 R = Regions->RegionEnUV(U, V);
+						const int32 IdxPx = PY * Res + PX;
+						RegionParPixel[IdxPx] = R;
+						PaysParPixel[IdxPx] = Regions->Regions.IsValidIndex(R)
+							? Regions->Regions[R].Pays : INDEX_NONE;
+					}
 
 					// --- teinte -------------------------------------------
 					if (Height < 0.0f)
@@ -392,6 +422,133 @@ namespace WorldseedGlobe
 			}
 		});
 
+		// --------------------------------------------------- les frontieres
+		//
+		// APRES LA BOUCLE, ET SUR LES IDENTIFIANTS RETENUS -- jamais sur les
+		// pixels deja ecrits. Elle lit `RegionParPixel`, qu'elle n'ecrit
+		// jamais, et n'ecrit que les trois octets de SON pixel : aucune
+		// dependance entre lignes, donc elle se parallelise comme la premiere.
+		//
+		// ⚠ ON COMPARE DES PIXELS D'ECRAN, PAS DES CELLULES DU MONDE. Sur une
+		// sphere, deux pixels voisins ne couvrent pas la meme etendue selon
+		// qu'ils sont au centre du disque ou pres du limbe -- la ou un pixel
+		// avale des dizaines de degres de longitude. Le trait s'y epaissit
+		// donc, exactement comme les continents s'y ecrasent. Ce n'est pas un
+		// defaut a corriger : c'est ce que fait une projection orthographique,
+		// et le trait de cote y subit le meme sort.
+		// LE COMPTE, JOURNALISE UNE SEULE FOIS. Un trait absent a deux causes
+		// OPPOSEES -- la passe qui ne tourne pas, et la passe qui tourne sans
+		// rien trouver -- qui n'appellent pas du tout le meme remede. Ce depot
+		// a deja paye la confusion sur la carte : le COMPTE avait tranche en
+		// une ligne ce que l'oeil expliquait par une couleur trop pale, et
+		// j'avais commence a corriger la couleur.
+		static bool bDejaDit = false;
+
+		if (bBordures)
+		{
+			// MEMES TEINTES ET MEMES OPACITES QUE LA CARTE. Deux jeux de
+			// valeurs finiraient par diverger, et l'ecart se verrait
+			// precisement la ou le globe et la carte montrent le meme endroit.
+			const FLinearColor TraitPays(0.06f, 0.05f, 0.08f);
+			const FLinearColor TraitRegion(0.13f, 0.12f, 0.15f);
+
+			ParallelFor(Res, [&](int32 PY)
+			{
+				for (int32 PX = 0; PX < Res; ++PX)
+				{
+					const int32 Idx = PY * Res + PX;
+					const int32 R = RegionParPixel[Idx];
+					if (R == INDEX_NONE)
+					{
+						continue;
+					}
+
+					bool bPays = false;
+					bool bRegion = false;
+
+					// LE VOISIN DROIT ET LE VOISIN BAS SEULEMENT : une
+					// frontiere separe DEUX regions, et regarder les quatre
+					// cotes la dessinerait en trait double.
+					auto Comparer = [&](int32 IndexVoisin)
+					{
+						const int32 Autre = RegionParPixel[IndexVoisin];
+						if (Autre == INDEX_NONE || Autre == R)
+						{
+							return;
+						}
+						bRegion = true;
+						bPays |= (PaysParPixel[Idx] != PaysParPixel[IndexVoisin]);
+					};
+
+					if (PX + 1 < Res) { Comparer(Idx + 1); }
+					if (PY + 1 < Res) { Comparer(Idx + Res); }
+
+					const FLinearColor* Trait = nullptr;
+					if (bPays) { Trait = &TraitPays; }
+					else if (bRegion) { Trait = &TraitRegion; }
+					if (!Trait)
+					{
+						continue;
+					}
+
+					const float A = bPays ? 0.90f : 0.38f;
+					const int32 Octet = Idx * 4;
+					auto Melanger = [A](uint8 Fond, float Trace) -> uint8
+					{
+						return static_cast<uint8>(FMath::Clamp(
+							Fond * (1.0f - A) + Trace * 255.0f * A, 0.0f, 255.0f));
+					};
+					Pixels[Octet + 0] = Melanger(Pixels[Octet + 0], Trait->B);
+					Pixels[Octet + 1] = Melanger(Pixels[Octet + 1], Trait->G);
+					Pixels[Octet + 2] = Melanger(Pixels[Octet + 2], Trait->R);
+					// L'alpha du disque est conserve : un trait opaque
+					// depasserait du fondu de bord.
+				}
+			});
+
+			if (!bDejaDit)
+			{
+				bDejaDit = true;
+				int32 NbTerre = 0;
+				int32 NbPays = 0;
+				int32 NbRegion = 0;
+				for (int32 I = 0; I < Res * Res; ++I)
+				{
+					if (RegionParPixel[I] == INDEX_NONE) { continue; }
+					++NbTerre;
+
+					const bool bD = (I % Res) + 1 < Res
+						&& RegionParPixel[I + 1] != INDEX_NONE
+						&& RegionParPixel[I + 1] != RegionParPixel[I];
+					const bool bB = I + Res < Res * Res
+						&& RegionParPixel[I + Res] != INDEX_NONE
+						&& RegionParPixel[I + Res] != RegionParPixel[I];
+					if (!bD && !bB) { continue; }
+
+					const bool bP =
+						(bD && PaysParPixel[I] != PaysParPixel[I + 1])
+						|| (bB && PaysParPixel[I] != PaysParPixel[I + Res]);
+					if (bP) { ++NbPays; } else { ++NbRegion; }
+				}
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed] globe : %d pixels de terre -- frontieres "
+						"%d de PAYS, %d de REGION"),
+					NbTerre, NbPays, NbRegion);
+			}
+		}
+		else if (!bDejaDit)
+		{
+			// L'AUTRE CAUSE, ET ELLE DOIT SE DISTINGUER DE LA PREMIERE.
+			bDejaDit = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] globe : AUCUNE FRONTIERE -- demandees %d, "
+					"decoupage %s"),
+				Settings.bShowBorders ? 1 : 0,
+				Regions == nullptr
+					? TEXT("absent")
+					: (Regions->EstValide() ? TEXT("valide") : TEXT("INVALIDE")));
+		}
+
 		// HORS DE LA BOUCLE PARALLELE : le reticule ecrit dans des pixels que
 		// plusieurs lignes se partagent, et il est bien trop petit pour que le
 		// paralleliser rapporte quoi que ce soit.
@@ -402,7 +559,7 @@ namespace WorldseedGlobe
 	UTexture2D* Render(const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
 		int32 PreviewResolution, const TArray<uint8>* BiomeIndex,
-		const TArray<uint8>* CoverIndex)
+		const TArray<uint8>* CoverIndex, const FWorldseedRegions* Regions)
 	{
 		const int32 Res = FMath::Clamp(PreviewResolution, 32, 2048);
 		if (Geometry.NX < 2 || Heights.Num() != Geometry.CellCount())
@@ -426,7 +583,8 @@ namespace WorldseedGlobe
 
 		FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
 		uint8* Pixels = static_cast<uint8*>(Mip.BulkData.Lock(LOCK_READ_WRITE));
-		FillPixels(Pixels, Res, Heights, Geometry, Settings, BiomeIndex, CoverIndex);
+		FillPixels(Pixels, Res, Heights, Geometry, Settings, BiomeIndex, CoverIndex,
+			Regions);
 		Mip.BulkData.Unlock();
 		Texture->UpdateResource();
 
@@ -435,7 +593,8 @@ namespace WorldseedGlobe
 
 	bool RenderInto(UTexture2D* Texture, const TArray<float>& Heights,
 		const FWorldseedGeometry& Geometry, const FGlobeSettings& Settings,
-		const TArray<uint8>* BiomeIndex, const TArray<uint8>* CoverIndex)
+		const TArray<uint8>* BiomeIndex, const TArray<uint8>* CoverIndex,
+		const FWorldseedRegions* Regions)
 	{
 		if (!Texture || Geometry.NX < 2 || Heights.Num() != Geometry.CellCount())
 		{
@@ -474,7 +633,8 @@ namespace WorldseedGlobe
 		// il doit donc lui survivre, et c'est le rappel de nettoyage qui le
 		// libere une fois le televersement fait.
 		uint8* Pixels = new uint8[Bytes];
-		FillPixels(Pixels, Res, Heights, Geometry, Settings, BiomeIndex, CoverIndex);
+		FillPixels(Pixels, Res, Heights, Geometry, Settings, BiomeIndex, CoverIndex,
+			Regions);
 
 		FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, Res, Res);
 

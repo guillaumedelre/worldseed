@@ -116,6 +116,21 @@ struct WORLDSEED_API FWorldseedRegions
 	 */
 	int32 RegionEn(double XM, double YM) const;
 
+	/**
+	 * La region sous un point donne en UV, ou INDEX_NONE.
+	 *
+	 * POUR LE GLOBE, QUI NE CONNAIT PAS LES METRES. Il projette une sphere et
+	 * travaille en latitude et longitude ; lui faire convertir ses UV en
+	 * metres pour que `RegionEn` les reconvertisse en UV ajouterait deux
+	 * divisions et une occasion de se tromper de convention, pour rien.
+	 *
+	 * ⚠ C'EST LA SEULE IMPLEMENTATION : `RegionEn` appelle celle-ci apres sa
+	 * conversion. Deux copies de la meme lecture divergeraient a la premiere
+	 * retouche, et l'ecart se verrait exactement la ou le globe et la carte
+	 * montrent le meme endroit.
+	 */
+	int32 RegionEnUV(double U, double V) const;
+
 	/** Le pays sous un point du monde, ou INDEX_NONE. */
 	int32 PaysEn(double XM, double YM) const;
 

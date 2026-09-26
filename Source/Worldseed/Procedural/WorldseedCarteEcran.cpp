@@ -388,10 +388,19 @@ bool UWorldseedCarteEcran::Cuire()
 	TArray<uint8> Base;
 	Base.SetNumUninitialized(static_cast<SIZE_T>(TexX) * TexY * 4);
 
+	// LES FRONTIERES SONT SUR LES TROIS VUES -- ce globe, cette carte et la
+	// minimap. Les deux cartes les tiennent de `PeindreFenetre`, partagee ;
+	// le globe a son propre peintre et les trace par le meme mecanisme.
+	P.bFrontieresRegions = true;
+	P.bFrontieresPays = true;
+
+	const FWorldseedRegions* const Reg = T->MondePartage().IsValid()
+		? &T->MondePartage()->Regions : nullptr;
+
 	const double T0 = FPlatformTime::Seconds();
 	WorldseedCarte::PeindreFenetre(Geo, T->MondeAltitudes(),
 		T->MondePartage().IsValid() ? T->MondePartage()->Biomes : FWorldseedBiomeMap(),
-		P, Base.GetData());
+		P, Base.GetData(), Reg);
 
 	// SANS PYRAMIDE, LE LISERE DE COTE SORT POINTILLE des que la carte est
 	// reduite -- mesure a l'image sur la planche de `ProbeCarteEcran`. Le GPU

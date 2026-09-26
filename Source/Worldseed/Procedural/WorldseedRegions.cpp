@@ -452,18 +452,17 @@ namespace
 	}
 }
 
-int32 FWorldseedRegions::RegionEn(double XM, double YM) const
+int32 FWorldseedRegions::RegionEnUV(double U, double V) const
 {
-	if (!EstValide() || LargeurM <= 0.0f || HauteurM <= 0.0f)
+	if (!EstValide())
 	{
 		return INDEX_NONE;
 	}
 
 	// LA LONGITUDE S'ENROULE, LA LATITUDE SE BORNE -- la meme convention que
 	// le drainage et la peinture. Un pole n'a pas de voisin au-dela.
-	double U = XM / LargeurM + 0.5;
 	U -= FMath::FloorToDouble(U);
-	const double V = FMath::Clamp(YM / HauteurM + 0.5, 0.0, 1.0);
+	V = FMath::Clamp(V, 0.0, 1.0);
 
 	// TRONCATURE, JAMAIS ARRONDI : la cellule k couvre [k, k+1[, donc son
 	// centre est en k + 0,5 et c'est `Floor` qui designe le bon centre. Ce
@@ -475,6 +474,15 @@ int32 FWorldseedRegions::RegionEn(double XM, double YM) const
 
 	const int16 R = Id[J * NX + I];
 	return (R >= 0 && Regions.IsValidIndex(R)) ? R : INDEX_NONE;
+}
+
+int32 FWorldseedRegions::RegionEn(double XM, double YM) const
+{
+	if (LargeurM <= 0.0f || HauteurM <= 0.0f)
+	{
+		return INDEX_NONE;
+	}
+	return RegionEnUV(XM / LargeurM + 0.5, YM / HauteurM + 0.5);
 }
 
 int32 FWorldseedRegions::PaysEn(double XM, double YM) const

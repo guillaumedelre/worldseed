@@ -1110,6 +1110,7 @@ void UWorldseedMenuWidget::PollGeneration()
 		CachedSeasonalAmpC = MoveTemp(PendingResult->Climate.SeasonalAmpC);
 		CachedContinentality = MoveTemp(PendingResult->Climate.Continentality);
 		CachedBiomes = MoveTemp(PendingResult->Biomes);
+		CachedRegions = MoveTemp(PendingResult->Regions);
 		CachedLithologyId = MoveTemp(PendingResult->Lithology.Id);
 
 		// COPIES, PAS DEPLACES : `RemplirLieux` les relit trente lignes plus
@@ -1596,6 +1597,23 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	const TArray<uint8>* GlobeCoverPtr =
 		(GlobeCover.Num() == GlobeHeights.Num()) ? &GlobeCover : nullptr;
 
+	// LES FRONTIERES NE DEPENDENT PAS DE LA GRILLE DESSINEE, et c'est ce qui
+	// permet de les tracer sur l'apercu comme sur le monde plein : le
+	// decoupage porte SA PROPRE grille et se lit en UV (`RegionEnUV`), pas en
+	// cellules du heightfield. Reduire les altitudes de 4096 a 1024 ne deplace
+	// donc aucune frontiere -- seul le RELIEF y perd du detail.
+	//
+	// ⚠ CETTE CONDITION A PORTE `!bUsePreview`, ET C'ETAIT UNE FAUTE. Je
+	// croyais l'apercu provisoire -- « une generation rapide a basse
+	// resolution » disait le commentaire -- alors que `BuildPreviewField`
+	// REDUIT le monde FINI, une fois, et de facon permanente : `bUsePreview`
+	// est donc vrai en PERMANENCE des que le monde depasse 1024 de large,
+	// c'est-a-dire toujours. Les frontieres etaient coupees a chaque image, et
+	// rien ne le disait. Trouvees par le COMPTE pose dans `FillPixels`, qui
+	// distingue « la passe ne tourne pas » de « la passe ne trouve rien ».
+	const FWorldseedRegions* const GlobeRegionsPtr =
+		CachedRegions.EstValide() ? &CachedRegions : nullptr;
+
 	WorldseedGlobe::FGlobeSettings GlobeSettings;
 
 	// Des regles on ne tire que les latitudes de reference et la
@@ -1616,6 +1634,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	GlobeSettings.LongitudeOffsetDeg = GlobeLongitudeDeg;
 	GlobeSettings.TiltDeg = GlobeTiltDeg;
 	GlobeSettings.Repere = Repere;
+	GlobeSettings.bShowBorders = true;
 
 	// Premiere fois : on cree la texture. Ensuite on ne fait que reecrire ses
 	// pixels, sinon la rotation fabriquerait une UTexture2D par frame.
@@ -1625,7 +1644,8 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	if (!PreviewTexture)
 	{
 		PreviewTexture = WorldseedGlobe::Render(
-			GlobeHeights, Geometry, GlobeSettings, 512, GlobeBiomesPtr, GlobeCoverPtr);
+			GlobeHeights, Geometry, GlobeSettings, 512, GlobeBiomesPtr, GlobeCoverPtr,
+			GlobeRegionsPtr);
 
 		if (!PreviewTexture)
 		{
@@ -1645,7 +1665,7 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	}
 
 	WorldseedGlobe::RenderInto(PreviewTexture, GlobeHeights,
-		Geometry, GlobeSettings, GlobeBiomesPtr, GlobeCoverPtr);
+		Geometry, GlobeSettings, GlobeBiomesPtr, GlobeCoverPtr, GlobeRegionsPtr);
 }
 
 void UWorldseedMenuWidget::BuildPreviewField()

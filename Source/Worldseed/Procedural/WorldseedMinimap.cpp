@@ -500,10 +500,19 @@ void UWorldseedMinimap::Rafraichir()
 			}
 			P.FondM = FondDuMondeM;
 
+			// LES FRONTIERES SUIVENT LA FENETRE GLISSANTE, donc elles se
+			// redessinent avec le fond et ne coutent rien de plus qu'une
+			// seconde passe sur un tampon de 512 pixels de cote.
+			P.bFrontieresRegions = true;
+			P.bFrontieresPays = true;
+
+			const FWorldseedRegions* const Reg = T->MondePartage().IsValid()
+				? &T->MondePartage()->Regions : nullptr;
+
 			uint8* const Pixels = new uint8[Octets];
 			WorldseedCarte::PeindreFenetre(T->MondeGeometrie(), T->MondeAltitudes(),
 				T->MondePartage().IsValid() ? T->MondePartage()->Biomes
-					: FWorldseedBiomeMap(), P, Pixels);
+					: FWorldseedBiomeMap(), P, Pixels, Reg);
 
 			Televerser(TextureFond, Pixels, Cote);
 

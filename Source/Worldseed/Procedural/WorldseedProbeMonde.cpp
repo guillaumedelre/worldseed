@@ -1302,14 +1302,63 @@ FString UWorldseedProbeLibrary::ProbeCarteEcran(int32 Seed, float HeightMeters,
 			static_cast<double>(Geo.WidthM()) * 0.5, TexX, TexY);
 	Cuisson.bDisque = false;
 	Cuisson.FondM = WorldseedCarte::FondDuMonde(World.ElevationM);
+	Cuisson.bFrontieresRegions = true;
+	Cuisson.bFrontieresPays = true;
 
 	TArray<uint8> Cuit;
 	Cuit.SetNumUninitialized(static_cast<SIZE_T>(TexX) * TexY * 4);
 
 	const double T0 = FPlatformTime::Seconds();
 	WorldseedCarte::PeindreFenetre(Geo, World.ElevationM, World.Biomes,
-		Cuisson, Cuit.GetData());
+		Cuisson, Cuit.GetData(), &World.Regions);
 	const double MsCuisson = (FPlatformTime::Seconds() - T0) * 1000.0;
+
+	// --- COMBIEN DE PIXELS CHAQUE NIVEAU TRACE-T-IL ? ------------------------
+	//
+	// ON NE PEUT PAS LE LIRE SUR L'IMAGE FINALE : les deux traits sont
+	// presque noirs et MELANGES au fond, donc aucune couleur ne les identifie.
+	// Le premier jet les distinguait par la teinte et l'un des deux etait
+	// invisible sur du sable -- defaut trouve a l'oeil, qu'aucun compte ne
+	// pouvait dire.
+	//
+	// DEUX CUISSONS DE PLUS, ET LA DIFFERENCE DONNE LE COMPTE. Cinquante
+	// millisecondes chacune, une fois par sonde. C'est la regle du depot : le
+	// controle qui tranche est le COMPTE, pas l'impression -- et il distingue
+	// « ce niveau ne trace rien » de « ce niveau trace et ne se voit pas »,
+	// qui n'appellent pas du tout le meme remede.
+	int32 PixelsPays = 0;
+	int32 PixelsRegions = 0;
+	{
+		auto Cuire = [&](bool bRegions, bool bPays, TArray<uint8>& Out)
+		{
+			WorldseedCarte::FParamsFenetre Q = Cuisson;
+			Q.bFrontieresRegions = bRegions;
+			Q.bFrontieresPays = bPays;
+			Out.SetNumUninitialized(static_cast<SIZE_T>(TexX) * TexY * 4);
+			WorldseedCarte::PeindreFenetre(Geo, World.ElevationM, World.Biomes,
+				Q, Out.GetData(), &World.Regions);
+		};
+
+		auto Differents = [TexX, TexY](const TArray<uint8>& A,
+			const TArray<uint8>& B) -> int32
+		{
+			int32 N = 0;
+			const SIZE_T Total = static_cast<SIZE_T>(TexX) * TexY;
+			for (SIZE_T I = 0; I < Total; ++I)
+			{
+				const uint8* const PA = A.GetData() + I * 4;
+				const uint8* const PB = B.GetData() + I * 4;
+				N += (PA[0] != PB[0] || PA[1] != PB[1] || PA[2] != PB[2]) ? 1 : 0;
+			}
+			return N;
+		};
+
+		TArray<uint8> Nue, PaysSeuls;
+		Cuire(false, false, Nue);
+		Cuire(false, true, PaysSeuls);
+		PixelsPays = Differents(Nue, PaysSeuls);
+		PixelsRegions = Differents(PaysSeuls, Cuit);
+	}
 
 	auto LireCuit = [&Cuit, TexX](int32 X, int32 Y) -> FColor
 	{
@@ -1451,6 +1500,12 @@ FString UWorldseedProbeLibrary::ProbeCarteEcran(int32 Seed, float HeightMeters,
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed]   vignettes : 1 prelevement (sans mips), ")
 		TEXT("2 moyenne (avec mips), 3 un pixel par cellule"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed]   frontieres : %d pixels de PAYS, %d de REGION ")
+		TEXT("(%d regions, %d pays) -- zero d'un cote dit que le niveau ne ")
+		TEXT("trace RIEN, ce qui n'est pas la meme chose qu'un trait invisible"),
+		PixelsPays, PixelsRegions,
+		World.Regions.Regions.Num(), World.Regions.Pays.Num());
 
 	return Bilan;
 }

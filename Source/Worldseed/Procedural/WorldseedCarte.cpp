@@ -272,6 +272,30 @@ namespace
 	const FColor CouleurLisere(18, 18, 24, 255);
 
 	/**
+	 * LES DEUX TRAITS DE FRONTIERE SE DISTINGUENT PAR L'OPACITE, PAS PAR LA
+	 * TEINTE -- et le premier jet faisait l'inverse, ce qui ne marchait pas.
+	 *
+	 * Il donnait au trait de region un gris CLAIR (214, 206, 196) a 45 % : sur
+	 * une foret sombre il se lisait, sur du sable a (230, 210, 150) il donnait
+	 * (223, 208, 171), c'est-a-dire RIEN. Mesure a l'image, agrandissement
+	 * quatre fois : aucune frontiere de region visible la ou le trait de pays
+	 * ressortait parfaitement. **Une couleur de trait doit se lire sur TOUS
+	 * les fonds de la carte, et celle-ci en porte vingt-et-un.**
+	 *
+	 * Les deux sont donc presque noirs, comme le trait de cote, et c'est
+	 * l'OPACITE qui porte la hierarchie -- exactement ce que font les cartes
+	 * reelles, ou une limite d'Etat est grasse et une limite de province
+	 * legere. Un fond sombre garde alors son trait, parce qu'un noir a 40 %
+	 * sur du vert fonce reste plus fonce que son voisin.
+	 *
+	 * ⚠ AUCUNE TEINTE FRANCHE ICI. Un rouge ou un bleu de frontiere se
+	 * confondrait avec la couleur d'un biome ; un presque-noir ne ressemble a
+	 * aucun terrain de ce monde.
+	 */
+	const FColor CouleurFrontierePays(16, 14, 20, 255);
+	const FColor CouleurFrontiereRegion(34, 30, 38, 255);
+
+	/**
 	 * LUMIERE RASANTE DU NORD-OUEST -- l'eclairage conventionnel des cartes en
 	 * relief, celui qui fait ressortir les vallees. Meme direction que
 	 * l'apercu de `WorldseedNoise`, dans le repere du monde ou +X est l'est et
@@ -305,7 +329,8 @@ namespace
 
 void PeindreFenetre(const FWorldseedGeometry& Geo,
 	const TArray<float>& ElevationM, const FWorldseedBiomeMap& Biomes,
-	const FParamsFenetre& P, uint8* PixelsBGRA)
+	const FParamsFenetre& P, uint8* PixelsBGRA,
+	const FWorldseedRegions* Regions)
 {
 	WORLDSEED_TRACE(Carte);
 
@@ -342,6 +367,33 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 	// re-echantillonne pas. Elle sert aussi de marqueur de hors-monde.
 	TArray<float> Altitudes;
 	Altitudes.SetNumUninitialized(ResX * ResY);
+
+	// LES REGIONS SE RETIENNENT PAR PIXEL, EXACTEMENT COMME L'ALTITUDE, et
+	// pour la meme raison : la passe des frontieres compare des VOISINS, donc
+	// elle doit lire un tableau qu'elle n'ecrit pas. Marquer en place
+	// propagerait le trait de proche en proche.
+	//
+	// ⚠ ON PRELEVE L'IDENTIFIANT AU POINT, ON NE L'AGREGE PAS. Un identifiant
+	// de region est une CATEGORIE, comme un biome : la moyenne de deux regions
+	// n'est pas une region intermediaire, c'est une region qui n'existe nulle
+	// part. Et contrairement au biome, l'agregation par vote ne conviendrait
+	// pas davantage -- elle DEPLACERAIT la frontiere d'un demi-bloc, ce qui se
+	// verrait comme un trait qui ne suit plus la crete.
+	//
+	// La question ne se pose d'ailleurs pas au cadrage reel : la grille des
+	// regions est un sous-echantillonnage de celle du monde (facteur 4), donc
+	// la carte cuite a la resolution de la grille SUR-echantillonne les
+	// regions d'un facteur quatre. Le trait sort net.
+	const bool bFrontieres = (Regions != nullptr) && Regions->EstValide()
+		&& (P.bFrontieresRegions || P.bFrontieresPays);
+
+	TArray<int32> RegionParPixel;
+	TArray<int32> PaysParPixel;
+	if (bFrontieres)
+	{
+		RegionParPixel.Init(INDEX_NONE, ResX * ResY);
+		PaysParPixel.Init(INDEX_NONE, ResX * ResY);
+	}
 
 	// Le pas d'ombrage, borne par le pixel : voir `PasOmbrageMetres`.
 	const double PasOmbrageM = PasOmbrageMetres(P, Geo);
@@ -436,6 +488,14 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 			}
 
 			Altitudes[Index] = Z;
+
+			if (bFrontieres)
+			{
+				const int32 R = Regions->RegionEn(Xm, Ym);
+				RegionParPixel[Index] = R;
+				PaysParPixel[Index] = Regions->Regions.IsValidIndex(R)
+					? Regions->Regions[R].Pays : INDEX_NONE;
+			}
 
 			// SANS BIOMES, LA TERRE EST GRISE ET LA MER GARDE SON DEGRADE.
 			// Passer l'identifiant 0 rendrait la couleur du PREMIER biome du
@@ -541,6 +601,107 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 					// L'alpha du disque est conserve : un lisere opaque
 					// depasserait du fondu de bord.
 				}
+			}
+		});
+	}
+
+	// ----------------------------------------------------- les frontieres
+	//
+	// APRES LE LISERE DE COTE, ET C'EST UN ORDRE, pas un hasard : une
+	// frontiere qui atteint la mer doit se voir PAR-DESSUS le trait de cote,
+	// sans quoi elle s'arreterait a un pixel du rivage et paraitrait flotter.
+	//
+	// ELLE SE TRACE SUR LE VOISIN DROIT ET BAS SEULEMENT, la ou le lisere en
+	// regarde quatre. Une frontiere separe DEUX regions : marquer les quatre
+	// voisins la dessinerait des deux cotes, donc en trait double -- et deux
+	// pixels pour une limite qui n'en merite qu'un, sur une carte ou chaque
+	// pixel compte.
+	if (bFrontieres)
+	{
+		const bool bEnroule = 2.0 * P.DemiPorteeXm
+			>= static_cast<double>(Geo.WidthM()) - P.MetresParPixelX();
+
+		ParallelFor(ResY, [&](int32 PY)
+		{
+			for (int32 PX = 0; PX < ResX; ++PX)
+			{
+				const int32 Index = PY * ResX + PX;
+				const int32 R = RegionParPixel[Index];
+				if (R == INDEX_NONE)
+				{
+					continue;
+				}
+
+				// LE BORD DROIT D'UNE FENETRE PARTIELLE N'A PAS DE VOISIN, et
+				// le relier a la colonne zero tracerait une frontiere entre
+				// deux endroits qui ne se touchent pas -- exactement ce que le
+				// lisere de cote evite deja.
+				const bool bADroite = bEnroule || (PX + 1 < ResX);
+				const int32 XD = bEnroule ? (PX + 1) % ResX : PX + 1;
+				const bool bEnBas = (PY + 1 < ResY);
+
+				bool bPays = false;
+				bool bRegion = false;
+
+				// ⚠ ON COMPARE DEUX PIXELS, DONC ON PASSE DEUX INDEX DE PIXEL.
+				// Le premier jet passait `RegionParPixel[voisin]` -- un
+				// IDENTIFIANT DE REGION -- puis s'en servait pour indexer
+				// `PaysParPixel`, qui est indexe par PIXEL. Avec 47 regions il
+				// lisait donc les 47 premiers pixels de la carte, tous en mer :
+				// le pays du voisin valait toujours INDEX_NONE, `bPays` passait
+				// vrai partout, et le niveau REGION ne tracait plus rien.
+				//
+				// AUCUN PLANTAGE, AUCUNE ERREUR -- 47 reste un index valide du
+				// tableau. C'est le COMPTE qui l'a dit, en une mesure : « 17139
+				// pixels de PAYS, 0 de REGION ». A l'oeil, l'absence de trait
+				// de region s'expliquait tres bien par une couleur trop claire,
+				// et j'avais commence a corriger la couleur.
+				auto Comparer = [&](int32 IndexVoisin)
+				{
+					const int32 Autre = RegionParPixel[IndexVoisin];
+
+					// UN VOISIN EN MER N'OUVRE PAS DE FRONTIERE. Le trait de
+					// cote dit deja ou la terre s'arrete ; doubler les deux
+					// ourlerait chaque ile d'un lisere puis d'une frontiere.
+					if (Autre == INDEX_NONE || Autre == R)
+					{
+						return;
+					}
+					bRegion = true;
+					bPays |= (PaysParPixel[Index] != PaysParPixel[IndexVoisin]);
+				};
+
+				if (bADroite) { Comparer(PY * ResX + XD); }
+				if (bEnBas) { Comparer((PY + 1) * ResX + PX); }
+
+				// LE PAYS L'EMPORTE, et il le faut : toute frontiere de pays
+				// est aussi une frontiere de region -- un pays est un agregat
+				// de regions entieres -- donc sans priorite le trait fin
+				// recouvrirait le trait appuye selon l'ordre de parcours.
+				const FColor* Trait = nullptr;
+				if (bPays && P.bFrontieresPays) { Trait = &CouleurFrontierePays; }
+				else if (bRegion && P.bFrontieresRegions) { Trait = &CouleurFrontiereRegion; }
+				if (!Trait)
+				{
+					continue;
+				}
+
+				uint8* const Pixel = PixelsBGRA + Index * 4;
+				// UN MELANGE, PAS UN APLAT. Une frontiere est une convention
+				// de lecture posee SUR un terrain, pas un mur : l'opacifier
+				// effacerait le relief et le biome qu'elle est censee
+				// delimiter. Le trait de pays pese plus lourd que celui de
+				// region, ce qui EST la hierarchie qu'on veut lire.
+				const float A = bPays ? 0.90f : 0.38f;
+				auto Melanger = [A](uint8 Fond, uint8 Trace) -> uint8
+				{
+					return static_cast<uint8>(FMath::Clamp(
+						Fond * (1.0f - A) + Trace * A, 0.0f, 255.0f));
+				};
+				Pixel[0] = Melanger(Pixel[0], Trait->B);
+				Pixel[1] = Melanger(Pixel[1], Trait->G);
+				Pixel[2] = Melanger(Pixel[2], Trait->R);
+				// L'alpha du disque est conserve, comme pour le lisere.
 			}
 		});
 	}
