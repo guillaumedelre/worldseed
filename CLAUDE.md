@@ -9305,3 +9305,56 @@ monde est de toute facon cachee.
   reste interdit -- employer l'editeur de fichiers. Un heredoc bash casse
   aussi sur les apostrophes : pour ajouter un long texte a un fichier,
   l'ecrire ailleurs puis le concatener.
+
+### L'ecran d'entree devient un menu de jeu : deux pieges (26 septembre 2026)
+
+Demande du proprietaire : des icones a la place du de et des autres actions, et
+un agencement qui ressemble moins a un tableau de bord. Le chantier lui-meme est
+dans le commit ; deux pieges en sortent, et ils resserviront.
+
+**UN GLYPHE D'ICONE N'A PAS LA TAILLE D'UNE LETTRE DE MEME CORPS.** Material
+Symbols occupe **tout son cadratin** quand une fonte de texte n'en remplit
+guere que la hauteur d'x. Les dix-huit points qui convenaient au caractere
+Unicode « ⚄ » donnent donc **vingt-quatre pixels de dessin dans un bouton qui
+en fait trente**, marges deduites : le de debordait de son fond. Regle retenue
+-- le glyphe se pose a **trois points de plus que le mot** qu'il accompagne, et
+les boutons a icone seule emploient un corps de **treize**. Cela ne se voit
+qu'au GROSSISSEMENT : a l'echelle de la capture, un glyphe qui deborde de deux
+pixels passe pour une bordure epaisse.
+
+**`GameUserSettings.ini` SURVIT ET PRIME SUR LA LIGNE DE COMMANDE.** La
+premiere capture de la session est sortie en **5120 x 1369 au lieu de
+1600 x 900**, et a qualite degradee -- le fichier portait encore
+`sg.ResolutionQuality=0` d'un vieux balayage ET `FullscreenMode=1`
+(plein ecran sans bordure, donc toute la surface des deux moniteurs). **Ni
+`-windowed`, ni `-resx=`, ni `-resy=` n'y changent rien.** Ce registre avait
+deja la regle -- « un balayage doit remettre a zero l'etat persistant entre
+chaque passe » -- mais elle etait ecrite pour les mesures de performance ; elle
+vaut pour **toute capture**. Supprimer
+`Saved/Config/WindowsEditor/GameUserSettings.ini` avant chaque lancement.
+
+**ET LE SIGNE QUI TRAHIT UNE FENETRE DE TRAVERS EST LA TAILLE RENDUE PAR LA
+CAPTURE**, que le script imprime : `1600 x 900` attendu, autre chose = le
+fichier de reglages a parle. Juger une mise en page a un rapport d'aspect de
+3,7:1 quand le jeu tourne en 16:9 ne prouve rien.
+
+**UNE BORDURE POSEE SUR UN WIDGET QUI REPOND AU CLIC NE LE PROTEGE PAS.** Slate
+ne fait consommer l'evenement qu'aux widgets qui le GERENT : un `UBorder` est
+bien touche par le test de survol, puis laisse l'evenement remonter. Un panneau
+flottant sur le globe ne barre donc RIEN -- appuyer sur son fond posait un
+repere sur la terre qu'il cache, et un glisser parti de la faisait tourner le
+monde. Il faut tester explicitement la geometrie des panneaux
+(`FGeometry::IsUnderLocation`, qui prend la position ABSOLUE que portent les
+evenements de souris). La geometrie en cache d'un widget `Collapsed` est vide,
+donc un panneau replie ne barre rien sans qu'on ait a tester sa visibilite.
+
+*Corollaire* : un relachement doit exiger qu'un appui ait ete ACCEPTE. Sans
+cela, le « up » qui suit une pression refusee trouve le compteur de glissement
+a la valeur du geste PRECEDENT -- zero -- et conclut au clic.
+
+**VERIFIE EN JEU, AVEC LE TEMOIN QUI REND LA MESURE LISIBLE** : clics injectes,
+globe a zoom 4 (c'est la seulement que les panneaux recouvrent vraiment le
+globe), clic sur le globe -> reticule a 1,6 px, clic sur le bandeau -> aucun
+reticule, et le repere precedent intact au dixieme de pixel. Sans le premier,
+« aucun reticule » ne se distinguerait pas d'un clic que la fenetre n'aurait
+pas recu.
