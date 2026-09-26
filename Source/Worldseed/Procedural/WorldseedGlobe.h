@@ -90,6 +90,27 @@ namespace WorldseedGlobe
 		 * metres par metre. Ce reglage n'existe que pour exagerer sciemment.
 		 */
 		float ReliefStrength = 1.0f;
+
+		/**
+		 * Altitude maximale du monde, en metres. Zero = « calcule-la ».
+		 *
+		 * ELLE SERT A NORMALISER LA NEIGE, et elle NE CHANGE JAMAIS pour un
+		 * monde donne : apres erosion le sommet n'est plus la valeur
+		 * theorique, mais il est fige des la generation finie.
+		 *
+		 * ⚠ LA CALCULER ICI COUTE UN PARCOURS COMPLET DU RELIEF PAR IMAGE.
+		 * Sur la grille du jeu cela fait 8,4 millions de flottants -- 33 Mo --
+		 * relus soixante fois par seconde pour retrouver le meme nombre.
+		 * Mesure : 1,14 ms de redessin sur le relief reduit contre 5,10 sur le
+		 * relief plein, soit QUATRE MILLISECONDES de surcout qui ne dependent
+		 * pas du nombre de pixels dessines -- la signature d'un travail par
+		 * CELLULE dans une passe qui devrait etre par PIXEL.
+		 *
+		 * C'est exactement le reproche que `WorldseedGlobeBake.h` adresse a
+		 * l'ancien globe : refaire a l'identique, trente fois par seconde, un
+		 * calcul dont le resultat ne change jamais.
+		 */
+		float MaxLandM = 0.0f;
 	};
 
 	// ------------------------------------------------- la projection, et son inverse

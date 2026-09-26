@@ -335,6 +335,18 @@ private:
 	/** Construit PreviewHeights depuis CachedHeights. */
 	void BuildPreviewField();
 
+	/**
+	 * Altitude maximale du monde, relevee UNE FOIS par generation.
+	 *
+	 * Le peintre du globe s'en sert pour normaliser la neige. Sans elle il la
+	 * recalcule a chaque image, donc relit tout le relief soixante fois par
+	 * seconde pour retrouver le meme nombre -- quatre millisecondes mesurees
+	 * sur la grille du jeu. Elle est relevee sur le monde PLEIN et non sur sa
+	 * reduction : c'est le monde qu'elle decrit, et `Downsample` fait une
+	 * MOYENNE, donc le sommet du relief reduit est plus bas que le vrai.
+	 */
+	float GlobeMaxLandM = 0.0f;
+
 	/** Climat du monde en cache : il pilote les couleurs du terrain. */
 	TArray<float> CachedTempC;
 	TArray<float> CachedPrecipMm;

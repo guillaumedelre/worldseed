@@ -201,10 +201,19 @@ namespace WorldseedGlobe
 
 		// Altitude maximale reelle : apres erosion le sommet n'est plus la
 		// valeur theorique, et normaliser dessus ecraserait tout le relief.
-		float MaxLand = KINDA_SMALL_NUMBER;
-		for (const float H : Heights)
+		//
+		// ELLE VIENT DE L'APPELANT QUAND IL LA CONNAIT. La recalculer ici
+		// relit tout le relief a chaque image pour retrouver le meme nombre :
+		// quatre millisecondes par redessin sur la grille du jeu, soit trois
+		// fois le cout du dessin lui-meme. Voir `FGlobeSettings::MaxLandM`.
+		float MaxLand = Settings.MaxLandM;
+		if (MaxLand <= 0.0f)
 		{
-			MaxLand = FMath::Max(MaxLand, H);
+			MaxLand = KINDA_SMALL_NUMBER;
+			for (const float H : Heights)
+			{
+				MaxLand = FMath::Max(MaxLand, H);
+			}
 		}
 		const float SnowScale = FMath::Max(Settings.SnowStartM, MaxLand * 0.75f);
 

@@ -1636,15 +1636,38 @@ void UWorldseedMenuWidget::RedrawGlobe()
 	GlobeSettings.Repere = Repere;
 	GlobeSettings.bShowBorders = true;
 
+	// Zero quand le monde n'est pas encore la : le peintre le calcule alors
+	// lui-meme, et c'est le bon comportement -- une donnee absente doit
+	// rester sans effet, jamais fausser la teinte.
+	GlobeSettings.MaxLandM = GlobeMaxLandM;
+
 	// Premiere fois : on cree la texture. Ensuite on ne fait que reecrire ses
 	// pixels, sinon la rotation fabriquerait une UTexture2D par frame.
 	//
-	// CE CHEMIN EST DESORMAIS UN REPLI : il ne sert que si le materiau du globe
-	// est introuvable. Voir BakeGlobe.
+	// ⚠ CE COMMENTAIRE A DIT « ce chemin est desormais un repli, il ne sert
+	// que si le materiau est introuvable ». C'EST FAUX, et le journal le dit
+	// a chaque partie : « rendu par le processeur ». La voie graphique est
+	// derriere `-WorldseedGlobeGPU` et n'est PAS armee par defaut -- le
+	// lance-de-rayon est le chemin NOMINAL, retenu le 20 septembre parce
+	// qu'il rendait nettement mieux pour 1,4 % d'un budget de trame.
+	//
+	// `-WorldseedGlobeRes=` change la resolution de la texture. Le cout du
+	// lance-de-rayon est en Res au carre et ne depend PAS de l'etendue
+	// couverte : chaque pixel fait un travail constant. C'est ce que cette
+	// surcharge sert a chiffrer.
 	if (!PreviewTexture)
 	{
+		int32 Res = 512;
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedGlobeRes="), Res);
+		Res = FMath::Clamp(Res, 128, 4096);
+		if (Res != 512)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] globe : texture %dx%d (defaut 512)"), Res, Res);
+		}
+
 		PreviewTexture = WorldseedGlobe::Render(
-			GlobeHeights, Geometry, GlobeSettings, 512, GlobeBiomesPtr, GlobeCoverPtr,
+			GlobeHeights, Geometry, GlobeSettings, Res, GlobeBiomesPtr, GlobeCoverPtr,
 			GlobeRegionsPtr);
 
 		if (!PreviewTexture)
@@ -1672,9 +1695,33 @@ void UWorldseedMenuWidget::BuildPreviewField()
 {
 	PreviewHeights.Reset();
 	PreviewGeometry = FWorldseedGeometry();
+	GlobeMaxLandM = 0.0f;
 
 	if (WorldGeometry.NX < 2 || CachedHeights.Num() != WorldGeometry.CellCount())
 	{
+		return;
+	}
+
+	// LE SOMMET SE RELEVE ICI, UNE FOIS, SUR LE MONDE PLEIN. Le peintre du
+	// globe le refaisait a chaque image faute de le recevoir. Il est pris
+	// AVANT toute reduction : `Downsample` moyenne, donc le sommet du relief
+	// reduit est plus bas que celui du monde.
+	for (const float H : CachedHeights)
+	{
+		GlobeMaxLandM = FMath::Max(GlobeMaxLandM, H);
+	}
+
+	// `-WorldseedGlobePlein` : ne rien reduire, et laisser le globe lire le
+	// relief a sa resolution vraie. C'est la moitie « avant » de l'A/B qui
+	// chiffre ce que la reduction fait GAGNER -- et, depuis l'autre bout, ce
+	// que la nettete au zoom couterait. Une surcharge plutot qu'une edition
+	// du fichier de regles : son empreinte regenererait le monde entre les
+	// deux moities, et ce ne serait plus le meme monde.
+	if (FParse::Param(FCommandLine::Get(), TEXT("WorldseedGlobePlein")))
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] globe : relief PLEIN (%dx%d), aucune reduction"),
+			WorldGeometry.NX, WorldGeometry.NY);
 		return;
 	}
 
