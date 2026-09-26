@@ -2940,8 +2940,16 @@ ce qui suit : c'est l'etat MESURE au moment du retrait, pas un souvenir.
   ROUTAGE, et l'erosion s'en sert pour son incision par puissance de courant.
   Sans lui, plus de vallees. `FWorldseedFlow::LakeDepthM` porte un nom trompeur :
   c'est la hauteur comblee, pas une nappe.
-- **`WorldseedPolyline` et `WorldseedLabel`**, briques geometriques generiques
-  gardees sans appelant, en vue d'une reprise eventuelle.
+- ~~**`WorldseedPolyline` et `WorldseedLabel`**, briques geometriques generiques
+  gardees sans appelant, en vue d'une reprise eventuelle.~~ **PERIME : les deux
+  ont ete SUPPRIMES le 23 septembre 2026** (798 lignes, cinq jours sans
+  appelant), et cette entree est restee sous un titre qui dit « il ne faut pas
+  les supprimer ». Elle a ete rapportee telle quelle a une exploration du
+  26 septembre, qui a conclu que la brique d'etiquetage existait encore.
+  `WorldseedLabel::Components` -- composantes connexes a quatre voisins,
+  longitude enroulee, pile explicite -- se recupere par
+  `git show ba1fc2a^:Source/Worldseed/Procedural/WorldseedLabel.h`.
+  **Une note qui survit a ce qu'elle decrit coute plus cher que pas de note.**
 - **Les identifiants positionnels.** `EWorldseedCover` (0 None, 1 Ocean, 2 Lake,
   3 River) et les ids de biome (0 ocean, 1 lac, 2 riviere, 18 marais) ne sont PAS
   renumerotes : ils servent de cles a `surfaces.recipes` et aux tables en dur de
@@ -8957,3 +8965,192 @@ vigueur est `orasot-pur` : les 217 maillages viennent tous de ce pack.
 inchange -- 11,9 % de pixels differents pour un ecart moyen de 6,3 sur 765,
 **tres en deca des 82 %** que ce depot mesure entre deux lancements REPUTES
 IDENTIQUES sous eclairage.
+
+### Un conteneur global a initialisation dynamique fait planter le MOTEUR (26 septembre 2026)
+
+Portage du generateur de noms. Le module compile du premier coup, et l'editeur
+en ligne de commande meurt en `EXCEPTION_ACCESS_VIOLATION` dans CoreUObject --
+adresse `0x000004de00000040`, pile entierement en `UnknownFunction`, **juste
+apres `LogDeviceProfileManager` et bien avant qu'une seule ligne de Worldseed
+ne tourne**. Rien dans le journal ne designe le fichier fautif.
+
+**LA CAUSE : TROIS CONTENEURS POSES A PORTEE DE FICHIER.**
+
+    const TArray<FString> OrdreVoulu = { ... };      // <- dynamique
+    TMap<FString, FWorldseedUnivers> Catalogue;      // <- dynamique
+    TArray<FString> OrdreCharge;                     // <- dynamique
+
+Ils se construisent au chargement de la DLL -- donc AVANT que le moteur soit
+pret -- et se detruisent APRES le depart de son allocateur. Le remede est une
+**statique LOCALE rendue par un accesseur** : elle se construit a son premier
+appel, le moteur tourne alors, et la construction est thread-safe depuis C++11.
+Un `bool` ou un `const TCHAR* const` restent legitimes a portee de fichier :
+ils n'ont aucune initialisation dynamique.
+
+**LE TEMOIN, ET IL FALLAIT LE MONTER AVANT DE CHERCHER.** La pile ne nommait
+aucun de nos fichiers, donc lire le code n'aurait rien donne. Sortir les trois
+fichiers neufs du dossier et recompiler coute trente secondes et tranche :
+
+    avec les fichiers neufs   EXCEPTION_ACCESS_VIOLATION au demarrage
+    sans                      **** TEST COMPLETE. EXIT CODE: 0 ****
+
+Le defaut etait a nous, et il n'etait dans aucune des lignes qu'on aurait
+relues -- il etait dans la FACON de declarer trois variables.
+
+**ET UN SEUIL DE TEST POSE A VUE ECHOUE SUR DES DONNEES SAINES.** L'oracle des
+cles exigeait « plus de 100 motifs balayes » ; le fichier en porte **85**. Il a
+donc crie sur des tables parfaitement coherentes -- aucune cle manquante sur
+les onze univers -- et c'est le chiffre attendu qui etait invente, pas la
+mesure. Les seuils sont desormais cales sur le releve (85 motifs, 154 cles) avec
+la moitie de marge, et le compte part au journal par `AddInfo` plutot que de
+n'apparaitre qu'en cas d'echec.
+
+**`AddInfo` SORT BIEN AU JOURNAL** meme quand le test passe, entre `BeginEvents`
+et `EndEvents` -- c'est par la que passent les echantillons de noms, et c'est ce
+qui permet de REGARDER une forme qu'aucun oracle ne sait juger. Trois choses
+etablies a l'oeil et par rien d'autre : l'accord en genre (« Torvald fils de
+Hakon » contre « Ragnhild fille de Sigurd »), l'elision (« de Urthruk » rendu
+« les Terres brulees d'Urthruk »), et le fait qu'aucun `{` ni `~` ne survit.
+
+**PIEGE D'OUTILLAGE** : `-ExecCmds="<commande>;Quit"` SANS `Automation` lance
+l'editeur COMPLET, qui charge la carte par defaut -- plusieurs minutes, et la
+commande ne sort jamais dans le delai. Pour faire imprimer quelque chose vite,
+passer par un test d'automation (`-nullrhi`, trois secondes) ; la commande
+console, elle, sert en jeu.
+
+### Les regions et les pays : quatre seuils, et trois etaient faux (26 septembre 2026)
+
+Le monde se decoupe desormais en REGIONS geographiques groupees en PAYS,
+nommees, mises en cache. Mesure sur le monde de reference (graine 1337,
+64 x 32 km, 593,3 km2 de terres) : **47 regions, 8 pays**, aires de 6,3 a
+32,7 km2, mediane 12,5 ; partition parfaite -- 0 terre sans region, 0 mer
+avec, 0 identifiant hors bornes -- et 55 noms distincts sans un doublon.
+
+**LE DECOUPAGE EST GEOGRAPHIQUE, ET C'EST TOUT SON OBJET.** Le Voronoi des
+plaques dessine deja les continents ; il ne dit rien de ce qui fait qu'un pays
+tient ensemble. Ce qui le dit est le BASSIN VERSANT -- une vallee dont toutes
+les eaux se rejoignent est une unite humaine avant d'etre hydrologique : les
+routes y suivent les rivieres, les villes s'y posent aux confluences, et les
+cretes font les frontieres.
+
+**ET C'EST LA SEULE GRANDEUR DE CETTE CHAINE QUI NE SOIT PAS POSITIONNELLE.**
+Tout le reste -- roche, biome, vegetation, cavites, mesas -- se recalcule
+cellule par cellule sans rien savoir des voisines, et c'est cet invariant qui
+permet de tout rejouer. Un bassin versant ne le peut pas : savoir ou s'ecoule
+une cellule demande de suivre la pente jusqu'a la mer. **Sa mise en cache
+n'est donc pas une commodite mais une NECESSITE** -- l'oublier ne couterait
+pas du temps, comme pour les cavites ou les sites, il couterait les
+frontieres.
+
+#### Trois seuils poses a l'intuition, trois fois faux
+
+1. **`littoralPart` a 0,45 -- « une cellule sur deux borde l'eau ».** Il n'a
+   JAMAIS mordu : zero region littorale sur quarante-sept. La part mesuree va
+   de 0,005 a 0,161, mediane 0,051. La raison est d'echelle -- une region de
+   12 km2 sur une maille de 62 m compte des milliers de cellules pour quelques
+   centaines de rivage. Recale a **0,09** : cinq regions littorales.
+   **Ce depot a EXACTEMENT la meme note pour la pente** (« un plafond a 25
+   degres ne gardait que 36 % des terres sur un monde dont la pente mediane
+   vaut 30,6 ») et pour le seuil des diaclases (« un seuil n'est pas une
+   part »). Troisieme fois. La sonde rend desormais la distribution, pour que
+   le prochain calage ne se fasse pas a l'aveugle.
+2. **Les ilots faisaient region.** L'agglomeration absorbe une miette dans son
+   voisin de plus longue frontiere -- mais une ile n'a AUCUN voisin terrestre,
+   donc aucune frontiere par ou l'absorber. Mesure avant correction, sur un
+   banc de 16 x 8 km : **16 regions dont la MEDIANE d'aire valait 0,0 km2** --
+   une cellule -- et **14 pays pour 16 regions**, chaque ilot formant le sien.
+   La partition etait pourtant parfaite. Un oracle de partition ne voit pas
+   cela ; un QUANTILE le montre d'un coup. Corrige par un rattachement par
+   PROXIMITE, ce qui est aussi la geographie reelle des archipels : 3 regions
+   de 10,8 a 15,3 km2, un pays.
+3. **La coupe en hautes et basses terres casse la connexite.** Elle se fait a
+   un SEUIL D'ALTITUDE, et rien n'assure que les cellules au-dessus se
+   touchent : deux sommets separes par un col sous la mediane donnent une
+   « region » en deux morceaux disjoints, portant UN nom pour deux endroits
+   sans rapport. Aucune erreur, aucune mesure de travers -- seulement une
+   frontiere qui saute par-dessus une vallee. Trouve en RELISANT la conception
+   avant de tester, pas par un test. D'ou une passe de composantes connexes
+   suivie d'une seconde agglomeration.
+
+#### Une langue par PAYS, jamais par region
+
+Le premier jet donnait sa base a chaque region d'apres son propre caractere.
+Le resultat aurait ete une bouillie : deux vallees voisines d'un meme royaume,
+l'une un peu plus haute que l'autre, l'une nommee en nain et l'autre en
+francais. **Une frontiere politique separe des langues ; un col n'en separe
+pas.** C'est donc la region la plus ETENDUE du pays qui donne le ton, et
+toutes les autres la suivent -- verifie a l'oeil : le pays celtique
+*Abermurodia* porte Aweryles, Erynoldynon, Llantobron, Trerynolloch.
+
+#### UNE SUBSTITUTION QUI NE MATCHE PAS NE DIT RIEN
+
+`EcrireRegions` n'a jamais ete insere dans `Save` : le `perl -i -pe` n'avait
+pas trouve sa ligne -- fins de ligne CRLF -- et j'ai lu sa verification trop
+vite. `LireRegions`, elle, etait branchee : la lecture partait au-dela de la
+fin du flux et echouait sur ses bornes.
+
+**C'EST L'ORACLE D'ALLER-RETOUR QUI L'A DIT, EN UNE LIGNE**, et c'est
+exactement ce pour quoi il avait ete ecrit quatre jours plus tot. Le controle
+apres une substitution se fait sur le RESULTAT -- `grep` du texte insere --
+jamais sur l'absence d'erreur : `perl -i -pe` qui ne trouve rien sort zero.
+
+**ET L'ORACLE A ETE RENFORCE POUR COUVRIR CE QU'IL NE VOYAIT PAS** : la
+grille, chaque champ de chaque region, chaque membre de chaque pays -- avec un
+controle A L'ENVERS sur les noms, qui NE doivent PAS traverser. Ils se
+rejouent depuis des corpus qui n'entrent pas dans l'empreinte du cache ; les
+serialiser figerait les noms d'un monde a ceux du corpus du jour de sa
+generation, et retoucher une base n'aurait plus d'effet sur les mondes deja
+joues, sans que rien ne le dise.
+
+### Le generateur de noms : cinq outils compares, un seul utilisable (26 septembre 2026)
+
+Le generateur grammatical porte du projet Godot a ete REMPLACE, sur decision
+du proprietaire, par le moteur d'**Azgaar's Fantasy Map Generator** -- chaine
+de Markov a pseudo-syllabes, **43 bases, 9 194 mots**, licence MIT.
+
+| outil | licence | verdict |
+|---|---|---|
+| **Azgaar FMG** | **MIT**, bases ecrites par l'auteur | **retenu** |
+| js.fantasy-names | MIT **usurpe** | ecarte, voir ci-dessous |
+| fantasy-name-api | **aucune** | ecarte : sans licence = tous droits reserves |
+| fantasygen | ISC, mais 7 dicos thematiques | sans interet |
+| nameforge | MIT, mais plugin Obsidian | sans interet |
+
+**LE POINT QUI TRANCHE EST JURIDIQUE, PAS ESTHETIQUE.** `js.fantasy-names` est
+techniquement le plus riche des cinq -- 907 generateurs, 10,6 Mo, dont 116
+pour les lieux -- mais son contenu est un SCRAPE de fantasynamegenerators.com,
+dont les conditions sont explicites : « All other original content [...]
+cannot be copied, sold or redistributed without permission », et seuls les
+NOMS PRODUITS sont libres d'emploi. Le depot redistribue precisement ce qui ne
+peut pas l'etre, sous une etiquette MIT qu'il n'avait pas a donner. Worldseed
+est public : l'embarquer nous mettrait en tort. **Une licence affichee sur un
+depot ne dit rien des droits sur son CONTENU.**
+
+**CE QU'ON PERD, ET IL FAUT LE SAVOIR.** La grammaire remplacee produisait des
+SYNTAGMES francais -- « les Marches de Silael », « Villey-sur-Ance », « le
+Golfe de Port-Rouge » -- et accordait le patronyme nordique (« Ragnhild fille
+de Sigurd » contre « Torvald fils de Hakon »). Combinatoire mesuree avant
+remplacement : **39 187 noms de region, 4 458 villages, 1 691 910
+personnages**. Azgaar rend un MOT, et ses noms d'Etat se font par suffixe
+agglutine (`-ia`, `-land`, `-terre`, `-maa`, `-orszag`, « Guo ») et non par
+article. Le fichier est garde inactif en
+`Content/Worldseed/Data/noms-grammaire.json`.
+
+**LE PORTAGE EST FIDELE Y COMPRIS DANS SES BIZARRERIES**, et chacune est
+signalee dans le code. La plus notable : une ligne du decoupage en syllabes
+compare un BOOLEEN a une CHAINE, donc elle est TOUJOURS FAUSSE en JavaScript
+strict -- le portage TypeScript d'Azgaar a du la caster pour compiler et son
+commentaire la nomme « original quirky behavior ». La rendre « juste »
+changerait le decoupage de tous les corpus, donc tous les noms du jeu.
+
+**⚠ L'INDEX D'ORIGINE DE CHAQUE BASE EST PORTANT.** Le systeme de suffixes
+d'Etat teste des NUMEROS -- `2` pour le francais, `> 32 && < 42` pour les onze
+bases de fantasy, qui n'en recoivent aucun. Renumeroter ne casserait rien a la
+compilation : les noms sortiraient, simplement avec les mauvaises
+terminaisons. Un oracle le garde.
+
+**ET LES 32 BASES REELLES SONT DES CORPUS DE TOPONYMES** -- « Achern »,
+« Aichhalden » sont des communes allemandes. Un « personnage » allemand sort
+donc « Kellingen Openalbhau », qui sonne comme deux villages. C'est le
+comportement de l'original, sans consequence pour Worldseed dont le besoin
+porte sur les LIEUX ; a savoir le jour ou l'on nommera des gens.
