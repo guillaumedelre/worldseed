@@ -5,6 +5,7 @@
 #include "Procedural/WorldseedCoast.h"
 #include "Procedural/WorldseedFins.h"
 #include "Procedural/WorldseedPlateau.h"
+#include "Procedural/WorldseedRegions.h"
 #include "Procedural/WorldseedStrata.h"
 
 #include "Procedural/WorldseedCache.h"
@@ -178,6 +179,16 @@ namespace WorldseedPipeline
 			// plus ICI -- et aurait donc declare la victoire.
 			Out.Tables = MoveTemp(Cached.Tables);
 			Out.Canyons = MoveTemp(Cached.Canyons);
+
+			// LE DECOUPAGE ARRIVE ICI AUSSI, ET C'EST LA LIGNE QUE L'ON
+			// OUBLIE. Le 22 septembre, `EcrireSites` et `LireSites` etaient
+			// tous deux justes et les sites arrivaient quand meme vides :
+			// personne ne les transvasait du monde RELU vers le resultat.
+			// Aucune erreur, aucun avertissement -- juste une passe rejouee
+			// pour rien. Le decoupage, lui, ne se rejoue PAS : l'oublier ne
+			// couterait pas du temps, il couterait les regions.
+			Out.Regions = MoveTemp(Cached.Regions);
+
 			Out.bHasClimate = (Out.Climate.TempMeanC.Num() == Geometry.CellCount());
 			Out.bFromCache = true;
 
@@ -278,6 +289,12 @@ namespace WorldseedPipeline
 					// il ne voyait rien de ce que la classification et les champs
 					// du sol allaient lire -- premiere version silencieuse pour
 					// cette raison, alors qu'une cle etait cassee expres.
+					// LES NOMS SE REJOUENT, ILS NE SE LISENT PAS. Les corpus vivent
+					// dans `Content/` et n'entrent pas dans l'empreinte du cache :
+					// les serialiser figerait les noms d'un monde a ceux du corpus
+					// du jour de sa generation. Quelques millisecondes.
+					WorldseedRegions::Nommer(Out.Regions, Seed);
+
 					BioRules->ReportMissingKeys();
 				}
 			}
@@ -681,6 +698,29 @@ namespace WorldseedPipeline
 					Out.Climate.PrecipMm, Out.Climate.TempMeanC,
 					Seed, Out.Tables, &Out.Canyons);
 
+				// --- LE DECOUPAGE EN REGIONS, APRES LES BIOMES -------------
+				//
+				// IL LES LIT : le biome dominant d'une region fait partie de
+				// ce qu'elle porte, et le caractere qui decide de sa langue se
+				// lit sur ses moyennes de temperature et de pluie. Le poser
+				// plus haut lui donnerait des champs vides.
+				//
+				// ⚠ ET IL SE CACHE, PARCE QU'IL NE PEUT PAS SE REFAIRE A LA
+				// DEMANDE. Tout le reste de ce depot est POSITIONNEL -- une
+				// cellule calcule sa roche, son biome, sa vegetation sans rien
+				// savoir de ses voisines -- et c'est ce qui permet de tout
+				// rejouer. Un bassin versant ne l'est pas : savoir ou s'ecoule
+				// une cellule demande de suivre la pente jusqu'a la mer, donc
+				// un etiquetage GLOBAL. C'est ce qui rend sa mise en cache non
+				// pas commode mais NECESSAIRE.
+				WorldseedRegions::Construire(Geometry, Out.ElevationM,
+					Out.Climate.TempMeanC, Out.Climate.PrecipMm,
+					Out.Biomes.Index,
+					FWorldseedRegionRules::FromRules(*BioRules), Seed,
+					Out.Regions);
+
+				WorldseedRegions::Nommer(Out.Regions, Seed);
+
 				BioRules->ReportMissingKeys();
 			}
 		}
@@ -724,6 +764,11 @@ namespace WorldseedPipeline
 			// au menu. Quelques centaines d'octets contre trois secondes.
 			ToCache.Tables = Out.Tables;
 			ToCache.Canyons = Out.Canyons;
+
+			// LE DECOUPAGE PART AVEC, ET IL LE DOIT : c'est la seule grandeur
+			// de cette chaine qui ne soit pas positionnelle, donc la seule qui
+			// ne sache pas se refaire a la demande.
+			ToCache.Regions = Out.Regions;
 
 			WorldseedCache::Save(CacheKey, Rules->SourceHash, ToCache);
 		}

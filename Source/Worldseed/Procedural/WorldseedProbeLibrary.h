@@ -164,6 +164,21 @@ public:
 	static FString ProbeGroundFields(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);
 
+	/**
+	 * LE DECOUPAGE EN REGIONS ET EN PAYS -- combien, de quelle taille, et se
+	 * tiennent-ils ?
+	 *
+	 * QUESTION DE CALAGE, QUE NUL ORACLE NE TRANCHE. Un test dira qu'une
+	 * partition est une partition ; il ne dira pas qu'un monde de 598 km2
+	 * decoupe en trois cents regions serait illisible, ni qu'en deux il serait
+	 * inutile. Elle rend la partition, les quantiles d'aire, la repartition
+	 * des caracteres -- donc des langues -- l'unicite des noms, et la liste
+	 * qu'on REGARDE.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeRegions(int32 Seed = 20260909, float HeightMeters = 8000.0f,
+		int32 ResolutionY = 1024);
+
 	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
 	static FString ProbeBiomes(int32 Seed = 20260909, float HeightMeters = 8000.0f,
 		int32 ResolutionY = 1024);

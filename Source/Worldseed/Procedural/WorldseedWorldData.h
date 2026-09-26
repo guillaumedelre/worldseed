@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedPlateau.h"
 #include "Procedural/WorldseedCaves.h"
+#include "Procedural/WorldseedRegions.h"
 #include "Procedural/WorldseedRules.h"
 
 /**
@@ -138,6 +139,33 @@ struct WORLDSEED_API FWorldseedWorldData
 	 */
 	TArray<FWorldseedPlateauSite> Tables;
 	TArray<FWorldseedPlateauSite> Canyons;
+
+	/**
+	 * LE DECOUPAGE EN REGIONS ET EN PAYS, SERIALISE -- ET IL LE DOIT.
+	 *
+	 * ⚠ CE N'EST PAS LE MEME ARGUMENT QUE POUR LES CAVITES OU LES SITES. Ces
+	 * deux-la sont deterministes et SE REFONT : on les ecrit pour ne pas payer
+	 * leurs secondes deux fois, et les oublier ne couterait que du temps.
+	 * Celui-ci ne se refait PAS a la demande.
+	 *
+	 * Tout le reste de cette chaine est POSITIONNEL : une cellule calcule sa
+	 * roche, son biome, sa vegetation sans rien savoir de ses voisines, et
+	 * c'est cet invariant qui permet de tout rejouer. Un bassin versant ne
+	 * peut pas l'etre -- savoir ou s'ecoule une cellule demande de suivre la
+	 * pente jusqu'a la mer, donc un etiquetage GLOBAL sur toute la grille.
+	 *
+	 * LES NOMS, EUX, NE SONT PAS ECRITS. Ils se rejouent par
+	 * `WorldseedRegions::Nommer` en quelques millisecondes, et les laisser
+	 * dehors a une raison : les corpus vivent dans `Content/Worldseed/Data/`,
+	 * qui n'entre PAS dans l'empreinte du cache. Retoucher un corpus doit
+	 * renommer le monde a la prochaine partie, pas exiger une regeneration de
+	 * quatre minutes -- et des noms serialises figeraient exactement cela.
+	 *
+	 * LA GRILLE EST UN SOUS-ECHANTILLONNAGE de celle du monde : 1024 x 512
+	 * sur le monde de reference, soit un `int16` par cellule, environ
+	 * 1 Mo avant zlib et bien moins apres -- le champ est tres correle.
+	 */
+	FWorldseedRegions Regions;
 
 	int32 CellCount() const { return Geometry.CellCount(); }
 

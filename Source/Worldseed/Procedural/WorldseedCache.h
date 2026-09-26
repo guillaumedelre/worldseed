@@ -54,8 +54,16 @@
  *       sont desormais designes sur le relief FINAL, comme le chemin de
  *       cache le faisait deja -- donc les deux chemins rendent enfin la meme
  *       chose, et un cache d'une version anterieure les relirait vides.
+ *  26 - le DECOUPAGE EN REGIONS ET EN PAYS entre dans le cache, et il est le
+ *       premier a devoir y entrer. Les cavites et les sites s'y trouvent pour
+ *       ne pas payer leurs secondes deux fois : deterministes, ils se
+ *       refont. Celui-ci ne se refait PAS a la demande -- un bassin versant
+ *       demande de suivre la pente jusqu'a la mer, donc un etiquetage GLOBAL,
+ *       quand tout le reste de cette chaine est positionnel. Un cache
+ *       anterieur le relirait vide, c'est-a-dire un monde sans frontieres et
+ *       sans noms.
  */
-#define WORLDSEED_PIPELINE_VERSION 25
+#define WORLDSEED_PIPELINE_VERSION 26
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

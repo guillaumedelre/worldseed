@@ -197,6 +197,117 @@ bool FWorldseedTestCacheAllerRetour::RunTest(const FString& Parameters)
 	TestTrue(TEXT("le monde fictif porte des tables"), Avant.Tables.Num() > 0);
 	TestTrue(TEXT("le monde fictif porte des canyons"), Avant.Canyons.Num() > 0);
 
+	// --- 3 bis. LE DECOUPAGE EN REGIONS ------------------------------------
+	//
+	// ⚠ IL COMPTE PLUS QUE LES AUTRES, et l'oubli qui suit l'a prouve le jour
+	// meme : `EcrireRegions` n'avait PAS ete insere dans `Save` -- une
+	// substitution qui n'avait pas trouve sa ligne -- alors que `LireRegions`
+	// etait bien branchee. Le flux lu au-dela de sa fin echouait sur ses
+	// bornes, et c'est CE TEST qui l'a dit, en une ligne.
+	//
+	// LA RAISON DE FOND : les cavites et les sites sont deterministes et se
+	// refont. Une serialisation qui ment leur coute du temps. Le decoupage,
+	// lui, ne se refait PAS -- un bassin versant demande un etiquetage global
+	// -- donc une serialisation qui ment coute les frontieres et les noms,
+	// definitivement.
+	{
+		const FWorldseedRegions& A = Avant.Regions;
+		const FWorldseedRegions& B = Apres.Regions;
+
+		TestEqual(TEXT("regions : NX"), B.NX, A.NX);
+		TestEqual(TEXT("regions : NY"), B.NY, A.NY);
+		TestEqual(TEXT("regions : facteur"), B.Facteur, A.Facteur);
+		TestEqual(TEXT("regions : largeur du monde"), B.LargeurM, A.LargeurM);
+		TestEqual(TEXT("regions : hauteur du monde"), B.HauteurM, A.HauteurM);
+
+		if (TestEqual(TEXT("regions : nombre de cellules"), B.Id.Num(), A.Id.Num()))
+		{
+			int32 Ecarts = 0;
+			for (int32 I = 0; I < A.Id.Num(); ++I)
+			{
+				Ecarts += (A.Id[I] != B.Id[I]) ? 1 : 0;
+			}
+			TestEqual(TEXT("regions : la grille est identique"), Ecarts, 0);
+		}
+
+		if (TestEqual(TEXT("regions : nombre de regions"),
+			B.Regions.Num(), A.Regions.Num()))
+		{
+			for (int32 I = 0; I < A.Regions.Num(); ++I)
+			{
+				const FWorldseedRegion& X = A.Regions[I];
+				const FWorldseedRegion& Y = B.Regions[I];
+				TestEqual(*FString::Printf(TEXT("region %d : id"), I), Y.Id, X.Id);
+				TestEqual(*FString::Printf(TEXT("region %d : pays"), I), Y.Pays, X.Pays);
+				TestEqual(*FString::Printf(TEXT("region %d : caractere"), I),
+					static_cast<int32>(Y.Caractere), static_cast<int32>(X.Caractere));
+				TestEqual(*FString::Printf(TEXT("region %d : biome dominant"), I),
+					static_cast<int32>(Y.BiomeDominant),
+					static_cast<int32>(X.BiomeDominant));
+				TestEqual(*FString::Printf(TEXT("region %d : centre"), I),
+					Y.CentreM, X.CentreM);
+				TestEqual(*FString::Printf(TEXT("region %d : aire"), I),
+					Y.AireKm2, X.AireKm2);
+				TestEqual(*FString::Printf(TEXT("region %d : altitude"), I),
+					Y.AltitudeMoyenneM, X.AltitudeMoyenneM);
+				TestEqual(*FString::Printf(TEXT("region %d : temperature"), I),
+					Y.TemperatureMoyenneC, X.TemperatureMoyenneC);
+				TestEqual(*FString::Printf(TEXT("region %d : pluie"), I),
+					Y.PluieMoyenneMm, X.PluieMoyenneMm);
+				TestEqual(*FString::Printf(TEXT("region %d : part littorale"), I),
+					Y.PartLittorale, X.PartLittorale);
+			}
+		}
+
+		if (TestEqual(TEXT("regions : nombre de pays"), B.Pays.Num(), A.Pays.Num()))
+		{
+			for (int32 I = 0; I < A.Pays.Num(); ++I)
+			{
+				TestEqual(*FString::Printf(TEXT("pays %d : id"), I),
+					B.Pays[I].Id, A.Pays[I].Id);
+				TestEqual(*FString::Printf(TEXT("pays %d : centre"), I),
+					B.Pays[I].CentreM, A.Pays[I].CentreM);
+				TestEqual(*FString::Printf(TEXT("pays %d : aire"), I),
+					B.Pays[I].AireKm2, A.Pays[I].AireKm2);
+				TestEqual(*FString::Printf(TEXT("pays %d : nombre de regions"), I),
+					B.Pays[I].Regions.Num(), A.Pays[I].Regions.Num());
+				for (int32 K = 0; K < A.Pays[I].Regions.Num()
+					&& K < B.Pays[I].Regions.Num(); ++K)
+				{
+					TestEqual(*FString::Printf(TEXT("pays %d : membre %d"), I, K),
+						B.Pays[I].Regions[K], A.Pays[I].Regions[K]);
+				}
+			}
+		}
+
+		// LA FIXTURE DOIT PORTER DE LA MATIERE, sinon tout ce qui precede
+		// compare des riens -- la faute la plus frequente de ce depot.
+		TestTrue(TEXT("le monde fictif porte des regions"), A.Regions.Num() > 0);
+		TestTrue(TEXT("le monde fictif porte des pays"), A.Pays.Num() > 0);
+		TestTrue(TEXT("le monde fictif porte une grille de regions"),
+			A.Id.Num() > 0);
+
+		// ⚠ ET LES NOMS NE DOIVENT PAS TRAVERSER. Ils se rejouent depuis des
+		// corpus qui n'entrent PAS dans l'empreinte du cache : les serialiser
+		// figerait les noms d'un monde a ceux du corpus du jour de sa
+		// generation, et retoucher une base de noms n'aurait plus d'effet sur
+		// les mondes deja joues -- sans que rien ne le dise. Ce controle est
+		// donc a l'ENVERS des autres, et c'est voulu.
+		bool bUnNomATraverse = false;
+		for (const FWorldseedRegion& Y : B.Regions)
+		{
+			bUnNomATraverse |= !Y.Nom.IsEmpty();
+		}
+		for (const FWorldseedPays& Y : B.Pays)
+		{
+			bUnNomATraverse |= !Y.Nom.IsEmpty();
+		}
+		TestFalse(TEXT("les noms ne sont PAS serialises, ils se rejouent"),
+			bUnNomATraverse);
+		TestTrue(TEXT("temoin : la fixture, elle, en portait bien"),
+			!A.Regions[0].Nom.IsEmpty());
+	}
+
 	// --- 4. L'INDEX SPATIAL EST DERIVE, DONC REBATI ET NON RELU -------------
 	//
 	// Les CASES ne sont pas serialisees -- elles pesent plus que ce qu'elles

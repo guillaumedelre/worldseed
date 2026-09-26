@@ -198,6 +198,142 @@ namespace WorldseedCache
 		 * a chaque chargement ET a chaque retour au menu. C'est le meme marche
 		 * que les cavites la veille, en cent fois plus petit.
 		 */
+		/**
+		 * Le decoupage en regions et en pays.
+		 *
+		 * MEME REGLE QUE LES CAVITES ET LES SITES : champ par champ, jamais la
+		 * structure en bloc. Un `Serialize(&S, sizeof(S))` graverait le
+		 * bourrage du compilateur, et le jour ou un champ arrive, le cache se
+		 * relirait SANS ERREUR en posant les frontieres ailleurs.
+		 *
+		 * ⚠ LES NOMS NE SONT PAS ECRITS, ET C'EST VOULU. Ils se rejouent par
+		 * `Nommer` en quelques millisecondes, depuis des corpus qui vivent
+		 * dans `Content/` et n'entrent donc PAS dans l'empreinte du cache.
+		 * Les ecrire figerait les noms d'un monde a ceux du corpus du jour ou
+		 * il a ete genere : retoucher une base de noms n'aurait plus aucun
+		 * effet sur les mondes deja joues, sans que rien ne le dise.
+		 *
+		 * LE CARACTERE, LUI, EST ECRIT : il se DEDUIT des moyennes de la
+		 * region, lesquelles ne sont pas recalculees a la lecture -- sans lui
+		 * il faudrait rejouer tout le decoupage pour le retrouver.
+		 */
+		void EcrireRegions(FArchive& Ar, const FWorldseedRegions& R)
+		{
+			int32 NX = R.NX, NY = R.NY, Facteur = R.Facteur;
+			float LargeurM = R.LargeurM, HauteurM = R.HauteurM;
+			Ar << NX; Ar << NY; Ar << Facteur;
+			Ar << LargeurM; Ar << HauteurM;
+
+			int32 NbCellules = R.Id.Num();
+			Ar << NbCellules;
+			if (NbCellules > 0)
+			{
+				Ar.Serialize(const_cast<int16*>(R.Id.GetData()),
+					NbCellules * sizeof(int16));
+			}
+
+			int32 NbRegions = R.Regions.Num();
+			Ar << NbRegions;
+			for (const FWorldseedRegion& Reg : R.Regions)
+			{
+				int32 Id = Reg.Id, Pays = Reg.Pays;
+				uint8 Car = static_cast<uint8>(Reg.Caractere);
+				uint8 Biome = Reg.BiomeDominant;
+				FVector2D Centre = Reg.CentreM;
+				float Aire = Reg.AireKm2, Alt = Reg.AltitudeMoyenneM;
+				float Temp = Reg.TemperatureMoyenneC, Pluie = Reg.PluieMoyenneMm;
+				float Litt = Reg.PartLittorale;
+				Ar << Id; Ar << Pays; Ar << Car; Ar << Biome;
+				Ar << Centre; Ar << Aire; Ar << Alt;
+				Ar << Temp; Ar << Pluie; Ar << Litt;
+			}
+
+			int32 NbPays = R.Pays.Num();
+			Ar << NbPays;
+			for (const FWorldseedPays& P : R.Pays)
+			{
+				int32 Id = P.Id;
+				FVector2D Centre = P.CentreM;
+				float Aire = P.AireKm2;
+				Ar << Id; Ar << Centre; Ar << Aire;
+
+				int32 Nb = P.Regions.Num();
+				Ar << Nb;
+				for (const int32 Membre : P.Regions)
+				{
+					int32 M = Membre;
+					Ar << M;
+				}
+			}
+		}
+
+		bool LireRegions(FArchive& Ar, FWorldseedRegions& R)
+		{
+			R = FWorldseedRegions();
+
+			int32 NbCellules = 0;
+			Ar << R.NX; Ar << R.NY; Ar << R.Facteur;
+			Ar << R.LargeurM; Ar << R.HauteurM;
+			Ar << NbCellules;
+
+			// BORNE DE SURETE, comme partout ici : un fichier tronque donnerait
+			// sinon une reservation absurde avant que la lecture n'echoue.
+			if (R.NX < 0 || R.NY < 0 || NbCellules < 0 || NbCellules > 100000000
+				|| NbCellules != R.NX * R.NY)
+			{
+				return false;
+			}
+			if (NbCellules > 0)
+			{
+				R.Id.SetNumUninitialized(NbCellules);
+				Ar.Serialize(R.Id.GetData(), NbCellules * sizeof(int16));
+			}
+
+			int32 NbRegions = 0;
+			Ar << NbRegions;
+			if (NbRegions < 0 || NbRegions > 1000000)
+			{
+				return false;
+			}
+			R.Regions.SetNum(NbRegions);
+			for (FWorldseedRegion& Reg : R.Regions)
+			{
+				uint8 Car = 0, Biome = 0;
+				Ar << Reg.Id; Ar << Reg.Pays; Ar << Car; Ar << Biome;
+				Ar << Reg.CentreM; Ar << Reg.AireKm2; Ar << Reg.AltitudeMoyenneM;
+				Ar << Reg.TemperatureMoyenneC; Ar << Reg.PluieMoyenneMm;
+				Ar << Reg.PartLittorale;
+				Reg.Caractere = (Car < static_cast<uint8>(EWorldseedRegionCaractere::Nombre))
+					? static_cast<EWorldseedRegionCaractere>(Car)
+					: EWorldseedRegionCaractere::Plaine;
+				Reg.BiomeDominant = Biome;
+			}
+
+			int32 NbPays = 0;
+			Ar << NbPays;
+			if (NbPays < 0 || NbPays > 1000000)
+			{
+				return false;
+			}
+			R.Pays.SetNum(NbPays);
+			for (FWorldseedPays& P : R.Pays)
+			{
+				Ar << P.Id; Ar << P.CentreM; Ar << P.AireKm2;
+				int32 Nb = 0;
+				Ar << Nb;
+				if (Nb < 0 || Nb > 1000000)
+				{
+					return false;
+				}
+				P.Regions.SetNum(Nb);
+				for (int32& M : P.Regions)
+				{
+					Ar << M;
+				}
+			}
+			return !Ar.IsError();
+		}
+
 		void EcrireSites(FArchive& Ar, const TArray<FWorldseedPlateauSite>& Sites)
 		{
 			int32 Nb = Sites.Num();
@@ -360,7 +496,8 @@ namespace WorldseedCache
 			|| !ReadFloats(Ar, Out.Continentality)
 			|| !ReadBytes(Ar, Out.LithologyId)
 			|| !LireGrottes(Ar, Out.Caves)
-			|| !LireSites(Ar, Out.Tables) || !LireSites(Ar, Out.Canyons))
+			|| !LireSites(Ar, Out.Tables) || !LireSites(Ar, Out.Canyons)
+			|| !LireRegions(Ar, Out.Regions))
 		{
 			return false;
 		}
@@ -402,6 +539,7 @@ namespace WorldseedCache
 		EcrireGrottes(Raw, World.Caves);
 		EcrireSites(Raw, World.Tables);
 		EcrireSites(Raw, World.Canyons);
+		EcrireRegions(Raw, World.Regions);
 
 		// Trois champs tres correles spatialement : zlib les reduit d'un facteur
 		// 2 a 3. Sans compression, un monde de reference pese une centaine de Mo.

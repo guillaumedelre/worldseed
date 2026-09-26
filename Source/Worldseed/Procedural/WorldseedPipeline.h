@@ -10,6 +10,7 @@
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedJob.h"
+#include "Procedural/WorldseedRegions.h"
 #include "Procedural/WorldseedRules.h"
 
 /**
@@ -105,6 +106,25 @@ namespace WorldseedPipeline
 		 * du bon cote d'une paroi.
 		 */
 		TArray<FWorldseedPlateauSite> Canyons;
+
+		/**
+		 * LE DECOUPAGE EN REGIONS ET EN PAYS, avec leurs noms.
+		 *
+		 * ⚠ SEULE GRANDEUR DE CETTE CHAINE QUI NE SOIT PAS POSITIONNELLE, et
+		 * c'est ce qui la distingue de tout le reste. Une cellule calcule sa
+		 * roche, son biome, sa vegetation sans rien savoir de ses voisines ;
+		 * c'est cet invariant qui permet de tout rejouer a la demande. Un
+		 * bassin versant ne peut pas l'etre -- savoir ou s'ecoule une cellule
+		 * demande de suivre la pente jusqu'a la mer -- donc l'etiquetage est
+		 * GLOBAL, et sa mise en cache n'est pas une commodite mais une
+		 * necessite.
+		 *
+		 * LA GRILLE EST PROPRE AU DECOUPAGE : un sous-echantillonnage entier
+		 * de celle du monde. Une region fait plusieurs kilometres, la resoudre
+		 * au metre couterait seize fois plus de cache pour une frontiere qu'on
+		 * ne sait de toute facon pas dessiner plus finement que le pixel.
+		 */
+		FWorldseedRegions Regions;
 
 		/** Vrai si le monde vient du cache disque plutot que d'un calcul. */
 		bool bFromCache = false;

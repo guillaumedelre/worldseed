@@ -235,6 +235,79 @@ namespace WorldseedTest
 			W.Canyons.Add(C);
 		}
 
+		// --- LE DECOUPAGE EN REGIONS -------------------------------------
+		//
+		// ⚠ SA FIXTURE COMPTE PLUS QUE LES AUTRES, parce que c'est la seule
+		// grandeur du cache qui ne se refasse PAS a la demande. Les cavites
+		// et les sites y sont pour ne pas payer leurs secondes deux fois ; si
+		// leur serialisation ment, on perd du temps. Si celle-ci ment, on perd
+		// les frontieres et les noms, et rien ne les recalcule.
+		//
+		// TOUTES LES VALEURS SONT DISTINCTES CHAMP PAR CHAMP. Une aire et une
+		// altitude qui porteraient le meme nombre laisseraient passer une
+		// serialisation qui les intervertit -- ce depot a deja ecrit une
+		// fixture dont deux tableaux valaient `nullptr`, si bien que le test
+		// comparait deux riens et passait toujours.
+		{
+			W.Regions.NX = 8;
+			W.Regions.NY = 4;
+			W.Regions.Facteur = 4;
+			W.Regions.LargeurM = 3200.0f;
+			W.Regions.HauteurM = 1600.0f;
+
+			// UNE GRILLE QUI PORTE DE LA MER ET TROIS REGIONS, pas un damier
+			// regulier : une lecture qui decalerait tout d'une cellule doit se
+			// voir, et elle ne se verrait pas sur un motif periodique.
+			W.Regions.Id.Init(-1, 32);
+			for (int32 I = 0; I < 32; ++I)
+			{
+				if (I >= 5 && I < 12) { W.Regions.Id[I] = 0; }
+				else if (I >= 14 && I < 21) { W.Regions.Id[I] = 1; }
+				else if (I >= 25 && I < 29) { W.Regions.Id[I] = 2; }
+			}
+
+			const EWorldseedRegionCaractere Caracteres[3] = {
+				EWorldseedRegionCaractere::Polaire,
+				EWorldseedRegionCaractere::Aride,
+				EWorldseedRegionCaractere::Littoral
+			};
+			for (int32 I = 0; I < 3; ++I)
+			{
+				FWorldseedRegion R;
+				R.Id = I;
+				R.Pays = (I < 2) ? 0 : 1;
+				R.Caractere = Caracteres[I];
+				R.BiomeDominant = static_cast<uint8>(3 + I * 5);
+				R.CentreM = FVector2D(120.0 * I + 7.0, -260.0 * I - 13.0);
+				R.AireKm2 = 31.0f + I;
+				R.AltitudeMoyenneM = 412.0f + 3.0f * I;
+				R.TemperatureMoyenneC = -6.5f + 4.0f * I;
+				R.PluieMoyenneMm = 733.0f + 11.0f * I;
+				R.PartLittorale = 0.17f + 0.06f * I;
+				// LE NOM N'EST PAS SERIALISE, a dessein : il se rejoue depuis
+				// des corpus qui n'entrent pas dans l'empreinte du cache. On
+				// le pose quand meme pour que le test puisse VERIFIER qu'il ne
+				// traverse pas -- une serialisation trop zelee se verrait.
+				R.Nom = FString::Printf(TEXT("Region%d"), I);
+				R.Univers = TEXT("French");
+				W.Regions.Regions.Add(R);
+			}
+
+			for (int32 P = 0; P < 2; ++P)
+			{
+				FWorldseedPays Pays;
+				Pays.Id = P;
+				Pays.CentreM = FVector2D(-90.0 * P - 17.0, 410.0 * P + 23.0);
+				Pays.AireKm2 = 64.0f + 5.0f * P;
+				Pays.Nom = FString::Printf(TEXT("Pays%d"), P);
+				Pays.Univers = TEXT("Nordic");
+				W.Regions.Pays.Add(Pays);
+			}
+			// DES TAILLES DIFFERENTES, pour qu'un compte mal ecrit se voie.
+			W.Regions.Pays[0].Regions = { 0, 1 };
+			W.Regions.Pays[1].Regions = { 2 };
+		}
+
 		return W;
 	}
 }

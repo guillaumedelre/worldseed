@@ -981,6 +981,38 @@
     "gridResolution": 128,
     "dominantRadiusM": 200.0
   },
+  "regions": {
+    "_comment": "LE DECOUPAGE DU MONDE EN REGIONS ET EN PAYS, ajoute le 26 septembre 2026. Il est GEOGRAPHIQUE et non arbitraire : le Voronoi des plaques dessine deja les continents, il ne dit rien de ce qui fait qu'un pays tient ensemble. Ce qui le dit, c'est le BASSIN VERSANT -- une vallee dont toutes les eaux se rejoignent est une unite humaine avant d'etre une unite hydrologique : les routes y suivent les rivieres, les villes s'y posent aux confluences, et les cretes font les frontieres. C'est pour cela que les frontieres reelles suivent si souvent les lignes de partage des eaux. ATTENTION : c'est la SEULE grandeur de cette chaine qui ne soit pas positionnelle -- savoir ou s'ecoule une cellule demande de suivre la pente jusqu'a la mer, donc un etiquetage GLOBAL -- et c'est ce qui rend sa mise en cache non pas commode mais NECESSAIRE.",
+
+    "_comment_facteur": "ARBITRAIRE, calibre sur le cout. Sous-echantillonnage de la grille de simulation vers celle des regions. Une region fait plusieurs kilometres : la resoudre au metre couterait 8,4 millions de cellules pour une frontiere qu'on ne sait de toute facon pas dessiner plus finement que le pixel de la carte. A 4, la grille du monde de reference (4096 x 2048) devient 1024 x 512, soit une maille de 62 m -- une frontiere y fait 4 texels de la carte cuite, donc environ 2 pixels a l'ecran. Monter ce facteur divise le cache par son carre et grossit l'escalier des frontieres.",
+    "facteur": 4,
+
+    "_comment_aireMinKm2": "CALIBRE. En dessous, un bassin n'est pas une region : il est absorbe par le voisin avec lequel il partage la plus longue frontiere, ou -- s'il s'agit d'une ile sans voisin terrestre -- rattache par proximite a la region la plus proche. CE SEUIL DECIDE DU NOMBRE DE REGIONS, et il compte plus qu'il n'y parait : l'etiquetage par exutoire produit des MILLIERS de micro-bassins, un par cellule cotiere qui se deverse en mer. Mesure du 26 septembre 2026 sur un banc de 16 x 8 km (37,5 km2 de terres) : sans le rattachement par proximite, 16 regions dont la MEDIANE d'aire valait 0,0 km2 -- une cellule -- et 14 pays pour 16 regions, chaque ilot formant le sien. Apres correction : 3 regions de 10,8 a 15,3 km2, un pays.",
+    "aireMinKm2": 6.0,
+
+    "_comment_aireMaxKm2": "CALIBRE. Au-dessus, une region est recoupee en HAUTES et BASSES terres a sa mediane d'altitude. Un grand bassin n'est pas une region : le Rhone n'est pas un pays, et une vallee alpine n'a ni le climat, ni la vegetation, ni les hommes de son delta. La coupe se fait a la MEDIANE et jamais a un seuil absolu -- un seuil fixe couperait tout un continent bas au meme endroit et ne couperait rien dans un massif. Elle peut casser la connexite, ce que le code repare ensuite par une passe de composantes connexes : deux sommets separes par un col sous la mediane tomberaient sinon dans la meme region sans se toucher.",
+    "aireMaxKm2": 60.0,
+
+    "_comment_airePaysKm2": "ARBITRAIRE, et c'est un choix de jeu. Aire visee pour un pays. L'agregation part de la plus grande region libre et etend vers la voisine avec laquelle la frontiere est la plus longue, jusqu'a atteindre cette aire. Plus petit, on obtient une mosaique de principautes ; plus grand, deux ou trois empires. Elle ne borne rien : un pays depasse des que sa derniere region l'y porte, et un pays isole reste seul quelle que soit sa taille.",
+    "airePaysKm2": 150.0,
+
+    "_comment_caractere": "CE QUI DONNE SON CARACTERE A UNE REGION, DONC SA LANGUE. Il ne s'agit pas d'un biome de plus : un biome est une etiquette par CELLULE, calee sur le diagramme de Whittaker ; un caractere est le trait dominant d'une REGION ENTIERE, lu sur ses moyennes. Une region peut porter cinq biomes et n'avoir qu'un caractere. L'ORDRE DES TESTS EST LE CRITERE, du plus contraignant au plus general : une region polaire de montagne est POLAIRE, parce que c'est le froid qui decide de ce qui y pousse et de qui y vit, pas l'altitude ; un desert d'altitude est ARIDE pour la meme raison. La table caractere -> langue, elle, est en dur dans WorldseedRegions.cpp : elle n'a rien a faire ici, ou la moindre retouche regenererait tous les mondes -- ce fichier est hache EN ENTIER pour l'empreinte du cache.",
+
+    "_comment_polaireTempC": "SOURCE. Temperature moyenne annuelle en dessous de laquelle une region est polaire. Zero degre est la limite classique du pergelisol continu et se trouve tres pres de la limite des arbres, qui est ce qui separe reellement une toundra d'une taiga.",
+    "polaireTempC": 0.0,
+
+    "_comment_aridePluieMm": "SOURCE. Cumul annuel en dessous duquel une region est aride. 400 mm est l'ordre de grandeur de la limite entre steppe et zone cultivable sans irrigation -- l'isohyete qui borde le Sahel comme les Grandes Plaines.",
+    "aridePluieMm": 400.0,
+
+    "_comment_foretPluieMm": "SOURCE. Au-dela, avec de la chaleur, une region est une foret humide. 1200 mm est le plancher usuel d'une foret tropicale humide ; en dessous on est en foret seche ou en savane boisee.",
+    "foretPluieMm": 1200.0,
+
+    "_comment_massifAltitudeM": "CALIBRE sur notre monde, et il DOIT l'etre. Altitude MOYENNE au-dessus de laquelle une region est un massif. Le monde de reference va de -371 a 1772 m ; 600 m y designe un relief franchement montagneux sans confondre un plateau avec une chaine. A recaler si world.maxElevationM ou tectonics.mountainHeightM bougent -- un seuil metrique fige a deja fausse ce depot plusieurs fois quand l'echelle du monde a change.",
+    "massifAltitudeM": 600.0,
+
+    "_comment_littoralPart": "ARBITRAIRE. Part des cellules d'une region qui touchent la mer, au-dela de laquelle elle est LITTORALE. CALIBRE CONTRE LA DISTRIBUTION MESUREE, et il a d abord ete pose a l intuition -- 0,45, « une cellule sur deux borde l eau » -- ou il ne mordait JAMAIS : releve du 26 septembre 2026 sur le monde de reference, la part littorale va de 0,00 a 0,11, mediane 0,05. Zero region littorale sur quarante-sept, et rien ne le signalait. La raison est d echelle : une region de 12 km2 sur une maille de 62 m compte des milliers de cellules pour quelques centaines de cellules de rivage. A 0,09 le critere designe les quatre ou cinq regions les plus decoupees. ATTENTION, IL N EST PAS ROBUSTE AU CHANGEMENT D ECHELLE : il depend de la taille des regions ET de la maille, donc il est a recaler si regions.facteur ou regions.aireMinKm2 bougent. La sonde ProbeRegions rend la distribution pour cela. Ce test vient APRES ceux du froid, de l'aridite, de l'altitude et de la foret -- une cote polaire reste polaire.",
+    "littoralPart": 0.09
+  },
   "ground": {
     "_comment": "LES CHAMPS CONTINUS DU SOL, ajoutes le 18 septembre 2026. Un biome est une ETIQUETTE, pas une grandeur : rien dans la nature ne calcule un biome. Ce qui se calcule, ce sont des champs continus, et ce sont EUX la source de verite pour la vegetation. Deux manquaient, et ce sont les deux que la litterature met en tete du rapport credibilite sur cout apres le relief et la pluie -- l'humidite du sol et l'ensoleillement. Ils sont produits A COTE de la classification, jamais avant : rien en amont ne les relit.",
     "_comment_soilMoistureRefMm": "Cumul annuel au-dessus duquel la pluie seule sature le sol. Sert a ramener les precipitations dans [0..1] avant de les melanger a la topographie.",
