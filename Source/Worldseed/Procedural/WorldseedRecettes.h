@@ -59,6 +59,25 @@ struct FWorldseedCoucheRecette
 	float CullDebutCm = 0.0f;
 	float CullFinCm = 0.0f;
 
+	/**
+	 * La couche pose de la ROCHE : un solide, pas du feuillage.
+	 *
+	 * DEUX CONSEQUENCES, ET C'EST POURQUOI UN SEUL DRAPEAU LES PORTE. Une
+	 * roche ARRETE le joueur, et elle OCCUPE LE SOL -- rien d'autre ne pousse
+	 * dessous. Les deux disent la meme chose : il y a de la matiere la.
+	 *
+	 * IL EST SUR LA COUCHE ET NON SUR L'ESPECE, parce que c'est la couche qui
+	 * porte le sens -- « eboulis », « rochers » -- quand un maillage n'est
+	 * qu'une forme. Mais l'EMPRISE, elle, se mesure sur l'instance : le meme
+	 * `SM_Env_scatter_rock_12` sert de BLOC a l'echelle 1,6 et de GALET a 0,4,
+	 * et aucun nom de couche ne peut dire lequel des deux barre le passage.
+	 *
+	 * Une espece citee par au moins une couche obstacle est donc de la roche
+	 * PARTOUT -- voir `EspeceObstacle` -- et c'est sa TAILLE qui decide de ce
+	 * qu'elle bloque reellement.
+	 */
+	bool bObstacle = false;
+
 	/** Diametre des taches, en cm. A zero, la couche couvre uniformement. */
 	float TacheTailleCm = 0.0f;
 
@@ -117,6 +136,35 @@ struct WORLDSEED_API FWorldseedRecettes
 
 	/** Tous les chemins d'assets cites, dedoublonnes : l'ordre fait l'index. */
 	TArray<FString> Catalogue;
+
+	/**
+	 * Parallele a `Catalogue` : vrai si l'espece est de la ROCHE.
+	 *
+	 * CALCULE A LA LECTURE, par union sur les couches : une espece citee par
+	 * au moins une couche `obstacle` l'est partout. Ce n'est pas un compromis,
+	 * c'est le seul choix coherent -- la collision se pose sur le COMPOSANT,
+	 * donc sur l'espece, et il n'y en a qu'un par maillage. Le meme rocher ne
+	 * peut pas etre solide en eboulis et traversable en galets.
+	 *
+	 * Et cela ne coute rien la ou l'on pourrait le craindre : un galet de
+	 * quarante centimetres est sous la hauteur de marche du personnage, donc
+	 * il se franchit sans qu'on le sente, collision ou non.
+	 */
+	TArray<bool> EspeceObstacle;
+
+	/**
+	 * Parallele a `Catalogue` : demi-largeur du maillage en XY, en cm, a
+	 * l'echelle 1. Zero tant que personne ne l'a mesuree.
+	 *
+	 * ELLE NE VIENT PAS DU JSON, ET ELLE NE LE PEUT PAS : c'est une propriete
+	 * de l'ASSET, que seul celui qui le charge connait. Le semeur, lui, ne
+	 * manipule que des index de catalogue -- il n'a ni le maillage ni le droit
+	 * de le charger, puisqu'il tourne sur un fil de travail.
+	 *
+	 * VIDE, L'EMPRISE NE JOUE PAS, et c'est un etat valide : un clone frais
+	 * sans `Content/` seme comme avant au lieu de refuser de semer.
+	 */
+	TArray<float> RayonEspeceCm;
 
 	/** Nombre total de couches, pour le releve. */
 	int32 NbCouches = 0;

@@ -148,6 +148,17 @@ struct FWorldseedVegetationReleve
 	/** Rejetes par la densite globale. */
 	int64 Densite = 0;
 
+	/**
+	 * Rejetes parce que leur point tombe dans l'emprise d'une ROCHE.
+	 *
+	 * IL COMPTE DEUX CHOSES QU'IL FAUT SAVOIR DISTINGUER D'UN ESTRAN NU OU
+	 * D'UNE COUCHE VIDE : de l'herbe ecartee d'un rocher, et un rocher ecarte
+	 * d'un autre rocher. Un zero sur un monde qui porte des rochers dit que
+	 * les gabarits ne sont pas arrives -- `RayonEspeceCm` vide -- et non que
+	 * rien ne se chevauchait.
+	 */
+	int64 SousLaRoche = 0;
+
 	int32 Posees = 0;
 	int32 Plafonnees = 0;
 	int32 HorsRayon = 0;

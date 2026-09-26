@@ -96,6 +96,7 @@
           1
         ]
       ],
+      "obstacle" : true,
       "name" : "galets",
       "pente" : [
         0,
@@ -233,6 +234,7 @@
               2
             ]
           ],
+          "obstacle" : true,
           "name" : "blocs",
           "scale" : [
             0.6,
@@ -336,6 +338,7 @@
               1
             ]
           ],
+          "obstacle" : true,
           "name" : "rochers",
           "scale" : [
             0.5,
@@ -453,6 +456,7 @@
               2
             ]
           ],
+          "obstacle" : true,
           "name" : "pierraille",
           "pente" : [
             20,
@@ -1702,6 +1706,7 @@
               1
             ]
           ],
+          "obstacle" : true,
           "name" : "cailloutis",
           "scale" : [
             0.5,
@@ -1763,6 +1768,7 @@
               1
             ]
           ],
+          "obstacle" : true,
           "name" : "galets",
           "pente" : [
             0,
@@ -1945,6 +1951,7 @@
               2
             ]
           ],
+          "obstacle" : true,
           "name" : "falaises",
           "pente" : [
             32,
@@ -1987,6 +1994,7 @@
               2
             ]
           ],
+          "obstacle" : true,
           "name" : "eboulis",
           "pente" : [
             25,
@@ -2092,6 +2100,7 @@
               1
             ]
           ],
+          "obstacle" : true,
           "name" : "pierres",
           "pente" : [
             0,
@@ -2223,6 +2232,7 @@
               1
             ]
           ],
+          "obstacle" : true,
           "name" : "pierres",
           "pente" : [
             0,
@@ -2563,6 +2573,7 @@
               1
             ]
           ],
+          "obstacle" : true,
           "name" : "blocs",
           "scale" : [
             0.5,

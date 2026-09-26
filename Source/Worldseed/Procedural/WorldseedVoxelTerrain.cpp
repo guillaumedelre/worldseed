@@ -13,8 +13,10 @@
 #include "Async/Async.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
@@ -1557,6 +1559,17 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 	// comparables a ces volumes.
 	int32 Manquants = 0;
 	int32 RvtRemplaces = 0;
+
+	// --- LES GABARITS SE MESURENT ICI, ET NULLE PART AILLEURS --------------
+	//
+	// Le semeur tourne sur un fil de travail et ne manipule que des index de
+	// catalogue : il n'a pas le droit de charger un asset. C'est donc a
+	// l'endroit ou les maillages sont charges de relever leur taille.
+	Recettes.RayonEspeceCm.Init(0.0f, Recettes.Catalogue.Num());
+	int32 Obstacles = 0;
+	int32 SansPrimitive = 0;
+	float PlusGrosCm = 0.0f;
+
 	for (int32 I = 0; I < Recettes.Catalogue.Num(); ++I)
 	{
 		UStaticMesh* Maillage = Cast<UStaticMesh>(
@@ -1579,7 +1592,61 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 			NewObject<UInstancedStaticMeshComponent>(this, Nom);
 		ISM->SetupAttachment(RootScene);
 		ISM->SetStaticMesh(Maillage);
-		ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		// --- LA ROCHE ARRETE, LE FEUILLAGE NON --------------------------
+		//
+		// Demande du proprietaire : « je voudrai que les roches soit des
+		// obstacle ». Elle ne vaut QUE pour la roche -- traverser un buisson
+		// est normal, et donner un corps physique a six cent mille brins
+		// d'herbe couterait sans rien apporter.
+		//
+		// LE DEMI-COTE EN XY SERT DEUX FOIS, et c'est pourquoi on le releve
+		// ici meme pour ce qui n'est pas roche : il donne l'emprise au sol,
+		// dont le semeur se sert pour ne rien poser dans un rocher.
+		//
+		// LA MOYENNE DES DEUX DEMI-COTES, pas le plus grand : l'instance
+		// recoit un lacet aleatoire, donc le disque equivalent d'une boite
+		// tournee au hasard est la moyenne. Voir `FEmprise` dans le semeur.
+		const FBoxSphereBounds Boite = Maillage->GetBounds();
+		const float RayonCm = static_cast<float>(
+			(Boite.BoxExtent.X + Boite.BoxExtent.Y) * 0.5);
+		Recettes.RayonEspeceCm[I] = RayonCm;
+
+		const bool bRoche = Recettes.EspeceObstacle.IsValidIndex(I)
+			&& Recettes.EspeceObstacle[I];
+		if (bRoche)
+		{
+			// `QueryAndPhysics` ET NON `QueryOnly` : le personnage d'Unreal
+			// est un `CharacterMovementComponent`, qui balaie sa capsule --
+			// donc une requete -- mais un objet SIMULE qu'on ferait tomber
+			// dessus passerait au travers d'un volume seulement interrogeable.
+			ISM->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			ISM->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+			++Obstacles;
+			PlusGrosCm = FMath::Max(PlusGrosCm, RayonCm);
+
+			// UN MAILLAGE SANS PRIMITIVE SIMPLE NE BLOQUE RIEN, ET IL FAUT LE
+			// DIRE. Les trois pans de falaise du pack sont dans ce cas
+			// (releve du 25 septembre : `CollisionPrims = 0`) : la collision
+			// se pose sans erreur et le joueur traverse. Un silence ici ferait
+			// chercher le defaut dans le semis.
+			const UBodySetup* const Corps = Maillage->GetBodySetup();
+			const int32 Prims = Corps ? Corps->AggGeom.GetElementCount() : 0;
+			const bool bComplexe = Corps
+				&& Corps->CollisionTraceFlag == CTF_UseComplexAsSimple;
+			if (Prims == 0 && !bComplexe)
+			{
+				++SansPrimitive;
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] roche SANS collision simple, elle ne ")
+					TEXT("bloquera RIEN -- %s"), *Recettes.Catalogue[I]);
+			}
+		}
+		else
+		{
+			ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+
 		ISM->SetCastShadow(bOmbresChunks);
 		ISM->bAffectDistanceFieldLighting = false;
 
@@ -1641,6 +1708,14 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 		TEXT("[Worldseed] vegetation : %d emplacement(s) de materiau passes en ")
 		TEXT("SANS RVT sur %d correspondances connues"),
 		RvtRemplaces, Recettes.SansRVT.Num());
+
+	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le compte des especes
+	// solides, « aucun obstacle en jeu » ne se distinguerait pas d'un drapeau
+	// jamais lu dans les recettes.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] vegetation : %d espece(s) de ROCHE sur %d -- solides, ")
+		TEXT("emprise au sol jusqu'a %.0f cm de rayon ; %d sans collision simple"),
+		Obstacles, Recettes.Catalogue.Num(), PlusGrosCm, SansPrimitive);
 
 	if (Manquants > 0)
 	{
@@ -1739,7 +1814,20 @@ void AWorldseedVoxelTerrain::SemerVegetationDuChunk(const FWorldseedChunkKey& Ke
 				NewObject<UInstancedStaticMeshComponent>(this, Nom);
 			ISM->SetupAttachment(RootScene);
 			ISM->SetStaticMesh(Modele->GetStaticMesh());
-			ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+			// LA COLLISION SE REPREND DU MODELE, ELLE NE SE REPOSE PAS.
+			//
+			// ELLE ETAIT ECRITE `NoCollision` EN DUR ICI, et c'est ce qui a
+			// rendu la roche traversable alors que tout le reste etait juste :
+			// le modele portait bien `QueryAndPhysics` -- releve, 34 composants
+			// solides sur 815 -- mais il ne porte AUCUNE instance dans ce mode,
+			// et les composants qui en portent repartaient de zero.
+			//
+			// C'est le meme piege que les materiaux deux lignes plus bas, et
+			// la meme reponse : ce qui est resolu une fois sur le modele se
+			// RECOPIE, sinon chaque chunk le perd en silence.
+			ISM->SetCollisionEnabled(Modele->GetCollisionEnabled());
+			ISM->SetCollisionProfileName(Modele->GetCollisionProfileName());
 			ISM->SetCastShadow(bOmbresChunks);
 			ISM->bAffectDistanceFieldLighting = false;
 
@@ -2809,7 +2897,8 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			TEXT("[Worldseed] vegetation : entonnoir sur %lld points testes  |  ")
 			TEXT("hors chunk %.1f %%  case vide %.1f %%  tranche Z %.1f %%  ")
 			TEXT("sous la mer %.1f %%  substrat %.1f %%  ")
-			TEXT("pente %.1f %%  taches %.1f %%  densite %.1f %%  ->  POSEES %.1f %%"),
+			TEXT("pente %.1f %%  taches %.1f %%  densite %.1f %%  ")
+			TEXT("dans la roche %.1f %%  ->  POSEES %.1f %%"),
 			VegetationReleve.Testes,
 			100.0 * VegetationReleve.HorsChunk / T,
 			100.0 * VegetationReleve.CaseVide / T,
@@ -2819,6 +2908,7 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			100.0 * VegetationReleve.Pente / T,
 			100.0 * VegetationReleve.Taches / T,
 			100.0 * VegetationReleve.Densite / T,
+			100.0 * VegetationReleve.SousLaRoche / T,
 			100.0 * VegetationReleve.Posees / T);
 	}
 

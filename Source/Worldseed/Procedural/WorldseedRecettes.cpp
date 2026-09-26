@@ -42,6 +42,8 @@ bool FWorldseedRecettes::Charger(FString& OutErreur)
 {
 	ParBiome.Reset();
 	Catalogue.Reset();
+	EspeceObstacle.Reset();
+	RayonEspeceCm.Reset();
 	NbCouches = 0;
 
 	FString Brut;
@@ -157,6 +159,11 @@ bool FWorldseedRecettes::Charger(FString& OutErreur)
 			LirePaire(TEXT("pente"), Couche.PenteMinDeg, Couche.PenteMaxDeg);
 			LirePaire(TEXT("cull"), Couche.CullDebutCm, Couche.CullFinCm);
 
+			// ABSENT = FAUX, donc une recette qui ne connait pas cette cle se
+			// comporte exactement comme avant. C'est ce qui permet de la poser
+			// couche par couche sans casser le reste du fichier.
+			(*C)->TryGetBoolField(TEXT("obstacle"), Couche.bObstacle);
+
 			const TSharedPtr<FJsonObject>* Taches = nullptr;
 			if ((*C)->TryGetObjectField(TEXT("taches"), Taches))
 			{
@@ -226,6 +233,17 @@ bool FWorldseedRecettes::Charger(FString& OutErreur)
 						Espece.IndexCatalogue = Catalogue.Num();
 						IndexParChemin.Add(Espece.Chemin, Espece.IndexCatalogue);
 						Catalogue.Add(Espece.Chemin);
+						EspeceObstacle.Add(false);
+					}
+
+					// UNION, ET NON AFFECTATION : le meme rocher est cite par
+					// une couche d'eboulis ET par une couche de galets. S'il
+					// est de la roche quelque part, il l'est partout -- la
+					// derniere couche lue n'a pas a effacer les precedentes.
+					if (Couche.bObstacle
+						&& EspeceObstacle.IsValidIndex(Espece.IndexCatalogue))
+					{
+						EspeceObstacle[Espece.IndexCatalogue] = true;
 					}
 
 					Couche.Especes.Add(Espece);

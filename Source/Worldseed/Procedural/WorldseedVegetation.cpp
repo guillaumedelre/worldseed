@@ -310,8 +310,55 @@ void WorldseedVegetation::Semer(const FWorldseedVoxelMesh& Mesh,
 		}
 	}
 
-	for (int32 IdxCouche = 0; IdxCouche < Couches.Num(); ++IdxCouche)
+	// --- LA ROCHE PASSE D'ABORD, ET TOUT L'ORDRE EN DECOULE ----------------
+	//
+	// Une emprise ne peut ecarter que ce qui vient APRES elle. Les couches
+	// obstacle sont donc semees en premier, et les autres se rangent ensuite
+	// dans ce qu'elles laissent.
+	//
+	// LE CANAL DE HACHAGE RESTE CELUI DE L'ORDRE D'ORIGINE, et c'est ce qui
+	// rend ce reordonnancement gratuit : il porte l'indice de couche pour que
+	// deux couches de meme pas ne tombent pas aux memes points, et le calculer
+	// sur l'ordre de PASSAGE aurait redistribue tout le decor du monde --
+	// chaque plante ailleurs -- pour un changement qui ne porte que sur la
+	// roche. On trie les couches, jamais leur identite.
+	TArray<int32, TInlineAllocator<16>> Ordre;
+	Ordre.Reserve(Couches.Num());
+	for (int32 I = 0; I < Couches.Num(); ++I)
 	{
+		if (Couches[I]->bObstacle) { Ordre.Add(I); }
+	}
+	const int32 NbObstacles = Ordre.Num();
+	for (int32 I = 0; I < Couches.Num(); ++I)
+	{
+		if (!Couches[I]->bObstacle) { Ordre.Add(I); }
+	}
+
+	/**
+	 * L'emprise d'une roche posee : ou elle est, et jusqu'ou elle occupe.
+	 *
+	 * UN DISQUE ET NON LA BOITE DU MAILLAGE. L'instance recoit un lacet
+	 * ALEATOIRE, donc aucun des deux demi-cotes n'est privilegie : la moyenne
+	 * des deux est le disque equivalent d'une boite tournee au hasard. Prendre
+	 * le plus grand laisserait un anneau nu autour d'un rocher allonge ;
+	 * prendre le plus petit laisserait de l'herbe traverser sa longueur.
+	 */
+	struct FEmprise
+	{
+		FVector2D Centre = FVector2D::ZeroVector;
+		float RayonCm = 0.0f;
+	};
+	TArray<FEmprise, TInlineAllocator<64>> Emprises;
+
+	// SANS GABARITS, PAS D'EMPRISE. `RayonEspeceCm` est rempli par qui charge
+	// les maillages ; un clone frais sans `Content/` seme comme avant plutot
+	// que de refuser de semer.
+	const bool bEmprisesPretes = (Recettes.RayonEspeceCm.Num() == Recettes.Catalogue.Num());
+
+	for (int32 Rang = 0; Rang < Ordre.Num(); ++Rang)
+	{
+		const int32 IdxCouche = Ordre[Rang];
+		const bool bCoucheObstacle = (Rang < NbObstacles);
 		const FWorldseedCoucheRecette& Couche = *Couches[IdxCouche];
 		const bool bCoucheEstran = SurEstran[IdxCouche];
 		if (Couche.Especes.Num() == 0 || Couche.PoidsTotal <= 0.0f)
@@ -506,11 +553,54 @@ void WorldseedVegetation::Semer(const FWorldseedVoxelMesh& Mesh,
 					continue;
 				}
 
+				// --- CE QUE LA ROCHE OCCUPE -------------------------------
+				//
+				// SIGNALE EN JEU : de l'herbe poussait A TRAVERS les rochers.
+				// Une roche est de la matiere, pas une image posee sur le sol.
+				//
+				// LE TEST PORTE SUR LE POINT, PAS SUR LE FEUILLAGE. Une touffe
+				// dont le centre est hors de la roche peut encore la deborder
+				// de quelques centimetres, et c'est voulu : exclure sur le
+				// rayon du feuillage creuserait un anneau nu bien plus visible
+				// que le debord qu'il corrige.
+				const FVector2D PointCm(CX, CY);
+				if (Emprises.Num() > 0)
+				{
+					bool bOccupe = false;
+					for (const FEmprise& E : Emprises)
+					{
+						if (FVector2D::DistSquared(PointCm, E.Centre)
+							<= static_cast<double>(E.RayonCm) * E.RayonCm)
+						{
+							bOccupe = true;
+							break;
+						}
+					}
+					if (bOccupe)
+					{
+						++Releve.SousLaRoche;
+						continue;
+					}
+				}
+
 				Plante.Transform = FTransform(Rot,
 					FVector(CX, CY, static_cast<double>(ZCm)),
 					FVector(Echelle, Echelle, Echelle));
 				Out.Add(Plante);
 				++Releve.Posees;
+
+				// LES ROCHES S'ECARTENT ENTRE ELLES AUSSI, et c'est le meme
+				// test : deux blocs qui se traversent se lisent aussi mal que
+				// de l'herbe dans un bloc. Comme les couches obstacle passent
+				// en premier, chacune voit celles qui l'ont precedee.
+				if (bCoucheObstacle && bEmprisesPretes)
+				{
+					const float R = Recettes.RayonEspeceCm[Plante.Espece] * Echelle;
+					if (R > 1.0f)
+					{
+						Emprises.Add({ PointCm, R });
+					}
+				}
 			}
 		}
 	}

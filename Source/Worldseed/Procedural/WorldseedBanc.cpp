@@ -4,7 +4,10 @@
 
 #include "Procedural/WorldseedVoxelTerrain.h"
 
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMemory.h"
@@ -454,6 +457,122 @@ void UWorldseedBanc::Conclure()
 				TEXT("pion n'a pas marche (bloque, ou aucun controleur). Ce ")
 				TEXT("releve ne mesure PAS le streaming en mouvement."),
 				ParcouruM);
+		}
+	}
+
+	// --- LA ROCHE BLOQUE-T-ELLE VRAIMENT ? ---------------------------------
+	//
+	// DECLARER UNE COLLISION N'EN CREE PAS UNE, et l'echec est silencieux :
+	// un maillage sans primitive simple accepte `BlockAll` sans broncher, et
+	// le joueur le traverse. Le releve de la vegetation compte deja ces
+	// maillages-la ; ce qui reste a prouver est que les INSTANCES POSEES
+	// portent bien un corps physique interrogeable.
+	//
+	// UN RECOUVREMENT, PAS UN LANCER DE RAYON : un rayon ne rencontre qu'un
+	// objet et ne dit rien de ceux qu'il manque. La sphere, elle, compte tout
+	// ce qui barrerait le passage dans son volume -- et zero au milieu d'un
+	// monde qui porte des rochers est un verdict, pas une absence de mesure.
+	if (const APawn* const Pion = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+	{
+		// --- ON MESURE LA OU LA FORME EST, PAS LA OU L'ON SE TROUVE -------
+		//
+		// PREMIERE VERSION FAUTIVE : la sphere etait centree sur le JOUEUR, et
+		// elle a rendu zero. Le banc nait sur une plaine cotiere, ou la
+		// recette d'estran ne pose presque rien : on mesurait une absence de
+		// roche et l'on aurait pu y lire une absence de collision. C'est le
+		// piege que ce depot a deja paye sur les diaclases -- « mesurer une
+		// forme rare au mauvais endroit ».
+		//
+		// On cherche donc la roche solide la PLUS PROCHE, et c'est sur elle
+		// qu'on interroge la physique.
+		int32 Posees = 0;
+		int32 SansCorps = 0;
+		int32 CompoSolides = 0;
+		int32 CompoTotal = 0;
+		FVector RochePlusProche = FVector::ZeroVector;
+		double MeilleureDist = TNumericLimits<double>::Max();
+
+		if (T)
+		{
+			TArray<UInstancedStaticMeshComponent*> Ism;
+			T->GetComponents<UInstancedStaticMeshComponent>(Ism);
+			for (const UInstancedStaticMeshComponent* const C : Ism)
+			{
+				if (!C || !C->GetName().StartsWith(TEXT("Plantes_"))) { continue; }
+				++CompoTotal;
+				const bool bSolide =
+					(C->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
+				if (!bSolide) { SansCorps += C->GetInstanceCount(); continue; }
+
+				// COMPTE A PART DES INSTANCES, ET C'EST TOUT L'INTERET : un
+				// composant solide SANS instance dit « pas de roche ici », un
+				// zero de composants dit « le drapeau n'a pas pris ». Sans
+				// cette separation, les deux rendent le meme zero -- et ce
+				// depot a deja regle quatre fois le mauvais bouton faute
+				// d'avoir decompose un agregat.
+				++CompoSolides;
+				Posees += C->GetInstanceCount();
+				for (int32 K = 0; K < C->GetInstanceCount(); ++K)
+				{
+					FTransform Tr;
+					if (!C->GetInstanceTransform(K, Tr, true)) { continue; }
+					const double D = FVector::Dist(Tr.GetLocation(),
+						Pion->GetActorLocation());
+					if (D < MeilleureDist)
+					{
+						MeilleureDist = D;
+						RochePlusProche = Tr.GetLocation();
+					}
+				}
+			}
+		}
+
+		if (Posees == 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed]   ROCHES : %d composant(s) SOLIDES sur %d, mais ")
+				TEXT("aucune instance posee dans le monde charge -- rien a ")
+				TEXT("eprouver ici (%d instance(s) sans corps)"),
+				CompoSolides, CompoTotal, SansCorps);
+		}
+		else
+		{
+			// UNE SPHERE DE DEUX METRES SUR LA ROCHE ELLE-MEME. Plus large,
+			// elle attraperait le terrain et le verdict redeviendrait muet.
+			constexpr float SondeCm = 200.0f;
+
+			TArray<FOverlapResult> Touches;
+			FCollisionQueryParams Params(TEXT("WorldseedRoches"), false, Pion);
+			GetWorld()->OverlapMultiByChannel(Touches, RochePlusProche,
+				FQuat::Identity, ECC_WorldStatic,
+				FCollisionShape::MakeSphere(SondeCm), Params);
+
+			int32 Roches = 0;
+			int32 Autres = 0;
+			for (const FOverlapResult& O : Touches)
+			{
+				const UPrimitiveComponent* const C = O.GetComponent();
+				if (!C) { continue; }
+				// LE NOM EST LE SEUL LIEN DISPONIBLE ICI : le banc ne connait
+				// pas le catalogue des especes, et n'a pas a le connaitre.
+				if (C->GetName().StartsWith(TEXT("Plantes_"))) { ++Roches; }
+				else { ++Autres; }
+			}
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   ROCHES SOLIDES : %d posee(s), la plus proche ")
+				TEXT("a %.0f m -- une sphere de %.0f m sur elle rencontre %d ")
+				TEXT("composant(s) de roche  (temoin -- %d autre(s) primitive(s), ")
+				TEXT("%d instance(s) de plante sans corps)"),
+				Posees, MeilleureDist / 100.0, SondeCm / 100.0f,
+				Roches, Autres, SansCorps);
+
+			if (Roches == 0)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed]   la roche la plus proche NE REPOND PAS a ")
+					TEXT("la physique -- la collision n'a pas pris"));
+			}
 		}
 	}
 

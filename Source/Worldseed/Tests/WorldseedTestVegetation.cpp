@@ -394,4 +394,154 @@ bool FWorldseedVegetationDeterminismeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * RIEN NE POUSSE DANS UN ROCHER, ET C'EST UN DEFAUT SIGNALE EN JEU.
+ *
+ * Une roche est de la MATIERE, pas une image posee sur le sol : de l'herbe qui
+ * la traverse se voit immediatement, et c'est ce qui a ouvert ce chantier.
+ *
+ * DEUX INVARIANTS, ET ILS NE SE REMPLACENT PAS. Aucune plante dans l'emprise
+ * d'une roche -- ce qu'on est venu corriger -- et aucune roche dans celle
+ * d'une autre : deux blocs qui se traversent se lisent aussi mal.
+ *
+ * LE TEMOIN EST L'ABSENCE DE GABARITS. Sans `RayonEspeceCm`, l'emprise ne peut
+ * pas etre calculee et le semis retombe sur son comportement d'avant. C'est le
+ * seul moyen de montrer que ce test DISCRIMINE : sans lui, « zero plante dans
+ * la roche » serait aussi vrai d'un semis qui n'en pose aucune.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedVegetationRocheTest,
+	"Worldseed.Vegetation.RienNePousseDansLaRoche",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedVegetationRocheTest::RunTest(const FString& Parameters)
+{
+	const FWorldseedGeometry G = WorldseedTest::Geometrie();
+	const FWorldseedBiomeMap B = Carte(G, 3, EWorldseedCover::None);
+	const FVector Origine(0.0, 0.0, 0.0);
+	const FWorldseedVoxelMesh Mesh = ChunkPlat(Origine, 500.0f);
+
+	// L'ESPECE 1 EST LA ROCHE, L'ESPECE 0 L'HERBE. Le rocher est seme au pas
+	// de 800 cm pour un rayon de 250 : il occupe donc une part large mais non
+	// totale du chunk, ce qui laisse de l'herbe a poser -- sans quoi le test
+	// ne distinguerait pas « ecarte » de « rien seme ».
+	auto Recettes = [&](bool bGabarits) -> FWorldseedRecettes
+	{
+		FWorldseedRecettes R;
+		R.Catalogue.Add(TEXT("/Game/Test/Herbe.Herbe"));
+		R.Catalogue.Add(TEXT("/Game/Test/Rocher.Rocher"));
+		R.EspeceObstacle.Add(false);
+		R.EspeceObstacle.Add(true);
+
+		FWorldseedBiomeRecette Biome;
+
+		// L'HERBE EST DECLAREE EN PREMIER A DESSEIN : le semeur doit passer
+		// les couches obstacle AVANT, quel que soit leur rang dans la recette.
+		// Declarer la roche en tete masquerait exactement le defaut teste.
+		Biome.Couches.Add(Couche(TEXT("tapis"), 100.0f));
+
+		FWorldseedCoucheRecette Roche = Couche(TEXT("rochers"), 800.0f);
+		Roche.Especes[0].IndexCatalogue = 1;
+		Roche.bObstacle = true;
+		Biome.Couches.Add(MoveTemp(Roche));
+
+		R.ParBiome.Add(3, MoveTemp(Biome));
+		R.NbCouches = 2;
+
+		if (bGabarits)
+		{
+			R.RayonEspeceCm.Add(0.0f);     // l'herbe n'occupe rien
+			R.RayonEspeceCm.Add(250.0f);   // le rocher occupe 2,5 m de rayon
+		}
+		return R;
+	};
+
+	auto Compter = [&](const FWorldseedRecettes& R, int32& OutHerbe,
+		int32& OutRoches, int32& OutDansLaRoche, int32& OutRochesQuiSeTouchent)
+	{
+		TArray<FWorldseedPlante> Plantes;
+		FWorldseedVegetationReleve Releve;
+		WorldseedVegetation::Semer(Mesh, Origine, CoteCm, R, B, G,
+			Regles(), 4242, FVector2D::ZeroVector, Plantes, Releve);
+
+		TArray<FVector2D> Roches;
+		for (const FWorldseedPlante& P : Plantes)
+		{
+			if (P.Espece == 1)
+			{
+				const FVector T = P.Transform.GetLocation();
+				Roches.Add(FVector2D(T.X, T.Y));
+			}
+		}
+
+		OutHerbe = 0;
+		OutRoches = Roches.Num();
+		OutDansLaRoche = 0;
+		OutRochesQuiSeTouchent = 0;
+
+		// LE RAYON DU CONTROLE EST CELUI DU GABARIT, PAS CELUI DU SEMEUR : on
+		// verifie une propriete geometrique du resultat, pas la ligne de code
+		// qui l'a produite. Un test qui relirait le rayon depuis le semeur
+		// passerait meme si le semeur le lisait de travers.
+		constexpr double RayonCm = 250.0;
+
+		for (const FWorldseedPlante& P : Plantes)
+		{
+			const FVector T = P.Transform.GetLocation();
+			const FVector2D Pt(T.X, T.Y);
+
+			if (P.Espece == 0)
+			{
+				++OutHerbe;
+				for (const FVector2D& Roc : Roches)
+				{
+					if (FVector2D::Distance(Pt, Roc) < RayonCm)
+					{
+						++OutDansLaRoche;
+						break;
+					}
+				}
+			}
+			else
+			{
+				for (const FVector2D& Roc : Roches)
+				{
+					if (!Roc.Equals(Pt, 0.01)
+						&& FVector2D::Distance(Pt, Roc) < RayonCm)
+					{
+						++OutRochesQuiSeTouchent;
+						break;
+					}
+				}
+			}
+		}
+	};
+
+	int32 Herbe = 0, Roches = 0, DansLaRoche = 0, QuiSeTouchent = 0;
+	Compter(Recettes(true), Herbe, Roches, DansLaRoche, QuiSeTouchent);
+
+	AddInfo(FString::Printf(
+		TEXT("avec gabarits : %d rochers, %d herbes, %d dans la roche, %d rochers qui se touchent"),
+		Roches, Herbe, DansLaRoche, QuiSeTouchent));
+
+	// SANS MATIERE, LE TEST EST MUET. Ce depot a paye quatre fixtures muettes
+	// en une journee ; on exige donc que les deux populations existent.
+	TestTrue(TEXT("des rochers ont ete poses"), Roches >= 4);
+	TestTrue(TEXT("de l'herbe a ete posee"), Herbe > 100);
+
+	TestEqual(TEXT("aucune plante dans l'emprise d'un rocher"), DansLaRoche, 0);
+	TestEqual(TEXT("aucun rocher dans l'emprise d'un autre"), QuiSeTouchent, 0);
+
+	// --- LE TEMOIN : sans gabarits, l'emprise ne joue pas -----------------
+	int32 HerbeT = 0, RochesT = 0, DansLaRocheT = 0, QuiSeTouchentT = 0;
+	Compter(Recettes(false), HerbeT, RochesT, DansLaRocheT, QuiSeTouchentT);
+
+	AddInfo(FString::Printf(
+		TEXT("temoin sans gabarits : %d rochers, %d herbes, %d dans la roche"),
+		RochesT, HerbeT, DansLaRocheT));
+
+	TestTrue(TEXT("SANS gabarits, de l'herbe pousse bien dans la roche"),
+		DansLaRocheT > 0);
+	return true;
+}
+
 #endif
