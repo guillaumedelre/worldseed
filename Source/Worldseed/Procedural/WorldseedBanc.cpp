@@ -618,9 +618,11 @@ void UWorldseedBanc::Conclure()
 
 			UE_LOG(LogTemp, Log,
 				TEXT("[Worldseed]   PANS DE FALAISE : %d pose(s), %d SOLIDES, ")
-				TEXT("%d CORPS physiques crees -- le plus proche a %.0f m, une ")
-				TEXT("boite de %.0f x %.0f x %.0f m sur lui rencontre %d composant(s)"),
+				TEXT("%d CORPS physiques crees -- le plus proche a %.0f m en ")
+				TEXT("(%.0f, %.0f) m, une boite de %.0f x %.0f x %.0f m sur lui ")
+				TEXT("rencontre %d composant(s)"),
 				Pans, PansSolides, PansCorps, MeilleurePan / 100.0,
+				PanPlusProche.X / 100.0, PanPlusProche.Y / 100.0,
 				PanDemi.X * 2.0 / 100.0, PanDemi.Y * 2.0 / 100.0,
 				PanDemi.Z * 2.0 / 100.0, PansTouches);
 

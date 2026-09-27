@@ -108,6 +108,101 @@ bool WorldseedParois::LireRebord(double XM, double YM,
 	return true;
 }
 
+void WorldseedParois::Emprises(const FVector2D& CoinCm, const FVector2D& TailleCm,
+	TArrayView<const FWorldseedParoiModele> Catalogue,
+	const FWorldseedParoiRegles& Regles, int32 Graine,
+	TFunctionRef<double(double, double)> ReliefM,
+	TArray<FWorldseedEmpriseParoi>& Out)
+{
+	if (Catalogue.Num() == 0 || Regles.Densite <= 0.0f || Regles.PasM <= 0.0f)
+	{
+		return;
+	}
+
+	const double PasCm = static_cast<double>(Regles.PasM) * 100.0;
+
+	const int32 MailleX0 = FMath::FloorToInt32(CoinCm.X / PasCm);
+	const int32 MailleY0 = FMath::FloorToInt32(CoinCm.Y / PasCm);
+	const int32 MailleX1 = FMath::CeilToInt32((CoinCm.X + TailleCm.X) / PasCm);
+	const int32 MailleY1 = FMath::CeilToInt32((CoinCm.Y + TailleCm.Y) / PasCm);
+
+	for (int32 MX = MailleX0; MX <= MailleX1; ++MX)
+	{
+		for (int32 MY = MailleY0; MY <= MailleY1; ++MY)
+		{
+			// LES MEMES CANAUX DE TIRAGE QUE `Semer`, DANS LE MEME ORDRE, et
+			// c'est la seule chose qui garantisse qu'on decrit LE MEME pan.
+			// Un canal decale rendrait une emprise plausible au mauvais
+			// endroit -- un defaut qui ne se verrait qu'a l'oeil, et encore.
+			const double CX = (static_cast<double>(MX) + 0.35
+				+ 0.3 * Tirage(MX, MY, 0, Graine)) * PasCm;
+			const double CY = (static_cast<double>(MY) + 0.35
+				+ 0.3 * Tirage(MX, MY, 1, Graine)) * PasCm;
+
+			if (CX < CoinCm.X || CX >= CoinCm.X + TailleCm.X
+				|| CY < CoinCm.Y || CY >= CoinCm.Y + TailleCm.Y)
+			{
+				continue;
+			}
+
+			if (Tirage(MX, MY, 2, Graine) > Regles.Probabilite * Regles.Densite)
+			{
+				continue;
+			}
+
+			FWorldseedRebord Rebord;
+			if (!LireRebord(CX / 100.0, CY / 100.0, Regles, ReliefM, Rebord))
+			{
+				continue;
+			}
+
+			// AUCUNE GARDE SUR LA TRANCHE VERTICALE, et c'est voulu. `Semer`
+			// ne pose un pan que depuis le chunk dont l'etage contient le
+			// rebord -- une regle qui evite de le poser en double. Une
+			// EMPRISE, elle, ne depend que de XY : le pan existe des que sa
+			// colonne existe, quel que soit l'etage qui l'a pose, et l'herbe
+			// doit s'en ecarter dans tous les cas.
+			const int32 IdxModele = FMath::Clamp(
+				FMath::FloorToInt32(Tirage(MX, MY, 3, Graine) * Catalogue.Num()),
+				0, Catalogue.Num() - 1);
+			const FWorldseedParoiModele& Modele = Catalogue[IdxModele];
+
+			const double HauteurModeleCm = FMath::Max(1.0, 2.0 * Modele.DemiTaille.Z);
+			const float Echelle = FMath::Clamp(
+				static_cast<float>(Rebord.ChuteM * 100.0 / HauteurModeleCm),
+				Regles.EchelleMin, Regles.EchelleMax);
+
+			const double AzimutVide = FMath::RadiansToDegrees(
+				FMath::Atan2(Rebord.VersLeVide.Y, Rebord.VersLeVide.X));
+			const double Lacet = FMath::DegreesToRadians(
+				AzimutVide + Regles.YawOffsetDeg);
+
+			// L'ENFONCEMENT EST LE MEME QUE CELUI DE LA POSE : le pan n'est
+			// pas centre sur le rebord, il recule vers l'interieur. Prendre le
+			// rebord pour centre decalerait l'emprise d'une demi-largeur --
+			// donc degarnirait le vide et laisserait de l'herbe dans la roche.
+			const FVector2D VersLInterieur = -Rebord.VersLeVide;
+			const double DemiLargeur = 0.5 * (Modele.DemiTaille.X + Modele.DemiTaille.Y);
+			const double Enfoncement = DemiLargeur * Echelle
+				* static_cast<double>(Regles.EnfoncementFrac);
+
+			// LE CENTRE DE LA BOITE, PAS LE PIVOT : les pivots de ce pack sont
+			// incoherents entre modeles, et `Modele.Origine` existe pour cela.
+			const FVector2D PointRebord(
+				CX + VersLInterieur.X * Enfoncement,
+				CY + VersLInterieur.Y * Enfoncement);
+
+			FWorldseedEmpriseParoi E;
+			E.CentreCm = PointRebord;
+			E.DemiCm = FVector2D(Modele.DemiTaille.X * Echelle,
+				Modele.DemiTaille.Y * Echelle);
+			E.CosLacet = static_cast<float>(FMath::Cos(Lacet));
+			E.SinLacet = static_cast<float>(FMath::Sin(Lacet));
+			Out.Add(E);
+		}
+	}
+}
+
 void WorldseedParois::Semer(const FWorldseedVoxelMesh& Mesh,
 	const FVector& OrigineChunkCm, double CoteChunkCm,
 	TArrayView<const FWorldseedParoiModele> Catalogue,

@@ -4,6 +4,12 @@
 
 #include "CoreMinimal.h"
 
+// L'EMPRISE EST DEFINIE PAR LE SEMIS DE VEGETATION, et c'est lui qui la
+// consomme : la definir une seconde fois ici pour eviter un include ferait
+// exactement ce que ce depot interdit -- deux definitions d'une meme chose,
+// qui divergent a la premiere retouche.
+#include "Procedural/WorldseedVegetation.h"
+
 struct FWorldseedVoxelMesh;
 
 /**
@@ -259,6 +265,30 @@ namespace WorldseedParois
 	 * C'est par elle que se mesure la hauteur d'une paroi : le maillage du
 	 * chunk ne peut pas la voir, il ne couvre que trente-deux metres.
 	 */
+	/**
+	 * L'EMPRISE AU SOL des pans d'une fenetre, sans les poser.
+	 *
+	 * POURQUOI ELLE NE PEUT PAS SE DEDUIRE DE `Semer`. Un pan fait 77 m et un
+	 * chunk 32 : un pan couvre donc SIX chunks au moins, et `Semer` ne le rend
+	 * qu'a celui qui l'a pose. Le semis de vegetation, qui s'en sert pour ne
+	 * rien planter dessous, n'en voyait ainsi qu'un sixieme -- signale en jeu,
+	 * « on voit des arbres qui ont ete places a l'endroit ou est la roche ».
+	 *
+	 * On rejoue donc la grille sur une fenetre ELARGIE. C'est possible parce
+	 * que le placement ne lit PAS le maillage du chunk : il ne depend que du
+	 * relief MACRO, des regles et de la graine. Seule l'altitude finale
+	 * s'accroche au maillage, et une emprise ne s'en sert pas.
+	 *
+	 * `CoinCm` et `TailleCm` bornent la fenetre, en centimetres. La marge a
+	 * prendre autour d'un chunk est la plus grande demi-dimension du catalogue
+	 * multipliee par `EchelleMax`.
+	 */
+	WORLDSEED_API void Emprises(const FVector2D& CoinCm, const FVector2D& TailleCm,
+		TArrayView<const FWorldseedParoiModele> Catalogue,
+		const FWorldseedParoiRegles& Regles, int32 Graine,
+		TFunctionRef<double(double, double)> ReliefM,
+		TArray<FWorldseedEmpriseParoi>& Out);
+
 	WORLDSEED_API void Semer(const FWorldseedVoxelMesh& Mesh,
 		const FVector& OrigineChunkCm, double CoteChunkCm,
 		TArrayView<const FWorldseedParoiModele> Catalogue,

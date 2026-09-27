@@ -617,13 +617,24 @@ public:
 	/**
 	 * Garder le materiau du PACK plutot que l'instance sans RVT.
 	 *
-	 * LA PREMISSE DU REMPLACEMENT A CHANGE. Il a ete pose quand le niveau
-	 * n'avait aucune Runtime Virtual Texture ; `WorldseedRvt` en pose deux
-	 * aujourd'hui. `-WorldseedParoiPack=1` permet de comparer les deux au lieu
-	 * de decider sur un commentaire qui decrit un monde d'avant.
+	 * VRAI DEPUIS QUE LA COMPARAISON A ETE FAITE, ET C'EST L'OEIL QUI A
+	 * TRANCHE. Le remplacement avait ete pose quand le niveau n'avait AUCUNE
+	 * Runtime Virtual Texture -- la couche du dessus echantillonnait du vide
+	 * et rendait un bleu pur. `WorldseedRvt` en pose deux depuis, et le
+	 * remplacement ne protegeait plus de rien : il APLATISSAIT le pan.
+	 * Signale en jeu -- « un gros bloc de pierre qui n'a pas la texture de
+	 * l'asset de base » -- puis verifie avec le materiau du pack : « le pan
+	 * est texture, un grain de roche est effectivement la ».
+	 *
+	 * MON A/B AUTOMATIQUE N'AVAIT RIEN PROUVE : il est tombe sur un arret
+	 * photo ou aucun pan n'etait en vue, et deux images ou le sujet est absent
+	 * ne se comparent pas. C'est une observation en jeu qui a decide.
+	 *
+	 * `-WorldseedParoiPack=0` revient au remplacement, pour le jour ou un
+	 * niveau sans RVT reviendrait.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
-	bool bParoiMateriauDuPack = false;
+	bool bParoiMateriauDuPack = true;
 
 	/** Les reglages du semis. Voir `FWorldseedParoiRegles`. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
@@ -888,6 +899,7 @@ private:
 
 	/** Releve du semis, pour que le journal dise ce qui a ete pose. */
 	mutable int32 ParoisPosees = 0;
+	mutable int32 ParoisEmprises = 0;
 	mutable double ParoisMs = 0.0;
 
 	// ------------------------------------------------------- vegetation

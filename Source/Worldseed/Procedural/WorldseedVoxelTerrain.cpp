@@ -1545,26 +1545,39 @@ void AWorldseedVoxelTerrain::SemerParoisDuChunk(const FWorldseedChunkKey& Key,
 		}
 		State.Parois.Emplace(I.Modele,
 			ParoiComposants[I.Modele]->AddInstanceById(I.Transform));
+	}
 
-		// --- L'EMPRISE AU SOL, POUR QUE RIEN N'Y POUSSE -------------------
-		//
-		// LA BOITE SE PREND SUR L'ASSET, PAS SUR LE PIVOT : les pivots du pack
-		// sont incoherents entre modeles, le centre de la boite ne l'est pas.
-		// C'est deja ce que fait `ParoiCatalogue`, et l'ignorer ici decalerait
-		// l'emprise de la moitie d'un pan.
-		const FWorldseedParoiModele& M = ParoiCatalogue[I.Modele];
-		const FVector Echelle = I.Transform.GetScale3D();
-		const FVector CentreMonde = I.Transform.TransformPosition(M.Origine);
-		const double Lacet = FMath::DegreesToRadians(
-			I.Transform.GetRotation().Rotator().Yaw);
+	// --- L'EMPRISE SE RELEVE SUR UNE FENETRE ELARGIE ----------------------
+	//
+	// ET SURTOUT PAS SUR LES PANS QU'ON VIENT DE POSER, ce qui etait la
+	// premiere version et ne couvrait qu'un sixieme du probleme : un pan fait
+	// 77 m pour un chunk de 32, donc il deborde sur ses voisins, qui ne le
+	// connaissaient pas. Resultat signale en jeu -- « on voit des arbres qui
+	// ont ete places a l'endroit ou est la roche ».
+	//
+	// LA MARGE VIENT DU CATALOGUE, pas d'une constante : c'est la plus grande
+	// demi-dimension qu'un pan puisse atteindre une fois mis a l'echelle. Une
+	// valeur en dur cesserait d'etre juste au premier modele ajoute, et rien
+	// ne le signalerait.
+	{
+		double MargeCm = 0.0;
+		for (const FWorldseedParoiModele& M : ParoiCatalogue)
+		{
+			MargeCm = FMath::Max(MargeCm, M.Rayon() * Regles.EchelleMax);
+		}
 
-		FWorldseedEmpriseParoi E;
-		E.CentreCm = FVector2D(CentreMonde.X, CentreMonde.Y);
-		E.DemiCm = FVector2D(M.DemiTaille.X * Echelle.X,
-			M.DemiTaille.Y * Echelle.Y);
-		E.CosLacet = static_cast<float>(FMath::Cos(Lacet));
-		E.SinLacet = static_cast<float>(FMath::Sin(Lacet));
-		OutEmprises.Add(E);
+		WorldseedParois::Emprises(
+			FVector2D(OrigineCm.X - MargeCm, OrigineCm.Y - MargeCm),
+			FVector2D(CoteM * WorldseedMetersToCm + 2.0 * MargeCm,
+				CoteM * WorldseedMetersToCm + 2.0 * MargeCm),
+			ParoiCatalogue, Regles, WorldSeed, Relief, OutEmprises);
+
+		// ON COMPTE, ON NE SUPPOSE PAS. « Sous un pan 0,0 % » a deux causes
+		// opposees -- aucune emprise relevee, ou des emprises relevees qui ne
+		// recouvrent rien -- et elles n'appellent pas le meme remede. Ce depot
+		// a deja regle quatre fois le mauvais bouton faute d'avoir decompose
+		// un agregat.
+		ParoisEmprises += OutEmprises.Num();
 	}
 
 	ParoisPosees += Instances.Num();
@@ -2917,8 +2930,10 @@ FString AWorldseedVoxelTerrain::ReportState() const
 		}
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] parois : %d posees au total, %d vivantes, ")
-			TEXT("%d modele(s), semis %.2f ms cumulees"),
-			ParoisPosees, Vivantes, ParoiCatalogue.Num(), ParoisMs);
+			TEXT("%d modele(s), %d emprise(s) rendues au semis, ")
+			TEXT("semis %.2f ms cumulees"),
+			ParoisPosees, Vivantes, ParoiCatalogue.Num(), ParoisEmprises,
+			ParoisMs);
 	}
 
 	// LE COMPTE TRANCHE, PAS LE TEMPS -- meme raison que pour les parois. Et le
