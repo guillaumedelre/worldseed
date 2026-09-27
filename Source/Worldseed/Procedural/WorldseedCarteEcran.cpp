@@ -104,6 +104,9 @@ void UWorldseedCarteEcran::OnWorldBeginPlay(UWorld& InWorld)
 	// Un zoom impose, pour juger une echelle precise sans piloter la molette.
 	FParse::Value(FCommandLine::Get(), TEXT("WorldseedCarteEchelle="), EchelleAutoM);
 
+	// La force de l'ombrage, pour la choisir a l'image plutot qu'au nombre.
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedRelief="), ForceRelief);
+
 	// UN REPERE POSE SANS CLIQUER, et ce n'est pas une commodite : piloter la
 	// souris d'une machine ou quelqu'un travaille ne marche pas -- la fenetre
 	// ne prend pas le focus, les evenements partent ailleurs, et l'on croit a
@@ -384,6 +387,7 @@ bool UWorldseedCarteEcran::Cuire()
 		static_cast<double>(Geo.WidthM()) * 0.5, TexX, TexY);
 	P.bDisque = false;
 	P.FondM = WorldseedCarte::FondDuMonde(T->MondeAltitudes());
+	P.ForceOmbrage = ForceRelief;
 
 	TArray<uint8> Base;
 	Base.SetNumUninitialized(static_cast<SIZE_T>(TexX) * TexY * 4);
@@ -526,9 +530,6 @@ void UWorldseedCarteEcran::Ouvrir()
 		return;
 	}
 
-	// LA PREMIERE VUE MONTRE LE MONDE ENTIER, centre sur le joueur : on ouvre
-	// une carte pour se situer, pas pour chercher ou l'on est.
-	//
 	// EN PIXELS LOGIQUES, ET C'EST CE QUE SLATE EMPLOIE. Le viewport rend des
 	// pixels REELS ; melanger les deux donnerait une echelle fausse d'un
 	// facteur DPI, donc une carte deux fois trop grande sur un ecran dense.
@@ -540,11 +541,6 @@ void UWorldseedCarteEcran::Ouvrir()
 
 	if (const AWorldseedVoxelTerrain* const T = Terrain())
 	{
-		const FWorldseedReperePlayer R = T->ReperePlayer();
-		if (R.bValide)
-		{
-			CentreVueM = FVector2D(R.Xm, R.Ym);
-		}
 		// LE MONDE ENTIER, donc le cote le plus contraignant des deux -- voir
 		// `BornerVue`. Sur la hauteur seule, onze pour cent de la largeur
 		// restaient hors champ.
@@ -552,6 +548,27 @@ void UWorldseedCarteEcran::Ouvrir()
 		MetresParPixel = FMath::Max(
 			static_cast<double>(G.HeightM) / FMath::Max(Taille.Y, 1.0),
 			static_cast<double>(G.WidthM()) / FMath::Max(Taille.X, 1.0));
+
+		const FWorldseedReperePlayer R = T->ReperePlayer();
+		if (R.bValide)
+		{
+			// ON S'OUVRE SUR LE VOISINAGE, PAS SUR LE MONDE ENTIER. Signale :
+			// « je galere a trouver ma position sur la carte en plein ecran ».
+			// A l'echelle du monde, le joueur occupe trois pixels au milieu de
+			// soixante-quatre kilometres, et rien alentour ne le designe.
+			//
+			// LA FRACTION EST DU MONDE, PAS UNE DISTANCE EN DUR. Ce depot a
+			// paye deux fois la constante metrique juste a une echelle et
+			// fausse a l'autre -- la prime d'altitude de `tectonics.py` et le
+			// `Sand UV` d'Orasot. Un huitieme de la largeur fait ici huit
+			// kilometres, soit un peu plus que ce que le terrain charge montre
+			// (2400 m de rayon) : on voit ou l'on est ET ce qu'il y a juste
+			// au-dela. Le dezoom au monde entier reste a un cran de molette.
+			constexpr double FractionDepart = 0.125;
+			CentreVueM = FVector2D(R.Xm, R.Ym);
+			MetresParPixel = static_cast<double>(G.WidthM()) * FractionDepart
+				/ FMath::Max(Taille.X, 1.0);
+		}
 	}
 
 	// ON BORNE DES L'OUVERTURE, et pas seulement au glisser : sans cela une

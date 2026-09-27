@@ -52,6 +52,10 @@ struct WORLDSEED_API FWorldseedMarqueur
  * montrer -- le detail au metre n'existe que dans le champ de densite du
  * voxel, qu'on ne peut pas interroger par pixel de carte.
  *
+ * ELLE S'OUVRE SUR LE VOISINAGE DU JOUEUR, pas sur le monde entier : « je
+ * galere a trouver ma position sur la carte en plein ecran ». Un point de
+ * trois pixels au milieu de soixante-quatre kilometres ne se trouve pas.
+ *
  * COMMANDES :
  *
  *     Tab                        ouvre et ferme, en jeu
@@ -62,6 +66,7 @@ struct WORLDSEED_API FWorldseedMarqueur
  *     Ctrl + clic                y teleporte le joueur
  *     Worldseed.Carte            bascule depuis la console
  *     -WorldseedCarteRes=        plafonne la largeur de cuisson
+ *     -WorldseedRelief=          force de l'ombrage, 0 doux et 1 comme le globe
  */
 UCLASS()
 class WORLDSEED_API UWorldseedCarteEcran : public UTickableWorldSubsystem
@@ -200,4 +205,7 @@ private:
 
 	/** Echelle imposee apres l'ouverture automatique, en metres par pixel. */
 	float EchelleAutoM = 0.0f;
+
+	/** Force de l'ombrage, 0 doux et 1 franc. Voir `FParamsFenetre`. */
+	float ForceRelief = 1.0f;
 };

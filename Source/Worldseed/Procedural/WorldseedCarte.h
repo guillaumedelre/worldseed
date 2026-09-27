@@ -71,6 +71,30 @@ namespace WorldseedCarte
 		/** Ombrage de relief par lumiere rasante. */
 		bool bOmbrage = true;
 
+		/**
+		 * Force de cet ombrage : 0 le rend doux, 1 le rend franc.
+		 *
+		 * LES DEUX BOUTS SONT DES ETATS QUI ONT EXISTE, pas des nombres ronds.
+		 * A zero, la modulation vaut `0,72 + 0,56 . Lambert` -- le reglage
+		 * d'origine, pose « doux » pour qu'un ombrage qui va jusqu'au noir ne
+		 * mange pas les biomes qu'on vient de peindre. A un, elle vaut
+		 * `0,22 + 0,88 . Lambert`, qui est EXACTEMENT celle du globe.
+		 *
+		 * Le rapport entre un versant eclaire et un versant a l'ombre passe
+		 * ainsi de 1,8 a 5,0 : c'est lui qui decide si le relief se lit ou
+		 * s'il faut le deviner. Signale a l'image -- « appliquer un
+		 * re-echantillonnage comme sur le globe, avec l'ombre et le relief ».
+		 *
+		 * ET CE N'ETAIT PAS UN PROBLEME D'ECHANTILLONNAGE. Mesure : repeindre
+		 * la fenetre a chaque changement de vue, au lieu d'etirer une texture
+		 * cuite, ne rend RIEN de plus -- la donnee s'arrete a la cellule de
+		 * 15,6 m dans les deux cas. Le seul ecart visible etait a l'envers :
+		 * les bords de biome, interpoles par l'etirement, sortaient en
+		 * escalier une fois peints au pixel. Piste abandonnee, ne pas la
+		 * reprendre sans une donnee plus fine a montrer.
+		 */
+		float ForceOmbrage = 1.0f;
+
 		/** Souligne le trait de cote. */
 		bool bLisereCote = true;
 

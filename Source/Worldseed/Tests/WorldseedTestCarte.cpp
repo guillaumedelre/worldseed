@@ -885,6 +885,16 @@ bool FWorldseedTestCarteReduction::RunTest(const FString& Parameters)
 			WorldseedCarte::FParamsFenetre::Carree(DemiM, Cote);
 		P.bDisque = false;
 		P.bLisereCote = false;
+
+		// L'OMBRAGE EST IDENTIQUE DANS LES DEUX BRANCHES, et il faut donc le
+		// couper. Il ne lit PAS le bloc agrege : ses quatre echantillons vont
+		// au relief, au pas d'une cellule, quelle que soit l'agregation. Il
+		// n'apporte donc que du bruit COMMUN -- et quand sa force est passee
+		// de « doux » a celle du globe, ce bruit a noye l'ecart que ce test
+		// mesure : 23589 contre 23561, soit 0,12 %, et le signe s'est inverse.
+		// Le test tombait alors sur une propriete parfaitement vraie.
+		P.bOmbrage = false;
+
 		P.Agregation = Mode;
 		P.FondM = WorldseedCarte::FondDuMonde(Monde.ElevationM);
 

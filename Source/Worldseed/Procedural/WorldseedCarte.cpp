@@ -388,6 +388,12 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 	// Le pas d'ombrage, borne par le pixel : voir `PasOmbrageMetres`.
 	const double PasOmbrageM = PasOmbrageMetres(P, Geo);
 
+	// HORS DE LA BOUCLE : deux `Lerp` par pixel sur huit millions de pixels se
+	// paieraient, et la force ne varie pas d'un pixel a l'autre.
+	const float ForceOmbrage = FMath::Clamp(P.ForceOmbrage, 0.0f, 1.0f);
+	const float Ambiante = FMath::Lerp(0.72f, 0.22f, ForceOmbrage);
+	const float Gain = FMath::Lerp(0.56f, 0.88f, ForceOmbrage);
+
 	// LE SEUIL EST A DEUX CELLULES PAR PIXEL, ET PAS A UNE. Les deux lectures
 	// ne partagent pas exactement la meme convention -- `SampleUV` interpole
 	// entre noeuds, `CelluleDepuisMetres` designe une cellule par son centre --
@@ -527,9 +533,11 @@ void PeindreFenetre(const FWorldseedGeometry& Geo,
 				const double Lambert = FMath::Max(
 					FVector::DotProduct(Normale, DirectionLumiere), 0.0);
 
-				// Doux : on module, on ne remplace pas. Un ombrage qui va
-				// jusqu'au noir mangerait les biomes qu'on vient de peindre.
-				C *= static_cast<float>(0.72 + 0.56 * Lambert);
+				// ON MODULE, ON NE REMPLACE PAS : un ombrage qui irait jusqu'au
+				// noir mangerait les biomes qu'on vient de peindre. Reste a
+				// savoir de combien -- voir `ForceOmbrage`, dont les deux bouts
+				// sont le reglage doux d'origine et celui du globe.
+				C *= Ambiante + Gain * static_cast<float>(Lambert);
 			}
 
 			EcrireBGRA(Pixel, C, Alpha);
