@@ -2934,6 +2934,63 @@ FString AWorldseedVoxelTerrain::ReportState() const
 			TEXT("semis %.2f ms cumulees"),
 			ParoisPosees, Vivantes, ParoiCatalogue.Num(), ParoisEmprises,
 			ParoisMs);
+
+		// OU SONT-ILS ? UN PAN QU'ON NE SAIT PAS TROUVER N'EXISTE PAS -- c'est
+		// deja la raison pour laquelle les bouches de grotte journalisent leur
+		// position. Sans ces lignes, photographier un pan demande de deviner :
+		// deux tournees ont ete perdues a cadrer une cote et une calotte parce
+		// que les seules coordonnees disponibles venaient du BANC, qui ne joue
+		// pas le meme monde -- il ouvre la carte directement, sans le menu, et
+		// retombe donc sur une autre graine.
+		//
+		// EN METRES ET DANS LE REPERE DU MONDE, c'est-a-dire exactement ce que
+		// `-WorldseedVueX/Y` attend. Et l'on RECULE : la vue libre se pose au
+		// point donne et regarde VERS L'EXTERIEUR, donc se poser sur un pan le
+		// met hors du cadre. La ligne donne donc le point de PRISE DE VUE et
+		// son cap, pas le pan.
+		// LES PLUS HAUTS, ET NON LES CINQ PREMIERS. Un echantillon pris dans
+		// l'ordre de pose est arbitraire : celui de ce monde est tombe sur cinq
+		// pans a Z negatif, donc sous la mer, et la tournee a photographie de
+		// l'eau. On cite ceux qu'on a une chance de VOIR.
+		TArray<FVector> Sommets;
+		int32 SousLeau = 0;
+		for (const UInstancedStaticMeshComponent* ISM : ParoiComposants)
+		{
+			if (!ISM)
+			{
+				continue;
+			}
+			for (int32 I = 0; I < ISM->GetNumInstances(); ++I)
+			{
+				FTransform Tr;
+				ISM->GetInstanceTransform(I, Tr, /*bWorldSpace=*/true);
+				const FVector P = Tr.GetLocation();
+				if (P.Z < 0.0) { ++SousLeau; }
+				Sommets.Add(P);
+			}
+		}
+		Sommets.Sort([](const FVector& A, const FVector& B) { return A.Z > B.Z; });
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] parois : %d pivot(s) sous le niveau de la mer sur %d"),
+			SousLeau, Sommets.Num());
+
+		for (int32 I = 0; I < FMath::Min(5, Sommets.Num()); ++I)
+		{
+			const FVector P = Sommets[I];
+
+			// ON RECULE DE CENT VINGT METRES, ET C'EST LE POINT DE LA LIGNE.
+			// `-WorldseedVue=` pose la camera au point donne et regarde VERS
+			// L'EXTERIEUR : se poser sur un pan le met hors du cadre. Deux
+			// tournees ont ete perdues a cela -- quatre vues « centrees sur un
+			// pan » qui n'en montraient aucun. La ligne donne donc le point de
+			// PRISE DE VUE et son cap, pas la position du pan.
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed]   pan a (%.0f, %.0f, %.0f) m -- pour le voir : ")
+				TEXT("-WorldseedVueX=%.0f -WorldseedVueY=%.0f -WorldseedVue=270"),
+				P.X / 100.0, P.Y / 100.0, P.Z / 100.0,
+				P.X / 100.0 + 120.0, P.Y / 100.0);
+		}
 	}
 
 	// LE COMPTE TRANCHE, PAS LE TEMPS -- meme raison que pour les parois. Et le
