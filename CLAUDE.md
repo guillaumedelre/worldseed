@@ -9358,3 +9358,127 @@ globe), clic sur le globe -> reticule a 1,6 px, clic sur le bandeau -> aucun
 reticule, et le repere precedent intact au dixieme de pixel. Sans le premier,
 « aucun reticule » ne se distinguerait pas d'un clic que la fenetre n'aurait
 pas recu.
+
+### La carte : ce que « re-echantillonner comme le globe » voulait dire (27 septembre 2026)
+
+Deux demandes dans la meme phrase -- « je galere a trouver ma position sur la
+carte en plein ecran, serait il possible quand elle s'ouvre de zoomer par
+defaut sur la position du joueur » et « appliquer un re-echantillonnage comme
+sur le globe, avec l'ombre et le relief ». La premiere etait claire ; la
+seconde, prise au pied de la lettre, ne valait rien -- et c'est la lecon.
+
+**LA LECTURE LITTERALE, ECRITE PUIS ANNULEE.** La carte cuisait le monde entier
+a la resolution de la grille puis ETIRAIT cette texture ; je l'ai remplace par
+une repeinture de la VUE a chaque changement, comme le globe. Le chemin a ete
+ecrit, mesure, regarde -- et il ne rend RIEN :
+
+| | avant (etirement) | apres (repeinture) |
+|---|---|---|
+| relief a 5 m/px | identique | **identique** |
+| bords de biome | lisses (interpolation) | **en escalier** |
+| glisser | gratuit | **19,2 ms**, ramene a 10,9 au quart |
+| texture | 32 Mo | 5,8 Mo |
+| ouverture | 68 ms | 22 ms |
+
+**LA DONNEE S'ARRETE A LA CELLULE, 15,6 m, DANS LES DEUX CAS.** Interpoler la
+COULEUR deja peinte ou interpoler l'ALTITUDE puis peindre donne le meme relief ;
+la seule difference est que la premiere lisse aussi les IDENTIFIANTS, ce qui
+FLATTE les bords de biome. Le chemin « propre » etait donc visuellement pire.
+Annule. Ne pas le reprendre sans une donnee plus fine a montrer.
+
+**CE QUI MANQUAIT VRAIMENT ETAIT LE CONTRASTE.** La carte modulait sa couleur
+par `0,72 + 0,56 . Lambert`, pose « doux » pour qu'un ombrage qui va jusqu'au
+noir ne mange pas les biomes. Le globe emploie `0,22 + 0,88` : le rapport entre
+un versant eclaire et un versant a l'ombre passe de **1,8 a 5,0**. Mesure de
+l'ecart-type de la luminance sur une zone de TERRE, meme graine :
+
+    globe               moyenne  61,6   ecart-type  28,9
+    carte, force 1,0             85,0               27,1
+    carte, force 0,0            109,6               21,8
+
+La carte rejoint le contraste du globe ; l'ecart de moyenne qui reste est
+l'assombrissement du LIMBE, qui n'a de sens que sur une sphere.
+`FParamsFenetre::ForceOmbrage` interpole entre les deux formules et vaut 1 ;
+la minimap suit, une seule definition. Trois forces capturees au meme cadrage
+avant de trancher.
+
+**METHODE : QUAND UNE DEMANDE NOMME UN MECANISME, VERIFIER QUE C'EST BIEN LUI.**
+« Re-echantillonner » designait un mecanisme ; ce qui se voyait etait un
+CONTRASTE. J'ai passe une heure a implementer le premier avant de mesurer que
+le relief ne bougeait pas d'un pixel. Le controle qui aurait du venir en
+premier tient en deux captures au meme cadrage.
+
+**UN ORACLE QUI TOMBE PARCE QU'UN AUTRE REGLAGE A BOUGE.**
+`Worldseed.Carte.LaReductionSeDeclencheQuandIlLeFaut` compare la variation
+totale de l'image agregee a celle prise au point. L'ombrage est IDENTIQUE dans
+les deux branches -- ses quatre echantillons vont au relief, au pas d'une
+cellule, quelle que soit l'agregation -- donc il n'apporte que du bruit COMMUN.
+A force 1,0 ce bruit a noye l'ecart : **23589 contre 23561, soit 0,12 %, signe
+inverse**. Le test coupe desormais l'ombrage. Meme famille que « une mesure dont
+la reference derive avec le reglage qu'on teste ne mesure rien ».
+
+**L'OUVERTURE EST UNE FRACTION DU MONDE**, un huitieme de sa largeur -- huit
+kilometres ici, un peu plus que les 2400 m de rayon que le terrain charge
+montre. Pas une distance en dur : ce depot a paye deux fois la constante
+metrique juste a une echelle et fausse a l'autre.
+
+### `-WorldseedVue=` REGARDE VERS L'EXTERIEUR (27 septembre 2026)
+
+Deux tournees photo perdues, et la cause est dans la signature de l'option.
+`-WorldseedVue=<caps>` pose la camera a `-WorldseedVueX/Y` et vise une cible a
+QUATRE KILOMETRES dans la direction du cap. **Se poser sur un pan de falaise le
+met donc hors du cadre, par construction** : les quatre vues « centrees sur un
+pan » n'en montraient aucun -- de l'ocean, une calotte, un personnage face a la
+mer. Pour photographier un objet, on RECULE de cent metres et l'on vise.
+
+**ET LE BANC NE JOUE PAS LE MEME MONDE QUE LA TOURNEE.** Le banc ouvre
+`L_Worldseed_Proc` DIRECTEMENT et retombe sur la graine de secours ; une partie
+lancee par le menu porte celle du menu. Les coordonnees relevees par l'un ne
+designent rien chez l'autre. C'est une variante du piege deja consigne -- « les
+deux acteurs generaient DEUX MONDES DIFFERENTS » -- et elle se lit au journal :
+`monde repris du cache : seed=...`.
+
+**LE REMEDE EST CELUI DES BOUCHES DE GROTTE** : journaliser la position. Le
+releve des parois cite desormais les CINQ PLUS HAUTS pans -- pas les cinq
+premiers, echantillon arbitraire qui est tombe sur cinq pans a Z negatif -- et
+donne le point de PRISE DE VUE, deja recule, pas la position du pan.
+
+**UN CHIFFRE SORTI DE LA : 40 pivots sur 42 sont sous le niveau de la mer.** Le
+pivot d'un maillage de ce pack est connu pour etre incoherent -- ce depot l'a
+paye en sondant la collision d'un pan sur son pivot, qui tombait dans le vide --
+donc ce chiffre ne prouve PAS que quarante pans sont noyes. Il dit qu'il faut
+aller voir. **Reste ouvert.**
+
+### Le dessus noir des pans : deux hypotheses tuees (27 septembre 2026)
+
+Signale : « le dessus est noir mais devrait plutot etre vert selon moi car nous
+sommes dans une foret tropicale humide ». Le diagnostic n'est pas termine, mais
+deux pistes sont FERMEES et il ne faut pas les rouvrir :
+
+- **« `M_WorldseedBiome` n'emet pas vers la RVT » : FAUX.** Le materiau porte
+  bien un `RuntimeVirtualTextureOutput`, et il est CABLE -- `VertexColor` vers
+  la couleur, `WorldPosition` vers la hauteur. Les deux RVT du pack sont posees
+  au lancement (`RVT_Landscape_Material` a 12,2 cm par texel,
+  `RVT_Landscape_Height` a 97,7 cm).
+- **« le pan ne lit pas la RVT » : FAUX.** La chaine
+  `MI_WorldseedParoi -> MI_Cliff_2 -> MI_Cliff_1 -> M_Master_Cliff_Mat` aboutit
+  a un maitre de 110 expressions qui echantillonne `RVT_Landscape_Material`
+  exactement une fois.
+
+**LES ENTREES D'UN NOEUD DE SORTIE RVT SONT PROTEGEES EN LECTURE DEPUIS
+PYTHON** (`Property 'Specular' ... is protected and cannot be read`), et
+`MaterialService.export_material_graph` n'existe pas dans ce build de VibeUE.
+Ce qui marche : lister les expressions avec leur POSITION dans le graphe
+(`material_expression_editor_x/y`) -- sur vingt-quatre noeuds, la topologie se
+lit d'un coup d'oeil.
+
+**LE PROCHAIN CONTROLE EST CELUI QUE LE DEPOT S'IMPOSE DEPUIS SEPTEMBRE :**
+`ShowFlag.Lighting 0` sur un pan cadre. Si le dessus reste noir, c'est la
+couleur -- donc la RVT ; s'il devient gris uniforme, ce sont les normales ou
+l'eclairage. Il n'avait jamais ete fait faute de pouvoir cadrer un pan.
+
+**PIEGE D'OUTILLAGE : le compilateur MSVC a rendu DEUX `C1001` transitoires**
+dans cette session, dont un sur `WorldseedProbeMonde.cpp`, un fichier que
+personne n'avait touche. Relancer la compilation suffit. Le controle qui
+tranche entre une ICE transitoire et un vrai defaut est l'HORODATAGE du binaire
+apres la seconde passe.
