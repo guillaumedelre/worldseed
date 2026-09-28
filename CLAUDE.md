@@ -11103,3 +11103,60 @@ chiffre de sonde et non un fait de jeu.**
 naturel pour clore -- « je suis sur que je le verrai en jeu ». Le controle qui
 trancherait, le jour ou l'on y revient, est un guet a cadence NOMINALE (180 s)
 sur le site exact de la sonde, avec le biome relu au HUD avant de compter.
+
+### Le dessus gris-bleu des pans : quatre pistes FERMEES (28 septembre 2026)
+
+Signale de nuit : « je vois un pan dans le loin qui semble briller ». Il ne
+brille pas -- son albedo est gris-bleu la ou tout le terrain est chaud, et
+l'auto-exposition nocturne fait le reste. Le diagnostic n'est PAS termine, mais
+quatre pistes sont closes et il ne faut pas les rouvrir.
+
+**LA MESURE, meme zone et meme critere a chaque fois** -- pixels desatures a
+B > R dans la fenetre du versant, `ShowFlag.Lighting 0` pour ne juger que
+l'albedo :
+
+    reference (pans + nappe RVT)   1623
+    sans les PANS                   117    -93 %   <- ce sont eux
+    sans la NAPPE RVT              1597    -1,6 %  <- ce n'est pas elle
+    UseRVT arme sur notre instance 1446    cadrage different, NON VALIDE
+
+| piste | verdict |
+|---|---|
+| l'eclairage, le speculaire, le bloom | **NON** : le defaut survit a `ShowFlag.Lighting 0` |
+| la nappe RVT | **NON** : couper son ecrivain ne deplace rien |
+| le menage des dix-neuf instances SansRVT du matin | **NON** : `git log` montre que `MI_WorldseedParoi.uasset` n'a ete touche qu'a sa creation |
+| armer `UseRVT` sur notre instance | **NON** : les pans restent gris-bleu a l'image |
+
+**LE TEMOIN QUI A PAYE EST CELUI DU PROPRIETAIRE** : « regarder la carte de
+reference `M_5_Bioms_Showcase` ». Elle repond sans une seule capture --
+inventaire de ses 24 couples maillage/materiau de falaise et de rocher :
+
+    UseRVT = True sur les VINGT-QUATRE, sans exception
+    MI_Cliff_2   UseTopVertexRVTMask=True    UseTopLayerRvt=False
+    MI_Cliff_1   UseTopVertexRVTMask=False   UseTopLayerRvt=True
+
+**CHAQUE INSTANCE DU PACK ARME L'UN OU L'AUTRE DES DEUX MASQUES DE DESSUS ; LA
+NOTRE A LES DEUX A FAUX.** C'est la seule difference structurelle qui reste, et
+`UseTopVertexRVTMask` ayant ete essaye sans effet, le suspect restant est
+**`UseTopLayerRvt`**, non teste.
+
+**DEUX PIEGES PAYES, TOUS DEUX DEJA AU REGISTRE :**
+
+- **`get_material_instance_static_switch_parameter_value` ne remonte pas
+  l'heritage**, et `get_static_switch_parameter_source` rend un `SoftObjectPath`
+  VIDE : on ne peut donc pas distinguer « surcharge a faux » de « jamais
+  surcharge ». C'est la variante, pour les switches statiques, de
+  l'avertissement deja porte par `ParoiMateriau` sur les textures. Le seul
+  controle qui tranche est de POSER la valeur et de regarder.
+- **Une capture ne vaut que par son SUJET.** L'A/B de `UseRVT` a compare deux
+  vues dont la camera n'etait pas a la meme hauteur : le versant lointain, qui
+  porte les plaques, n'etait plus dans le cadre. Les -11 % mesuraient le
+  cadrage. Ce qui reste valable de cet essai est une observation DIRECTE, et
+  non un compte : les pans visibles restent gris-bleu avec `UseRVT` arme.
+
+L'essai a ete ANNULE (`git checkout` sur l'asset) : ce depot ne garde pas une
+modification qui ne regle pas ce qu'on voit.
+
+**RESTE OUVERT** : d'ou vient ce gris-bleu, puisque ni la RVT ni son ecrivain ne
+le determinent ; et les **plantes blanches du premier plan**, defaut DISTINCT
+qui n'a pas ete touche.
