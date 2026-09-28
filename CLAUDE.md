@@ -1513,6 +1513,14 @@ niveau de son graphe : il appelle `MF_RVT`. Un balayage qui ne regarde que
 `export_material_graph` le classe a tort comme ignorant la RVT. Descendre dans
 les `MaterialFunctionCall` via `export_function_graph`.
 
+> **PERIME AU 28 SEPTEMBRE 2026, ET CETTE NOTE M'A FAIT ME TROMPER DEVANT LE
+> PROPRIETAIRE.** Les deux assets existent toujours dans le projet, mais **ni
+> `M_Assets_MasterMat` ni `MF_RVT` ne porte la moindre expression de RVT** --
+> releve exhaustif : il n'y a que DOUZE expressions de RVT dans tout `/Game`,
+> et aucune dans ces deux-la. Ce qui etait vrai du pack a l'epoque du Landscape
+> ne l'est plus. **La methode ci-dessus reste juste** -- il faut bien descendre
+> dans les fonctions de materiau -- **c'est le FAIT qui est mort.**
+
 **`MF_RVT` fait mieux que notre greffe, et pourquoi on ne l'a pas prise.** Elle
 melange couleur, speculaire, rugosite ET normale, avec un masque calcule sur la
 hauteur du monde -- ce qui ANCRE l'objet dans le sol au lieu de le repeindre.
@@ -9802,3 +9810,139 @@ un diff.
   monde.** Le mecanisme le dit -- partout ou le voxel descend sous le relief
   macro, donc a peu pres partout -- mais ce n'est pas chiffre. Une sonde qui
   compare la surface voxel au relief macro sur N colonnes le dirait.
+
+### Le terrain sans texture : un reglage pose dans UNE SEULE branche (28 septembre 2026)
+
+Signale en jeu : « le terrain a perdu son RVT, il n'a plus de texture ».
+L'hypothese etait la RVT ; ce n'etait pas elle, et la mesure l'a ecartee avant
+que je touche a quoi que ce soit.
+
+**LA COULEUR DU TERRAIN NE LIT JAMAIS LA RVT.** Releve dans les deux materiaux :
+`M_WorldseedBiome` prend sa `BaseColor` de la COULEUR DE SOMMET,
+`M_WorldseedGround` d'un `Lerp` sur ses quatre textures. Ils l'ECRIVENT ; ce
+sont le feuillage et les pans qui la LISENT. Les deux graphes etaient d'ailleurs
+intacts -- 7 et 50 expressions, `PoidsDepuisTexture` a False par defaut, toutes
+les proprietes branchees.
+
+**LA CAUSE.** `Colouring` vaut `BiomeColour` par defaut depuis l'origine, et
+`TexturePack` n'etait pose que dans la branche « monde repris du menu »
+d'`AdoptWorld` -- la ou vivait le lien « habillage choisi -> coloration » avant
+que les six packs ne soient ramenes au seul Orasot. Un lancement DIRECT sur
+`L_Worldseed_Proc` -- le harnais, un PIE sans passer par le menu -- ne prend pas
+cette branche : le journal dit « aucun monde en attente, generation de secours »,
+et le sol rend des couleurs de biome A PLAT.
+
+**C'EST LA TROISIEME FOIS, ET LE FICHIER LE DISAIT TRENTE LIGNES PLUS BAS** :
+« L'HABILLAGE FORCE S'APPLIQUE ICI, sur les DEUX chemins de chargement. Pose
+plus haut, dans la seule branche "monde repris du menu", il ne servait jamais en
+lancement direct -- exactement le defaut deja paye sur le point de naissance. »
+**Un reglage qui doit valoir partout se pose dans le DEFAUT, jamais dans une
+branche.**
+
+Le temoin qui distingue les deux moities est au journal : la rampe s'arme sur
+`M_WorldseedBiome` avant, sur `MI_WorldseedGround_Orasot` apres.
+
+### La chaine RVT ne sert qu'a quatre lecteurs (28 septembre 2026)
+
+Releve exhaustif : il n'existe que **DOUZE expressions de RVT dans tout le
+projet**, et quatre seulement sont des LECTEURS de notre RVT de couleur --
+`M_Grass` (deux fois) et `M_Master_Cliff_Mat`. Sous les 120 maillages du
+catalogue, 66 materiaux distincts, dont **TROIS** lisent la RVT.
+
+**PERSONNE NE LIT LA RVT DE HAUTEUR**, et c'est verifie sur le TEMOIN qui
+tranche : la carte de demonstration du pack, `M_5_Bioms_Showcase`, pose 81
+materiaux, dont **29 lisent la couleur et ZERO la hauteur**, et ne contient
+aucun acteur `VirtualHeightfieldMesh`. Le chantier « ecrire la RVT de hauteur »,
+que j'avais annonce comme la suite naturelle, est donc **ABANDONNE** : il ne
+changerait rien a l'image, pas meme dans le rendu que le pack est cense
+produire. C'est la question du proprietaire -- « combien de materiaux de la demo
+lisent la hauteur ? » -- qui l'a tranche, et elle valait mieux que ma reponse.
+
+**UNE NOTE DE CE REGISTRE ETAIT PERIMEE ET M'A FAIT ME TROMPER.** Elle affirme
+que « `M_Assets_MasterMat` ne contient aucun `RuntimeVirtualTextureSample` au
+premier niveau : il appelle `MF_RVT` » -- et c'est sur elle que j'ai explique au
+proprietaire, en trois phrases confiantes, ce que l'ecriture de la hauteur
+changerait. Les deux assets EXISTENT bien dans le projet, mais **ni l'un ni
+l'autre ne porte la moindre expression de RVT**. Ce qui etait vrai du pack a
+l'epoque du Landscape ne l'est plus.
+
+### Ce que la table SansRVT faisait vraiment (28 septembre 2026)
+
+Dix-neuf instances, creees quand le niveau n'avait aucune RVT. La mesure, faite
+AVANT de supprimer, a montre qu'elles ne faisaient presque rien :
+
+    DOUZE ne changeaient RIEN, pas un switch. Des copies conformes -- dont les
+      quatre MI_Rock_* de Biom_Dark, qui LISENT pourtant la RVT : la table n'a
+      donc jamais corrige leur bleu.
+    TROIS coupaient `UseTopVertexRVTMask` (les MI_Cliff_* de Biom_Green). Seul
+      vrai correctif de RVT, et desormais nuisible.
+    QUATRE coupaient `Use Roughness Map` / `Use Specular Map` -- AUCUN rapport
+      avec la RVT, ce sont les « textures parasites » du commentaire.
+      Arbitrage du proprietaire : le pack a raison.
+
+**LIRE LES SURCHARGES PROPRES D'UNE INSTANCE NE DIT PAS CE QU'ELLE REND.** Mon
+premier diff comparait les tableaux de surcharge de l'original et du
+remplacant : il rendait « T_Bamboo_1 -> (non surcharge) » sur les dix-neuf, et
+j'ai failli annoncer que le remplacement avait perdu toutes les textures du
+pack. **Les dix-neuf ont pour parent l'instance d'origine** : ils HERITENT de
+tout. La preuve se prend sur la valeur EFFECTIVE
+(`get_material_instance_texture_parameter_value`), pas sur le tableau des
+surcharges -- et l'en-tete de `ParoiMateriau` portait deja l'avertissement :
+« un `get` seul rend `False` aussi bien pour une surcharge posee que pour un
+parametre jamais surcharge ; c'est la comparaison AU PARENT qui le prouve ».
+
+**UN DEFAUT LATENT PART AVEC LA TABLE** : son chargeur lisait un `.json` sous
+`Content/`, qui n'est pas un `.uasset` et n'entre donc pas dans un build cuit
+sans `DirectoriesToAlwaysStageAsUFS` -- absent. La table etait **vide en build
+final**, et personne ne l'a jamais su. Le piege est deja consigne pour la police
+d'icones ; il vaut pour tout fichier non-`.uasset` lu a l'execution.
+
+### Un A/B d'image par lancements successifs exige SON TEMOIN (28 septembre 2026)
+
+Mesure entre deux configurations differentes : **49,02 %** de pixels changes,
+ecart moyen 17,18 sur 765. Mesure entre deux lancements **RIGOUREUSEMENT
+IDENTIQUES** : **60,60 %**, ecart moyen 20,03. Le signal est SOUS le plancher de
+bruit -- Lumen et TSR ne convergent pas pareil d'un lancement a l'autre.
+
+Le signe qui aurait du alerter avant le temoin : **le CIEL changeait de 43 %**,
+alors qu'aucun materiau de vegetation ne peut l'atteindre. Une zone que le
+traitement ne touche pas et qui bouge quand meme mesure le bruit.
+
+**Ce qui decide alors n'est pas un pourcentage mais un CRITERE BINAIRE** -- ici
+« y a-t-il du bleu, oui ou non » -- juge a l'oeil sur une image ou le sujet est
+present. Le depot avait deja releve 82 % entre deux passes identiques sur une
+autre scene ; c'est desormais deux fois.
+
+### Une capture ne vaut que par son SUJET, et trois facons de le rater (28 septembre 2026)
+
+- **`-WorldseedVue=` se pose en (0, 0) par defaut**, c'est-a-dire au CENTRE DU
+  MONDE -- qui est en pleine mer sur ce monde, **sol a -349 m**. Ma premiere
+  serie de quatre vues photographiait le fond de l'ocean a travers l'eau : une
+  masse bleu-gris sans texture, parfaitement interpretable comme « le terrain a
+  perdu ses textures ». Le journal le disait pourtant en toutes lettres, et la
+  ligne `especes dans 150 m : 0` le confirmait.
+- **`-WorldseedPhotos` est REQUIS**, meme pour une vue libre : `OnWorldBeginPlay`
+  sort a sa premiere garde sans lui. Sans ce drapeau la partie se lance, ne
+  photographie rien, et **ne quitte jamais** -- mon premier essai a tourne dix
+  minutes pour rien.
+- **`-WorldseedGraine=` ne prend PAS sur le chemin du lancement direct.** Demande
+  a 1337, le journal repond « monde repris du cache : seed=20260909 ». Toute
+  comparaison qui suppose la graine demandee est fausse ; lire la ligne.
+
+**LE CONTROLE QUI SAUVE CES TROIS CAS TIENT EN UNE LIGNE DE JOURNAL** :
+`-WorldseedEspeces=<rayon>` dit combien d'instances entourent le point de vue.
+`0` signifie qu'il n'y a rien a photographier. C'est exactement ce qui manquait
+a l'A/B des pans du 27 septembre, « tombe sur un arret ou aucun pan n'etait en
+vue ».
+
+### awk en mode texte mange les CRLF (28 septembre 2026)
+
+Pour retirer un bloc de quatre-vingt-douze lignes d'un `.cpp`, `awk 'NR<a ||
+NR>b'` rend un fichier en **LF seul** la ou l'original est en CRLF : le diff
+devient le fichier entier. `head -n X` puis `tail -n +Y` sont fideles aux
+octets -- verifie par `cmp` sur la tete ET sur la queue avant d'installer.
+
+Et le fichier avait **une ligne en LF seul** au milieu d'un fichier CRLF,
+laissee par une edition precedente : c'est ce qui a fait echouer la variante
+« awk avec ORS=CRLF », qui aurait normalise cette ligne au passage. Un
+`grep -c` de fin de ligne ne l'avait pas vue ; `od -c` si.

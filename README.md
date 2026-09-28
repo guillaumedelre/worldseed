@@ -201,10 +201,17 @@ et il se lit station par station : un simple compte laisserait passer un
 échange, ce qui s'est déjà produit — l'ajout de la forêt subtropicale humide a
 fait passer deux relevés et basculer deux autres, pour un score inchangé.
 
-Les cent oracles ne remplacent pas le regard. Une règle du dépôt :
+Les oracles ne remplacent pas le regard. Une règle du dépôt :
 **une forme qui n'a pas été vue n'est pas validée.** Les terrasses des parois de
 canyon étaient mesurées justes — écart de pente dur contre tendre de +8,17° — et
 rendaient à l'écran une surface qui ne ressemblait pas à de la roche.
+
+Et **le regard ne se remplace pas par une différence de pixels**. Sous
+éclairage, deux lancements *rigoureusement identiques* de ce projet diffèrent de
+**60,6 %** de pixels — Lumen et TSR ne convergent pas pareil. Tout A/B d'image
+par lancements successifs doit donc porter son témoin : deux passes de la même
+moitié, mesurées comme les autres. Sans lui, un écart de 49 % se lit comme un
+résultat alors qu'il est sous le bruit.
 
 ---
 
