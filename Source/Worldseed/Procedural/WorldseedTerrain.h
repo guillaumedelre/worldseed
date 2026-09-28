@@ -180,9 +180,28 @@ public:
 	 * Pente, en degres, a partir de laquelle la roche prend le dessus.
 	 * Les deux bornes forment la zone de transition.
 	 */
-	/** Ce que les couleurs de sommet transportent. */
+	/**
+	 * Ce que les couleurs de sommet transportent.
+	 *
+	 * LE DEFAUT EST L'HABILLAGE, ET IL DOIT L'ETRE DEPUIS QU'IL N'Y EN A QU'UN.
+	 * Il valait `BiomeColour`, et `TexturePack` n'etait pose QUE dans la
+	 * branche « monde repris du menu » de `AdoptWorld`. Un lancement DIRECT sur
+	 * `L_Worldseed_Proc` -- le harnais, un PIE sans passer par le menu -- ne
+	 * prend pas cette branche : le terrain gardait alors des couleurs de biome
+	 * a plat, sans une seule texture, et rien ne le signalait. Signale en jeu
+	 * le 28 septembre 2026 : « le terrain n'a plus de texture ».
+	 *
+	 * C'EST LE PIEGE QUE `AdoptWorld` DOCUMENTE TRENTE LIGNES PLUS BAS, et le
+	 * depot l'avait deja paye deux fois -- sur le point de naissance, puis sur
+	 * l'habillage force : « ce chemin-la n'est pris que si personne ne donne de
+	 * monde au voxel ». Un reglage qui doit valoir partout se pose dans le
+	 * DEFAUT, jamais dans une seule des deux branches de chargement.
+	 *
+	 * `BiomeColour` et `LayerWeights` restent joignables depuis l'editeur :
+	 * ce sont des modes de VISUALISATION, et ils servent au diagnostic.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches")
-	EWorldseedTerrainColouring Colouring = EWorldseedTerrainColouring::BiomeColour;
+	EWorldseedTerrainColouring Colouring = EWorldseedTerrainColouring::TexturePack;
 
 	/** Materiau employe en mode couleur de biome. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Couches")
