@@ -133,7 +133,7 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 	L.Add(TEXT("site                      lat   Koppen   T an  mm/an   pluie averse  neige  degage couvert")
 		TEXT("   orages   aurore   | CIBLE, sans fondu"));
 	L.Add(TEXT("                                             C    mm       %     %       %       %      %")
-		TEXT("    (episodes/an)     | pluie %  orages"));
+		TEXT("    (episodes/an)     | pluie %  orages        X       Y (m)"));
 
 	// --- les sites, repartis en latitude -------------------------------------
 	//
@@ -266,16 +266,22 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			Aurore.Voir(Courant.Aurora >= SeuilAurore);
 		}
 
+		// OU C EST, en metres du monde -- une meteo qu on ne sait pas aller voir
+		// n existe pas pour le joueur, exactement comme une grotte sans entree.
+		const int32 Colonne = Cellule % Geo.NX;
+		const float XM = (static_cast<float>(Colonne) / Geo.NX - 0.5f) * Geo.HeightM * 2.0f;
+		const float YM = (static_cast<float>(MeilleureLigne) / Geo.NY - 0.5f) * Geo.HeightM;
+
 		const float Cent = 100.0f / FMath::Max(Pas, 1);
 		L.Add(FString::Printf(
 			TEXT("%-24s %5.0f   %-6s %5.1f %6.0f  %5.1f %5.1f  %5.1f   %5.1f  %5.1f    %4d     %4d")
-			TEXT("   |%6.1f %5d"),
+			TEXT("   |%6.1f %5d   %7.0f %7.0f"),
 			*NomBiome.Left(24), Echantillon.LatitudeDeg, WorldseedKoppen::Nom(Classe),
 			Echantillon.TempMeanC, Echantillon.PrecipMm,
 			Pluie.Pas * Cent, Averse.Pas * Cent, Neige.Pas * Cent,
 			Degage.Pas * Cent, Couvert.Pas * Cent,
 			Orage.Episodes, Aurore.Episodes,
-			PluieCible.Pas * Cent, OrageCible.Episodes));
+			PluieCible.Pas * Cent, OrageCible.Episodes, XM, YM));
 	}
 
 	L.Add(TEXT(""));

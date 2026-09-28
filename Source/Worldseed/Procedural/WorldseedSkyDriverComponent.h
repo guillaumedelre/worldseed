@@ -123,4 +123,7 @@ private:
 
 	/** Faux des qu'on a constate qu'il n'y a rien a piloter. */
 	bool bSearchedForSky = false;
+
+	/** La surcharge de periode ne se lit qu une fois : la ligne de commande ne change pas. */
+	bool bPeriodeLue = false;
 };

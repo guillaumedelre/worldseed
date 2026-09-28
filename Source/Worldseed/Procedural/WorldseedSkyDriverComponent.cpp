@@ -63,6 +63,38 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		return;
 	}
 
+	// --- COMPRIMER LE CYCLE METEO POUR ALLER LE REGARDER ---------------------
+	//
+	// UNE FREQUENCE JUSTE EST INOBSERVABLE EN DEMONSTRATION, et ce depot a le
+	// precedent exact : le 12 septembre la neige tombait une fois sur
+	// quarante-trois tirages -- mecanique parfaite, deux heures et demie
+	// d'attente. Nos chiffres actuels ont le meme profil : soixante-six orages
+	// par an sur une annee de vingt-sept heures font UN ORAGE TOUTES LES
+	// VINGT-CINQ MINUTES, et quarante aurores dont la moitie tombe de jour.
+	//
+	// La surcharge ne change RIEN au modele : elle accelere l'horloge du signal,
+	// donc la meme succession d'evenements defile plus vite. A vingt secondes au
+	// lieu de cent quatre-vingts, un orage arrive toutes les trois minutes.
+	//
+	// ET ELLE PASSE PAR LA LIGNE DE COMMANDE, pas par le fichier de regles : en
+	// toucher changerait l'empreinte, donc regenererait le monde -- ce ne serait
+	// plus le meme endroit qu'on regarde.
+	if (!bPeriodeLue)
+	{
+		bPeriodeLue = true;
+		float Surcharge = 0.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedMeteoPeriode="), Surcharge)
+			&& Surcharge >= 1.0f)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : cycle COMPRIME de %.0f a %.0f s ")
+				TEXT("-- pour REGARDER, pas pour jouer : les frequences par an ")
+				TEXT("sont inchangees, elles defilent %0.1f fois plus vite"),
+				WeatherPeriodS, Surcharge, WeatherPeriodS / Surcharge);
+			WeatherPeriodS = Surcharge;
+		}
+	}
+
 	// --- trouver le ciel, une seule fois ------------------------------------
 	if (!Bridge.IsValid())
 	{
