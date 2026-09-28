@@ -155,6 +155,26 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 			TEXT("fraction estivale : la notre %.3f en moyenne, le reel %.3f, ecart moyen %.3f"),
 			SommeFeNotre / M, SommeFeReelle / M, SommeEcartFe / M));
 		L.Add(TEXT("  (0,5 = pluie egale entre semestres ; 1 = tout au semestre chaud)"));
+
+		// LE DETAIL PAR CLIMAT, TRIE PAR LATITUDE. Une moyenne juste et un
+		// ecart individuel de 0,185 veulent dire que les erreurs se compensent ;
+		// c'est en les rangeant par latitude qu'on voit si elles suivent une
+		// structure -- un biais par ceinture -- ou si elles sont du bruit.
+		L.Add(TEXT(""));
+		L.Add(TEXT("  climat                            lat    reel   notre   ecart"));
+		TArray<const FWorldseedReleveReel*> Tri;
+		for (const FWorldseedReleveReel& R : Releves) { Tri.Add(&R); }
+		Tri.Sort([](const FWorldseedReleveReel& A, const FWorldseedReleveReel& B)
+		{
+			return A.LatitudeDeg < B.LatitudeDeg;
+		});
+		for (const FWorldseedReleveReel* R : Tri)
+		{
+			const float Notre = WorldseedClimate::SummerRainFraction(
+				*Regles, Geo, R->LatitudeDeg);
+			L.Add(FString::Printf(TEXT("  %-32s %5.1f  %6.3f  %6.3f  %+6.3f"),
+				*R->Cle, R->LatitudeDeg, R->FractionEte, Notre, Notre - R->FractionEte));
+		}
 	}
 	L.Add(FString::Printf(TEXT("pire ecart de couverture : %+.1f points  (%s)"),
 		PireCouvert, *PireNom));

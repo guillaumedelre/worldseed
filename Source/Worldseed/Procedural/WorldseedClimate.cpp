@@ -784,5 +784,30 @@ float WorldseedClimate::SummerRainFraction(const UWorldseedRules& Rules,
 	const float Hiver = TauxDePluieZonal(Rules, AbsHiver, Half, Cells, Front, ConvF, Subs);
 
 	const float Somme = Ete + Hiver;
-	return (Somme > 1e-6f) ? Ete / Somme : 0.5f;
+	const float Brute = (Somme > 1e-6f) ? Ete / Somme : 0.5f;
+
+	// --- L'OSCILLATION ZONALE EST DEUX FOIS TROP FORTE ------------------------
+	//
+	// MESURE SUR LES VINGT-TROIS RELEVES DE STATIONS REELLES, et le constat est
+	// severe : la fraction brute s'ecarte du reel de 0,185 en moyenne, quand
+	// REPONDRE 0,5 PARTOUT -- ne rien predire du tout -- n'en fait que 0,157.
+	// Telle quelle, cette fonction ajoutait donc du bruit plutot que de
+	// l'information.
+	//
+	// MAIS L'ERREUR EST STRUCTUREE, PAS ALEATOIRE : trop estivale sous les
+	// tropiques (+0,05 a +0,40) et aux hautes latitudes (+0,09 a +0,31), trop
+	// hivernale aux moyennes (-0,08 a -0,34). C'est la signature d'une bonne
+	// FORME a la mauvaise amplitude -- et l'amortir a 0,54 ramene l'erreur a
+	// 0,102, sous le temoin.
+	//
+	// CE QUE LE FACTEUR REPRESENTE : la circulation zonale MOYENNE exagere le
+	// contraste que le climat reel produit. L'ocean amortit les saisons, et les
+	// pluies convectives des continents ne suivent pas les ceintures -- un
+	// continental d'ete est arrose quand notre modele le veut sec. Un terme de
+	// continentalite a d'ailleurs ete essaye pour cela, et son coefficient
+	// optimal est NUL : ne pas le retenter sans une autre idee.
+	const float Amortissement = static_cast<float>(
+		Rules.Num(TEXT("precipitation"), TEXT("saisonAmortissement"), 1.0));
+
+	return 0.5f + Amortissement * (Brute - 0.5f);
 }

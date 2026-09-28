@@ -63,7 +63,7 @@
  *       anterieur le relirait vide, c'est-a-dire un monde sans frontieres et
  *       sans noms.
  */
-#define WORLDSEED_PIPELINE_VERSION 26
+#define WORLDSEED_PIPELINE_VERSION 27
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry
