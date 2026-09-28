@@ -126,4 +126,8 @@ private:
 
 	/** La surcharge de periode ne se lit qu une fois : la ligne de commande ne change pas. */
 	bool bPeriodeLue = false;
+
+	/** Temoin d'orage force par `-WorldseedOrageForce=` ; negatif = inactif. */
+	bool bTemoinLu = false;
+	float TemoinOrage = -1.0f;
 };

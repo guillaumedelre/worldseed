@@ -192,6 +192,37 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			WorldseedWeatherState::AlphaDeFondu(DeltaSeconds, BlendSeconds));
 	}
 
+	// --- LE TEMOIN FRANC : FORCER L'EVENEMENT AU LIEU DE L'ATTENDRE ----------
+	//
+	// Un orage absent a DEUX causes opposees -- le modele n'en demande aucun,
+	// ou il en demande et rien n'atteint l'ecran -- et guetter ne les separe
+	// pas : quarante captures sur neuf minutes n'ont rien montre, ce qui est
+	// compatible avec les deux. Forcer la valeur repond a la seconde question
+	// SEULE, en une capture, et c'est exactement ce que ce depot fait partout
+	// ailleurs avec ses temoins de couleur franche.
+	//
+	// ON FORCE APRES LE FONDU, JAMAIS AVANT : pose sur la cible, le lissage
+	// ecreterait le temoin lui-meme et l'on retomberait dans la question de
+	// depart.
+	if (!bTemoinLu)
+	{
+		bTemoinLu = true;
+		float Valeur = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedOrageForce="), Valeur)
+			&& Valeur >= 0.0f)
+		{
+			TemoinOrage = FMath::Clamp(Valeur, 0.0f, 10.0f);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : ORAGE FORCE a %.1f sur 10 -- ")
+				TEXT("temoin, le climat ne decide plus de cette valeur"),
+				TemoinOrage);
+		}
+	}
+	if (TemoinOrage >= 0.0f)
+	{
+		Current.Thunder = TemoinOrage;
+	}
+
 	PushWeather();
 
 	// --- L'HEURE AVANCE-T-ELLE VRAIMENT ? ------------------------------------
