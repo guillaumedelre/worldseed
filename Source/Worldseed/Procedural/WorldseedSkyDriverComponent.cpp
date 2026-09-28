@@ -220,7 +220,22 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	}
 	if (TemoinOrage >= 0.0f)
 	{
+		// UN TEMOIN D'ORAGE DOIT POSER UN ORAGE, PAS UN ECLAIR NU.
+		//
+		// La premiere version ne forcait que `Thunder` : des eclairs tombaient
+		// sous un ciel bleu, et le proprietaire l'a signale aussitot. J'en ai
+		// d'abord conclu que le modele calculait la couverture independamment
+		// de la pluie -- C'ETAIT FAUX, et il suffisait de lire la ligne :
+		// `CloudCoverage` pese deja `Occurrence * 0,8` contre `CloudyFraction
+		// * 0,5`, donc la pluie DOMINE la nebulosite climatique. Le defaut
+		// etait dans l'instrument, pas dans le monde.
+		//
+		// Les trois grandeurs bougent donc ensemble, comme `Evaluate` les
+		// produirait a plein regime : sans quoi le temoin fabrique une scene
+		// que le jeu ne peut pas produire, et l'on debogue une chimere.
 		Current.Thunder = TemoinOrage;
+		Current.Rain = TemoinOrage;
+		Current.CloudCoverage = FMath::Max(Current.CloudCoverage, 9.0f);
 	}
 
 	PushWeather();

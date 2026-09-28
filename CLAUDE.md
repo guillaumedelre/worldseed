@@ -10979,3 +10979,102 @@ rendues et le dire, ou ne pas conclure de l'absence.
 verts et violets d'un bord a l'autre du ciel. `-WorldseedHeure=` pose l'heure de
 depart, en centiemes d'heure comme UDS (23 et 2300 acceptes tous deux), sans
 quoi il faut attendre une demi-heure de journee avant de pouvoir juger.
+
+### La sonde du ciel mesurait son propre lissage (28 septembre 2026)
+
+Suite de l'aurore. La neige et la pluie etant vues, restait l'orage -- et la
+seance a rendu un defaut d'INSTRUMENT bien plus gros que le defaut cherche.
+
+**LA SONDE FONDAIT QUINZE FOIS PLUS FORT QUE LE JEU.** `ProbeCiel` lissait sur
+`pas / periode`, soit une constante de temps d'une PERIODE ENTIERE (180 s),
+quand `UWorldseedSkyDriverComponent` fond sur **douze secondes reelles**. Et le
+commentaire annoncait deja « LE MEME FONDU QU'EN JEU » : c'est cette phrase qui
+l'a rendu invisible pendant toute la seance precedente. **Une note exacte posee
+sur du code faux ne protege rien** -- le depot a exactement la meme entree pour
+la glace ecrite dans le cache.
+
+Meme graine, meme monde, seul le fondu de la sonde corrige :
+
+    site                        avant   apres   cible sans fondu
+    foret tropicale seche, 0        9     109      119
+    savane, -15                    13      88      105
+    savane, +15                     1      42       56
+    aurores, taiga 60              62     136       --
+    neige en taiga                6,5 %   8,2 %     --
+
+**ET CELA ANNULE UN DIAGNOSTIC QUE J'AVAIS ECRIT ICI LA VEILLE.** J'y affirmais
+que les climats froids sous-pleuvaient d'un facteur trois -- « taiga 1,9 % de
+precipitation pour 7,5 nominaux » -- et j'attribuais ce manque a l'inegalite de
+Jensen sur la courbe de frequence, plus le seuil de visibilite. La taiga voit
+8,2 % de neige plus 3,1 % de pluie, soit **11,3 %** : elle est AU-DESSUS du
+nominal. Le facteur trois etait mon fondu, et le mecanisme invoque n'avait rien
+a expliquer. **Une explication physique plausible posee sur une mesure fausse
+se lit exactement comme un diagnostic.**
+
+`AlphaDeFondu` et `FonduDefautS` vivent desormais dans `WorldseedWeatherState`,
+appeles par la sonde ET par le pilote : la formule etait recopiee dans les deux
+fichiers, et elle avait diverge.
+
+#### GUETTER UN EVENEMENT RARE NE SEPARE PAS LES DEUX CAUSES
+
+Quarante captures sur neuf minutes, zero orage. Ce zero est compatible avec les
+deux explications opposees que ce fichier consigne depuis le carre d'ocean : le
+modele n'en demande aucun, ou il en demande et rien n'atteint l'ecran. **C'est
+le proprietaire qui a pose la question qui tranche** -- « est-il possible de
+verifier plus rapidement que d'attendre ? ». D'ou `-WorldseedOrageForce=<0..10>`,
+qui pose la valeur APRES le fondu -- posee sur la cible, le lissage ecreterait
+le temoin lui-meme et l'on retomberait dans la question de depart.
+
+Verdict en une capture : **les eclairs tombent**, la chaine de foudre est saine,
+et aucun interrupteur maitre ne dort (925 et 584 variables balayees ; `Spawn
+Lightning Flashes`, `Enable Obscured Lightning`, `Lightning Flash Light Source`
+et `Lightning Flashes Cast Shadows` sont VRAIS par defaut).
+
+**UN ECLAIR SE DETECTE A LA LUMINANCE MOYENNE DE L'IMAGE ENTIERE**, pas au ciel :
+c'est une source de lumiere, elle eclaire la scene. Le pic se lit sans
+ambiguite contre ses voisines -- 126 -> 154 a ciel clair, 100 -> 141 sous
+l'orage.
+
+#### UN TEMOIN DOIT POSER UN ETAT COHERENT, SINON ON DEBOGUE UNE CHIMERE
+
+La premiere version ne forcait que `Thunder` : des eclairs sous un ciel bleu,
+signale aussitot. **J'en ai conclu que le modele calculait la couverture
+independamment de la pluie, et je l'ai dit au proprietaire avant d'avoir lu la
+ligne.** Elle dit :
+
+    CloudCoverage = Lerp(Clear, Overcast, clamp(CloudyFraction * 0,5 + Occurrence * 0,8))
+
+Le couplage existe, et la pluie y **domine** la nebulosite climatique. Le defaut
+etait dans l'instrument. Le temoin force desormais les trois grandeurs ensemble,
+comme `Evaluate` les produirait a plein regime.
+
+#### UN DETECTEUR DE COULEUR SE VALIDE SUR UN CAS NEGATIF CONNU
+
+Mon guet comptait les pixels « orange » du bandeau dans une bande de l'ecran.
+Sur la savane ocre il a rendu **1794 pixels et crie victoire** alors que le
+bandeau affichait `orage 0.00` en argent : il mesurait le SOL. Le zero obtenu
+plus tot sur fond vert etait une chance, pas une mesure. Critere resserre a
+`R>230, G 130-180, B<60` et VALIDE a zero sur ce cas negatif, sur fond ocre
+comme sur fond vert. **Localiser les pixels comptes avant de lire le compte** --
+le depot a deja cette note, avec la dune et la jambe du personnage.
+
+#### DEUX PIEGES DE MONTAGE, TOUS DEUX DEJA AU REGISTRE SOUS UNE AUTRE FORME
+
+- **Comprimer le cycle pousse le defaut hors de portee.** Un guet lance a
+  `-WorldseedMeteoPeriode=20` ne pouvait RIEN montrer : a vingt secondes de
+  cycle, les douze secondes de fondu du jeu couvrent **soixante pour cent** de
+  la periode et ecrasent tout pic.
+- **La sonde et le jeu doivent tourner a la MEME resolution.** Lancee a 512
+  lignes quand le jeu tourne a 2048, elle a rendu les coordonnees d'un monde de
+  travail : le site vise portait 1881 mm/an chez elle et 1344 en jeu, et le
+  biome n'etait pas le meme. A 2048 le meme site ne compte plus 66 orages mais
+  109 -- les deux mondes ne sont pas comparables.
+
+**ET LE HANDLE D'UNE FENETRE DE JEU SE RELIT A CHAQUE PASSE.** Celui qu'on
+obtient dans les premieres secondes est le SPLASH, detruit ensuite : le figer
+rend « fenetre absente » pour toujours, et cela a coute deux series completes.
+
+**PIEGE POWERSHELL** : `git log -1 --pretty=%B` rend un TABLEAU de lignes ; un
+`-replace` suivi d'un `Out-File -NoNewline` les colle en une seule ligne et
+detruit le message de commit. Joindre explicitement, ou reecrire le message
+entier depuis un here-string.
