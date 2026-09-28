@@ -62,6 +62,16 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	/** Appelle une fonction SANS ARGUMENT sur l'un des deux acteurs. */
 	bool CallFunction(FName FunctionName) const;
 
+	/**
+	 * Nom du calendrier en vigueur, et sa longueur en jours.
+	 *
+	 * ELLE N'EST PAS SUR L'ACTEUR mais sur l'objet que porte sa variable
+	 * `Calendar`, et elle y est CALCULEE au demarrage : dans l'asset au repos
+	 * elle vaut zero, y compris pour le calendrier gregorien d'UDS qui
+	 * fonctionne. Rend faux si aucun calendrier n'est assigne.
+	 */
+	bool ReadYearLength(double& OutDays, FString& OutName) const;
+
 
 	// --- ecriture ------------------------------------------------------------
 

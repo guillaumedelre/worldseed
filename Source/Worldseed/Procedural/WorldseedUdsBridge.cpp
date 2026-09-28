@@ -184,6 +184,43 @@ bool FWorldseedUdsBridge::ReadSeasonPhase(float& OutPhase) const
 	return true;
 }
 
+bool FWorldseedUdsBridge::ReadYearLength(double& OutDays, FString& OutName) const
+{
+	// LA LONGUEUR DE L'ANNEE N'EST PAS SUR L'ACTEUR mais sur l'objet que porte
+	// sa variable `Calendar` -- et elle y est CALCULEE au demarrage : dans
+	// l'asset au repos, `Number of Days in Year` vaut zero, y compris pour le
+	// calendrier gregorien livre par UDS, qui fonctionne. Il faut donc la lire
+	// en jeu, sur l'instance, et non dans le fichier.
+	for (AActor* const Acteur : { SkyActor.Get(), WeatherActor.Get() })
+	{
+		if (!Acteur) { continue; }
+		FObjectProperty* const Prop = CastField<FObjectProperty>(
+			Acteur->GetClass()->FindPropertyByName(TEXT("Calendar")));
+		if (!Prop) { continue; }
+
+		UObject* const Calendrier = Prop->GetObjectPropertyValue_InContainer(Acteur);
+		if (!Calendrier) { continue; }
+
+		OutName = Calendrier->GetName();
+		if (FDoubleProperty* const Jours = CastField<FDoubleProperty>(
+				Calendrier->GetClass()->FindPropertyByName(TEXT("Number of Days in Year"))))
+		{
+			OutDays = Jours->GetPropertyValue_InContainer(Calendrier);
+			return true;
+		}
+		if (FIntProperty* const JoursInt = CastField<FIntProperty>(
+				Calendrier->GetClass()->FindPropertyByName(TEXT("Number of Days in Year"))))
+		{
+			OutDays = JoursInt->GetPropertyValue_InContainer(Calendrier);
+			return true;
+		}
+		// Le calendrier est la, sa longueur ne se lit pas : on rend son nom.
+		OutDays = 0.0;
+		return true;
+	}
+	return false;
+}
+
 bool FWorldseedUdsBridge::CallFunction(FName FunctionName) const
 {
 	// POSER UNE VARIABLE PAR REFLEXION NE DECLENCHE AUCUN RAPPEL. Une variable

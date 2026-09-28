@@ -327,31 +327,30 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 		// horloge armee ou non. `CAL_Worldseed` la ramene a trente-six jours,
 		// soit vingt-sept heures, et une saison a six heures quarante-cinq.
 		double Jours = 0.0;
-		if (Bridge.ReadNumber(TEXT("Number of Days in Year"), Jours) && Jours > 0.0)
+		FString NomCalendrier;
+		if (!Bridge.ReadYearLength(Jours, NomCalendrier))
 		{
-			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] meteo : annee de %.0f jours"), Jours);
-			if (Jours > 100.0)
-			{
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] meteo : ANNEE DE %.0f JOURS -- a quarante-cinq ")
-					TEXT("minutes reelles par journee, elle dure %.0f heures. La saison ")
-					TEXT("ne changera pas en pratique. Assigner CAL_Worldseed."),
-					Jours, Jours * 0.75);
-			}
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : AUCUN CALENDRIER sur %s -- la saison ne ")
+				TEXT("pourra pas avancer"), *Bridge.Describe());
+		}
+		else if (Jours > 100.0)
+		{
+			// A quarante-cinq minutes reelles par journee, trois cent
+			// soixante-cinq jours font deux cent soixante-quatorze heures : la
+			// saison ne changerait jamais, horloge armee ou non.
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : calendrier « %s », %.0f jours -- soit %.0f ")
+				TEXT("heures reelles par annee. La saison ne changera pas en ")
+				TEXT("pratique. Assigner CAL_Worldseed."),
+				*NomCalendrier, Jours, Jours * 0.75);
 		}
 		else
 		{
-			// ON LE DIT PLUTOT QUE DE SE TAIRE. Un silence ici se lirait comme
-			// « le calendrier va bien », alors qu'il veut dire « je n'ai pas su
-			// regarder » : la longueur de l'annee est CALCULEE dans l'asset
-			// `UDS_Calendar` et non exposee sur l'acteur. Verifier a la main que
-			// `CAL_Worldseed` y est assigne -- sans lui l'annee fait 365 jours,
-			// soit deux cent soixante-quatorze heures reelles.
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] meteo : longueur de l'annee non lisible depuis ")
-				TEXT("l'acteur (elle vit dans l'asset calendrier) -- verifier a la ")
-				TEXT("main que CAL_Worldseed est assigne"));
+				TEXT("[Worldseed] meteo : calendrier « %s », %.0f jours, soit %.1f ")
+				TEXT("heures par annee et %.1f par saison"),
+				*NomCalendrier, Jours, Jours * 0.75, Jours * 0.75 / 4.0);
 		}
 
 		if (Refusees.IsEmpty())

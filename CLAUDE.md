@@ -10241,3 +10241,26 @@ l'asset calendrier et non exposee sur l'acteur, donc le controle ne peut pas la
 lire -- il journalise son impuissance. Sans ce calendrier, l'annee des trois
 cent soixante-cinq jours d'UDS dure deux cent soixante-quatorze heures reelles
 et la saison ne changera jamais, horloge armee ou non.
+
+**ET LE CALENDRIER Y ETAIT AUSSI, ce que j'avais dit ne pas pouvoir verifier.**
+J'ai ecrit qu'il fallait l'ouvrir a la main dans l'editeur ; c'etait faux --
+un commandlet Python charge la carte, lit l'acteur et l'ecrit. La limite
+n'existait qu'en JEU, ou la longueur de l'annee n'est pas sur l'acteur.
+
+    releve : Calendar = Gregorian_Calendar   -> 365 jours, soit 274 h par annee
+    apres  : Calendar = CAL_Worldseed        -> 36 jours, 27 h, saison de 6,8 h
+
+**LE TEMOIN QUI A VALIDE NOTRE CALENDRIER.** Dans l'asset au repos,
+`CAL_Worldseed` a `Number of Days in Year` a ZERO, `Month Lengths` vide et
+`Calendar Data Saved` a False -- de quoi le croire incomplet, et une note de ce
+registre dit d'ailleurs qu'il faut poser ces champs a la main. Or **le
+calendrier gregorien livre par UDS, qui fonctionne, est dans EXACTEMENT le meme
+etat**. Ces champs sont donc calcules au demarrage, et un vide dans l'asset ne
+prouve rien. La seule chose qui compte est la table `Months` -- douze mois de
+trois jours. Verifie en jeu : « calendrier CAL_Worldseed, 36 jours ».
+
+**LA SAISON AVANCE, ET C'EST LA PREUVE DE BOUT EN BOUT** : le releve du ciel
+passe de `3.88` a `3.89` dans une meme partie, la ou il affichait `3.78` sur
+toutes les lignes avant. Le temps, lui, va de 1300,34 a 1303,66 en 5,5 s.
+
+`Tools/UE/calendrier_worldseed.py` rejoue l'operation, idempotent par constat.
