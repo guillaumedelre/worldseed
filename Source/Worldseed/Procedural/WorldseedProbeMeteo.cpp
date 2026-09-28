@@ -28,26 +28,6 @@ namespace
 	const TCHAR* const NomSaisonMeteo[4] =
 		{ TEXT("hiver"), TEXT("printemps"), TEXT("ete"), TEXT("automne") };
 
-	/**
-	 * La latitude d'un releve, qu'AUCUN fichier ne donne.
-	 *
-	 * ET C'EST UNE LIMITE, PAS UN DETAIL. `Build` module la pluie par l'ITCZ
-	 * entre les tropiques et par le regime mediterraneen entre 30 et 45 degres ;
-	 * sans latitude, ces deux termes ne peuvent pas etre reproduits. On la
-	 * DEDUIT donc de la temperature moyenne -- la seule grandeur du releve qui
-	 * varie avec elle -- par une interpolation grossiere : 0 degre de latitude
-	 * vers 27 C, 90 degres vers -25 C.
-	 *
-	 * CE QUE CELA COUTE : les lignes des climats tropicaux et mediterraneens
-	 * portent une incertitude que les autres n'ont pas, et l'en-tete du releve
-	 * le dit. Ajouter la latitude a `climats_reels.json` la leverait -- c'est
-	 * une donnee de reference, elle a sa place dans le fichier de reference.
-	 */
-	float LatitudePlausibleDeg(float TmoyC)
-	{
-		const float T = FMath::Clamp(TmoyC, -25.0f, 27.0f);
-		return 90.0f * (27.0f - T) / 52.0f;
-	}
 }
 
 FString UWorldseedProbeLibrary::ProbeMeteo()
@@ -77,9 +57,10 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 		TEXT("%d releves -- cloudyFloorPct %.0f  cloudySpanPct %.0f  cloudyPrecipScaleMm %.0f"),
 		Releves.Num(), ReglesPreset.CloudyFloorPct, ReglesPreset.CloudySpanPct,
 		ReglesPreset.CloudyPrecipScaleMm));
-	L.Add(TEXT("LIMITE : la latitude est DEDUITE de la temperature, les releves"));
-	L.Add(TEXT("ne la portant pas. Les climats tropicaux et mediterraneens, ou"));
-	L.Add(TEXT("l'ITCZ et la modulation saisonniere mordent, sont donc moins surs."));
+	L.Add(TEXT("La latitude vient de la table des climats, pas du releve : voir"));
+	L.Add(TEXT("FAttendu::LatDeg. Ce sont des centres de plage de Koppen, donc une"));
+	L.Add(TEXT("approximation -- mais elle arme l'ITCZ et le regime mediterraneen,"));
+	L.Add(TEXT("qu'une latitude deduite de la temperature laissait muets."));
 	L.Add(TEXT(""));
 	L.Add(TEXT("climat                              saison      mm reel  mm calc   couvert reel  calc   ecart"));
 	L.Add(TEXT("----------------------------------------------------------------------------------------------"));
@@ -102,7 +83,7 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 		// deduction la moins arbitraire disponible. Trente degres d'ecart
 		// saisonnier est un continental franc.
 		Sample.Continentality = FMath::Clamp(R.AmplitudeC / 30.0f, 0.0f, 1.0f);
-		Sample.LatitudeDeg = LatitudePlausibleDeg(R.TmoyC);
+		Sample.LatitudeDeg = R.LatitudeDeg;
 
 		const FWorldseedClimatePreset P =
 			WorldseedClimatePreset::Build(Sample, ReglesPreset);

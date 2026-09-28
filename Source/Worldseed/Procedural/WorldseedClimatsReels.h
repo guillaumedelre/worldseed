@@ -68,6 +68,23 @@ struct WORLDSEED_API FWorldseedReleveReel
 
 	/** Ecart entre la saison la plus froide et la plus chaude, en degres. */
 	float AmplitudeC = 0.0f;
+
+	/**
+	 * Latitude typique du climat, en degres nord.
+	 *
+	 * ELLE NE VIENT PAS DU RELEVE mais de notre table : un fichier de stations
+	 * porte ce que le thermometre a mesure, pas ou il se trouvait. Voir
+	 * `FAttendu::LatDeg` dans le .cpp pour d'ou sortent ces valeurs et ce
+	 * qu'elles valent.
+	 *
+	 * SANS ELLE, LE BULLETIN METEO NE PEUT PAS MESURER CE QU'IL PRETEND : la
+	 * traduction du climat vers UDS module la pluie par l'ITCZ entre les
+	 * tropiques et par le regime mediterraneen entre 30 et 45 degres. Un
+	 * premier jet la deduisait de la temperature, et attribuait dix-sept
+	 * degres de latitude a un climat mediterraneen -- dont la modulation ne
+	 * s'appliquait donc jamais, sur les lignes memes ou elle compte le plus.
+	 */
+	float LatitudeDeg = 0.0f;
 };
 
 /**
