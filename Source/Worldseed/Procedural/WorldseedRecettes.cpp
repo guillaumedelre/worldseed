@@ -323,45 +323,6 @@ bool FWorldseedRecettes::Charger(FString& OutErreur)
 		return false;
 	}
 
-	ChargerSansRVT();
-
 	OutErreur = Trouve;
 	return true;
-}
-
-void FWorldseedRecettes::ChargerSansRVT()
-{
-	SansRVT.Reset();
-
-	const FString Chemin = FPaths::ConvertRelativePathToFull(
-		FPaths::ProjectContentDir()
-		/ TEXT("Worldseed/Materials/SansRVT/correspondance.json"));
-
-	FString Brut;
-	if (!FFileHelper::LoadFileToString(Brut, *Chemin))
-	{
-		return;
-	}
-
-	TSharedPtr<FJsonObject> Racine;
-	TSharedRef<TJsonReader<>> Lecteur = TJsonReaderFactory<>::Create(Brut);
-	if (!FJsonSerializer::Deserialize(Lecteur, Racine) || !Racine.IsValid())
-	{
-		return;
-	}
-
-	const TSharedPtr<FJsonObject>* Table = nullptr;
-	if (!Racine->TryGetObjectField(TEXT("table"), Table))
-	{
-		return;
-	}
-
-	for (const auto& Paire : (*Table)->Values)
-	{
-		FString Valeur;
-		if (Paire.Value->TryGetString(Valeur))
-		{
-			SansRVT.Add(FString(StringCast<TCHAR>(*Paire.Key).Get()), Valeur);
-		}
-	}
 }

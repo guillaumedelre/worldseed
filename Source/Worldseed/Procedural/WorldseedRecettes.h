@@ -218,34 +218,41 @@ struct WORLDSEED_API FWorldseedRecettes
 	int32 NbCouches = 0;
 
 	/**
-	 * Materiau d'origine -> instance SANS Runtime Virtual Texture.
+	 * IL Y AVAIT ICI UNE TABLE `SansRVT` -- materiau du pack -> instance
+	 * corrigee -- ET ELLE EST PARTIE LE 28 SEPTEMBRE 2026, AVEC SES DIX-NEUF
+	 * ASSETS. Ce qui suit est la mesure qui l'a condamnee ; ne pas la refaire.
 	 *
-	 * POURQUOI CETTE TABLE EXISTE. Dix-neuf des cent cinquante-quatre materiaux
-	 * cites par les recettes ont un switch STATIQUE de RVT arme -- `UseRVT`,
-	 * `UseTopLayerRvt`, `UseTopVertexRVTMask`. Ils echantillonnent une Runtime
-	 * Virtual Texture que ce niveau n'a pas, depuis que le Landscape a disparu,
-	 * et rendent alors un BLEU ELECTRIQUE sur la face concernee : signale en
-	 * jeu, la face SUPERIEURE des rochers de desert etait bleue quand leurs
-	 * flancs restaient corrects.
+	 * ELLE EXISTAIT parce que certains materiaux du pack echantillonnent une
+	 * Runtime Virtual Texture, et que ce niveau n'en avait aucune depuis la
+	 * disparition du Landscape : ils rendaient un BLEU ELECTRIQUE sur la face
+	 * du dessus. Un switch STATIQUE ne se change pas a l'execution -- une
+	 * `UMaterialInstanceDynamic` ne peut pas le faire, seule une instance
+	 * CONSTANTE le peut -- d'ou dix-neuf assets et une table.
 	 *
-	 * ET CELA NE SE CORRIGE PAS A L'EXECUTION. Un switch statique compile deux
-	 * shaders differents ; une `UMaterialInstanceDynamic` ne peut pas le
-	 * changer, seule une instance CONSTANTE le peut. Les dix-neuf instances
-	 * corrigees sont donc des assets, crees en editeur, et cette table dit
-	 * lequel remplace lequel.
+	 * `WorldseedNappeRvt` REMPLIT la RVT de couleur depuis le 27 septembre : la
+	 * premisse est tombee. Et le releve, fait avant de supprimer quoi que ce
+	 * soit, a montre que la table faisait bien moins que ce qu'elle annoncait.
+	 * Les dix-neuf remplacants heritaient TOUS de l'instance d'origine -- donc
+	 * textures et scalaires identiques, verifie au millieme -- et ne changeaient
+	 * que des switchs :
 	 *
-	 * LA CLE EST LE CHEMIN COMPLET, PAS LE NOM : trois packs differents ont un
-	 * `MI_Rock_1`, et les confondre poserait le mauvais materiau sur deux
-	 * rochers sur trois.
+	 *   DOUZE ne changeaient RIEN du tout, pas un seul switch. Copies conformes.
+	 *     Dont les quatre `MI_Rock_*` de Biom_Dark, qui LISENT pourtant la RVT :
+	 *     la table n'a donc jamais corrige leur bleu.
+	 *   TROIS coupaient `UseTopVertexRVTMask` (les `MI_Cliff_*` de Biom_Green).
+	 *     Seul vrai correctif de RVT, et il est desormais nuisible : le masque
+	 *     doit REPRENDRE maintenant que la RVT est remplie.
+	 *   QUATRE coupaient `Use Roughness Map` / `Use Specular Map` (`MI_Bamboo`,
+	 *     `MI_Gray_Rock_1`, `MI_Palm_Bark`, `MI_Tree_Bark`). Cela n'avait AUCUN
+	 *     rapport avec la RVT -- c'etaient les « textures parasites » du
+	 *     commentaire du fichier. DECISION DU PROPRIETAIRE, 28 septembre 2026 :
+	 *     le pack a raison, on lui rend sa rugosite et son speculaire.
+	 *
+	 * ET LE CHARGEUR AVAIT UN DEFAUT LATENT : il lisait un `.json` sous
+	 * `Content/`, qui n'est pas un `.uasset` et n'entre donc pas tout seul dans
+	 * un build cuit -- il aurait fallu `DirectoriesToAlwaysStageAsUFS`, absent.
+	 * La table etait donc vide en build final, et personne ne l'a jamais su.
 	 */
-	TMap<FString, FString> SansRVT;
-
-	/**
-	 * Charge la table des instances sans RVT. Sans effet si le fichier manque
-	 * -- on garde alors les materiaux du pack, bleu compris, plutot que de
-	 * refuser de semer.
-	 */
-	void ChargerSansRVT();
 
 	bool EstVide() const { return ParBiome.Num() == 0; }
 

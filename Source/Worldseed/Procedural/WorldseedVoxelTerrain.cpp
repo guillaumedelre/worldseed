@@ -690,16 +690,6 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			bParoiMateriauDuPack = (Pack != 0);
 		}
 
-		// LE MEME ARBITRAGE, POUR LES DIX-NEUF INSTANCES DU SEMIS. Voir
-		// `bVegetationMateriauDuPack` : la premisse « ce niveau n'a pas de
-		// RVT » est tombee, et sur les pans le remplacement s'etait revele
-		// nuisible. On compare sur le MEME binaire plutot que de supposer.
-		int32 PackVeg = bVegetationMateriauDuPack ? 1 : 0;
-		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVegetationPack="), PackVeg))
-		{
-			bVegetationMateriauDuPack = (PackVeg != 0);
-		}
-
 		float Montee = ParoiMonteeMaxFrac;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiMontee="), Montee))
 		{
@@ -1460,11 +1450,11 @@ void AWorldseedVoxelTerrain::PreparerParois()
 				TEXT("[Worldseed] parois : materiau du PACK garde, le remplacement ")
 				TEXT("sans RVT est coupe"));
 		}
-		else if (UMaterialInterface* SansRVT = Cast<UMaterialInterface>(ParoiMateriau.TryLoad()))
+		else if (UMaterialInterface* Remplacant = Cast<UMaterialInterface>(ParoiMateriau.TryLoad()))
 		{
 			for (int32 S = 0; S < Maillage->GetStaticMaterials().Num(); ++S)
 			{
-				ISM->SetMaterial(S, SansRVT);
+				ISM->SetMaterial(S, Remplacant);
 			}
 		}
 		else if (!ParoiMateriau.IsNull())
@@ -1742,7 +1732,6 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 	// (InstancedStaticMeshComponent.h:288). Le culling GPU d'UE5 rend les deux
 	// comparables a ces volumes.
 	int32 Manquants = 0;
-	int32 RvtRemplaces = 0;
 
 	// --- LES GABARITS SE MESURENT ICI, ET NULLE PART AILLEURS --------------
 	//
@@ -1834,51 +1823,14 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 		ISM->SetCastShadow(bOmbresChunks);
 		ISM->bAffectDistanceFieldLighting = false;
 
-		// --- LE BLEU DE LA RVT SE REMPLACE ICI, EMPLACEMENT PAR EMPLACEMENT --
+		// LE MAILLAGE GARDE LES MATERIAUX DU PACK, ET C'EST TOUT.
 		//
-		// Voir `FWorldseedRecettes::SansRVT`. On remplace par EMPLACEMENT et non
-		// en bloc parce qu'un maillage a plusieurs sections peut meler un
-		// materiau fautif -- l'ecorce -- et un materiau sain -- le feuillage ;
-		// remplacer les deux ecraserait le second par le premier.
-		for (int32 S = 0; S < Maillage->GetStaticMaterials().Num()
-			&& !bVegetationMateriauDuPack; ++S)
-		{
-			const UMaterialInterface* const Origine = Maillage->GetMaterial(S);
-			if (!Origine)
-			{
-				continue;
-			}
-			// La table est indexee par le chemin du PAQUET, sans le suffixe
-			// d'objet : c'est ce que le script d'editeur y a ecrit.
-			FString Cle = Origine->GetPathName();
-			int32 Point = INDEX_NONE;
-			if (Cle.FindChar(TEXT('.'), Point))
-			{
-				Cle = Cle.Left(Point);
-			}
-			if (const FString* Remplacant = Recettes.SansRVT.Find(Cle))
-			{
-				if (UMaterialInterface* Sain = Cast<UMaterialInterface>(
-					FSoftObjectPath(*Remplacant).TryLoad()))
-				{
-					ISM->SetMaterial(S, Sain);
-					++RvtRemplaces;
-				}
-				else
-				{
-					// UN REMPLACANT INTROUVABLE DOIT CRIER, ET CE SILENCE A
-					// COUTE UN DIAGNOSTIC. Un temoin pose pour identifier un
-					// maillage fautif n'a rien remplace -- son chemin etait
-					// faux -- et le releve affichait le meme compte qu'avant :
-					// on a conclu que le maillage n'etait pas celui-la, alors
-					// qu'on n'avait rien teste du tout.
-					UE_LOG(LogTemp, Warning,
-						TEXT("[Worldseed] vegetation : remplacant INTROUVABLE pour %s ")
-						TEXT("-- le materiau du pack est garde : %s"),
-						*Cle, **Remplacant);
-				}
-			}
-		}
+		// Il y avait ici une substitution par EMPLACEMENT, qui echangeait dix-
+		// neuf materiaux du pack contre des instances « sans RVT ». Elle est
+		// partie le 28 septembre 2026 : la mesure complete est dans
+		// `FWorldseedRecettes` (douze remplacants ne changeaient rien, trois
+		// coupaient un masque de RVT desormais souhaitable, quatre coupaient la
+		// rugosite et le speculaire du pack -- et le pack a raison).
 
 		// NE PAS COUPER L'OMBRE PORTEE « PAR PRECAUTION » : fait une fois au
 		// passage a 6 200 instances a l'hectare, le verdict a l'image fut
@@ -1887,28 +1839,6 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 		// sans, soit 0,7 ms pour un budget de 16,67.
 		ISM->RegisterComponent();
 		PlanteComposants.Add(ISM);
-	}
-
-	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le mot qui dit quelle moitie
-	// tourne, les deux passes d'un A/B se ressemblent au journal, et le depot a
-	// deja conclu sur une moitie qui n'avait pas pris.
-	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le mot qui dit quelle moitie
-	// tourne, les deux passes d'un A/B se ressemblent au journal, et le depot a
-	// deja conclu sur une moitie qui n'avait pas pris.
-	if (bVegetationMateriauDuPack)
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] vegetation : materiaux du PACK gardes -- la RVT de ")
-			TEXT("couleur est remplie, les %d correspondances SANS RVT sont ")
-			TEXT("connues et NON employees"),
-			Recettes.SansRVT.Num());
-	}
-	else
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[Worldseed] vegetation : %d emplacement(s) de materiau passes en ")
-			TEXT("SANS RVT sur %d correspondances connues"),
-			RvtRemplaces, Recettes.SansRVT.Num());
 	}
 
 	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le compte des especes

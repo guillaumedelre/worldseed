@@ -4,7 +4,10 @@
 
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "MaterialTypes.h"
+// `MaterialTypes.h` est DEPRECIE et le moteur le dit a la compilation : « please
+// update your code before upgrading to the next release, otherwise your project
+// will no longer compile ». C'est le seul avertissement du module.
+#include "Materials/MaterialParameters.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/SoftObjectPath.h"
 
