@@ -30,21 +30,20 @@
     "Les biomes NUS (desert, plage, roche nue, calotte, toundra, alpin, desert",
     "froid) gardent le pas large : un desert dense n'est plus un desert.",
     "",
-    "LE TAPIS EST EN TROIS COUCHES depuis le 11 septembre 2026, et la raison est",
-    "la Runtime Virtual Texture. Le terrain ECRIT sa couleur dans une RVT ; le",
-    "materiau M_Grass la RELIT et teinte le brin a la couleur du sol. Mesure : la",
-    "meme herbe rend 0,0 % de pixels verts en desert et 100 % en foret tropicale.",
-    "Or le tapis pesait 67 % de toutes les instances et 37 de ses 39 maillages",
-    "ignoraient la RVT : l'herbe restait verte partout. D'ou le remplacement.",
+    "LE TAPIS EST REVENU A UNE SEULE COUCHE, et les trois lignes qui decrivaient",
+    "ses trois couches sont parties avec elles. Ce qui reste vrai : le tapis pese",
+    "67 % de toutes les instances, donc c est LUI qui decide du cout comme du",
+    "rendu, et toute question de densite ou de materiau commence par lui.",
     "",
-    "  tapis         LPF:SM_Env_Grass_small -- 4 triangles, dix fois moins que",
-    "                les 40 de PBF:SM_Grass. Base 39 cm, d ou une echelle 2,6-5,9",
-    "                qui rend les 101 a 230 cm de l ancien tapis.",
-    "  tapis_haut    GLO:SM_Grass d Orasot -- 360 triangles mais 3 LOD, pour la",
-    "                silhouette. 10 % des instances de la masse.",
-    "  tapis_accents les fleurs, le ble et le lierre, a leur densite d origine.",
-    "",
-    "Bilan mesure sur les 12 biomes : -2 % d instances, -14 % de triangles.",
+    "REMPLACEMENT DU 28 SEPTEMBRE 2026 : LowPolyForestVol2 est SORTI de la palette,",
+    "remplace par Stylized_Forest (SFP plantes, SFS pierres, SFT arbres). Ce qu on",
+    "perd, et c etait su : les champignons -- aucun equivalent, la couche est",
+    "supprimee dans cinq biomes --, les buissons a baies et les arbres morts sur",
+    "pied. Les coniferes de la taiga et de l alpin gardent SFL:SM_Pine / SM_Pine_2,",
+    "faute de conifere identifiable dans Stylized_Forest.",
+    "NON MESURE A CE JOUR : le maillage d herbe qui tenait un quart du tapis faisait",
+    "QUATRE triangles ; le cout des SFP:SM_grass_* n a pas ete releve, et le tapis",
+    "est la couche ou cela mord.",
     "",
     "POURQUOI DES PAS PAR BIOME (tapis_ras_175, tapis_haut_500...). La part",
     "d accents va de 0 % (toundra, desert froid, alpin) a 35 % (prairie) : un pas",
@@ -52,11 +51,10 @@
     "sont donc calcules puis NOMMES PAR LEUR VALEUR -- deux biomes qui tombent sur",
     "la meme valeur partagent le nom, donc la meme branche de decimation du graphe.",
     "",
-    "materiaux_forces : materiau impose a un maillage, par reference. Il pointe",
-    "le petit maillage du tapis vers MI_WorldseedGrassRas, notre copie greffee de",
-    "la Runtime Virtual Texture -- voir Tools/UE/rvt_graft.py, qui la refabrique.",
-    "Ces copies vivent sous /Game/Worldseed/PCG/Materials/, exclu de git : elles",
-    "DERIVENT d un pack payant.",
+    "materiaux_forces : materiau impose a un maillage, par reference. IL EST VIDE",
+    "depuis le 26 septembre 2026, avec la table SansRVT qu il servait : la nappe",
+    "RVT a desormais un ecrivain, donc plus aucun materiau n a besoin d etre",
+    "substitue. La cle reste lue, et ne pose rien.",
     "",
     "ATTENTION, piege paye comptant : il existe DEUX materiaux nommes M_Grass.",
     "  LowPolyForestVol2/Materials/M_Grass          MASQUE, feuillage deux faces",
@@ -79,7 +77,7 @@
   "_comment_estran" : "L ESTRAN N EST PAS UN BIOME, c est un SUBSTRAT (EWorldseedCover::Beach) : une plage de desert et une plage de foret tropicale sont toutes deux du sable nu, et leur climat decide de ce qui pousse DERRIERE, pas dessus. Tant que le semis ne lisait que le biome, une plage recevait le tapis d herbe de la foret voisine -- de l herbe sur le sable, signale en jeu le 26 septembre 2026. Cette recette REMPLACE celle du biome sur les cellules d estran, qui pesent 3,9 pour cent des terres. ELLE NE PORTE AUCUNE HERBE, A DESSEIN : une plage est nue, et c est le point de la demande. Le pas est `rares`, soit 40 m, donc environ 6 blocs a l hectare -- des galets et des rochers echoues, pas un eboulis. L echelle descend a 0,4 parce que ce qui roule sur une plage est plus petit que ce qui tombe d une falaise, et la pente est bornee a 20 degres : au-dela on n est plus sur l estran mais sur la dune ou la roche qui le domine. Vider ce tableau rend la plage entierement nue, ce qui reste plus juste que de l herbe.",
   "_comment_spacings" : "Le pas du TAPIS est cale sur GT_Grass du pack Orasot, mesure le 25 septembre 2026 sur M_5_Bioms_Showcase : deux varietes de SM_Grass a 65 et 70 instances par 100 m2, soit 1,35 brin au metre carre. A 75 cm de pas la couche rend 1,78 point/m2, dont trois quarts vont a SM_Grass par son poids -> 1,33/m2. La carte de demonstration tient cette densite GRATUITEMENT, par LandscapeGrassOutput : un monde voxel n a pas de Landscape, donc chaque brin est ici une instance reelle et se paie.",
   "_comment_tapis" : "LE TAPIS N EMPLOIE PAS SM_Grass DU DOSSIER Global, ET C EST MESURE. Les deux herbes du bundle portent le meme nom de maillage et le meme nom d instance de materiau -- piege deja paye : comparer des CHEMINS, jamais des noms. Global/SM_Grass passe par Global/Materials/M_Grass, qui echantillonne la Runtime Virtual Texture par DEUX noeuds et n expose aucun interrupteur pour s en passer (son seul switch est Tweak) : tant que la RVT n est pas alimentee, ses brins rendent NOIRS -- verifie a l image, et sans eclairage, donc c est bien une couleur. StylizedForestLandscape/SM_Grass passe par M_Master_Grass, qui n en lit AUCUNE, pour un gabarit equivalent : 0,77 m contre 0,66, 307 triangles contre 360, opaque et double face dans les deux cas.",
-  "_palette" : "orasot-pur : UN seul des cinq biomes caracteristiques par biome Worldseed (jamais deux melanges), plus les fonds neutres du bundle (Global, LowPolyForest, StylizedForestLandscape). Calage arrete par le proprietaire le 25 septembre 2026, formulaire rempli : Green prend la foret tropicale humide, l alpin, le mediterraneen et la foret subtropicale humide ; Bamboo ne sert plus qu au marais, qui est INATTEIGNABLE depuis le retrait de l hydrologie -- donc aucun bambou dans le monde jouable. Biom_Red reste RESERVE a un futur biome d iles flottantes. La teinte jaune de la savane ne se peint pas : GLB:SM_Grass lit la RVT et prend le ton du sol.",
+  "_palette" : "orasot-pur + Egypte - LowPolyForest (28 septembre 2026) : le socle reste orasot-pur, et les plantes et pierres de Stylized_Egypt reviennent dans les CINQ biomes secs -- desert chaud, desert froid, foret tropicale seche, savane, steppe -- aux places et aux ECHELLES que le catalogue leur avait deja calees. Motif : Orasot est le plus pauvre en silhouettes arides, et enrichir une couche ne coute AUCUNE instance (le pas de grille fixe la densite, pas le nombre de maillages). Ce qu on accepte en echange : ces maillages ne lisent pas la RVT, donc ils ne prennent pas le ton du sol. Biom_Red reste RESERVE a un futur biome d iles flottantes. LowPolyForestVol2 est sorti le meme jour au profit de Stylized_Forest.",
   "biomes" : {
     "alpin" : {
       "id" : 15,
@@ -95,7 +93,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -165,14 +171,6 @@
             [
               "SFL:SM_Pine_2",
               3
-            ],
-            [
-              "LPF:SM_Env_Pine_Tree_2",
-              2
-            ],
-            [
-              "LPF:SM_Env_death_tree_3",
-              1
             ]
           ],
           "name" : "coniferes_epars",
@@ -205,11 +203,11 @@
               1
             ],
             [
-              "LPF:SM_Env_rock_4",
+              "SFS:SM_stone_01",
               2
             ],
             [
-              "LPF:SM_Env_scatter_rock_14",
+              "SFS:SM_stone_03",
               2
             ]
           ],
@@ -251,6 +249,10 @@
             [
               "DES:SM_Hero_Tree_1_with_Roots",
               1
+            ],
+            [
+              "EGP:SM_tree_01",
+              2
             ]
           ],
           "name" : "palmiers",
@@ -282,6 +284,10 @@
             ],
             [
               "DES:SM_Bush_many_2",
+              2
+            ],
+            [
+              "EGP:SM_bush_03",
               2
             ]
           ],
@@ -327,6 +333,18 @@
             [
               "DES:SM_Gray_Rock_1",
               1
+            ],
+            [
+              "EGS:SM_stone_01",
+              2
+            ],
+            [
+              "EGS:SM_stone_02",
+              2
+            ],
+            [
+              "EGS:SM_stone_03",
+              2
             ]
           ],
           "name" : "rochers",
@@ -345,6 +363,14 @@
           "meshes" : [
             [
               "DES:SM_Mid_Bush_1",
+              2
+            ],
+            [
+              "EGP:SM_bush_01",
+              2
+            ],
+            [
+              "EGP:SM_bush_02",
               2
             ]
           ],
@@ -381,7 +407,19 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "EGP:SM_grass",
+              1
+            ],
+            [
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -409,16 +447,16 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_death_tree_2",
+              "SFT:SM_branch_01",
               2
             ],
             [
-              "LPF:SM_Env_death_tree_4",
+              "SFT:SM_branch_02",
               2
             ],
             [
-              "LPF:SM_Env_death_tree_small_2",
-              1
+              "SFT:SM_stump_02",
+              2
             ]
           ],
           "name" : "bois_mort",
@@ -447,11 +485,11 @@
               2
             ],
             [
-              "LPF:SM_Env_scatter_rock_7",
+              "SFS:SM_small_stone_01",
               2
             ],
             [
-              "LPF:SM_Env_scatter_rock_16",
+              "SFS:SM_small_stone_03",
               2
             ]
           ],
@@ -483,7 +521,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -561,7 +607,15 @@
               2
             ],
             [
-              "LPF:SM_Env_bush_berry_3",
+              "SFP:SM_shrub_02",
+              1
+            ],
+            [
+              "SFP:SM_shrub_flower_01",
+              1
+            ],
+            [
+              "SFP:SM_flower_01",
               1
             ]
           ],
@@ -575,34 +629,6 @@
             0.95
           ],
           "spacing" : "sousbois"
-        },
-        {
-          "cull" : [
-            9000,
-            15000
-          ],
-          "meshes" : [
-            [
-              "LPF:SM_Env_mushroom_12",
-              1
-            ]
-          ],
-          "name" : "champignons",
-          "pente" : [
-            0,
-            30
-          ],
-          "scale" : [
-            0.8,
-            1.4
-          ],
-          "spacing" : "sousbois_clair",
-          "taches" : {
-            "douceur" : 0.3,
-            "octaves" : 3,
-            "seuil" : 0.553,
-            "taille" : 900
-          }
         },
         {
           "cull" : [
@@ -643,11 +669,15 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_treestump_2",
+              "SFT:SM_branch_01",
               1
             ],
             [
-              "LPF:SM_Env_fallen_tree",
+              "SFT:SM_branch_02",
+              1
+            ],
+            [
+              "SFT:SM_stump_02",
               1
             ]
           ],
@@ -714,7 +744,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -788,7 +826,15 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_bush_berry_5",
+              "SFP:SM_shrub_02",
+              1
+            ],
+            [
+              "SFP:SM_shrub_flower_01",
+              1
+            ],
+            [
+              "SFP:SM_flower_01",
               1
             ]
           ],
@@ -802,34 +848,6 @@
             1.3
           ],
           "spacing" : "sousbois"
-        },
-        {
-          "cull" : [
-            9000,
-            15000
-          ],
-          "meshes" : [
-            [
-              "LPF:SM_Env_mushroom_7",
-              1
-            ]
-          ],
-          "name" : "champignons",
-          "pente" : [
-            0,
-            30
-          ],
-          "scale" : [
-            0.8,
-            1.4
-          ],
-          "spacing" : "sousbois_clair",
-          "taches" : {
-            "douceur" : 0.3,
-            "octaves" : 3,
-            "seuil" : 0.553,
-            "taille" : 900
-          }
         },
         {
           "cull" : [
@@ -870,11 +888,15 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_treestump_5",
+              "SFT:SM_branch_01",
               1
             ],
             [
-              "LPF:SM_Env_fallen_tree",
+              "SFT:SM_branch_02",
+              1
+            ],
+            [
+              "SFT:SM_stump_02",
               1
             ]
           ],
@@ -943,11 +965,19 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_plant_2",
+              "SFL:SM_Ivy",
               1
             ],
             [
-              "SFL:SM_Ivy",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -1005,11 +1035,11 @@
               1
             ],
             [
-              "LPF:SM_Env_plant_2",
+              "SFP:SM_shrub_flower_01",
               2
             ],
             [
-              "LPF:SM_Env_plant_5",
+              "SFP:SM_flower_02",
               2
             ]
           ],
@@ -1031,39 +1061,15 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_mushroom_14",
+              "SFT:SM_branch_01",
               1
             ],
             [
-              "LPF:SM_Env_mushroom_collection_1",
+              "SFT:SM_branch_02",
               1
-            ]
-          ],
-          "name" : "champignons",
-          "pente" : [
-            0,
-            30
-          ],
-          "scale" : [
-            0.8,
-            1.4
-          ],
-          "spacing" : "sousbois_clair",
-          "taches" : {
-            "douceur" : 0.3,
-            "octaves" : 3,
-            "seuil" : 0.553,
-            "taille" : 900
-          }
-        },
-        {
-          "cull" : [
-            9000,
-            15000
-          ],
-          "meshes" : [
+            ],
             [
-              "LPF:SM_Env_treestump_3",
+              "SFT:SM_stump_02",
               1
             ]
           ],
@@ -1132,7 +1138,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -1228,34 +1242,6 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_mushroom_16",
-              1
-            ]
-          ],
-          "name" : "champignons",
-          "pente" : [
-            0,
-            30
-          ],
-          "scale" : [
-            0.8,
-            1.4
-          ],
-          "spacing" : "sousbois_clair",
-          "taches" : {
-            "douceur" : 0.3,
-            "octaves" : 3,
-            "seuil" : 0.553,
-            "taille" : 900
-          }
-        },
-        {
-          "cull" : [
-            9000,
-            15000
-          ],
-          "meshes" : [
-            [
               "GRN:SM_Flower_1",
               1
             ],
@@ -1337,7 +1323,19 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "EGP:SM_grass",
+              2
+            ],
+            [
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -1361,6 +1359,10 @@
             [
               "DES:SM_PalmTree",
               1
+            ],
+            [
+              "EGP:SM_tree_01",
+              2
             ]
           ],
           "name" : "arbres",
@@ -1401,6 +1403,36 @@
             1.3
           ],
           "spacing" : "sousbois"
+        },
+        {
+          "cull" : [
+            9000,
+            15000
+          ],
+          "meshes" : [
+            [
+              "EGP:SM_bush_01",
+              2
+            ],
+            [
+              "EGP:SM_bush_02",
+              2
+            ]
+          ],
+          "name" : "sous_bois_haut",
+          "pente" : [
+            0,
+            40
+          ],
+          "scale" : [
+            0.526,
+            0.877
+          ],
+          "spacing" : "sousbois_clair",
+          "taches" : {
+            "seuil" : 0.45,
+            "taille" : 2600
+          }
         }
       ]
     },
@@ -1472,23 +1504,23 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_death_tree_small_3",
-              2
-            ],
-            [
-              "LPF:SM_Env_death_tree_5",
-              2
-            ],
-            [
-              "LPF:SM_Env_fallen_tree",
-              1
-            ],
-            [
               "SFL:SM_Log",
               2
             ],
             [
               "SFL:SM_Log_2",
+              2
+            ],
+            [
+              "SFT:SM_log_01",
+              2
+            ],
+            [
+              "SFT:SM_log_02",
+              2
+            ],
+            [
+              "SFT:SM_stump_01",
               2
             ]
           ],
@@ -1514,12 +1546,12 @@
               2
             ],
             [
-              "LPF:SM_Env_plant_3",
-              2
-            ],
-            [
               "SFL:SM_Ivy_2",
               1
+            ],
+            [
+              "SFP:SM_flower_02",
+              2
             ]
           ],
           "name" : "palustre",
@@ -1568,11 +1600,15 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_treestump_3",
+              "SFT:SM_branch_01",
               1
             ],
             [
-              "LPF:SM_Env_treestump_6",
+              "SFT:SM_branch_02",
+              1
+            ],
+            [
+              "SFT:SM_stump_02",
               1
             ]
           ],
@@ -1635,8 +1671,16 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
-              2
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
+              1
             ]
           ],
           "name" : "tapis",
@@ -1699,16 +1743,16 @@
               1
             ],
             [
-              "LPF:SM_Env_bush_2",
-              2
-            ],
-            [
-              "LPF:SM_Env_bush_5",
-              2
-            ],
-            [
               "SFL:SM_Bush",
               1
+            ],
+            [
+              "SFP:SM_shrub_02",
+              2
+            ],
+            [
+              "SFP:SM_flower_01",
+              2
             ]
           ],
           "name" : "maquis",
@@ -1767,16 +1811,16 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_scatter_rock_3",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_9",
-              2
-            ],
-            [
               "GRN:SM_Rock_1",
               1
+            ],
+            [
+              "SFS:SM_small_stone_02",
+              2
+            ],
+            [
+              "SFS:SM_small_stone_03",
+              2
             ]
           ],
           "name" : "cailloutis",
@@ -1829,16 +1873,16 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_scatter_rock_4",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_13",
-              2
-            ],
-            [
               "SFL:SM_Rock_Scatter_2",
               1
+            ],
+            [
+              "SFS:SM_small_stone_01",
+              2
+            ],
+            [
+              "SFS:SM_small_stone_04",
+              2
             ]
           ],
           "name" : "galets",
@@ -1869,7 +1913,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -2004,7 +2056,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -2059,28 +2119,12 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_rock_1",
-              2
+              "SFS:SM_small_stone_04",
+              6
             ],
             [
-              "LPF:SM_Env_rock_6",
-              2
-            ],
-            [
-              "LPF:SM_Env_rock_9",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_2",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_8",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_17",
-              2
+              "SFS:SM_small_stone_02",
+              6
             ]
           ],
           "name" : "eboulis",
@@ -2109,6 +2153,10 @@
             [
               "SFL:SM_Wheat",
               4
+            ],
+            [
+              "EGP:SM_grass",
+              3
             ]
           ],
           "name" : "tapis",
@@ -2131,6 +2179,10 @@
             [
               "DES:SM_Hero_Tree_1_with_Roots",
               3
+            ],
+            [
+              "EGP:SM_tree_01",
+              2
             ]
           ],
           "name" : "arbres_isoles",
@@ -2193,7 +2245,11 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_scatter_rock_11",
+              "SFS:SM_small_stone_02",
+              1
+            ],
+            [
+              "SFS:SM_small_stone_03",
               1
             ]
           ],
@@ -2217,6 +2273,10 @@
           "meshes" : [
             [
               "DES:SM_Mid_Bush_1",
+              1
+            ],
+            [
+              "EGP:SM_bush_01",
               1
             ]
           ],
@@ -2251,6 +2311,10 @@
             [
               "SFL:SM_Wheat",
               4
+            ],
+            [
+              "EGP:SM_grass",
+              3
             ]
           ],
           "name" : "tapis",
@@ -2283,6 +2347,10 @@
             [
               "DES:SM_Bush_many_2",
               2
+            ],
+            [
+              "EGP:SM_bush_03",
+              2
             ]
           ],
           "name" : "buissons",
@@ -2311,6 +2379,10 @@
             [
               "SFL:SM_Wheat",
               3
+            ],
+            [
+              "EGP:SM_grass",
+              2
             ]
           ],
           "name" : "herbes_seches",
@@ -2337,11 +2409,11 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_scatter_rock_3",
+              "SFS:SM_small_stone_02",
               1
             ],
             [
-              "LPF:SM_Env_scatter_rock_12",
+              "SFS:SM_small_stone_03",
               1
             ]
           ],
@@ -2397,7 +2469,15 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_plant_5",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -2419,27 +2499,11 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_Pine_Tree_1",
-              3
-            ],
-            [
-              "LPF:SM_Env_Pine_Tree_2",
-              3
-            ],
-            [
-              "LPF:SM_Env_Pine_Tree_3",
-              3
-            ],
-            [
               "SFL:SM_Pine",
               1
             ],
             [
               "SFL:SM_Pine_2",
-              1
-            ],
-            [
-              "LPF:SM_Env_death_tree_1",
               1
             ],
             [
@@ -2475,32 +2539,16 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_bush_1",
-              2
+              "SFP:SM_shrub_02",
+              3
             ],
             [
-              "LPF:SM_Env_bush_4",
-              2
+              "SFP:SM_shrub_flower_01",
+              3
             ],
             [
-              "LPF:SM_Env_bush_6",
-              2
-            ],
-            [
-              "LPF:SM_Env_bush_berry_2",
-              1
-            ],
-            [
-              "LPF:SM_Env_bush_berry_1",
-              1
-            ],
-            [
-              "LPF:SM_Env_bush_berry_4",
-              1
-            ],
-            [
-              "LPF:SM_Env_bush_berry_7",
-              1
+              "SFP:SM_flower_01",
+              3
             ]
           ],
           "name" : "sous_bois",
@@ -2521,51 +2569,23 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_mushroom_3",
-              1
-            ],
-            [
-              "LPF:SM_Env_mushroom_11",
-              1
-            ]
-          ],
-          "name" : "champignons",
-          "pente" : [
-            0,
-            30
-          ],
-          "scale" : [
-            0.8,
-            1.4
-          ],
-          "spacing" : "sousbois_clair",
-          "taches" : {
-            "douceur" : 0.3,
-            "octaves" : 3,
-            "seuil" : 0.553,
-            "taille" : 900
-          }
-        },
-        {
-          "cull" : [
-            9000,
-            15000
-          ],
-          "meshes" : [
-            [
-              "LPF:SM_Env_treestump_2",
-              1
-            ],
-            [
-              "LPF:SM_Env_fallen_branch_4",
-              1
-            ],
-            [
               "SFL:SM_Birch_Stump",
               1
             ],
             [
               "SFL:SM_Log_Birch_2",
+              1
+            ],
+            [
+              "SFT:SM_branch_01",
+              1
+            ],
+            [
+              "SFT:SM_branch_02",
+              1
+            ],
+            [
+              "SFT:SM_stump_02",
               1
             ]
           ],
@@ -2602,7 +2622,15 @@
               3
             ],
             [
-              "LPF:SM_Env_Grass_small",
+              "SFP:SM_grass_01",
+              1
+            ],
+            [
+              "SFP:SM_grass_02",
+              1
+            ],
+            [
+              "SFP:SM_grass_03",
               1
             ]
           ],
@@ -2630,24 +2658,12 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_bush_berry_1",
-              3
+              "SFP:SM_shrub_02",
+              6
             ],
             [
-              "LPF:SM_Env_bush_berry_4",
-              3
-            ],
-            [
-              "LPF:SM_Env_bush_berry_7",
-              2
-            ],
-            [
-              "LPF:SM_Env_bush_2",
-              2
-            ],
-            [
-              "LPF:SM_Env_bush_5",
-              2
+              "SFP:SM_shrub_flower_01",
+              6
             ]
           ],
           "name" : "arbrisseaux",
@@ -2674,22 +2690,6 @@
           ],
           "meshes" : [
             [
-              "LPF:SM_Env_scatter_rock_1",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_5",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_9",
-              2
-            ],
-            [
-              "LPF:SM_Env_scatter_rock_12",
-              2
-            ],
-            [
               "SFL:SM_Rock_3",
               2
             ],
@@ -2702,8 +2702,12 @@
               1
             ],
             [
-              "LPF:SM_Env_bush_1",
-              1
+              "SFS:SM_stone_01",
+              5
+            ],
+            [
+              "SFS:SM_stone_03",
+              5
             ]
           ],
           "name" : "blocs",
@@ -2725,11 +2729,11 @@
       ],
       "meshes" : [
         [
-          "LPF:SM_Env_scatter_rock_3",
+          "SFS:SM_small_stone_01",
           1
         ],
         [
-          "LPF:SM_Env_scatter_rock_12",
+          "SFS:SM_small_stone_04",
           1
         ]
       ],
