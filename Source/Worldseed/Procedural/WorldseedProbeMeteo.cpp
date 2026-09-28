@@ -344,12 +344,16 @@ FString UWorldseedProbeLibrary::ProbeKoppen(int32 Seed, float HeightMeters,
 			WorldseedClimate::SummerRainFraction(*Regles, Geo, Lat),
 			ReglesPreset.SeasonContrastExponent);
 
-		// LES VRAIES POINTES, QUAND LE MONDE LES PORTE. La chaine calcule
-		// `TempMinC` et `TempMaxC` -- les moyennes du mois le plus froid et du
-		// plus chaud, exactement ce que Koppen demande -- alors que le
-		// prereglage les RECONSTRUIT depuis l'amplitude. Les employer ici dit ce
-		// que le classement vaudrait si on les lui transmettait, et c'est un
-		// chantier a part : `FWorldseedClimateSample` ne les porte pas encore.
+		// LES EXTREMES DU MONDE PLUTOT QUE LEUR RECONSTRUCTION -- ET C'EST LA
+		// MEME CHOSE, verifie dans `WorldseedClimate` : la chaine les pose a
+		// `TempMeanC -/+ Amp/2`, exactement ce que `DepuisChamps` recalcule, et
+		// la prime d'aridite s'ajoute aux trois de facon identique. On les lit
+		// donc ici par exactitude, pas par gain.
+		//
+		// CE QUI VEUT DIRE QUE L'ECART ENTRE LES 4,3 POINTS ATTENDUS ET LES 7,5
+		// MESURES NE VIENT PAS DE LA : il vient de la reconstruction de la PLUIE
+		// saisonniere, l'estimation etant partie des pluies reelles des releves
+		// quand la chaine les tire d'un cumul annuel et d'une fraction estivale.
 		if (Cl.TempMinC.IsValidIndex(I) && Cl.TempMaxC.IsValidIndex(I))
 		{
 			E.TFroidC = Cl.TempMinC[I];

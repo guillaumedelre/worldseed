@@ -10505,3 +10505,61 @@ saisonniere. C'est cette reconstruction qui explique l'ecart entre les 4,3
 points attendus et les 7,5 mesures. Les transmettre par
 `FWorldseedClimateSample` supprimerait cette erreur ; la sonde les emploie deja,
 le jeu non.
+
+### Pourquoi le monde est trop froid : ce n'est pas le climat, c'est le SUD (28 septembre 2026)
+
+**PREMIERE CHOSE, ET C'EST UN CHANTIER ANNULE.** Le proprietaire a demande de
+transmettre `TempMinC` et `TempMaxC` par `FWorldseedClimateSample`, sur mon
+diagnostic que la reconstruction des extremes expliquait l'ecart entre 4,3 et
+7,5 points. **C'ETAIT FAUX, et la verification l'a dit avant la compilation** :
+
+    Out.TempMinC[Index] = T - Amp * 0.5f;
+    Out.TempMaxC[Index] = T + Amp * 0.5f;
+
+C'est EXACTEMENT ce que `DepuisChamps` recalcule, et la prime d'aridite
+s'ajoute aux trois de facon identique. Les transmettre n'aurait strictement
+rien rapporte. Le code ecrit a ete annule par `git checkout`. L'ecart vient
+donc de la reconstruction de la PLUIE saisonniere, non des temperatures.
+
+    REGLE : avant de transporter une donnee « plus exacte », VERIFIER qu'elle
+    differe de ce qu'on recalcule. Ici les deux etaient identiques a l'octet
+    pres, et j'ai propose le chantier sans l'avoir ouvert.
+
+**LE MONDE N'EST PAS TROP FROID -- SON HEMISPHERE SUD L'EST.** `ProbeZonal`,
+qui existait deja, tranche en une lecture :
+
+    hemisphere NORD : -0,2 degre d'ecart a la Terre   (8 bandes)
+    hemisphere SUD  : -7,2 degres                     (9 bandes)
+
+| latitude | NORD | | | SUD | | | ecart |
+|---|---|---|---|---|---|---|---|
+| 70-80 | -10,5 C | 8 % emerge | 212 m | -24,1 C | **100 %** | **965 m** | **13,6 C** |
+| 60-70 | -6,5 | 16 % | 120 m | -15,0 | 70 % | 690 m | 8,5 |
+| 50-60 | +2,1 | 10 % | 71 m | -9,8 | 41 % | 715 m | 11,9 |
+
+**NOTRE PROFIL ZONAL EST SYMETRIQUE, ET LE RESULTAT NE L'EST PAS** : l'ecart ne
+vient donc pas du climat mais de ce qu'il trouve sous lui. Le pole sud est
+force en continent -- ce qui est voulu, et terrestre : l'Antarctique existe --
+mais il culmine a 965 a 1088 m, quand les terres du nord aux memes latitudes
+tiennent entre 71 et 212. `tectonics.poleContinentBonusM` vaut 175 m AVANT
+mise a l'echelle, donc **700 m** sur un monde de 32 km de hauteur. C'est le
+meme defaut que la constante metrique de `tectonics.py` en septembre, a une
+autre echelle.
+
+**DEUX RESERVES D'HONNETETE, et elles limitent ce diagnostic :**
+
+- **la reference zonale de la sonde est SYMETRIQUE, et la Terre ne l'est pas.**
+  Son propre commentaire le dit : l'hemisphere nord terrestre est plus chaud
+  parce qu'il porte plus de terres. Comparer notre sud continental a une
+  moyenne symetrique SURESTIME donc l'ecart -- l'Antarctique cotier reel est
+  vers -20 a -30, pas -14 ;
+- **le nord manque de terres** autant que le sud en a : 8 % emerge a 70-80
+  contre environ 35 sur Terre. Notre nord est « juste » en temperature parce
+  qu'il est surtout oceanique, ce qui n'est pas la meme chose qu'etre juste.
+
+**CE QUI EST SOLIDE** : `ET + EF` pese 28,6 % des terres contre 16 attendus, et
+la moitie de cet exces tient au continent polaire sud, haut et integralement
+emerge. La piste est donc `poleContinentBonusM` et la mise a l'echelle
+verticale -- de la TECTONIQUE, pas du climat. Ne pas y toucher sans mesurer
+d'abord la part emergee par bande APRES changement : la regle existe pour que
+le pole EMERGE, et l'amputer le ferait disparaitre.
