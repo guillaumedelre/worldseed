@@ -10369,3 +10369,43 @@ juste aujourd'hui et ou un ciel gris se remarque le plus.
 
 Une moyenne ne suffit pas a trancher : c'est pourquoi la sonde rend les deux
 colonnes.
+
+**ET L'IDENTIFIANT NE MARCHE PAS NON PLUS -- LE BIOME EST TROP GROSSIER.**
+La regle ci-dessus disait « si le gros du residu est inter-groupe, il faut un
+IDENTIFIANT ». Nous en avons un, le biome, et la correspondance releve ->
+biome existe deja dans la table `Attendus`. Essaye : un decalage de couverture
+par biome, cale sur les releves, en validation croisee PAR CLIMAT -- le
+decalage d'un biome calcule sans le climat qu'on estime, sinon on mesurerait
+sa capacite a se retenir lui-meme.
+
+| echelle | sans identifiant | avec decalage par biome |
+|---|---|---|
+| 60 | 14,83 | **16,27** |
+| 80 | **13,54** | 15,92 |
+| 100 | 13,54 | 15,57 |
+
+**IL FAIT PIRE, ET LA RAISON EST STRUCTURELLE** : plusieurs climats de KOPPEN
+tombent dans le meme biome de WHITTAKER. `TemperateForest` regroupe Oceanic,
+deux continentaux et deux subtropicaux d'altitude -- cinq climats dont le
+decalage moyen ne predit celui d'aucun. Le biais est par climat de Koppen, pas
+par biome, et notre monde ne calcule que le second.
+
+    REGLE, seconde moitie : un identifiant ne vaut que s'il est a la RESOLUTION
+    du biais. Trop grossier, il ajoute la variance de son groupe a l'erreur au
+    lieu de la retirer.
+
+**BILAN DE TOUTES LES PISTES**, pour qu'aucune ne soit retentee :
+
+    formule en vigueur, sur la vraie chaine        15,3 points
+    echelle de pluie portee a 80                   13,7   (arides 13,5 -> 14,8)
+    meilleure formule possible, pluie seule        12,7
+    + plancher fonction de la pluie annuelle       12,2
+    + terme de temperature                         12,6   (0,06 de gain)
+    interpolation des vingt-trois releves          13,9
+    decalage par biome                             15,9   PIRE
+    plancher structurel, dispersion intra-climat    6,74
+
+Rien ne descend sous douze points et demi, et le plancher absolu est a 6,74.
+**Le realisme percu ne se joue plus la** : il vient du CONTRASTE entre climats,
+qui lui est acquis -- zero pour cent de pluie au desert chaud, cent en foret
+tropicale humide.
