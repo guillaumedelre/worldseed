@@ -62,8 +62,16 @@
  *       quand tout le reste de cette chaine est positionnel. Un cache
  *       anterieur le relirait vide, c'est-a-dire un monde sans frontieres et
  *       sans noms.
+ *  28 - LE RELIEF MIS EN CACHE EST CELUI DE LA ROCHE, ET IL PORTAIT LA GLACE.
+ *       `WorldseedIce::Apply` ecrit dans `ElevationM` et l'ecriture du cache
+ *       la suivait : le fichier gardait un relief deja englace, et le
+ *       rechargement y reposait un second dome. Mesure, graine 20260909 :
+ *       bande -90..-80 a 685 m en generation contre 924 au rechargement,
+ *       -80..-70 a 595 contre 707, sommet du monde 1611 contre 1669. Tout
+ *       cache anterieur porte donc cette glace et recevrait la seconde
+ *       couche malgre la correction -- d'ou ce cran, qui les ecarte.
  */
-#define WORLDSEED_PIPELINE_VERSION 27
+#define WORLDSEED_PIPELINE_VERSION 28
 
 /** Ce qu'on sait d'un monde en cache sans le decompresser. */
 struct WORLDSEED_API FWorldseedCacheEntry

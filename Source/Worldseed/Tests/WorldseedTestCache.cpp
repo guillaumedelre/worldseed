@@ -5,6 +5,8 @@
 #include "Tests/WorldseedTestMondeFictif.h"
 
 #include "Procedural/WorldseedCache.h"
+#include "Procedural/WorldseedPipeline.h"
+#include "Procedural/WorldseedRules.h"
 
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
@@ -373,6 +375,166 @@ bool FWorldseedTestCacheCle::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("les memes parametres donnent la meme cle"),
 		WorldseedCache::MakeKey(1, 8000.0f, 1024, TEXT("aaa")), Base);
+
+	return true;
+}
+
+
+/**
+ * LE CACHE PORTE LA ROCHE, ET LES DEUX CHEMINS RENDENT LE MEME RELIEF.
+ *
+ * CE QU'IL AURAIT ATTRAPE, ET LE DEFAUT A VECU JUSQU'AU 28 SEPTEMBRE 2026.
+ * `WorldseedIce::Apply` ecrit DANS le relief -- sa signature le dit,
+ * `TArray<float>&` -- et l'ecriture du cache la suivait : le fichier gardait
+ * un relief DEJA ENGLACE, sur lequel le rechargement reposait un second dome.
+ * Mesure, graine 20260909 : bande -90..-80 a 685 m en generation contre 924 au
+ * rechargement, -80..-70 a 595 contre 707, sommet du monde 1611 contre 1669.
+ * Un joueur avait donc un pole trois cents metres plus haut au SECOND
+ * lancement de son monde qu'au premier, sans un mot au journal.
+ *
+ * POURQUOI RIEN NE L'AVAIT VU, ET C'EST LE POINT.
+ *   - Le defaut n'est pas CUMULATIF : deux relectures successives rendent le
+ *     meme chiffre au metre. Il ne se lit qu'en comparant les deux CHEMINS, ce
+ *     qu'aucune sonde ne faisait -- elles mesurent un monde, pas deux facons
+ *     de l'obtenir.
+ *   - Le commentaire de la passe decrivait l'invariant JUSTE -- « elle passe
+ *     apres la mise en cache, qui garde le relief de roche » -- pendant que le
+ *     code faisait l'inverse. Une note exacte sur du code faux ne protege rien.
+ *
+ * IL PORTE SON PROPRE TEMOIN, ET IL LE FAUT. Si la glace n'etait jamais posee
+ * -- calotte absente a cette resolution, epaisseur reglee a zero -- la
+ * comparaison finale passerait TRIVIALEMENT, et ce depot a deja paye quatre
+ * fixtures muettes en une journee. On exige donc d'abord que le relief du
+ * CACHE DIFFERE de celui qu'on vient de generer : cela prouve du meme coup que
+ * la glace existe et que le fichier ne la porte pas.
+ *
+ * IL GENERE UN VRAI MONDE, et c'est assume : l'invariant porte sur la chaine
+ * entiere et aucun monde fictif ne l'exerce. Cent vingt-huit lignes suffisent
+ * -- on ne juge ici ni un calage ni une forme, seulement l'accord de deux
+ * chemins -- et l'entree de cache est supprimee a la sortie, sans quoi la
+ * liste du menu montrerait un monde fantome.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCacheReliefDeRoche,
+	"Worldseed.Cache.LeCachePorteLaRoche",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCacheReliefDeRoche::RunTest(const FString& Parameters)
+{
+	constexpr int32 Graine = 20260928;
+	constexpr float HauteurM = 32000.0f;
+	constexpr int32 Lignes = 128;
+
+	FString Erreur;
+	const UWorldseedRules* Regles = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), Regles))
+	{
+		AddError(Erreur);
+		return false;
+	}
+
+	// ON SUPPRIME L'ENTREE AVANT DE COMMENCER, sans quoi le PREMIER appel
+	// pourrait relire un cache laisse par une execution anterieure : les deux
+	// appels seraient alors des lectures, et le test ne comparerait plus rien.
+	// `bFromCache` le verifie ensuite, pour que l'echec soit franc si jamais.
+	const FString Cle = WorldseedCache::MakeKey(Graine, HauteurM, Lignes,
+		Regles->SourceHash);
+	const FString Chemin = WorldseedCache::PathForKey(Cle);
+	IFileManager::Get().Delete(*Chemin, false, true, true);
+
+	ON_SCOPE_EXIT
+	{
+		IFileManager::Get().Delete(*Chemin, false, true, true);
+	};
+
+	WorldseedPipeline::FResult Genere;
+	if (!TestTrue(TEXT("la generation aboutit"),
+		WorldseedPipeline::Generate(Graine, HauteurM, Lignes, Genere, Erreur)))
+	{
+		AddError(Erreur);
+		return false;
+	}
+	if (!TestFalse(TEXT("le premier appel GENERE, il ne relit pas"),
+		Genere.bFromCache))
+	{
+		return false;
+	}
+
+	// LE TEMOIN : le fichier doit porter un AUTRE relief que le resultat.
+	FWorldseedWorldData Roche;
+	if (!TestTrue(TEXT("le cache vient d'etre ecrit et se relit"),
+		WorldseedCache::Load(Cle, Roche)))
+	{
+		return false;
+	}
+	if (!TestEqual(TEXT("le cache porte autant de cellules que le monde"),
+		Roche.ElevationM.Num(), Genere.ElevationM.Num()))
+	{
+		return false;
+	}
+
+	int32 Englacees = 0;
+	float PlusGrosDome = 0.0f;
+	for (int32 I = 0; I < Roche.ElevationM.Num(); ++I)
+	{
+		const float Dome = Genere.ElevationM[I] - Roche.ElevationM[I];
+		if (Dome > 0.01f)
+		{
+			++Englacees;
+			PlusGrosDome = FMath::Max(PlusGrosDome, Dome);
+		}
+	}
+	AddInfo(FString::Printf(
+		TEXT("glace : %d cellules sur %d, dome maximal %.1f m -- le cache, lui, ")
+		TEXT("porte la roche"),
+		Englacees, Roche.ElevationM.Num(), PlusGrosDome));
+
+	// SANS CETTE LIGNE LE TEST SERAIT MUET : un monde sans calotte rendrait la
+	// comparaison finale vraie sans rien prouver.
+	if (!TestTrue(TEXT("de la glace a bien ete posee, donc le temoin vaut"),
+		Englacees > 0 && PlusGrosDome > 1.0f))
+	{
+		return false;
+	}
+
+	WorldseedPipeline::FResult Repris;
+	if (!TestTrue(TEXT("la reprise aboutit"),
+		WorldseedPipeline::Generate(Graine, HauteurM, Lignes, Repris, Erreur)))
+	{
+		AddError(Erreur);
+		return false;
+	}
+	if (!TestTrue(TEXT("le second appel RELIT le cache"), Repris.bFromCache))
+	{
+		return false;
+	}
+
+	// L'INVARIANT. Il se lit cellule par cellule et non sur le seul sommet :
+	// un dome pose deux fois au pole ne deplace pas forcement le maximum du
+	// monde, qui est une montagne ailleurs -- il ne l'avait deplace que de
+	// 58 m quand la bande polaire, elle, montait de 239.
+	if (!TestEqual(TEXT("la reprise rend autant de cellules"),
+		Repris.ElevationM.Num(), Genere.ElevationM.Num()))
+	{
+		return false;
+	}
+
+	int32 Differentes = 0;
+	float PireEcart = 0.0f;
+	for (int32 I = 0; I < Genere.ElevationM.Num(); ++I)
+	{
+		const float Ecart = FMath::Abs(Repris.ElevationM[I] - Genere.ElevationM[I]);
+		if (Ecart > 0.01f) { ++Differentes; }
+		PireEcart = FMath::Max(PireEcart, Ecart);
+	}
+
+	AddInfo(FString::Printf(
+		TEXT("generation contre reprise : %d cellules differentes, pire ecart %.3f m"),
+		Differentes, PireEcart));
+
+	TestEqual(TEXT("aucune cellule ne differe entre generation et reprise"),
+		Differentes, 0);
+	TestTrue(TEXT("le sommet du monde est le meme sur les deux chemins"),
+		FMath::Abs(Repris.MaxElevationM - Genere.MaxElevationM) < 0.01f);
 
 	return true;
 }

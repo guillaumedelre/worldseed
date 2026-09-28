@@ -29,6 +29,29 @@ namespace WorldseedPipeline
 	 * ELLE PASSE APRES LA MISE EN CACHE, qui garde le relief de ROCHE. La
 	 * glace se recalcule donc a chaque chargement, comme les biomes, et ne
 	 * peut pas s'empiler d'une session a l'autre.
+	 *
+	 * ⚠ CE PARAGRAPHE A ETE FAUX DU 28 SEPTEMBRE 2026 AU MEME JOUR, ET IL
+	 * DECRIVAIT L'INTENTION PENDANT QUE LE CODE FAISAIT L'INVERSE. La passe
+	 * ecrit DANS `ElevationM` -- sa signature le dit, `TArray<float>&` -- et
+	 * l'ecriture du cache la suivait, si bien que le fichier portait un relief
+	 * DEJA ENGLACE. Le rechargement reposait alors un second dome par-dessus.
+	 * Mesure, graine 20260909 : bande -90..-80 a 685 m en generation contre
+	 * 924 au rechargement, -80..-70 a 595 contre 707, sommet du monde 1611
+	 * contre 1669. Deux relectures successives rendaient en revanche le meme
+	 * chiffre au metre : la faute etait entre les deux CHEMINS, pas cumulative
+	 * a chaque lecture, donc invisible a qui ne compare pas les deux.
+	 *
+	 * CE QUI GARANTIT DESORMAIS L'INVARIANT : la branche de generation prend
+	 * une copie du relief AVANT cet appel et c'est ELLE qui part au cache. Le
+	 * fichier porte donc bien la roche, et l'appel ci-dessus est le seul qui
+	 * pose de la glace, sur l'un comme sur l'autre chemin.
+	 *
+	 * ET IL NE FAUT PAS « SIMPLIFIER » EN RETIRANT L'APPEL DU CHEMIN DU CACHE
+	 * pour y laisser un relief englace : le classificateur de biomes LIT le
+	 * relief, donc la carte des biomes deviendrait dependante du chemin pris.
+	 * Elle ne differe pas aujourd'hui -- le dome ne s'ajoute que la ou la
+	 * calotte est deja posee, et trois cents metres de plus n'y changent
+	 * aucune classe -- mais c'est un equilibre, pas une garantie.
 	 */
 	void EpaissirLaGlace(FResult& Out, const FWorldseedGeometry& Geometry,
 		const UWorldseedRules& Rules)
@@ -634,6 +657,15 @@ namespace WorldseedPipeline
 			Out.MinElevationM, Out.MaxElevationM, Out.LandRatio * 100.0f,
 			(FPlatformTime::Seconds() - StartTime) * 1000.0);
 
+		// LE RELIEF DE ROCHE, PRIS AVANT QUE LA GLACE NE S'Y POSE.
+		//
+		// C'est LUI qui part au cache, et c'est ce qui rend vraie la promesse
+		// de `EpaissirLaGlace` -- « elle passe apres la mise en cache, qui
+		// garde le relief de ROCHE ». Sans cette copie, le fichier portait un
+		// relief deja englace et le rechargement posait un second dome : 239 m
+		// de trop au pole, mesures. Une copie de tableau par monde, une fois.
+		TArray<float> ReliefDeRoche;
+
 		// --- biomes ---------------------------------------------------------
 		// La temperature du mois le plus chaud n'est pas transportee : elle se
 		// RECONSTITUE exactement, le modele climatique la definissant comme la
@@ -664,6 +696,7 @@ namespace WorldseedPipeline
 					NoWaterMask, NoWaterMask,
 					FWorldseedBiomeRules::FromRules(*BioRules, Geometry), Out.Biomes);
 
+				ReliefDeRoche = Out.ElevationM;
 				EpaissirLaGlace(Out, Geometry, *BioRules);
 
 				WorldseedFields::Compute(Geometry, Out.ElevationM,
@@ -747,7 +780,13 @@ namespace WorldseedPipeline
 			FWorldseedWorldData ToCache;
 			ToCache.Geometry = Geometry;
 			ToCache.Seed = Seed;
-			ToCache.ElevationM = Out.ElevationM;
+			// LE CACHE PORTE LA ROCHE, JAMAIS LA GLACE -- voir `EpaissirLaGlace`.
+			// Le repli sur le relief courant couvre le seul cas ou la copie
+			// n'a pas ete prise : les regles introuvables, donc la passe des
+			// biomes jamais entree, donc aucune glace posee non plus.
+			ToCache.ElevationM = (ReliefDeRoche.Num() == Out.ElevationM.Num())
+				? MoveTemp(ReliefDeRoche)
+				: Out.ElevationM;
 			ToCache.TempC = Out.Climate.TempMeanC;
 			ToCache.PrecipMm = Out.Climate.PrecipMm;
 			ToCache.SeasonalAmpC = Out.Climate.SeasonalAmpC;

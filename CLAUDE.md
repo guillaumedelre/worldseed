@@ -10669,3 +10669,68 @@ tombe a 4,7 % sur la graine 1337.
 degrade ET. C'est un recalibrage qui regenere tous les mondes en cache. Rien n'a
 ete pose : le depot interdit de trancher en silence un arbitrage qui engage le
 rendu.
+
+### Le cache portait la GLACE, et le pole grandissait au second lancement (28 septembre 2026)
+
+Trouve PAR ACCIDENT, en verifiant les chiffres d'un autre chantier : deux
+relevés du meme reglage donnaient deux altitudes polaires differentes. C'est le
+signe que ce depot connait par coeur, et pour une fois il ne denoncait pas une
+mesure fausse -- il denoncait le monde.
+
+**LE DEFAUT.** `WorldseedIce::Apply` ecrit DANS le relief -- sa signature le dit,
+`TArray<float>&` -- et l'ecriture du cache la suivait (glace ligne 667, cache
+ligne 773). Le fichier gardait donc un relief **deja englace**, sur lequel la
+branche de reprise reposait un second dome.
+
+| graine 20260909 | generation | rechargement |
+|---|---|---|
+| bande -90..-80 | 685 m | **924 m** (+239) |
+| bande -80..-70 | 595 m | **707 m** (+112) |
+| sommet du monde | 1611 m | **1669 m** |
+
+**Un joueur avait un pole trois cents metres plus haut au SECOND lancement de
+son monde qu'au premier, sans un mot au journal.**
+
+**POURQUOI RIEN NE L'AVAIT VU, ET C'EST LE POINT :**
+
+- **le defaut n'est pas CUMULATIF.** Deux relectures successives rendent le meme
+  chiffre au metre -- verifie. Il ne se lit qu'en comparant les deux CHEMINS, ce
+  qu'aucune sonde ne faisait : elles mesurent un monde, pas deux facons de
+  l'obtenir ;
+- **le commentaire de la passe decrivait l'invariant JUSTE** -- « elle passe
+  apres la mise en cache, qui garde le relief de ROCHE » -- pendant que le code
+  faisait l'inverse. **Une note exacte posee sur du code faux ne protege rien**,
+  et elle endort : je l'ai lue AVANT de mesurer, et elle m'a presque convaincu
+  qu'il n'y avait rien a chercher.
+
+**LE CORRECTIF REND LE CODE CONFORME A SON INTENTION**, et non l'inverse : la
+branche de generation prend une copie du relief AVANT la glace, et c'est elle
+qui part au cache. Un tableau copie par monde, une fois.
+
+**ET IL NE FAUT PAS « SIMPLIFIER » EN RETIRANT L'APPEL DU CHEMIN DU CACHE** pour
+y laisser un relief englace -- c'etait l'autre correctif possible, plus court
+d'une ligne. Le classificateur de biomes LIT le relief : la carte des biomes
+deviendrait dependante du chemin pris. Elle ne differe pas aujourd'hui, le dome
+ne s'ajoutant que la ou la calotte est deja posee, mais c'est un equilibre et
+non une garantie.
+
+**LE BUMP DE VERSION EST OBLIGATOIRE, ET C'EST LE PIEGE DE CE CORRECTIF** : tout
+cache anterieur porte la glace, donc la correction lui en reposerait une seconde.
+`WORLDSEED_PIPELINE_VERSION` 27 -> 28.
+
+**L'ORACLE PORTE SON PROPRE TEMOIN, et c'est lui qui detecte le defaut.**
+`Worldseed.Cache.LeCachePorteLaRoche` genere un monde de 128 lignes, relit le
+fichier, et exige d'abord que le relief du CACHE **DIFFERE** de celui qu'on vient
+de generer -- ce qui prouve du meme coup que la glace existe et que le fichier ne
+la porte pas. Sans cette exigence, un monde sans calotte ferait passer la
+comparaison finale trivialement. Releve : 922 cellules englacees sur 32 768, dome
+maximal 286,9 m, et **0 cellule differente entre les deux chemins**.
+
+**TEMOIN MONTE PUIS RETIRE** : le defaut remis, le test tombe sur
+« glace : 0 cellules » -- avec le cache englace, l'ecart est nul partout et le
+TEMOIN crie avant meme la comparaison finale. C'est le bon ordre d'echec.
+
+**ET L'INVARIANT SE LIT CELLULE PAR CELLULE, jamais sur le seul sommet** : un
+dome pose deux fois au pole ne deplace pas forcement le maximum du monde, qui
+est une montagne ailleurs -- il ne l'avait deplace que de 58 m quand la bande
+polaire, elle, montait de 239.
