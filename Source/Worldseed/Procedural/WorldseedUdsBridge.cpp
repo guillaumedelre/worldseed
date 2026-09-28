@@ -184,6 +184,48 @@ bool FWorldseedUdsBridge::ReadSeasonPhase(float& OutPhase) const
 	return true;
 }
 
+bool FWorldseedUdsBridge::CallFunction(FName FunctionName) const
+{
+	// POSER UNE VARIABLE PAR REFLEXION NE DECLENCHE AUCUN RAPPEL. Une variable
+	// Blueprint repliquee avec RepNotify porte un `OnRep_`, que le moteur
+	// n'appelle que sur une replication reelle -- et c'est souvent LUI qui fait
+	// le travail. Mesure : « Animate Time of Day » pose a vrai, lu a vrai, et
+	// l'heure figee a 1300,0000 apres cinq secondes et demie.
+	//
+	// SANS ARGUMENT, a dessein : passer une pile de parametres mal formee a
+	// `ProcessEvent` corromprait la memoire. On n'appelle donc que des fonctions
+	// qui n'en prennent pas, et l'on verifie ce point avant l'appel.
+	for (AActor* const Acteur : { SkyActor.Get(), WeatherActor.Get() })
+	{
+		if (!Acteur) { continue; }
+		if (UFunction* const Fn = Acteur->FindFunction(FunctionName))
+		{
+			if (Fn->NumParms != 0)
+			{
+				continue;
+			}
+			Acteur->ProcessEvent(Fn, nullptr);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FWorldseedUdsBridge::WriteBool(FName PropertyName, bool bValue) const
+{
+	for (AActor* const Acteur : { WeatherActor.Get(), SkyActor.Get() })
+	{
+		if (!Acteur) { continue; }
+		if (FBoolProperty* const Prop = CastField<FBoolProperty>(
+				Acteur->GetClass()->FindPropertyByName(PropertyName)))
+		{
+			Prop->SetPropertyValue_InContainer(Acteur, bValue);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FWorldseedUdsBridge::ReadNumber(FName PropertyName, double& OutValue) const
 {
 	return GetNumber(WeatherActor.Get(), PropertyName, OutValue)

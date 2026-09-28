@@ -97,6 +97,22 @@ private:
 	mutable bool bNomsVerifies = false;
 
 	/**
+	 * Arme l'horloge d'UDS et pose la duree du jour et de la nuit.
+	 *
+	 * ELLE ETAIT ARRETEE, et c'etait le defaut dominant de la meteo : la phase
+	 * de l'annee est LUE dans Ultra Dynamic Sky, qui ne la fait avancer que si
+	 * son « Animate Time of Day » est arme. `BP_WorldseedClimat` s'en chargeait
+	 * avant que la generation ne passe en C++ ; le reglage est parti avec lui.
+	 */
+	void ArmerHorloge(const class UWorldseedRules& Rules);
+
+	/** Heure relevee au moment de l'armement, ou -1 si l'horloge n'est pas armee. */
+	double HeureALArmement = -1.0;
+
+	float TempsDepuisArmementS = 0.0f;
+	bool bAvanceVerifiee = false;
+
+	/**
 	 * Derniere latitude transmise au ciel.
 	 *
 	 * Un demi-degre vaut une cinquantaine de kilometres : en deca, la course du

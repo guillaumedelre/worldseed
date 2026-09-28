@@ -10200,3 +10200,44 @@ Les deux premieres lignes coutent deux cases a cocher et dominent tout le
 reste ; les trois suivantes sont des chantiers. **Regler un modele dont
 l'horloge est arretee n'aurait rien donne**, et c'est pourquoi ce controle vient
 avant.
+
+**SUITE, LE MEME JOUR : L'HORLOGE EST ARMEE, ET IL A FALLU TROIS ESSAIS.**
+Arbitrage du proprietaire : armer depuis le C++ plutot que dans la carte, pour
+qu'un `Content/` perdu n'emporte pas le reglage. Les durees vont dans
+`world_rules.json` (`uds.animerHorloge`, `dureeJourneeMin`, `dureeNuitMin`).
+
+| essai | ce qu'on a pose | mesure |
+|---|---|---|
+| poser `Animate Time of Day` | drapeau a vrai, RELU a vrai | heure figee a 1300,0000 |
+| + poser `Time Speed` | elle n'etait pas nulle | figee |
+| + appeler `OnRep_Animate Time of Day` | -- | **1300,0000 -> 1303,3146 en 5,5 s** |
+
+**POSER UNE VARIABLE PAR REFLEXION NE DECLENCHE AUCUN RAPPEL.** `Animate Time
+of Day` est une variable Blueprint repliquee a RepNotify : c'est son `OnRep_`
+qui lance la boucle d'animation, et le moteur ne l'appelle que sur une
+replication REELLE. Ecrire la valeur par `FBoolProperty::SetPropertyValue`
+pose le drapeau -- il se RELIT meme a vrai -- et ne reveille rien. C'est un
+echec parfaitement muet : tous les controles disaient oui.
+
+    REGLE : apres avoir pose une variable Blueprint par reflexion, chercher un
+    `OnRep_<nom>` et l'appeler. `FindFunction` puis `ProcessEvent`, et
+    seulement si `NumParms == 0` -- une pile de parametres mal formee
+    corromprait la memoire.
+
+**ET C'EST LA MESURE D'AVANCEMENT QUI A TOUT VU.** Sans elle, le journal
+annoncait « horloge EN MARCHE » et les onze variables acceptees : on aurait
+conclu a une victoire. Armer n'est pas faire avancer, et la seule preuve est de
+relire l'heure quelques secondes plus tard. Verification finale : 0,60 unite
+par seconde mesuree contre 0,667 attendue pour une journee de trente minutes,
+l'ecart etant le chargement compte dans l'intervalle.
+
+**NE PAS CONFONDRE `Time Speed` ET `Time of Day Change Speed`** : le premier,
+categorie « Animate Time Of Day », est le multiplicateur ; le second, categorie
+« Change Monitoring », MESURE la vitesse de changement et ne la fixe pas.
+
+**RESTE A VERIFIER A LA MAIN** : que `CAL_Worldseed` est bien assigne a la
+variable `Calendar` de l'acteur UDS. La longueur de l'annee est CALCULEE dans
+l'asset calendrier et non exposee sur l'acteur, donc le controle ne peut pas la
+lire -- il journalise son impuissance. Sans ce calendrier, l'annee des trois
+cent soixante-cinq jours d'UDS dure deux cent soixante-quatorze heures reelles
+et la saison ne changera jamais, horloge armee ou non.

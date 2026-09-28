@@ -979,7 +979,11 @@
     "mediterraneanLatMaxDeg": 45.0,
     "dustPrecipMaxMm": 250.0,
     "gridResolution": 128,
-    "dominantRadiusM": 200.0
+    "dominantRadiusM": 200.0,
+    "_comment_horloge": "SOURCE (mesure du 28 septembre 2026) + ARBITRAIRE pour les durees. L'HORLOGE D'UDS ETAIT ARRETEE, et c'etait le defaut dominant de la meteo : la phase de l'annee est LUE dans Ultra Dynamic Sky, qui ne la fait avancer que si son 'Animate Time of Day' est arme. Sans lui, la saison reste figee toute la partie -- mesuree a 3,78 sur 12 -- et tout le calage saisonnier devient decoratif : quatre saisons par prereglage, inversion des hemispheres, rien n'a d'effet. Il n'y a pas non plus de cycle jour/nuit. BP_WorldseedClimat l'armait depuis le 12 septembre ; ce Blueprint n'est plus employe depuis que la generation est passee en C++, et le reglage est parti avec lui. LES DUREES SONT UN CHOIX DE JEU, pas une mesure : trente minutes de jour et quinze de nuit font quarante-cinq minutes reelles pour vingt-quatre heures, ce qu'employait BP_WorldseedClimat. Avec le calendrier CAL_Worldseed -- trente-six jours par an -- cela donne une annee de vingt-sept heures et une saison de six heures quarante-cinq. Sans ce calendrier, l'annee des trois cent soixante-cinq jours d'UDS durerait deux cent soixante-quatorze heures et la saison ne changerait jamais, horloge armee ou non. A zero, animerHorloge rend l'etat d'avant : UDS garde ses propres reglages.",
+    "animerHorloge": 1,
+    "dureeJourneeMin": 30.0,
+    "dureeNuitMin": 15.0
   },
   "regions": {
     "_comment": "LE DECOUPAGE DU MONDE EN REGIONS ET EN PAYS, ajoute le 26 septembre 2026. Il est GEOGRAPHIQUE et non arbitraire : le Voronoi des plaques dessine deja les continents, il ne dit rien de ce qui fait qu'un pays tient ensemble. Ce qui le dit, c'est le BASSIN VERSANT -- une vallee dont toutes les eaux se rejoignent est une unite humaine avant d'etre une unite hydrologique : les routes y suivent les rivieres, les villes s'y posent aux confluences, et les cretes font les frontieres. C'est pour cela que les frontieres reelles suivent si souvent les lignes de partage des eaux. ATTENTION : c'est la SEULE grandeur de cette chaine qui ne soit pas positionnelle -- savoir ou s'ecoule une cellule demande de suivre la pente jusqu'a la mer, donc un etiquetage GLOBAL -- et c'est ce qui rend sa mise en cache non pas commode mais NECESSAIRE.",

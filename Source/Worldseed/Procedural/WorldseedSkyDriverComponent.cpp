@@ -70,6 +70,7 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		{
 			PresetRules = FWorldseedClimatePresetRules::FromRules(*Rules);
 			bPresetRulesLoaded = true;
+			ArmerHorloge(*Rules);
 		}
 		else
 		{
@@ -132,6 +133,42 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 
 	PushWeather();
 
+	// --- L'HEURE AVANCE-T-ELLE VRAIMENT ? ------------------------------------
+	//
+	// ARMER N'EST PAS FAIRE AVANCER. La valeur peut etre posee et le temps
+	// rester fige -- UDS met sa vitesse d'horloge en cache, et ce depot a deja
+	// constate qu'elle ne s'accelere pas a chaud. Le seul controle qui tranche
+	// est de relire l'heure quelques secondes plus tard.
+	if (HeureALArmement >= 0.0 && !bAvanceVerifiee)
+	{
+		TempsDepuisArmementS += DeltaSeconds;
+		if (TempsDepuisArmementS > 5.0f)
+		{
+			bAvanceVerifiee = true;
+			double Maintenant = 0.0;
+			if (!Bridge.ReadNumber(TEXT("Time of Day"), Maintenant))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] horloge : « Time of Day » illisible -- ")
+					TEXT("impossible de dire si le temps passe"));
+			}
+			else if (FMath::IsNearlyEqual(Maintenant, HeureALArmement, 1e-4))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] horloge : ARMEE MAIS FIGEE a %.4f apres %.1f s. ")
+					TEXT("UDS met sa vitesse en cache : il faut probablement poser les ")
+					TEXT("durees AVANT son BeginPlay, ou dans la carte."),
+					Maintenant, TempsDepuisArmementS);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log,
+					TEXT("[Worldseed] horloge : le temps passe -- %.4f a %.4f en %.1f s"),
+					HeureALArmement, Maintenant, TempsDepuisArmementS);
+			}
+		}
+	}
+
 	if (bShowReadout)
 	{
 		// La duree couvre largement la periode de mise a jour : la ligne ne
@@ -139,6 +176,77 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		WorldseedWeatherReadout::Draw(Current, Sample, LongitudeDeg, AltitudeM,
 			Params.SeasonPhase, WeatherPeriodS, FMath::Max(DeltaSeconds, 0.05f) * 4.0f);
 	}
+}
+
+void UWorldseedSkyDriverComponent::ArmerHorloge(const UWorldseedRules& Rules)
+{
+	static const FName NomAnimer = TEXT("Animate Time of Day");
+	static const FName NomJour = TEXT("Day Length");
+	static const FName NomNuit = TEXT("Night Length");
+
+	if (Rules.Num(TEXT("uds"), TEXT("animerHorloge"), 1.0) < 0.5)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] horloge : non armee (uds.animerHorloge a zero) -- ")
+			TEXT("Ultra Dynamic Sky garde ses propres reglages"));
+		return;
+	}
+
+	// LES DUREES D'ABORD, L'ARMEMENT ENSUITE, et l'ordre n'est pas indifferent :
+	// UDS met sa vitesse d'horloge EN CACHE, et ce depot a deja constate qu'elle
+	// ne s'accelere pas a chaud -- ni `Day Length` ni le multiplicateur ne
+	// changent la vitesse en cours de partie. Poser les durees avant d'armer
+	// donne au cache la chance de se construire sur les bonnes valeurs.
+	const double Jour = Rules.Num(TEXT("uds"), TEXT("dureeJourneeMin"), 30.0);
+	const double Nuit = Rules.Num(TEXT("uds"), TEXT("dureeNuitMin"), 15.0);
+	const bool bJour = Bridge.WriteNumber(NomJour, Jour);
+	const bool bNuit = Bridge.WriteNumber(NomNuit, Nuit);
+
+	// `Time Speed` EST LE MULTIPLICATEUR DE L'HORLOGE, et c'est lui qui manquait :
+	// armer « Animate Time of Day » sur un acteur dont la vitesse vaut zero pose
+	// bien le drapeau et ne fait rien avancer -- mesure : heure figee a 1300,0000
+	// apres cinq secondes et demie, alors que le journal annoncait « EN MARCHE ».
+	// NE PAS CONFONDRE avec `Time of Day Change Speed`, de la categorie « Change
+	// Monitoring » : celle-la MESURE la vitesse de changement, elle ne la fixe pas.
+	static const FName NomVitesse = TEXT("Time Speed");
+	double Vitesse = 0.0;
+	const bool bLue = Bridge.ReadNumber(NomVitesse, Vitesse);
+	if (bLue && Vitesse <= 0.0)
+	{
+		Bridge.WriteNumber(NomVitesse, 1.0);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] horloge : « Time Speed » valait %.2f, pose a 1"), Vitesse);
+	}
+
+	const bool bArmee = Bridge.WriteBool(NomAnimer, true);
+
+	// ET ON DECLENCHE LE RAPPEL A LA MAIN. `Animate Time of Day` est une
+	// variable repliquee a RepNotify : c'est son `OnRep_` qui lance la boucle
+	// d'animation, et le moteur ne l'appelle que sur une replication reelle --
+	// jamais quand on pose la variable par reflexion. Mesure sans cet appel :
+	// drapeau a vrai, lu a vrai, et l'heure figee a 1300,0000.
+	const bool bReveillee = Bridge.CallFunction(TEXT("OnRep_Animate Time of Day"));
+
+	if (!bArmee)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] horloge : « %s » introuvable sur %s -- le temps ne ")
+			TEXT("passera pas"), *NomAnimer.ToString(), *Bridge.Describe());
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] horloge : armee -- journee %.0f min%s, nuit %.0f min%s, ")
+		TEXT("rappel OnRep %s"),
+		Jour, bJour ? TEXT("") : TEXT(" (REFUSEE)"),
+		Nuit, bNuit ? TEXT("") : TEXT(" (REFUSEE)"),
+		bReveillee ? TEXT("appele") : TEXT("INTROUVABLE"));
+
+	// ON MEMORISE L'HEURE POUR VERIFIER QU'ELLE AVANCE. Armer n'est pas faire
+	// avancer : la valeur peut etre posee et le temps rester fige, et c'est
+	// precisement le genre d'echec muet que ce depot a paye plusieurs fois.
+	// Le controle se fait quelques secondes plus tard, dans `Drive`.
+	Bridge.ReadNumber(TEXT("Time of Day"), HeureALArmement);
 }
 
 void UWorldseedSkyDriverComponent::PushWeather() const

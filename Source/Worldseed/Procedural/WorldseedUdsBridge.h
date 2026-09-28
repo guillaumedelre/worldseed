@@ -56,6 +56,13 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	/** Lit une grandeur nommee sur l'un des deux acteurs, sans la modifier. */
 	bool ReadNumber(FName PropertyName, double& OutValue) const;
 
+	/** Pose un booleen nomme sur celui des deux acteurs qui le porte. */
+	bool WriteBool(FName PropertyName, bool bValue) const;
+
+	/** Appelle une fonction SANS ARGUMENT sur l'un des deux acteurs. */
+	bool CallFunction(FName FunctionName) const;
+
+
 	// --- ecriture ------------------------------------------------------------
 
 	bool WriteLatLon(float LatitudeDeg, float LongitudeDeg) const;
