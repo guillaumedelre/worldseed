@@ -10027,3 +10027,64 @@ deux variables par la seule casse.
 couches, et une boucle qui ne parcourt que `biomes` lui retire ses galets --
 donc tout ce qui pousse sur la plage. Verifier les cles de premier niveau
 avant tout traitement de masse sur ce fichier.
+
+### Le pilotage meteo etait ecrit, complet, et n'avait AUCUN APPELANT (28 septembre 2026)
+
+Signale a l'usage : « je vois assez rarement de la pluie dans le jeu ou des
+orages tres fort avec UDS, est-il bien branche sur le climat, les biomes ? ».
+Reponse : non. Et ce n'etait pas un defaut de calage, c'etait un fil manquant.
+
+**CE QUI EXISTAIT.** `WorldseedClimatePreset` traduit temperature, pluie,
+amplitude saisonniere, continentalite et latitude en un prereglage UDS, cale
+sur les vingt-trois prereglages LIVRES par le pack. `WorldseedWeatherState` en
+tire une meteo instantanee avec une idee juste -- le pourcentage de ciel
+couvert du prereglage sert de SEUIL DE FREQUENCE, si bien qu'un desert garde
+son orage rare sans qu'on l'invente. `UWorldseedSkyDriverComponent` pousse le
+tout dans UDS, avec un fondu pour qu'une frontiere climatique ne commute pas
+le ciel d'un coup. Tout cela etait juste, et rien ne tournait.
+
+**LA PREUVE, EN QUATRE POINTS CONCORDANTS :**
+
+    appelants de FeedSky                        AUCUN
+    AWorldseedTerrain      PrimaryActorTick.bCanEverTick = false
+    UWorldseedSkyDriver    PrimaryComponentTick.bCanEverTick = false
+    journal de partie      ni « ciel : latitude », ni « aucun Ultra Dynamic Sky »
+
+**LE DERNIER POINT EST LE TEMOIN QUI TRANCHE**, et c'est lui qu'il faut
+retenir : `Drive` emet FORCEMENT l'une de ces deux lignes, quelle que soit la
+branche prise -- elle a trouve le ciel, ou elle ne l'a pas trouve. Aucune des
+deux dans 395 Ko de journal : la fonction ne s'executait jamais. **Chercher la
+ligne qu'un chemin emet dans TOUS les cas coute moins cher que lire le code**,
+et c'est une mesure, pas une deduction.
+
+**CE QUE LE BRANCHEMENT A REVELE : le systeme etait excellent.** Mesure des
+que l'appelant existe, sur quatre cents echantillons d'un cycle complet --
+
+    part de pluie   desert chaud    0,0 %     foret tropicale humide  100,0 %
+    neige maximale  a -12 degres    0,34      a +14 degres              0,00
+
+**UN MINUTEUR, PAS LE TICK DE L'ACTEUR.** Le climat change a l'echelle du
+kilometre, pas de l'image : a six kilometres-heure, une demi-seconde
+represente quatre-vingt-trois centimetres, tres en deca de la maille de quinze
+metres de la carte des biomes. C'est aussi la cadence qu'employait
+`BP_WorldseedClimat` avant le portage. `SkyPeriodS = 0` rend l'etat d'avant --
+ciel non pilote -- donc l'A/B se fait sans recompiler.
+
+**ET MON PREMIER ORACLE ETAIT FAUX, PAS LE CODE.** `NeigeAuFroid` exigeait
+qu'il ne neige jamais a quatorze degres ; le modele en rendait 0,25 et le test
+criait. Mais j'avais pose TRENTE degres d'amplitude saisonniere : a quatorze de
+moyenne, l'hiver tombe alors a moins un, et il neige -- le modele avait raison.
+Corrige en ramenant l'amplitude a six, ou l'hiver doux reste a onze degres.
+**Un attendu naif se CORRIGE, il ne s'elargit pas** : allonger la tolerance
+aurait fait passer le test sans rien apprendre, et masque la question.
+
+**CE QU'UN TEST NE PEUT PAS GARDER ICI**, et il faut le dire : un minuteur ne
+se verifie pas sans instancier l'acteur. Les deux oracles gardent donc ce que
+le cablage SERT A PRODUIRE -- une meteo qui distingue les climats -- et non le
+cablage lui-meme. Si le fil sautait de nouveau, ils resteraient verts. Le seul
+controle qui le verrait est la ligne de journal ci-dessus.
+
+**RESTE OUVERT** : l'intensite maximale des orages n'est pas mesuree. Le
+prereglage traduit la pluie annuelle en frequence de ciel couvert ; ce qu'il
+atteint en pointe se regle dans la section `uds` de `world_rules.json`, et
+personne ne l'a encore chiffre.

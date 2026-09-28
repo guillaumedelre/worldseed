@@ -58,6 +58,27 @@ void AWorldseedTerrain::BeginPlay()
 				&AWorldseedTerrain::UpdateGroundProxyVisibility, 0.1f, true);
 		}
 	}
+
+	// ET LE CIEL AUSSI, ce qui n'etait pas le cas : voir `TickSky`.
+	if (SkyPeriodS > 0.0f)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(SkyTimer, this,
+				&AWorldseedTerrain::TickSky, SkyPeriodS, true);
+		}
+	}
+}
+
+void AWorldseedTerrain::TickSky()
+{
+	WORLDSEED_TRACE(Ciel);
+
+	// LE PAS EST LA PERIODE DU MINUTEUR, et c'est exact : `FeedSky` ne s'en
+	// sert que pour le fondu vers la cible et pour l'horloge de la meteo, deux
+	// grandeurs qui avancent du temps ecoule. Un minuteur repetitif d'Unreal
+	// rattrape ses retards, donc la somme des pas suit le temps reel.
+	FeedSky(SkyPeriodS);
 }
 
 void AWorldseedTerrain::UpdateGroundProxyVisibility()

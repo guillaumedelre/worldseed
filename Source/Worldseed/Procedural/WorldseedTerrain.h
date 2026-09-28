@@ -343,6 +343,17 @@ public:
 	bool bHideGroundProxyUnderground = true;
 
 	/**
+	 * Periode a laquelle le climat sous le joueur est pousse au ciel.
+	 *
+	 * A zero, le ciel n'est plus pilote du tout et Ultra Dynamic Sky reprend
+	 * ses propres reglages : c'est l'etat dans lequel le jeu a vecu depuis le
+	 * portage, faute d'appelant a `FeedSky`.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Ciel",
+		meta = (ClampMin = "0.0"))
+	float SkyPeriodS = 0.5f;
+
+	/**
 	 * Hauteur sondee au-dessus de l'oeil pour chercher un plafond, en metres.
 	 *
 	 * Le sondage doit depasser le relief le plus epais qu'on puisse avoir
@@ -439,6 +450,32 @@ protected:
 
 	/** Echantillonne le climat sous le joueur et le pousse au ciel. */
 	void FeedSky(float DeltaSeconds);
+
+	/**
+	 * CE QUI APPELLE `FeedSky`, ET IL N'EXISTAIT PAS.
+	 *
+	 * Tout le pilotage du ciel etait ecrit -- prereglage climatique par biome,
+	 * tirage de meteo, fondu vers la cible -- et RIEN NE L'APPELAIT : ni le
+	 * tick de l'acteur, coupe a dessein, ni celui du composant, coupe aussi.
+	 * La meteo tournait donc sur les reglages propres d'Ultra Dynamic Sky,
+	 * sans rapport avec le biome sous les pieds du joueur.
+	 *
+	 * LE TEMOIN QUI L'A TROUVE : `Drive` journalise forcement l'une de deux
+	 * lignes -- « ciel : latitude » ou « aucun Ultra Dynamic Sky dans le
+	 * niveau » -- quelle que soit la branche prise. Aucune n'apparaissait dans
+	 * les journaux de partie. Une fonction juste peut n'atteindre jamais
+	 * l'ecran, et ce depot l'a deja paye sur la rampe du decor.
+	 *
+	 * UN MINUTEUR PLUTOT QUE LE TICK DE L'ACTEUR : le climat change a l'echelle
+	 * du kilometre, pas de l'image. A six kilometres-heure, une demi-seconde
+	 * represente quatre-vingt-trois centimetres -- tres en deca de la maille de
+	 * quinze metres de la carte des biomes. C'est aussi la cadence que
+	 * `BP_WorldseedClimat` employait avant le portage en C++.
+	 */
+	void TickSky();
+
+	/** Minuteur du ciel, voir `TickSky`. */
+	FTimerHandle SkyTimer;
 
 	/** Position de reference pour le chargement : le joueur, sinon l'acteur. */
 	FVector GetStreamingOrigin() const;
