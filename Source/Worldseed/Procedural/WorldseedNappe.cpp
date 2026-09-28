@@ -333,11 +333,19 @@ void WorldseedNappe::Decimer(const FWorldseedNappeMaillage& Source,
 		// noie : c'est la meme grandeur, et la recopier ici l'aurait fait
 		// diverger de ce que le releve annonce.
 		//
-		// `-WorldseedNappeVue=` la surcharge, parce que c'est un arbitrage A
-		// L'IMAGE. Plus le decor est bas, moins il bouche -- mais plus il noie
-		// de terres basses. Aucun calcul ne tranche cela, et un A/B qui
-		// demanderait de rouvrir le fichier de regles en changerait
-		// l'empreinte, donc regenererait le monde entre les deux moities.
+		// ELLE N'A PLUS DE SURCHARGE, ET C'EST A SAVOIR AVANT D'EN CHERCHER
+		// UNE. `-WorldseedNappeVue=` a existe -- c'etait un arbitrage A
+		// L'IMAGE, plus le decor est bas moins il bouche mais plus il noie de
+		// terres basses -- et il a ete retire au menage du 23 septembre 2026,
+		// la question etant tranchee. Ce commentaire a ensuite continue de le
+		// citer, et un A/B monte dessus le 27 septembre a compare DEUX FOIS LA
+		// MEME CHOSE : c'est le journal, en annoncant le meme enfoncement des
+		// deux cotes, qui l'a dit.
+		//
+		// Pour rouvrir la question, on REPOSE la surcharge -- quelques lignes,
+		// et la regle du depot l'exige : un A/B qui demanderait d'editer le
+		// fichier de regles en changerait l'empreinte, donc regenererait le
+		// monde entre les deux moities.
 
 		// L'ENFONCEMENT SUIT L'EXAGERATION VERTICALE, comme celui de la nappe :
 		// un monde etire verticalement etire aussi la hauteur des ouvertures
@@ -399,8 +407,10 @@ void WorldseedNappe::Decimer(const FWorldseedNappeMaillage& Source,
 				// qui est un plan a zero, les recouvrait. Au-dela du rayon de
 				// chargement, une vallee verte avec sa plage se lisait comme
 				// une BAIE. Vu a l'image depuis le massif de l'est, et confirme
-				// par un temoin a `-WorldseedNappeVue=0` ou la meme vallee est
-				// verte : 28 a 30 % du cadre changeait entre les deux moities.
+				// a l'epoque par un temoin a enfoncement nul, ou la meme vallee
+				// est verte : 28 a 30 % du cadre changeait entre les deux
+				// moities. (Le drapeau qui posait ce temoin a ete retire au
+				// menage du 23 septembre 2026 : ne pas le chercher.)
 				//
 				// ET LE PLAFOND NE ROUVRE RIEN, par construction. L'enfoncement
 				// existe pour que la nappe passe sous toute cavite ; or aucune

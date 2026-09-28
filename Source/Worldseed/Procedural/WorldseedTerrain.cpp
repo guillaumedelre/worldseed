@@ -406,10 +406,48 @@ void AWorldseedTerrain::ReglerRampeDeLaNappe()
 	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeFinCm"), FinCm);
 	MatiereNappeVue->SetScalarParameterValue(TEXT("NappeRampeActive"), 1.0f);
 
+	// --- ON RELIT, PARCE QU'UNE ECRITURE MUETTE A DEJA COUTE CE DEFAUT ------
+	//
+	// `SetScalarParameterValue` sur un parametre que le materiau ne DECLARE
+	// PAS ne rend rien, ne journalise rien, et ne fait rien. La rampe
+	// n'existait que dans `M_WorldseedBiome` ; le jour ou l'habillage Orasot
+	// est devenu le seul, `ChooseTerrainMaterial` s'est mis a rendre
+	// `MI_WorldseedGround_Orasot`, ces trois lignes sont devenues des no-op,
+	// et le decor a CESSE D'ETRE ENFONCE. Il est reste a l'altitude macro, ou
+	// il perce le terrain voxel -- lequel s'en ecarte de `overhangAmplitudeM`,
+	// huit metres, assez pour enterrer un personnage de 1,80 m.
+	//
+	// Signale en jeu par « il y a 2 heightmap, mon joueur s'enfonce dans le
+	// sol », et mesure a **87,3 % du cadre couvert a tort** au point signale.
+	// Le journal, lui, annoncait « rampe ARMEE » a chaque partie : il
+	// rapportait ce qu'on avait DEMANDE, pas ce qui avait pris. Meme famille
+	// que « un repli journalise ressemble a une mesure ».
+	//
+	// La relecture tranche : `GetScalarParameterValue` rend FAUX quand le
+	// parametre n'existe pas sur la chaine d'instances.
+	float Relu = -1.0f;
+	const bool bPortee = MatiereNappeVue->GetScalarParameterValue(
+		FMaterialParameterInfo(TEXT("NappeRampeActive")), Relu);
+
+	const UMaterialInterface* const Parent = MatiereNappeVue->Parent;
+	const FString NomParent = Parent ? Parent->GetName() : TEXT("AUCUN");
+
+	if (!bPortee || Relu < 0.5f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Worldseed] sol de fond : LA RAMPE N'A PAS PRIS -- le materiau ")
+			TEXT("%s ne declare pas `NappeRampeActive` (relu=%s). Le decor ")
+			TEXT("d'horizon RESTERA A L'ALTITUDE MACRO et percera le terrain ")
+			TEXT("voxel : on verra deux reliefs, et le joueur s'enfoncera dans ")
+			TEXT("le sol. Le materiau doit appeler MF_WorldseedNappeRampe."),
+			*NomParent, bPortee ? *FString::Printf(TEXT("%.2f"), Relu) : TEXT("absent"));
+		return;
+	}
+
 	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] sol de fond : rampe ARMEE -- entiere jusqu'a %.0f m, ")
-		TEXT("nulle au-dela de %.0f m (rayon de vue %.0f m%s)"),
-		RayonM, RayonM * Facteur, RayonM,
+		TEXT("[Worldseed] sol de fond : rampe ARMEE et RELUE sur %s -- entiere ")
+		TEXT("jusqu'a %.0f m, nulle au-dela de %.0f m (rayon de vue %.0f m%s)"),
+		*NomParent, RayonM, RayonM * Facteur, RayonM,
 		VoxelTerrain ? TEXT("") : TEXT(", voxel pas encore pondu"));
 }
 

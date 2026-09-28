@@ -86,15 +86,28 @@ namespace WorldseedRvt
 		TArray<URuntimeVirtualTexture*>& OutTextures);
 
 	/**
-	 * Fait ECRIRE une primitive dans les RVT.
+	 * IL Y AVAIT ICI UN `FaireEcrire(Primitive, Textures)`, ET IL EST PARTI LE
+	 * 28 SEPTEMBRE 2026 -- son seul appelant etait inerte.
 	 *
-	 * LE MODE DE PASSE EST LE PIEGE, ET IL A DEJA FAIT ABANDONNER LA RVT UNE
-	 * FOIS. `VirtualTextureRenderPassType` vaut `Exclusive` par defaut : la
-	 * primitive ne se dessine alors PLUS dans la passe principale, seulement
-	 * dans la RVT. Le terrain proche perd sa geometrie fine et parait APLATI --
-	 * on conclut que la RVT est en cause et l'on fait marche arriere. Il faut
-	 * `Always` : le terrain se dessine normalement ET alimente la RVT.
+	 * Il posait `RuntimeVirtualTextures` sur une primitive et forcait
+	 * `VirtualTextureRenderPassType` a `Always`. Son unique appelant etait le
+	 * `ProceduralMeshComponent` de chaque chunk du terrain, lequel ne peut PAS
+	 * ecrire dans une RVT : releve dans la source du moteur,
+	 * `ProceduralMeshComponent.cpp` porte ZERO occurrence de
+	 * `DrawStaticElements` et ZERO de `RuntimeVirtualTexture`, et la passe RVT
+	 * se batit a partir des lots STATIQUES.
+	 *
+	 * LES DEUX LECONS QU'IL PORTAIT RESTENT VRAIES, et c'est pour elles que
+	 * cette note existe :
+	 *
+	 * - `VirtualTextureRenderPassType` vaut `Exclusive` PAR DEFAUT, et une
+	 *   primitive qu'on doit aussi VOIR exige `Always`. Le defaut avait un jour
+	 *   retire le terrain de la passe principale : il paraissait aplati, on a
+	 *   conclu que la RVT etait en cause, et elle a ete abandonnee a tort ;
+	 * - une primitive qui ne doit JAMAIS se voir prend `Never`, ce qui est le
+	 *   cas de l'ecrivain actuel -- voir `WorldseedNappeRvt`.
+	 *
+	 * Le jour ou une primitive a lots STATIQUES devra a la fois se voir et
+	 * alimenter la RVT, la fonction se repose en cinq lignes.
 	 */
-	WORLDSEED_API void FaireEcrire(UPrimitiveComponent* Primitive,
-		TArrayView<URuntimeVirtualTexture* const> Textures);
 }

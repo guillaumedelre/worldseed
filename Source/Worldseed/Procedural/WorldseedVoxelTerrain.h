@@ -27,6 +27,8 @@ class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UProceduralMeshComponent;
 class UStaticMesh;
+class UStaticMeshComponent;
+class UTexture2D;
 
 /**
  * Un maillage de chunk en cours de fabrication sur un fil de travail.
@@ -950,12 +952,55 @@ private:
 	/** Pose les composants de RVT. Sans effet si `bUtiliserRvt` est faux. */
 	void PreparerRvt();
 
+	/**
+	 * Cuit et pose la nappe qui REMPLIT la RVT de couleur.
+	 *
+	 * Elle existe parce que le terrain ne PEUT PAS ecrire dans une RVT : un
+	 * `ProceduralMeshComponent` n'emet aucun lot statique, et la passe RVT se
+	 * batit a partir des lots statiques. Voir `WorldseedNappeRvt.h` pour les
+	 * trois autres voies pesees et la mesure qui a tranche.
+	 */
+	void PreparerNappeRvt(TArrayView<URuntimeVirtualTexture* const> Textures);
 
+
+	/**
+	 * Les composants de RVT poses sur ce niveau, et les textures qu'ils
+	 * remplissent.
+	 *
+	 * ELLES NE SONT QU'ECRITES, ET CE N'EST PAS DU CODE MORT -- NE PAS LES
+	 * RETIRER AU PROCHAIN MENAGE. Ce sont des ANCRES DE RAMASSE-MIETTES : une
+	 * `UPROPERTY` est ce qui retient l'objet, et l'usage est la reference
+	 * elle-meme, pas une lecture. Les supprimer parce qu'aucun code ne les lit
+	 * ferait collecter les textures, et la RVT redeviendrait vide -- donc le
+	 * dessus des pans NOIR, sans le moindre avertissement. Meme raison que les
+	 * trois references de la nappe juste en dessous, et meme piege que j'ai
+	 * failli commettre le 28 septembre 2026 en retirant l'appel inerte qui les
+	 * lisait.
+	 */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URuntimeVirtualTextureComponent>> RvtComposants;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URuntimeVirtualTexture>> RvtTextures;
+
+	/**
+	 * La nappe qui REMPLIT la RVT de couleur, et les deux textures qu'elle lit.
+	 *
+	 * ELLES SONT `Transient` ET REFERENCEES ICI PARCE QU'ELLES SONT
+	 * TRANSITOIRES. `UTexture2D::CreateTransient` pose ses textures dans le
+	 * paquet transitoire, sans proprietaire : rien ne les retient, et le
+	 * ramasse-miettes les reprendrait au premier passage. La nappe deviendrait
+	 * alors blanche -- la texture par defaut du parametre -- sans le moindre
+	 * avertissement.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> NappeRvt;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> NappeRvtPoids;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> NappeRvtTeinte;
 
 
 public:

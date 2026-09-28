@@ -1,6 +1,7 @@
 // Worldseed - terrain voxel : diffusion des chunks autour du joueur.
 
 #include "Procedural/WorldseedVoxelTerrain.h"
+#include "Procedural/WorldseedNappeRvt.h"
 #include "Procedural/WorldseedPeinture.h"
 #include "Procedural/WorldseedPlacement.h"
 #include "Procedural/WorldseedPlateau.h"
@@ -1614,6 +1615,87 @@ void AWorldseedVoxelTerrain::PreparerRvt()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] RVT : %d texture(s) posee(s)"), Posees);
+
+	PreparerNappeRvt(Textures);
+}
+
+void AWorldseedVoxelTerrain::PreparerNappeRvt(
+	TArrayView<URuntimeVirtualTexture* const> Textures)
+{
+	NappeRvt = nullptr;
+	NappeRvtPoids = nullptr;
+	NappeRvtTeinte = nullptr;
+
+	if (Textures.Num() == 0)
+	{
+		return;
+	}
+
+	// UNE SURCHARGE, PARCE QU'UN A/B NE DOIT PAS DEMANDER DE RECOMPILER. Et
+	// surtout pas de toucher a `world_rules.json` : son empreinte entre dans la
+	// cle du cache, donc les deux moities ne joueraient plus le MEME MONDE --
+	// ce depot a une regle contre les A/B mal montes, et il a deja vide ce
+	// fichier en voulant l'editer en place.
+	int32 Armee = 1;
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeRvt="), Armee);
+	if (Armee == 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] nappe RVT : COUPEE par -WorldseedNappeRvt=0"));
+		return;
+	}
+
+	UTexture2D* Poids = nullptr;
+	UTexture2D* Teinte = nullptr;
+	FWorldseedNappeRvtReleve Releve;
+
+	if (!WorldseedNappeRvt::Cuire(Biomes(), Geometry, Poids, Teinte, Releve))
+	{
+		return;
+	}
+
+	NappeRvtPoids = Poids;
+	NappeRvtTeinte = Teinte;
+
+	NappeRvt = WorldseedNappeRvt::Poser(this, RootScene, Textures,
+		static_cast<double>(Geometry.WidthM()),
+		static_cast<double>(Geometry.HeightM), Poids, Teinte);
+
+	if (!NappeRvt)
+	{
+		return;
+	}
+
+	// ON RELIT LA TRANSFORM, ON NE LA SUPPOSE PAS. La ligne d'avant aurait
+	// journalise ce qu'on AVAIT DEMANDE, ce qui reste juste meme quand le
+	// composant n'a pas bouge -- c'est exactement le defaut qui a fait croire
+	// pendant une journee que le volume de RVT couvrait le monde alors qu'il
+	// faisait un centimetre de cote.
+	const FVector Pose = NappeRvt->GetComponentLocation();
+	const FVector Ech = NappeRvt->GetComponentScale();
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] nappe RVT : %d x %d texels (%.1f Mo, %.0f ms), ")
+		TEXT("%lld terre / %lld mer, %lld texel(s) marin(s) repris a la terre. ")
+		TEXT("Plan RELU en (%.0f, %.0f, %.0f) m, etendue RELUE %.1f x %.1f km, ")
+		TEXT("mode NEVER (jamais dessinee dans la passe principale)."),
+		Releve.Largeur, Releve.Hauteur, Releve.Mo, Releve.Ms,
+		Releve.Terre, Releve.Mer, Releve.Dilates,
+		Pose.X / WorldseedMetersToCm, Pose.Y / WorldseedMetersToCm,
+		Pose.Z / WorldseedMetersToCm,
+		Ech.X / 1000.0, Ech.Y / 1000.0);
+
+	// ON DIT CE QU'ON A ECRIT, PAS SEULEMENT QU'ON A ECRIT. Une nappe qui
+	// poserait du noir partout donnerait exactement le defaut qu'elle vient
+	// corriger, et l'image seule ne saurait pas les distinguer.
+	if (Releve.PoidsMax <= 0.0f || Releve.TeinteMax <= 0.0f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Worldseed] nappe RVT : poids max %.3f, teinte max %.3f -- ")
+			TEXT("elle ECRIT DU NOIR. Tout ce qui la lit rendra noir, a ")
+			TEXT("commencer par le dessus des pans de falaise."),
+			Releve.PoidsMax, Releve.TeinteMax);
+	}
 }
 
 void AWorldseedVoxelTerrain::PreparerVegetation()
@@ -2212,20 +2294,28 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 			State.Mesh->SetMaterial(0, TerrainMaterial);
 		}
 
-		// LE TERRAIN ECRIT DANS LA RVT, ET C'EST LUI SEUL QUI LE FAIT. Le
-		// feuillage la LIT : s'il y ecrivait aussi, il se teinterait de
-		// lui-meme et la boucle n'aurait aucun sens. C'est le sol qui donne le
-		// ton, comme dans la carte de demonstration du pack.
-		if (RvtTextures.Num() > 0)
-		{
-			TArray<URuntimeVirtualTexture*> Brutes;
-			Brutes.Reserve(RvtTextures.Num());
-			for (const TObjectPtr<URuntimeVirtualTexture>& T : RvtTextures)
-			{
-				Brutes.Add(T.Get());
-			}
-			WorldseedRvt::FaireEcrire(State.Mesh, Brutes);
-		}
+		// LE CHUNK N'ECRIT PAS DANS LA RVT, ET IL NE PEUT PAS -- NE PAS REMETTRE
+		// L'APPEL QUI SE TROUVAIT ICI.
+		//
+		// Il y avait la un `WorldseedRvt::FaireEcrire(State.Mesh, ...)`, sous un
+		// commentaire qui affirmait que le terrain etait le seul ecrivain de la
+		// RVT. C'etait FAUX, et le releve est dans la source du moteur :
+		// `ProceduralMeshComponent.cpp` porte ZERO occurrence de
+		// `DrawStaticElements` et ZERO de `RuntimeVirtualTexture`. La passe RVT
+		// d'Unreal se batit a partir des lots STATIQUES ; un proxy qui n'emet
+		// que du dynamique n'y entre jamais. Poser `RuntimeVirtualTextures` sur
+		// un tel composant compile et s'applique proprement -- le champ vit sur
+		// `UPrimitiveComponent` -- et PERSONNE ne le lit. C'est pourquoi la RVT
+		// est restee vide, et pourquoi le dessus des pans de falaise rendait
+		// NOIR.
+		//
+		// L'appel n'etait donc pas seulement inutile : il finissait par
+		// `MarkRenderStateDirty()`, soit une recreation d'etat de rendu PAR
+		// CHUNK, sur le chemin chaud du streaming, pour zero effet.
+		//
+		// L'ECRIVAIN EST `WorldseedNappeRvt` : un plan unique de la taille du
+		// monde, en `MainPassType::Never`, qui ne bouge jamais -- donc des pages
+		// calculees une fois et gardees. Le feuillage et les pans, eux, LISENT.
 	}
 
 	// TOUT CHUNK MAILLE EST SOLIDE, SANS EXCEPTION.

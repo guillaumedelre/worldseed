@@ -19,8 +19,9 @@
  *
  * AUCUNE SONDE NE POUVAIT LE VOIR. Elles mesurent des pentes, des parts de
  * biomes, des comptes de chunks -- jamais ce que le DECOR montre. Le defaut
- * n'est apparu qu'en cadrant l'horizon a l'image, et il a fallu un temoin
- * (`-WorldseedNappeVue=0`) pour l'attribuer.
+ * n'est apparu qu'en cadrant l'horizon a l'image, et il a fallu un temoin a
+ * enfoncement nul pour l'attribuer -- le drapeau qui le posait a depuis ete
+ * retire, ne pas le chercher.
  *
  * CE QUE CE TEST GARDE EST L'INVARIANT, PAS LE CHIFFRE. Le pourcentage depend
  * du monde et bougera a chaque regeneration ; la propriete, elle, ne doit

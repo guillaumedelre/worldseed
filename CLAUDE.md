@@ -6183,6 +6183,17 @@ L'autre levier, non employe, serait de porter la vue a 2400 m : la marche
 resterait haute mais deux fois plus loin, pour douze pour cent de chunks en
 plus -- chiffre deja mesure dans ce registre.
 
+**PERIME AU 27 SEPTEMBRE 2026 : LES DEUX LEVIERS CITES CI-DESSUS ONT CHANGE
+D'ETAT.** `-WorldseedNappeVue=` **N'EXISTE PLUS** -- retire au menage du
+23 septembre, la question etant tranchee ; un A/B monte dessus le 27 a compare
+DEUX FOIS LA MEME CHOSE, et c'est le journal, en annoncant le meme enfoncement
+des deux cotes, qui l'a dit. Et le second levier, annonce ici « non employe »,
+**EST employe** : `voxel.rayonChargementM` vaut **2400 m** dans
+`world_rules.json`. Pour rouvrir la question, on REPOSE la surcharge -- quelques
+lignes, et la regle du depot l'exige, un A/B qui demanderait d'editer le fichier
+de regles en changerait l'empreinte donc regenererait le monde entre les deux
+moities.
+
 ### Les diaclases GROSSISSENT avec la distance au lieu de s'effacer (21 septembre 2026)
 
 Signale en jeu : « toutes les faces de la montagne a droite ne sont pas finies
@@ -9482,3 +9493,312 @@ dans cette session, dont un sur `WorldseedProbeMonde.cpp`, un fichier que
 personne n'avait touche. Relancer la compilation suffit. Le controle qui
 tranche entre une ICE transitoire et un vrai defaut est l'HORODATAGE du binaire
 apres la seconde passe.
+
+### Un ProceduralMeshComponent ne peut PAS alimenter une RVT (27 septembre 2026)
+
+Le dessus des pans de falaise rendait une masse NOIRE, signalee en jeu. La
+cause n'etait ni le materiau des pans, ni le cablage de la sortie RVT du sol --
+deux pistes ouvertes puis fermees par la mesure. Elle est structurelle.
+
+**LE FAIT, RELEVE DANS LA SOURCE DU MOTEUR.** `FProceduralMeshSceneProxy`
+n'implemente pas `DrawStaticElements` et ne contient pas une seule occurrence
+du mot `RuntimeVirtualTexture`. Or la passe RVT se batit a partir des lots
+STATIQUES. Poser `RuntimeVirtualTextures` sur un tel composant **compile,
+s'applique proprement, et PERSONNE ne le lit** -- le champ vit sur
+`UPrimitiveComponent`, donc rien ne signale l'erreur. La RVT restait vide, et
+une RVT vide rend du noir.
+
+Cela explique aussi, retrospectivement, pourquoi les dix-neuf substitutions
+`SansRVT` du depot ont toujours ete necessaires.
+
+**LES DEUX PISTES FERMEES AVANT, pour qu'on ne les rouvre pas :**
+- *« `M_WorldseedGround` n'emet pas vers la RVT »* : FAUX, il porte bien un
+  `RuntimeVirtualTextureOutput`, cable ;
+- *« le pan ne lit pas la RVT »* : FAUX, la chaine `MI_WorldseedParoi ->
+  MI_Cliff_2 -> MI_Cliff_1 -> M_Master_Cliff_Mat` echantillonne
+  `RVT_Landscape_Material` exactement une fois.
+
+**UN DEFAUT REEL TROUVE EN CHEMIN, ET C'EST LE MEME QUE CELUI DU MAILLEUR.**
+`URuntimeVirtualTextureComponent` arrive en mobilite STATIQUE ; le deplacer
+APRES `RegisterComponent` est refuse, et le moteur le dit -- « Mobility of ...
+Rvt_0 has to be 'Movable' if you'd like to move ». La transform posee juste
+apres ne prenait donc pas : le volume gardait l'origine et l'echelle un, soit
+un cube d'UN CENTIMETRE, pour une RVT censee couvrir 64 x 32 km. Le journal
+disait pourtant « 524288 texels sur 64 x 32 km » -- un chiffre calcule depuis
+nos propres arguments, donc juste alors meme que rien n'avait bouge. **On relit
+desormais la transform au lieu de la supposer**, et l'on crie si elle ne fait
+pas la taille du monde. Meme famille que « un repli journalise ressemble a une
+mesure ».
+
+**LE TEMOIN QUI A TRANCHE, ET CE QU'IL A PROUVE EN PLUS.** Un plan statique de
+600 m portant un MAGENTA FRANC, pose en l'air a dessein -- enterre, « le dessus
+n'est pas magenta » ne se distinguerait pas de « le plan n'existe pas ». Le
+dessus des pans est devenu MAGENTA : un ecrivain a lots statiques remplit donc
+bien cette RVT. Mais il a prouve plus que la premisse -- **l'ecrivain n'a pas
+besoin d'etre le terrain.**
+
+**LE TEMOIN A ETE RETIRE LE MEME JOUR, decision du proprietaire**, selon le
+critere du menage du 23 septembre : on garde le levier d'une question OUVERTE,
+on retire celui d'une question CLOSE. Celle-ci l'est, et la nappe RVT est batie
+sur sa reponse -- si la RVT redevenait noire, on deboguerait la nappe, qui est
+desormais l'ecrivain de PRODUCTION, et non un temoin. `-WorldseedTemoinRvtStatique=`
+et `M_WorldseedTemoinRvt` **N'EXISTENT DONC PLUS** ; le bloc se recupere par
+`git show` sur ce commit. Ce qui vaut dans six mois est ci-dessus, pas les
+quatre-vingt-douze lignes.
+
+Deux pieges que ce temoin avait payes, gardes ici parce qu'ils resserviront a
+tout maillage statique pose depuis le C++ : la mobilite STATIQUE interdit de
+poser la transform APRES `RegisterComponent` -- il faut la poser AVANT, la
+mobilite Movable n'etant pas une option quand ce sont justement les lots
+statiques qu'on eprouve -- et un temoin **enterre ne temoigne pas**, « le dessus
+n'est pas magenta » ne se distinguant alors pas de « le plan n'existe pas ».
+
+#### La nappe RVT : un ecrivain dedie qui ne se dessine jamais
+
+`WorldseedNappeRvt` pose UN plan de la taille du monde, en
+`ERuntimeVirtualTextureMainPassType::Never` -- « Never render to the main pass.
+Use this for primitives that only render to Runtime Virtual Texture », dit le
+moteur. Il ne bouge jamais, donc ses pages sont calculees une fois et gardees.
+
+**IL NE RECOPIE AUCUNE FORMULE, ET C'ETAIT LA CONDITION.** Les poids des quatre
+matieres et la teinte sortent de `WorldseedBiomes::SlotWeights` et
+`WorldseedApparence::TeinteNormalisee`, exactement comme le peintre du terrain
+voxel ; le melange des quatre textures reste celui de `M_WorldseedGround`,
+atteint par un commutateur STATIQUE -- donc gratuit -- qui dit seulement d'ou
+viennent les poids : du sommet pour le sol, d'une texture pour la nappe. Deux
+melangeurs divergeraient, et l'ecart se verrait exactement la ou le dessus d'un
+pan touche le sol.
+
+**LES TROIS AUTRES VOIES, ET POURQUOI ELLES ONT ETE ECARTEES :**
+
+| voie | pourquoi non |
+|---|---|
+| garder `UseRVT = False` sur les pans | le dessus ne s'accorde jamais au biome |
+| la couleur dans les donnees PAR INSTANCE de l'ISM | une seule teinte pour un pan de 77 m, chirurgie de graphe sur le maitre du PACK -- qui a deja fait tomber l'editeur deux fois -- et cela ne repare QUE les pans |
+| porter le terrain sur un composant a lots statiques | **le terrain STREAME** : chaque chunk pose ou relache invaliderait des pages de RVT, a redessiner en permanence. Cout non mesure, et le portage complet en prime |
+
+**MESURE, banc au meme point, deux passes de chaque cote :**
+
+    nappe coupee   5,93 puis 5,96 ms   GPU 4,66 / 4,68
+    nappe armee    6,18 puis 5,95 ms   GPU 4,88 / 4,72
+
+La seconde paire -- 5,96 contre 5,95 -- dit que **la nappe ne coute rien de
+mesurable** en regime etabli. La premiere passe armee porte une trame a
+26,18 ms, non reproduite a la seconde et non expliquee. Cout reel : **64 Mo**
+de textures transitoires (4096 x 2048, un texel par cellule) et 277 ms de
+cuisson, une fois par monde.
+
+**L'A/B A L'IMAGE, meme point, meme cap, meme binaire :**
+
+    nappe coupee   R 80,9  V 92,6  B 114,0   -> B > V > R, bleu-noir
+    nappe armee    R 136,0 V 161,3 B 95,6    -> V > R > B, vert
+    le sol, dans la meme image                  V > R > B, le meme ordre
+
+**LES DEUX TEMOINS ONT BOUGE, ET C'ETAIT ATTENDU ICI.** Ciel 179 -> 134,
+terrain 198 -> 122. Le dessus du pan occupe la moitie de l'ecran : changer sa
+couleur change l'auto-exposition de toute la scene. **Les valeurs absolues ne
+sont donc pas comparables entre les deux moities**, et seul l'ORDRE DES CANAUX
+-- invariant par exposition -- conclut.
+
+**TROIS PIEGES PAYES COMPTANT :**
+
+- **`AppearanceBiome` ne rend JAMAIS `Ocean`.** Elle ne traduit que les
+  couvertures `Rock` et `Beach` ; pour toutes les autres, l'ocean compris, elle
+  rend le biome CLIMATIQUE, qui est defini PARTOUT -- meme sous la mer, ou il
+  decrit la bande climatique de l'eau. Le test terre/mer de la nappe valait
+  donc `Biome != Ocean` et annoncait **« 8 388 608 terre / 0 mer »** sur un
+  monde a 71 % d'ocean, ce qui rendait sa dilatation du rivage totalement
+  inerte. La mer se lit sur la COUVERTURE. **C'est le compte qui a trouve le
+  defaut, avant qu'aucune image ne puisse le montrer.**
+- **Un heredoc bash casse sur les apostrophes** -- deja consigne, refait. Pour
+  ecrire un long fichier C++, passer par l'editeur de fichiers.
+- **`get_inputs_for_material_expression` rend les EXPRESSIONS SOURCES**, pas
+  des enveloppes de connexion : `conn.get_editor_property("expression")` echoue
+  en silence et l'on croit le graphe sans aretes. Le tableau est aligne sur
+  `get_material_expression_input_names`. C'est ce qui permet de lire la
+  topologie d'un materiau **sans la deduire des POSITIONS des noeuds** -- une
+  deduction qui a deja fait conclure de travers dans ce depot.
+
+**L'ALLER-RETOUR sRGB EST DELIBERE.** Les poids sont lineaires, mais un
+echantillonneur `SAMPLERTYPE_COLOR` -- celui qu'une texture 2D porte par
+defaut -- decode le sRGB. Changer le type d'echantillonneur risque de
+desaccorder la texture PAR DEFAUT du parametre et de faire echouer la
+compilation ; on encode donc a la cuisson (`ToFColor(true)`) et l'on laisse le
+materiau decoder. L'aller-retour est exact a huit bits pres et gagne meme de la
+precision dans les valeurs basses.
+
+**CE QUI RESTE OUVERT, ET C'EST LE GAIN SUIVANT :**
+
+1. **Les dix-neuf substitutions `SansRVT` peuvent etre retirees.** Rochers,
+   ecorces et bambous les emploient parce que la RVT etait vide et rendait du
+   bleu electrique ; elle ne l'est plus. Les retirer leur rendrait le ton du
+   sol, ce que le pack a concu. **Non fait, non mesure.**
+2. **La nappe n'ecrit PAS dans `RVT_Landscape_Height`**, a dessein : une nappe
+   plate y poserait une altitude constante, ce qui deplacerait l'ancrage du
+   feuillage partout sans qu'on l'ait mesure. Lui cuire une texture de hauteur
+   est la suite naturelle.
+3. **La resolution de la nappe est celle de la SIMULATION**, 15,6 m, quand la
+   RVT fait 12,2 cm par texel. Le grain vient des quatre textures du pack,
+   carrelees a 2 m ; c'est la TEINTE qui est grossiere. Assez pour un dessus de
+   pan, a remesurer le jour ou un materiau en demandera plus.
+
+### Deux reliefs, et le joueur enterre : une ecriture de parametre MUETTE (27 septembre 2026)
+
+Signale en jeu : « il y a 2 heightmap j'ai l'impression, mon joueur s'enfonce
+dans le sol et ca le fait dans plusieurs autres endroits ». Les deux symptomes
+sont le meme defaut, et il etait invisible depuis des jours.
+
+**LA CAUSE.** Le decor d'horizon garde ses sommets a l'altitude VRAIE ; c'est
+un DEPLACEMENT DE SOMMETS, dans le materiau, qui le fait passer sous la bande
+creusable -- entier pres de la camera, nul au loin (voir « L'horizon etait
+NOYE, pas marche », 22 septembre). Cette rampe n'avait ete posee que dans
+**`M_WorldseedBiome`**. Or `AWorldseedTerrain::ChooseTerrainMaterial` rend
+**`GroundMaterial`** des que l'habillage est un pack de textures -- donc
+`MI_WorldseedGround_Orasot`, derive de `M_WorldseedGround`, qui n'a ni sortie
+`WorldPositionOffset` ni parametre `NappeRampe*`. Depuis que l'habillage
+Orasot est le SEUL (26 septembre), le decor recevait donc un materiau sans
+rampe.
+
+**ET RIEN N'A PROTESTE, PARCE QUE `SetScalarParameterValue` EST MUET.** Pose
+sur un parametre qu'un materiau ne DECLARE PAS, il ne rend rien, ne journalise
+rien, et ne fait rien. Les trois lignes de `ReglerRampeDeLaNappe` sont
+devenues des no-op, et le journal a continue d'annoncer « rampe ARMEE » a
+chaque partie : **il rapportait ce qu'on avait DEMANDE, pas ce qui avait
+pris**. Meme famille que « un repli journalise ressemble a une mesure », et
+c'est la troisieme fois que ce depot se fait avoir par un chiffre plausible.
+
+**CE QUE CELA DONNAIT.** Le decor, reste a l'altitude macro et maille a 31 m,
+percait le terrain voxel -- lequel s'en ecarte de `overhangAmplitudeM`, HUIT
+METRES, plus l'erreur de corde d'une maille de 31 m sur une pente. Assez pour
+enterrer un personnage de 1,80 m. Le HUD disait `sol +0 m` parce que la
+COLLISION, elle, etait juste : la nappe n'a pas de collision, on marchait sur
+le voxel en voyant le decor.
+
+#### L'A/B qui a nomme le coupable en trois captures
+
+Meme point (30523, -3305), meme cap, meme binaire, `-WorldseedDepartExact=1` :
+
+    reference              la camera est DANS une surface lisse, sans vegetation
+    -WorldseedParois=0     IDENTIQUE  -> ce ne sont pas les pans de falaise
+    -WorldseedSansNappe    le personnage est debout sur la pente, tout est normal
+
+**Un seul levier a change l'image, et c'est celui du sol de fond.** Le depot a
+cette note depuis septembre -- « le seul controle qui tranche est de le MASQUER
+et de recapturer » -- et elle a servi telle quelle.
+
+#### Trois mesures fausses ou vides en chemin, et il faut les dire
+
+1. **`-WorldseedNappeVue=` N'EXISTE PLUS.** Il a ete retire au menage du
+   23 septembre, mais **trois commentaires le citent encore** comme s'il etait
+   la, dont un dans un test. Mon A/B « enfoncement 0 contre 400 » a donc
+   compare deux fois la meme chose -- et c'est le JOURNAL qui l'a dit, en
+   annoncant 125 m des deux cotes. *Une note qui survit a ce qu'elle decrit
+   coute plus cher que pas de note*, et le depot le disait deja pour
+   `WorldseedLabel`.
+2. **LA TOURNEE PHOTO EST DEVENUE IMPRATICABLE.** Lancee pour balayer plusieurs
+   terrains d'un coup, elle s'est arretee apres cinq vues et n'a plus rien
+   produit pendant treize minutes. Un arret coute un REMPLISSAGE COMPLET du
+   diffuseur ; le registre le chiffrait a « une dizaine de minutes » pour un
+   rayon de 1200 m, et le rayon vaut 2400 aujourd'hui. Abandonnee.
+3. **LE POURCENTAGE DE PIXELS CHANGES NE MESURE PAS CE QU'ON CROIT.** J'ai
+   chiffre « 87,3 % du cadre couvert a tort » avant correction, puis mesure
+   21,7 % apres au meme point et **89 % a un autre point**. Le second chiffre
+   n'est pas une regression : a 308 m d'altitude, retirer le decor retire tout
+   le paysage lointain, qui est son ROLE. **Cette metrique melange ce que le
+   decor occulte a tort et ce qu'il montre a raison**, et le depot interdit
+   deja les agregats sur deux populations. Le critere qui tranche est binaire
+   et se lit a l'oeil : **le personnage est-il visible, debout, sur un sol
+   vegetalise ?** Avant : non, la camera etait dans la surface. Apres : oui,
+   aux deux points.
+
+#### Le correctif : UNE fonction, pas une copie
+
+`MF_WorldseedNappeRampe` porte la rampe -- UV3 pour le plafond par sommet,
+distance XY a la camera, `clamp((Fin - d) / (Fin - Debut))`, les trois
+parametres, et `(0, 0, -1)` en sortie. `M_WorldseedGround` et
+`M_WorldseedBiome` l'appellent tous deux sur `WorldPositionOffset`.
+
+**POURQUOI PAS UNE COPIE DANS CHACUN.** `ChooseTerrainMaterial` peut rendre
+TROIS materiaux, et chacun peut habiller le decor. Recopier la formule dans
+chacun, c'est reconstruire exactement la divergence qui vient de couter ce
+defaut -- et le depot a la regle : *ne jamais recopier une formule dans deux
+fichiers*.
+
+**LA PORTE ARRIVE FERMEE**, et il le faut : les chunks du terrain partagent ce
+materiau et ne posent AUCUN UV. `NappeRampeActive` vaut zero par defaut ;
+seule la nappe recoit une instance dynamique qui l'arme.
+
+#### Le garde-fou, qui est la vraie lecon
+
+`ReglerRampeDeLaNappe` **RELIT** desormais ce qu'elle vient d'ecrire :
+`GetScalarParameterValue` rend FAUX quand le parametre n'existe pas sur la
+chaine d'instances. A l'echec, une ERREUR nomme le materiau fautif et decrit
+le symptome. Le journal dit maintenant *sur QUEL materiau* la rampe a pris :
+
+    sol de fond : rampe ARMEE et RELUE sur MI_WorldseedGround_Orasot --
+    entiere jusqu'a 2400 m, nulle au-dela de 4800 m (rayon de vue 2400 m)
+
+**REGLE GENERALE : toute ecriture de parametre de materiau depuis le C++ se
+relit.** L'API ne signale pas un nom inconnu, et le defaut qui en resulte est
+visuel, diffus, et n'appartient a aucun fichier qu'on penserait a relire.
+
+#### L'oracle, et son temoin
+
+`Worldseed.Nappe.LesMateriauxPortentLaRampe` cree une instance DYNAMIQUE de
+chaque materiau d'habillage -- exactement ce que fait le jeu, interroger le
+maitre ne prouverait rien sur la chaine d'instances -- et exige que les trois
+parametres existent, que la porte arrive ETEINTE, et que la rampe ait une
+course (`Fin > Debut`, sans quoi elle enfoncerait AU LOIN au lieu de pres).
+
+**TEMOIN MONTE PUIS RETIRE** : renommer `NappeRampeActive` en
+`NappeRampeActiveTEMOIN` dans la fonction fait tomber le test sur
+« Expected 'MI_WorldseedGround_Orasot declare NappeRampeActive ... ' to be
+true ». Il discrimine.
+
+**ET LE TEMOIN A TROUVE UN SECOND DEFAUT.** Sous ce renommage,
+`M_WorldseedBiome` declarait ENCORE `NappeRampeActive` : son ancienne chaine,
+devenue orpheline en branchant la fonction, continuait de declarer ses
+parametres. **Une chaine morte qui masque un test coute plus cher qu'une
+chaine morte** -- elle a ete elaguee, le materiau passe de 25 expressions a 7.
+
+#### UNE ERREUR QUE J'AI FAITE, ET CE QU'ELLE APPREND
+
+**L'elagage a supprime le `RuntimeVirtualTextureOutput` de
+`M_WorldseedBiome`.** Mon critere -- « est orphelin ce qui n'alimente aucune
+PROPRIETE du materiau » -- est faux : une **sortie personnalisee**
+(`UMaterialExpressionCustomOutput` : sortie RVT, sortie d'herbe de Landscape,
+rendu de cheveux) n'est branchee sur aucune propriete et n'en est pas moins
+TERMINALE. Le noeud a ete remis avec ses deux entrees (couleur de sommet vers
+la couleur, position du monde vers la hauteur) et relu.
+
+**Les racines d'un graphe de materiau sont ses proprietes ET ses sorties
+personnalisees.** Un elagage qui ne compte que les premieres detruit
+silencieusement la moitie d'un graphe -- et un `.uasset` ne se relit pas dans
+un diff.
+
+#### Verifie
+
+- **118 oracles verts, 0 rouge** (117 avant, plus le nouveau).
+- **Deux points regardes a l'image**, avant et apres : (30523, -3305) sur une
+  pente de 45 degres, et (30977, -3508) en savane a 7 degres. Le personnage y
+  est debout, pieds au sol, sur un terrain vegetalise.
+- **Le journal nomme le materiau** sur lequel la rampe a pris.
+
+#### Reste ouvert
+
+- ~~**Les trois commentaires qui citent `-WorldseedNappeVue=`** designent un
+  drapeau supprime. Non corriges.~~ **FAIT, et cette ligne etait elle-meme
+  perimee en etant ecrite** : il n'en reste plus qu'UN dans la source
+  (`WorldseedNappe.cpp:337`), deja reformule au passe et portant la mesure qui
+  a tranche ; la citation du registre, elle, a recu sa marque de peremption.
+  Quatre lignes plus haut, ce meme fichier ecrit qu'« une note qui survit a ce
+  qu'elle decrit coute plus cher que pas de note » -- une note de TACHE qui
+  survit a son execution en est la variante, et c'est la seconde fois de la
+  semaine apres la tache du point de naissance et celle du mailleur legataire.
+  **Un carnet se remesure avant d'etre execute, et avant d'etre recopie.**
+- **La tournee photo ne tient plus** a 2400 m de rayon de vue. Elle est le seul
+  outil qui balaie plusieurs formes d'un coup, et elle est hors service.
+- **Aucune mesure ne dit OU le decor percait le terrain, a l'echelle du
+  monde.** Le mecanisme le dit -- partout ou le voxel descend sous le relief
+  macro, donc a peu pres partout -- mais ce n'est pas chiffre. Une sonde qui
+  compare la surface voxel au relief macro sur N colonnes le dirait.

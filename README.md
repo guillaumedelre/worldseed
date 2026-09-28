@@ -128,14 +128,23 @@ chaque compilation.
 UnrealEditor.exe Worldseed.uproject -game -windowed -resx=1600 -resy=900
 
 # La tournée photo : se poser devant chaque forme et la photographier.
+# ⚠ HORS SERVICE au rayon de vue actuel -- voir l'avertissement plus bas.
 UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc -game -WorldseedPhotos -WorldseedQuitter -windowed -resx=1600 -resy=900
 
 # Le banc : trame, fils, chunks, triangles, mémoire, remplissage.
 UnrealEditor.exe Worldseed.uproject /Game/Worldseed/Maps/L_Worldseed_Proc -game -WorldseedBanc -WorldseedQuitter -windowed -resx=1600 -resy=900
 
-# Les tests -- 100 oracles, sans rendu.
+# Les tests -- 118 oracles, sans rendu.
 UnrealEditor-Cmd.exe Worldseed.uproject -ExecCmds="Automation RunTests Worldseed;Quit" -unattended -nopause -nosplash -nullrhi
 ```
+
+⚠ **La tournée photo ne tient plus au rayon de vue actuel.** Un arrêt ne coûte
+pas une capture, il coûte un **remplissage complet** du diffuseur : celui-ci
+relâche tout ce qui sort du rayon, et onze arrêts sont onze remplissages. Le
+registre chiffrait déjà « une dizaine de minutes » pour un rayon de 1200 m ; il
+vaut 2400 aujourd'hui, et la tournée s'est arrêtée après cinq vues sans plus
+rien produire pendant treize minutes (27 septembre 2026). Pour juger une forme,
+poser une vue unique avec `-WorldseedVue=` et `-WorldseedDepartX/Y=`.
 
 Le harnais se pilote par surcharges de ligne de commande — `-WorldseedGraine=`,
 `-WorldseedRayon=`, `-WorldseedNiveaux=`, `-WorldseedDepartX/Y=`,
