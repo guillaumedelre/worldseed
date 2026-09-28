@@ -17,6 +17,21 @@ FLinearColor TeinteNormalisee(const FLinearColor& Teinte)
 		1.0f);
 }
 
+float PartEstran(EWorldseedBiome BiomeApparent)
+{
+	// UN SEUIL FRANC, ET IL LE FAUT : l'estran est un SUBSTRAT, donc un fait
+	// binaire -- une cellule est de l'estran ou elle ne l'est pas. Ce qui
+	// adoucit la frontiere n'est pas ce test mais ce qu'on en fait : la
+	// peinture du terrain voxel moyenne cette part sur les quatre cellules
+	// voisines, exactement comme elle moyenne deja la teinte et les poids, et
+	// l'interpolation des UV l'etale ensuite sur le triangle.
+	//
+	// ON NE MOYENNE JAMAIS UN IDENTIFIANT, mais ON PEUT moyenner ce qui en
+	// DERIVE. C'est la regle que ce depot a payee sur la carte des biomes --
+	// 307 points faux sur 17956 -- et la distinction est exactement celle-ci.
+	return BiomeApparent == EWorldseedBiome::Beach ? 1.0f : 0.0f;
+}
+
 void Sommet(const FWorldseedWorldData& Monde, const FWorldseedSurfaceRegles& Regles,
 	int32 Cell, float HeightM, const FVector& Normal,
 	const FWorldseedAppearance& Mode,
@@ -145,8 +160,13 @@ void Sommet(const FWorldseedWorldData& Monde, const FWorldseedSurfaceRegles& Reg
 		// recopier une formule dans deux fichiers.
 		const FLinearColor Normalised = WorldseedApparence::TeinteNormalisee(Tint);
 
+		// UV2.Y PORTE LA PART D'ESTRAN, et c'etait le dernier canal libre du
+		// sommet. Le materiau y fond le sable de plage sur celui du desert :
+		// les deux partagent la meme MATIERE aride -- il n'y en a que quatre --
+		// et ne pouvaient donc pas avoir deux textures sans ce transport.
 		OutTintRG = FVector2D(Normalised.R, Normalised.G);
-		OutTintB = FVector2D(Normalised.B, 0.0f);
+		OutTintB = FVector2D(Normalised.B,
+			WorldseedApparence::PartEstran(Biome));
 	}
 	else if (bColourByBiome)
 	{

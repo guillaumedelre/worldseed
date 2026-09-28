@@ -183,6 +183,14 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 		FLinearColor Teinte = WorldseedBiomes::Colour(Biome);
 		FLinearColor PoidsBiome = WorldseedBiomes::SlotWeights(Biome);
 
+		// LA PART D'ESTRAN SUIT LE MEME CHEMIN QUE LA TEINTE ET LES POIDS, et
+		// il le faut : elle est une grandeur CONTINUE derivee du biome, donc
+		// elle se moyenne. La laisser franche pendant que les poids se lissent
+		// ferait sauter la texture de sable la ou la matiere, elle, change en
+		// douceur -- soit exactement l'escalier que le melange ci-dessous
+		// corrige, transpose d'un canal a l'autre.
+		float Estran = WorldseedApparence::PartEstran(Biome);
+
 		if (C.bMelangerLesBiomes)
 		{
 			const double FX = U * C.Geo.NX - 0.5;
@@ -194,6 +202,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 
 			FLinearColor SommeT(0.0f, 0.0f, 0.0f, 0.0f);
 			FLinearColor SommeP(0.0f, 0.0f, 0.0f, 0.0f);
+			double SommeE = 0.0;
 			double SommePoids = 0.0;
 
 			for (int32 DY = 0; DY <= 1; ++DY)
@@ -225,6 +234,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 
 					SommeT += WorldseedBiomes::Colour(BV) * static_cast<float>(Poids);
 					SommeP += WorldseedBiomes::SlotWeights(BV) * static_cast<float>(Poids);
+					SommeE += WorldseedApparence::PartEstran(BV) * Poids;
 					SommePoids += Poids;
 				}
 			}
@@ -236,6 +246,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 				const float Inv = static_cast<float>(1.0 / SommePoids);
 				Teinte = SommeT * Inv;
 				PoidsBiome = SommeP * Inv;
+				Estran = static_cast<float>(SommeE) * Inv;
 			}
 		}
 
@@ -392,8 +403,14 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 			// creme distinct d'un basalte sombre sur la meme texture de roche.
 			const FLinearColor Normalisee =
 				WorldseedApparence::TeinteNormalisee(Teinte);
+			// UV2.Y PORTE LA PART D'ESTRAN, ET SEULEMENT AU-DESSUS DU SOL.
+			// Meme arbitrage que la ligne du dessus : sous terre c'est de la
+			// roche, et une paroi de grotte creusee sous une plage n'est pas
+			// du sable de plage. Lire l'estran sous terre poserait la texture
+			// du rivage au plafond d'une galerie.
 			Mesh.TintRG[I] = FVector2D(Normalisee.R, Normalisee.G);
-			Mesh.TintB[I] = FVector2D(Normalisee.B, 0.0);
+			Mesh.TintB[I] = FVector2D(Normalisee.B,
+				(Cause == WorldseedPeinture::ECause::Biome) ? Estran : 0.0f);
 			continue;
 		}
 

@@ -143,4 +143,31 @@ namespace WorldseedApparence
 	 * sol fluo.
 	 */
 	WORLDSEED_API FLinearColor TeinteNormalisee(const FLinearColor& Teinte);
+
+	/**
+	 * PART D'ESTRAN D'UN SOMMET, DANS [0..1] -- POUR QUE LA PLAGE N'AIT PAS LE
+	 * SABLE DU DESERT.
+	 *
+	 * IL N'Y A QUE QUATRE MATIERES, ET C'EST STRUCTUREL : elles voyagent dans
+	 * les quatre canaux RGBA de la couleur de sommet. Or la plage et le desert
+	 * chaud portent EXACTEMENT les memes poids -- [0, 1, 0, 0], soit cent pour
+	 * cent de la matiere aride -- et ne se distinguent aujourd'hui que par leur
+	 * teinte. Echanger la texture de sable les changerait donc tous les deux,
+	 * canyons compris.
+	 *
+	 * D'ou ce scalaire, transporte a part dans UV2.Y -- le seul canal libre du
+	 * sommet, UV0 portant le placage, UV1 la teinte RG et UV2.X la teinte B.
+	 * Le materiau y fond deux sables : celui du desert a zero, celui de la
+	 * plage a un. La matiere reste unique, seule sa TEXTURE change.
+	 *
+	 * ELLE EST PUBLIQUE POUR LA MEME RAISON QUE `TeinteNormalisee` : deux
+	 * appelants -- la nappe d'horizon et la peinture du terrain voxel -- et le
+	 * depot interdit de recopier une formule dans deux fichiers. Une divergence
+	 * se verrait exactement la ou les deux maillages se rencontrent.
+	 *
+	 * ELLE PREND LE BIOME D'APPARENCE, jamais l'index brut : l'estran est un
+	 * SUBSTRAT depuis le 26 septembre 2026, et l'axe des biomes porte le climat
+	 * meme sur une plage.
+	 */
+	WORLDSEED_API float PartEstran(EWorldseedBiome BiomeApparent);
 }
