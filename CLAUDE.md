@@ -10928,3 +10928,54 @@ en vise 7,5. Il reste donc un facteur trois, et il ne vient plus du signal :
 l'echelle de frequence est concave, si bien que la moyenne des quatre saisons
 rend MOINS que la frequence de la moyenne -- inegalite de Jensen -- et le seuil
 de visibilite mange le reste. C'est un calage, plus un defaut de forme.
+
+### L'aurore avait un INTERRUPTEUR MAITRE, et il arrivait eteint (28 septembre 2026)
+
+Signale en jeu : « je ne vois pas d'aurore ». Le site etait bon -- toundra
+australe, latitude -60,1, vingt-trois heures -- et **tous les controles disaient
+oui** : les treize variables d'UDS/UDW acceptees, l'heure posee et acceptee,
+l'horloge en marche, la latitude juste. Releve sur le defaut de classe
+d'`Ultra_Dynamic_Sky_C` :
+
+    Use Auroras                = False     <- l'interrupteur maitre
+    Using Either Aurora        = False     (derive)
+    Using Volumetric Aurora    = False     (derive)
+    Aurora Intensity           = 0.12
+    Daytime Aurora Intensity   = 0.0
+
+**NOUS ECRIVIONS FIDELEMENT UNE VALEUR QUE RIEN N'EVALUAIT.** C'est le piege
+que ce fichier consigne depuis le carre d'ocean -- « une couleur invisible a
+deux causes opposees : le terme qui ne s'evalue jamais, et le terme dont rien
+n'atteint l'ecran ». Ici c'etait le second, et la parade habituelle -- relire ce
+qu'on ecrit -- ne pouvait RIEN voir : l'ecriture prenait.
+
+    REGLE : devant un effet qui ne s'affiche pas, chercher l'INTERRUPTEUR
+    MAITRE de la fonctionnalite avant de regler son intensite. Un pack tiers
+    livre ses fonctions couteuses eteintes, et une intensite non nulle sur une
+    fonction eteinte se lit exactement comme un reglage qui marche.
+
+**ET POSER LE BOOLEEN NE SUFFIT PAS -- TROISIEME FOIS.** `Use Auroras` est
+repliquee a RepNotify, comme `Animate Time of Day` : la poser par reflexion arme
+le drapeau -- il se relit meme a vrai -- sans reveiller quoi que ce soit, parce
+que c'est `OnRep_Use Auroras` qui recalcule les deux drapeaux DERIVES que le
+rendu consulte. La regle etait deja ecrite pour l'horloge ; elle vaut pour toute
+variable Blueprint posee par reflexion, et l'inventaire des fonctions
+(`BlueprintService.list_functions`) dit en une ligne si un `OnRep_<nom>` existe.
+
+**CORRECTION D'UNE NOTE FAUSSE QUE J'AI ECRITE ET DITE AU PROPRIETAIRE.** Le
+commentaire de ce bloc annoncait que le defaut de 0,12 posait « une aurore faible
+et permanente a toutes les latitudes, equateur compris ». Il n'y en avait
+**aucune, nulle part** : 0,12 etait l'intensite d'une fonctionnalite eteinte.
+Une valeur par defaut non nulle ne prouve pas qu'elle serve.
+
+**PIEGE D'INVENTAIRE, ET IL A COUTE LE DIAGNOSTIC D'UNE SEANCE.** Mon premier
+balayage des variables d'aurore a ete **tronque a dix-huit entrees** et il a
+manque `Use Auroras` -- c'est-a-dire la seule qui comptait. Un inventaire
+partiel se lit exactement comme un inventaire complet. Compter les entrees
+rendues et le dire, ou ne pas conclure de l'absence.
+
+**VU A L'IMAGE**, ce qui est la seule validation qui vaille : site
+(-19938, -13875), latitude -59,9, toundra a -13 C, 23 h, ciel degage -- rubans
+verts et violets d'un bord a l'autre du ciel. `-WorldseedHeure=` pose l'heure de
+depart, en centiemes d'heure comme UDS (23 et 2300 acceptes tous deux), sans
+quoi il faut attendre une demi-heure de journee avant de pouvoir juger.
