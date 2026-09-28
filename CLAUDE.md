@@ -10734,3 +10734,134 @@ TEMOIN crie avant meme la comparaison finale. C'est le bon ordre d'echec.
 dome pose deux fois au pole ne deplace pas forcement le maximum du monde, qui
 est une montagne ailleurs -- il ne l'avait deplace que de 58 m quand la bande
 polaire, elle, montait de 239.
+
+### « Je ne vois jamais de pluie » : une ERREUR D'ECHELLE, pas de frequence (28 septembre 2026)
+
+Rappel du proprietaire, et il recadrait tout : « la base de tout ca c'etait un
+reglage meteo avec UDS et UDW [...] le but est de voir des pluies, du ciel
+couvert, degage, des orages violents, des aurores boreales et/ou australes, de
+la neige ». Le chantier alpin a ete abandonne pour celui-la.
+
+#### LE DEFAUT PRINCIPAL : notre averse la plus violente valait un tiers de bruine
+
+`FWorldseedWeather` documentait `Rain`, `Snow` et `Dust` en **0..1** quand
+`Fog` et `CloudCoverage`, DANS LA MEME STRUCTURE et a trois lignes d'ecart,
+etaient deja en unites d'UDS. L'incoherence etait ecrite en toutes lettres et
+personne ne l'avait lue.
+
+**L'ECHELLE SE MESURE DANS LES PREREGLAGES LIVRES PAR LE PACK**, et c'est la
+que la question se tranche sans discussion -- treize assets sous
+`Weather_Effects/Weather_Presets/` :
+
+    Rain_Light    rain  3    Snow_Light     snow  3    Sand_Dust_Storm dust 10
+    Rain          rain  7    Snow           snow  6    Foggy            fog 10
+    Rain_Thunderstorm 10     Snow_Blizzard  snow 10    Clear_Skies      tout 0
+
+**L'echelle est 0..10.** Notre pluie maximale valait donc **1,0, soit le tiers
+de la plus legere bruine que le pack sache dessiner** -- et c'est cela, bien
+avant toute question de frequence, qui rendait la meteo invisible.
+
+    REGLE : l'echelle d'un pack se releve dans SES assets, jamais dans son
+    vocabulaire. « 0..1 » et « 0..10 » se ressemblent dans un commentaire et
+    donnent dix fois rien a l'ecran.
+
+Corollaire paye dans la foulee : `VisibleFall` et `VisibleDust`, les seuils du
+libelle de regime, valaient 0,05 -- justes en fraction, absurdes sur dix. **Un
+seuil oublie lors d'un changement d'unite ne casse rien et ment a chaque ligne.**
+
+#### L'ORAGE ET L'AURORE N'ETAIENT PAS PILOTES DU TOUT
+
+Zero occurrence de « Thunder », « Aurora » ou « Random Weather » dans toute la
+source. La cause est architecturale et vaut d'etre comprise : **UDS n'arme
+`Thunder/Lightning` que par ses TYPES de meteo tout faits** -- `Rain_Thunderstorm`
+et les douze autres -- et nous n'en selectionnons JAMAIS, puisque nous posons
+des curseurs continus. Ce choix donne la precision regionale ; il laisse en
+echange cette variable a zero pour toute la partie, et **aucun reglage de climat
+ne pouvait produire un seul eclair**.
+
+`Aurora Intensity` n'etait pas touchee non plus, **et son defaut n'est pas
+zero mais 0,12** : le monde portait une aurore faible et permanente A TOUTES LES
+LATITUDES, equateur compris. La piloter corrige ce defaut autant qu'elle en
+ajoute une ou il faut.
+
+**ARBITRAGE DU PROPRIETAIRE** : piloter les deux variables nous-memes plutot que
+de rendre la main au tirage de types d'UDW -- ce second chemin avait ete mesure
+le 12 septembre a 2,3 % de neige par tirage en toundra l'hiver, et il aurait
+coute la precision Koppen gagnee le matin meme.
+
+#### LA SONDE QUI REPOND A « EST-CE QUE JE VAIS LE VOIR »
+
+`ProbeCiel` fait defiler UNE ANNEE de jeu -- 27 h, calendrier de trente-six
+jours -- sur onze sites repartis en latitude, et rend la part du temps sous la
+pluie, la neige, le ciel degage et couvert, plus le NOMBRE d'episodes d'orage et
+d'aurore. Elle n'a pas besoin du jeu : `Evaluate` est une fonction PURE du temps
+et de la saison.
+
+**ELLE PORTE DEUX COLONNES TEMOINS, et les deux ont servi le jour meme :**
+- la CIBLE sans fondu, a cote du vecu : si la part s'effondre entre les deux,
+  c'est le lissage qu'il faut regler, pas le climat. Elle a REFUTE mon
+  hypothese -- la cible est elle-meme a 0,6 % en taiga ;
+- le CUMUL ANNUEL de chaque site, sans lequel on ne peut pas distinguer « le
+  modele perd la pluie » de « ce site est sec ». C'est lui qui a rendu le
+  diagnostic lisible : 593 mm/an en taiga pour 0,5 % de neige.
+
+**TROIS DEFAUTS DE LA SONDE ELLE-MEME, trouves en la lisant :**
+1. *un echantillon arbitraire n'est pas une mesure.* Elle prenait le PREMIER
+   point emerge de chaque ligne : a l'equateur elle est tombee sur un BSh
+   semi-aride la ou la bande porte de la foret tropicale, et annoncait zero
+   averse pour tout le monde. Elle prend desormais la cellule MEDIANE en pluie ;
+2. *le pas doit resoudre l'octave la plus rapide du signal*, pas le cycle :
+   `Storminess` somme trois octaves dont une bat toutes les trente secondes ;
+3. *le fondu fait partie de ce qu'on mesure* -- on rejoue donc `BlendTowards`
+   comme le jeu, et l'on compare a la cible brute.
+
+#### CE QUI MARCHE, MESURE
+
+| site | mm/an | pluie | averse | orages/an | aurores/an |
+|---|---|---|---|---|---|
+| foret tropicale humide, 0 deg | 1881 | **21,7 %** | 0,9 % | **42** | 0 |
+| desert chaud, 30 deg | 176 | 0,0 % | -- | 0 | 0 (99,8 % degage) |
+| calotte, 75 deg | 143 | 0,0 % | -- | 0 | **40** |
+| toundra, -60 deg | 314 | 0,0 % | -- | 0 | **37** |
+
+La foret tropicale tombe exactement dans la fourchette terrestre -- vingt a
+trente pour cent du temps sous la pluie -- et ses quarante-deux orages par an
+sont du meme ordre que la centaine de la Floride. L'ovale auroral est net :
+**quarante episodes par an au-dela de 60 degres, ZERO sous 45**.
+
+#### DEUX CORRECTIONS DE MODELE, ET LA SECONDE EST UNE LECON DEJA ECRITE
+
+**1. La frequence de la pluie venait de la NEBULOSITE.** Le seuil d'occurrence
+etait pose sur le pourcentage de ciel couvert, ce qui revient a faire pleuvoir
+des qu'il y a des nuages : premiere mesure de la sonde, **96 % du temps sous la
+pluie en foret tropicale**. Une foret tropicale est bien couverte quatre-vingts
+pour cent de l'annee, mais l'averse convective y est BREVE. La frequence vient
+desormais de la QUANTITE, la nebulosite restant un plafond.
+
+**2. UN SEUIL N'EST PAS UNE PART -- QUATRIEME FOIS, et je l'ai refaite le jour
+meme ou je l'ecrivais.** `Storminess` somme trois octaves : sa loi est une
+cloche, pas une loi uniforme. Seuiller dessus ne rend pas la part demandee --
+0,15 donnait 96 % du temps, 0,75 en donnait 0,4. On uniformise donc le signal
+avant de le comparer.
+
+    ET J'AI CALCULE L'ECART-TYPE AU LIEU DE LE MESURER. La valeur posee, 0,186,
+    vient de l'algebre d'une somme de trois uniformes -- pas d'un releve. Le
+    resultat le dit : la taiga devrait voir 6 % de precipitation et en voit 0,5,
+    soit un facteur DOUZE. C'est exactement la faute que le paragraphe du dessus
+    denonce, commise deux cents lignes plus bas.
+
+#### CE QUI RESTE OUVERT, ET C'EST DIT SANS L'ADOUCIR
+
+**Les climats temperes et froids ne voient toujours presque rien** : taiga
+593 mm/an pour 0,5 % de neige, toundra 314 mm/an pour 0,0 %, mediterraneen
+476 mm/an pour 0,8 % de pluie. Le cumul est la, le modele le perd.
+
+La cause est identifiee et la voie est nommee : **mesurer la loi de
+`Storminess`** -- histogramme sur quelques milliers de tirages -- au lieu de la
+supposer, puis inverser sa vraie fonction de repartition. Tant que ce n'est pas
+fait, `StormEcartType` est un chiffre calcule, et ce depot sait ce que valent
+les chiffres calcules qu'on n'a pas mesures.
+
+Ce qui est livre reste un PROGRES NET et sans regression : avant, la pluie etait
+invisible PARTOUT, il n'y avait aucun orage, aucune aurore, et une aurore
+parasite a l'equateur.

@@ -45,6 +45,14 @@ FWorldseedClimatePresetRules FWorldseedClimatePresetRules::FromRules(
 	Out.MediterraneanLatMaxDeg = Num(TEXT("mediterraneanLatMaxDeg"), 45.0);
 
 	Out.DustPrecipMaxMm = Num(TEXT("dustPrecipMaxMm"), 250.0);
+	Out.PluieFrequenceEchelleMm = Num(TEXT("pluieFrequenceEchelleMm"), 625.0);
+	Out.PluieIntensitePlancher = Num(TEXT("pluieIntensitePlancher"), 0.5);
+
+	Out.OrageTempMinC = Num(TEXT("orageTempMinC"), 8.0);
+	Out.OrageTempMaxC = Num(TEXT("orageTempMaxC"), 24.0);
+	Out.AuroreLatitudePicDeg = Num(TEXT("auroreLatitudePicDeg"), 67.0);
+	Out.AuroreLargeurDeg = Num(TEXT("auroreLargeurDeg"), 12.0);
+	Out.AuroreIntensiteMax = Num(TEXT("auroreIntensiteMax"), 1.0);
 
 	Out.TropicLatDeg = static_cast<float>(Rules.Num(WORLD, TEXT("tropicDeg"), 23.44));
 	Out.SeasonContrastExponent = Num(TEXT("saisonExposant"), 1.9);

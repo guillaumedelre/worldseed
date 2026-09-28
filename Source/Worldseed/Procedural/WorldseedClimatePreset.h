@@ -114,6 +114,63 @@ struct WORLDSEED_API FWorldseedClimatePresetRules
 
 	float DustPrecipMaxMm = 250.0f;
 
+	/**
+	 * L'ECHELLE QUI TRANSFORME UN CUMUL MENSUEL EN FREQUENCE DE PLUIE, en mm.
+	 *
+	 * A ne pas confondre avec `CloudyPrecipScaleMm`, qui donne l'INTENSITE : la
+	 * premiere dit COMBIEN DE TEMPS il pleut, la seconde A QUEL POINT. Les
+	 * confondre revient a faire pleuvoir des qu'il y a des nuages -- c'etait le
+	 * cas, et le bulletin du ciel a mesure 96 % du temps sous la pluie en foret
+	 * tropicale humide, la ou on en compte vingt a trente.
+	 */
+	float PluieFrequenceEchelleMm = 625.0f;
+
+	/**
+	 * LE PLANCHER D'INTENSITE D'UNE AVERSE, dans [0, 1].
+	 *
+	 * Depuis que la FREQUENCE porte le cumul de pluie, l'intensite ne doit
+	 * plus le porter aussi : sans plancher, un climat modere est penalise au
+	 * CARRE et n'atteint jamais le seuil visible -- mesure au bulletin du ciel,
+	 * taiga et toundra a zero pour cent de pluie pour quatre cents millimetres
+	 * par an. Ce qui separe une averse tropicale d'une bruine oceanique est sa
+	 * DUREE et sa FREQUENCE, pas son debit : deux a trois fois, pas dix.
+	 */
+	float PluieIntensitePlancher = 0.5f;
+
+	/**
+	 * LA FENETRE DE TEMPERATURE OU L'ORAGE DEVIENT POSSIBLE, en degres.
+	 *
+	 * L'eclair est CONVECTIF : il demande de l'air chaud qui monte, pas
+	 * seulement de la pluie. Reference terrestre, en jours d'orage par an :
+	 * bassin du Congo plus de deux cents, Floride une centaine, Paris une
+	 * vingtaine, Islande deux, Antarctique aucun. Sous le minimum une averse
+	 * ne tonne jamais ; au-dessus du maximum elle tonne autant que la pluie le
+	 * permet.
+	 */
+	float OrageTempMinC = 8.0f;
+	float OrageTempMaxC = 24.0f;
+
+	/**
+	 * L'OVALE AURORAL : sa latitude de plus forte occurrence et sa largeur.
+	 *
+	 * C'EST UN ANNEAU, PAS UNE CALOTTE, et c'est ce qui interdit une simple
+	 * croissance vers le pole : l'ovale se centre sur le pole MAGNETIQUE vers
+	 * 67 degres, si bien qu'on voit plus d'aurores a Tromso qu'au pole Nord
+	 * lui-meme. Sous 45 degres elles demandent un orage magnetique majeur, ce
+	 * que la largeur laisse arriver de temps a autre sans le garantir.
+	 */
+	float AuroreLatitudePicDeg = 67.0f;
+	float AuroreLargeurDeg = 12.0f;
+
+	/**
+	 * L'intensite d'un beau rideau, sur l'echelle d'UDS.
+	 *
+	 * ⚠ LE DEFAUT DU PACK N'EST PAS ZERO mais 0,12 : sans pilotage, une aurore
+	 * faible et permanente se pose PARTOUT, jusque sous les tropiques. La
+	 * piloter corrige donc ce defaut autant qu'elle en ajoute une ou il faut.
+	 */
+	float AuroreIntensiteMax = 1.0f;
+
 	/** world.tropicDeg : borne de la bande ou la ZCIT module les pluies. */
 	float TropicLatDeg = 23.44f;
 

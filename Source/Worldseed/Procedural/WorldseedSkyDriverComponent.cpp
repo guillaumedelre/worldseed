@@ -19,6 +19,23 @@ namespace
 	const FName NameWindIntensity = TEXT("Wind Intensity");
 	const FName NameWindDirection = TEXT("Wind Direction");
 
+	/**
+	 * L'ORAGE ET L'AURORE, QUI N'ETAIENT PILOTES NI L'UN NI L'AUTRE.
+	 *
+	 * UDS n'arme « Thunder/Lightning » que par ses TYPES de meteo tout faits --
+	 * `Rain_Thunderstorm` et les douze autres -- et nous n'en selectionnons
+	 * jamais : nous posons des curseurs continus, ce qui donne la precision
+	 * regionale mais laisse cette variable a zero pour toute la partie. Aucun
+	 * reglage de climat ne pouvait donc produire un seul eclair.
+	 *
+	 * « Aurora Intensity » n'etait pas touchee non plus, et son defaut vaut
+	 * 0,12 : le monde portait une aurore faible et permanente A TOUTES LES
+	 * LATITUDES, equateur compris.
+	 */
+	const FName NameThunder = TEXT("Thunder/Lightning");
+	const FName NameThunderManuel = TEXT("Thunder/Lightning - Manual Override");
+	const FName NameAurora = TEXT("Aurora Intensity");
+
 	/** Plages de temperature, dans l'ordre des saisons du prereglage. */
 	const FName SeasonRangeNames[FWorldseedClimatePreset::SeasonCount] = {
 		TEXT("Winter Temperature Min and Max"),
@@ -281,6 +298,21 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 	Ecrire(NameWindIntensity, Current.WindIntensity);
 	Ecrire(NameWindDirection, Current.WindDirectionDeg);
 
+	// LA SURCHARGE MANUELLE S'ARME UNE FOIS, ET AVANT LA VALEUR.
+	//
+	// Sans elle, UDS reprend la main sur « Thunder/Lightning » depuis son
+	// propre systeme de types -- qui ne tire jamais rien chez nous -- et notre
+	// ecriture serait ecrasee au tick suivant. Le booleen se pose au premier
+	// passage seulement : le reposer deux fois par seconde ne servirait a rien
+	// et ce depot a deja paye qu'une ecriture de propriete declenche un rappel
+	// meme quand la valeur ne change pas.
+	if (bControle)
+	{
+		Bridge.WriteBool(NameThunderManuel, true);
+	}
+	Ecrire(NameThunder, Current.Thunder);
+	Ecrire(NameAurora, Current.Aurora);
+
 	const bool bFahrenheit =
 		Bridge.TemperatureScale == FWorldseedUdsBridge::ETemperatureScale::Fahrenheit;
 
@@ -356,7 +388,7 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 		if (Refusees.IsEmpty())
 		{
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] meteo : les 11 variables d'UDS/UDW acceptent l'ecriture")
+				TEXT("[Worldseed] meteo : les 13 variables d'UDS/UDW acceptent l'ecriture")
 				TEXT(" -- horloge %s"), bHorloge ? TEXT("EN MARCHE") : TEXT("arretee"));
 		}
 		else

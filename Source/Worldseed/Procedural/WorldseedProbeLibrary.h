@@ -221,6 +221,28 @@ public:
 	static FString ProbeMeteo();
 
 	/**
+	 * CE QUE LE JOUEUR VERRA PASSER DANS LE CIEL, sur une annee de jeu.
+	 *
+	 * POURQUOI ELLE MANQUAIT, ET LE DEPOT A LE PRECEDENT EXACT. Le 12 septembre
+	 * 2026, la chaine de neige etait juste de bout en bout et tombait UNE FOIS
+	 * SUR QUARANTE-TROIS tirages -- un episode toutes les deux heures et demie
+	 * de jeu. Mecanique exacte, frequence inobservable. Aucune sonde ne pouvait
+	 * le dire : elles mesurent un INSTANT ou une MOYENNE, jamais une duree
+	 * vecue.
+	 *
+	 * ELLE REND LA PART DU TEMPS *ET* LE NOMBRE D'EPISODES, parce que les deux
+	 * ne se lisent pas pareil : deux heures de pluie en une fois et deux heures
+	 * en douze averses ne se vivent pas de la meme facon.
+	 *
+	 * ELLE NE JUGE PAS L'ASPECT. Qu'un rideau d'aurore soit beau ou qu'un
+	 * eclair eclaire le paysage ne se voit qu'a l'image ; elle repond a « vais-
+	 * je le voir », pas a « est-ce joli ».
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeCiel(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 512);
+
+	/**
 	 * LA DISTRIBUTION DES CLASSES DE KOPPEN SUR LES TERRES DU MONDE.
 	 *
 	 * POURQUOI ELLE EST NECESSAIRE DEPUIS QUE LE CIEL VIENT DES RELEVES. La

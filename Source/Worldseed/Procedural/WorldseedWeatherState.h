@@ -8,11 +8,42 @@
 /** Ce qu'on ecrit dans UDS. Temperatures en Celsius : la conversion est au bord. */
 struct WORLDSEED_API FWorldseedWeather
 {
-	float Rain = 0.0f;              // 0..1
-	float Snow = 0.0f;              // 0..1
+	// TOUT EST SUR L'ECHELLE D'UDS, ET CE N'ETAIT PAS LE CAS.
+	//
+	// Jusqu'au 28 septembre 2026, `Rain`, `Snow` et `Dust` etaient documentes
+	// « 0..1 » quand `Fog` et `CloudCoverage`, dans la MEME structure, etaient
+	// deja en unites d'UDS -- l'incoherence etait ecrite en toutes lettres, a
+	// trois lignes d'intervalle. Or les prereglages LIVRES par le pack donnent
+	// le bareme : Rain_Light 3, Rain 7, Rain_Thunderstorm 10 ; Snow_Light 3,
+	// Snow 6, Snow_Blizzard 10 ; Sand_Dust_Storm 10. Notre averse la plus
+	// violente valait donc 1,0, soit le TIERS de la bruine la plus legere que
+	// le pack sache produire -- et c'est la raison pour laquelle on ne voyait
+	// « jamais de pluie », bien avant toute question de frequence.
+	float Rain = 0.0f;              // echelle UDS 0..10 (leger 3, fort 7, orage 10)
+	float Snow = 0.0f;              // echelle UDS 0..10 (leger 3, normal 6, blizzard 10)
 	float Fog = 1.0f;               // echelle UDS, 1 = normal
-	float Dust = 0.0f;              // 0..1
+	float Dust = 0.0f;              // echelle UDS 0..10 (tempete 10)
 	float CloudCoverage = 3.0f;     // echelle UDS, ~4 = ciel ordinaire
+
+	/**
+	 * L'ORAGE. Echelle UDS 0..10, et il accompagne la PLUIE, jamais la neige.
+	 *
+	 * Il n'etait pas pilote du tout : UDS ne l'arme que par ses TYPES de meteo
+	 * tout faits, et nous ne selectionnons jamais de type -- nous posons des
+	 * curseurs continus. La variable restait donc a zero en permanence, et
+	 * aucun reglage de climat ne pouvait y changer quoi que ce soit.
+	 */
+	float Thunder = 0.0f;
+
+	/**
+	 * L'AURORE. Echelle UDS, ou 0,12 est le defaut du pack et 1 un beau rideau.
+	 *
+	 * ⚠ SON DEFAUT N'EST PAS ZERO. Laissee seule, UDS pose 0,12 PARTOUT, donc
+	 * une aurore faible et permanente jusque sous les tropiques. La piloter
+	 * corrige ce defaut-la autant qu'elle en ajoute une ou elle doit etre.
+	 */
+	float Aurora = 0.0f;
+
 	float WindIntensity = 2.0f;
 	float WindDirectionDeg = 180.0f;
 
