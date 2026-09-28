@@ -451,12 +451,12 @@
               2
             ],
             [
-              "SFT:SM_branch_02",
-              2
+              "SFT:SM_small_branch_02",
+              1
             ],
             [
-              "SFT:SM_stump_02",
-              2
+              "SFT:SM_small_branch_03",
+              1
             ]
           ],
           "name" : "bois_mort",
@@ -673,11 +673,11 @@
               1
             ],
             [
-              "SFT:SM_branch_02",
+              "SFT:SM_small_branch_02",
               1
             ],
             [
-              "SFT:SM_stump_02",
+              "SFT:SM_small_branch_03",
               1
             ]
           ],
@@ -892,11 +892,11 @@
               1
             ],
             [
-              "SFT:SM_branch_02",
+              "SFT:SM_small_branch_02",
               1
             ],
             [
-              "SFT:SM_stump_02",
+              "SFT:SM_small_branch_03",
               1
             ]
           ],
@@ -1065,11 +1065,11 @@
               1
             ],
             [
-              "SFT:SM_branch_02",
+              "SFT:SM_small_branch_02",
               1
             ],
             [
-              "SFT:SM_stump_02",
+              "SFT:SM_small_branch_03",
               1
             ]
           ],
@@ -1604,11 +1604,11 @@
               1
             ],
             [
-              "SFT:SM_branch_02",
+              "SFT:SM_small_branch_02",
               1
             ],
             [
-              "SFT:SM_stump_02",
+              "SFT:SM_small_branch_03",
               1
             ]
           ],
@@ -1881,8 +1881,8 @@
               2
             ],
             [
-              "SFS:SM_small_stone_04",
-              2
+              "SFS:SM_small_stone_03",
+              1
             ]
           ],
           "name" : "galets",
@@ -2581,11 +2581,11 @@
               1
             ],
             [
-              "SFT:SM_branch_02",
+              "SFT:SM_small_branch_02",
               1
             ],
             [
-              "SFT:SM_stump_02",
+              "SFT:SM_small_branch_03",
               1
             ]
           ],
@@ -2733,7 +2733,7 @@
           1
         ],
         [
-          "SFS:SM_small_stone_04",
+          "SFS:SM_small_stone_03",
           1
         ]
       ],
