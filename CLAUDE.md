@@ -10409,3 +10409,55 @@ Rien ne descend sous douze points et demi, et le plancher absolu est a 6,74.
 **Le realisme percu ne se joue plus la** : il vient du CONTRASTE entre climats,
 qui lui est acquis -- zero pour cent de pluie au desert chaud, cent en foret
 tropicale humide.
+
+### Classer en Koppen : la meteo d'une vraie station, et non d'une courbe (28 septembre 2026)
+
+Demande du proprietaire apres le constat que la couverture nuageuse plafonne :
+« allons plus loin en classant chaque cellule en climat de Koppen ». C'est fait,
+et c'est le seul changement de la journee qui divise l'ecart par deux.
+
+**POURQUOI LE BIOME NE SUFFISAIT PAS.** Le biome dit ce qui POUSSE, Koppen dit
+le TEMPS QU'IL FAIT, et les deux ne sont pas a la meme resolution :
+`TemperateForest` recouvre l'oceanique, deux continentaux et deux subtropicaux
+d'altitude. Un decalage par biome rendait 15,9 points la ou ne rien faire en
+rendait 13,5 -- le groupe ajoutait sa variance a l'erreur.
+
+**CE QUE LE CLASSEMENT PERMET.** Les vingt-trois prereglages d'Ultra Dynamic Sky
+suivent la nomenclature de Koppen : « Mediterranean_Hot_Summer » EST un Csa. La
+verite terrain est donc gratuite, et une cellule classee peut recevoir la
+couverture d'une VRAIE station du meme climat, saison par saison.
+
+    couverture nuageuse : 15,3 -> 7,5 points d'ecart  (-51 %)
+    plancher d'une formule saisonniere : 6,74  -- desormais approche
+
+**ON NE COPIE QUE LE CIEL, PAS LE CLIMAT.** Les temperatures et le cumul de
+pluie viennent du MONDE ; seule la part du temps ou le ciel est charge vient du
+releve. C'est le seul endroit ou une donnee exterieure apporte ce qu'aucun
+calcul n'atteint -- la quantite de pluie ne dit pas son TYPE.
+
+**DEUX FAUTES DE FORMULE, TROUVEES PAR L'ORACLE ET NON PAR LA LECTURE.** Le
+seuil d'aridite de Koppen s'ecrit `20 x T + 280 / 140 / 0` selon la saison des
+pluies, et la regle est « desert sous la MOITIE du seuil, steppe sous le
+seuil ». Mon premier jet avait les primes au dixieme -- 28, 14, 0, la meme
+formule en CENTIMETRES -- et la comparaison inversee : seuil pour le desert,
+double du seuil pour la steppe. Londres et ses sept cents millimetres passaient
+alors pour un climat aride. Corrige : 15 sur 23 -> 17 sur 23 en classe exacte,
+18 -> 20 sur le groupe principal.
+
+**LA QUALITE NE TIENT PLUS A UN CALAGE MAIS A UN TAUX**, et c'est un changement
+de nature : une cellule bien classee recoit la meteo d'une vraie station, une
+cellule mal classee celle d'un AUTRE climat -- 16,5 points en moyenne, jusqu'a
+66 entre une foret tropicale et un desert chaud. L'oracle mesure donc le taux,
+et non plus un ecart.
+
+**ET L'ECART MESURE EST 7,5 QUAND J'EN ANNONCAIS 4,3.** La difference est
+l'erreur de RECONSTRUCTION : mon estimation partait des saisons reelles des
+releves, alors que la chaine reconstruit les siennes depuis une moyenne, une
+amplitude et une fraction estivale. Deux erreurs s'ajoutent -- celle du
+classement et celle de la reconstruction -- et ne pas les distinguer aurait
+fait promettre un chiffre hors d'atteinte.
+
+**POINTE MENSUELLE** : Koppen se definit sur les mois, nous n'avons que des
+saisons, et la moyenne de trois mois adoucit les pointes -- au point de faire
+passer des continentaux dans le groupe tempere. Le correctif est un ecart
+unique, BALAYE sur les releves (0 a 6 degres) plutot que devine : un demi-degre.

@@ -2,6 +2,8 @@
 
 #include "Procedural/WorldseedClimatsReels.h"
 
+#include "Procedural/WorldseedKoppen.h"
+
 #include "Dom/JsonObject.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -114,32 +116,44 @@ namespace
 		 * donc comparer notre ete a leur hiver.
 		 */
 		float LatDeg;
+
+		/**
+		 * La classe de Koppen que le NOM du releve annonce.
+		 *
+		 * C'est l'ATTENDU du classificateur, au meme titre que la case de
+		 * Whittaker deux colonnes plus haut : « Mediterranean_Hot_Summer » EST un
+		 * Csa, « Hot_Desert » un BWh. Les noms des prereglages d'Ultra Dynamic Sky
+		 * suivent la nomenclature de Koppen, ce qui donne gratuitement une verite
+		 * terrain -- et c'est ce qui permet de mesurer un taux de classement au
+		 * lieu de le supposer.
+		 */
+		EWorldseedKoppen Koppen;
 	};
 
 	const FAttendu Attendus[] = {
-		{ TEXT("Polar_Ice_Cap"), EWorldseedBiome::Tundra, EWorldseedBiome::ColdDesert, 78.0f },
-		{ TEXT("Polar_Tundra"), EWorldseedBiome::Tundra, EWorldseedBiome::Tundra, 70.0f },
-		{ TEXT("Subarctic"), EWorldseedBiome::Taiga, EWorldseedBiome::Taiga, 60.0f },
-		{ TEXT("Subarctic-Severe_Winter"), EWorldseedBiome::Taiga, EWorldseedBiome::Taiga, 62.0f },
-		{ TEXT("Subpolar_Oceanic"), EWorldseedBiome::Taiga, EWorldseedBiome::TemperateForest, 64.0f },
-		{ TEXT("Oceanic"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest, 51.5f },
-		{ TEXT("Humid_Subtropical"), EWorldseedBiome::SubtropicalForest, EWorldseedBiome::SubtropicalForest, 33.0f },
-		{ TEXT("Humid_Subtropical-Dry_Winter"), EWorldseedBiome::SubtropicalForest, EWorldseedBiome::SubtropicalForest, 28.0f },
-		{ TEXT("Hot_Summer_Continental"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest, 42.0f },
-		{ TEXT("Warm_Summer_Continental"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest, 46.0f },
-		{ TEXT("Mediterranean_Hot_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean, 38.0f },
-		{ TEXT("Mediterranean_Cool_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean, 40.0f },
-		{ TEXT("Mediterranean_Cold_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean, 43.0f },
-		{ TEXT("Hot_Desert"), EWorldseedBiome::HotDesert, EWorldseedBiome::HotDesert, 25.0f },
-		{ TEXT("Cold_Desert"), EWorldseedBiome::ColdDesert, EWorldseedBiome::ColdDesert, 40.0f },
-		{ TEXT("Hot_Semi-Arid"), EWorldseedBiome::HotDesert, EWorldseedBiome::Savanna, 28.0f },
-		{ TEXT("Cold_Semi-Arid"), EWorldseedBiome::Steppe, EWorldseedBiome::ColdDesert, 42.0f },
-		{ TEXT("Tropical_Rainforest"), EWorldseedBiome::TropicalRainforest, EWorldseedBiome::TropicalRainforest, 2.0f },
-		{ TEXT("Tropical_Monsoon"), EWorldseedBiome::TropicalRainforest, EWorldseedBiome::TropicalRainforest, 14.0f },
-		{ TEXT("Tropical_Savanna-Dry_Winter"), EWorldseedBiome::Savanna, EWorldseedBiome::Savanna, 12.0f },
-		{ TEXT("Tropical_Savanna-Dry_Summer"), EWorldseedBiome::Savanna, EWorldseedBiome::Savanna, 10.0f },
-		{ TEXT("Subtropical_Highland"), EWorldseedBiome::TemperateForest, EWorldseedBiome::SubtropicalForest, 19.0f },
-		{ TEXT("Subtropical_Highland-Dry_Winter"), EWorldseedBiome::TemperateForest, EWorldseedBiome::SubtropicalForest, 15.0f },
+		{ TEXT("Polar_Ice_Cap"), EWorldseedBiome::Tundra, EWorldseedBiome::ColdDesert, 78.0f, EWorldseedKoppen::EF },
+		{ TEXT("Polar_Tundra"), EWorldseedBiome::Tundra, EWorldseedBiome::Tundra, 70.0f, EWorldseedKoppen::ET },
+		{ TEXT("Subarctic"), EWorldseedBiome::Taiga, EWorldseedBiome::Taiga, 60.0f, EWorldseedKoppen::Dfc },
+		{ TEXT("Subarctic-Severe_Winter"), EWorldseedBiome::Taiga, EWorldseedBiome::Taiga, 62.0f, EWorldseedKoppen::Dfd },
+		{ TEXT("Subpolar_Oceanic"), EWorldseedBiome::Taiga, EWorldseedBiome::TemperateForest, 64.0f, EWorldseedKoppen::Cfc },
+		{ TEXT("Oceanic"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest, 51.5f, EWorldseedKoppen::Cfb },
+		{ TEXT("Humid_Subtropical"), EWorldseedBiome::SubtropicalForest, EWorldseedBiome::SubtropicalForest, 33.0f, EWorldseedKoppen::Cfa },
+		{ TEXT("Humid_Subtropical-Dry_Winter"), EWorldseedBiome::SubtropicalForest, EWorldseedBiome::SubtropicalForest, 28.0f, EWorldseedKoppen::Cwa },
+		{ TEXT("Hot_Summer_Continental"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest, 42.0f, EWorldseedKoppen::Dfa },
+		{ TEXT("Warm_Summer_Continental"), EWorldseedBiome::TemperateForest, EWorldseedBiome::TemperateForest, 46.0f, EWorldseedKoppen::Dfb },
+		{ TEXT("Mediterranean_Hot_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean, 38.0f, EWorldseedKoppen::Csa },
+		{ TEXT("Mediterranean_Cool_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean, 40.0f, EWorldseedKoppen::Csb },
+		{ TEXT("Mediterranean_Cold_Summer"), EWorldseedBiome::Mediterranean, EWorldseedBiome::Mediterranean, 43.0f, EWorldseedKoppen::Csc },
+		{ TEXT("Hot_Desert"), EWorldseedBiome::HotDesert, EWorldseedBiome::HotDesert, 25.0f, EWorldseedKoppen::BWh },
+		{ TEXT("Cold_Desert"), EWorldseedBiome::ColdDesert, EWorldseedBiome::ColdDesert, 40.0f, EWorldseedKoppen::BWk },
+		{ TEXT("Hot_Semi-Arid"), EWorldseedBiome::HotDesert, EWorldseedBiome::Savanna, 28.0f, EWorldseedKoppen::BSh },
+		{ TEXT("Cold_Semi-Arid"), EWorldseedBiome::Steppe, EWorldseedBiome::ColdDesert, 42.0f, EWorldseedKoppen::BSk },
+		{ TEXT("Tropical_Rainforest"), EWorldseedBiome::TropicalRainforest, EWorldseedBiome::TropicalRainforest, 2.0f, EWorldseedKoppen::Af },
+		{ TEXT("Tropical_Monsoon"), EWorldseedBiome::TropicalRainforest, EWorldseedBiome::TropicalRainforest, 14.0f, EWorldseedKoppen::Am },
+		{ TEXT("Tropical_Savanna-Dry_Winter"), EWorldseedBiome::Savanna, EWorldseedBiome::Savanna, 12.0f, EWorldseedKoppen::Aw },
+		{ TEXT("Tropical_Savanna-Dry_Summer"), EWorldseedBiome::Savanna, EWorldseedBiome::Savanna, 10.0f, EWorldseedKoppen::As },
+		{ TEXT("Subtropical_Highland"), EWorldseedBiome::TemperateForest, EWorldseedBiome::SubtropicalForest, 19.0f, EWorldseedKoppen::Cfb },
+		{ TEXT("Subtropical_Highland-Dry_Winter"), EWorldseedBiome::TemperateForest, EWorldseedBiome::SubtropicalForest, 15.0f, EWorldseedKoppen::Cwb },
 	};
 }
 
@@ -195,6 +209,7 @@ namespace WorldseedClimatsReels
 			R.AttenduA = A.A;
 			R.AttenduB = A.B;
 			R.LatitudeDeg = A.LatDeg;
+			R.Koppen = A.Koppen;
 
 			// LE DETAIL PAR SAISON, pour le bulletin METEO. Les noms suivent
 			// l'ordre de `EWorldseedSeason`, et non celui du fichier, qui

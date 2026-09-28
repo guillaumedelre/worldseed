@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedKoppen.h"
 
 /**
  * UN RELEVE DE STATION REELLE, RAMENE AUX QUATRE GRANDEURS QUE LE
@@ -85,6 +86,16 @@ struct WORLDSEED_API FWorldseedReleveReel
 	 * s'appliquait donc jamais, sur les lignes memes ou elle compte le plus.
 	 */
 	float LatitudeDeg = 0.0f;
+
+	/**
+	 * La classe de Koppen que le nom du releve annonce -- l'ATTENDU.
+	 *
+	 * Les prereglages d'Ultra Dynamic Sky suivent la nomenclature de Koppen :
+	 * « Mediterranean_Hot_Summer » EST un Csa. Cela donne gratuitement une
+	 * verite terrain, et c'est ce qui permet de MESURER un taux de classement
+	 * au lieu de le supposer.
+	 */
+	EWorldseedKoppen Koppen = EWorldseedKoppen::Aucun;
 };
 
 /**

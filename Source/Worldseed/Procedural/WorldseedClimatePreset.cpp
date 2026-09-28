@@ -5,6 +5,8 @@
 // qu'un autre fichier dit la meme chose autrement.
 
 #include "Procedural/WorldseedClimatePreset.h"
+
+#include "Procedural/WorldseedKoppen.h"
 #include "Procedural/WorldseedRules.h"
 
 namespace
@@ -45,7 +47,25 @@ FWorldseedClimatePresetRules FWorldseedClimatePresetRules::FromRules(
 	Out.DustPrecipMaxMm = Num(TEXT("dustPrecipMaxMm"), 250.0);
 
 	Out.TropicLatDeg = static_cast<float>(Rules.Num(WORLD, TEXT("tropicDeg"), 23.44));
-	Out.SeasonContrastExponent = Num(TEXT("saisonExposant"), 1.7);
+	Out.SeasonContrastExponent = Num(TEXT("saisonExposant"), 1.9);
+	Out.bCouvertureDepuisReleves =
+		(Rules.Num(UDS, TEXT("couvertureDepuisReleves"), 1.0) >= 0.5);
+	Out.KoppenPointeMensuelleC = Num(TEXT("koppenPointeMensuelleC"), 0.5);
+
+	// LES RELEVES SONT CHARGES ICI, avec le reste, et une seule fois. Un echec
+	// de lecture laisse le tableau vide, et `Build` retombe alors sur la courbe :
+	// une donnee absente doit rester sans effet, jamais faire echouer le ciel.
+	if (Out.bCouvertureDepuisReleves)
+	{
+		FString ErreurReleves;
+		if (!WorldseedClimatsReels::Charger(Out.Releves, ErreurReleves))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] ciel : releves illisibles (%s) -- la couverture ")
+				TEXT("nuageuse restera calculee depuis la pluie"), *ErreurReleves);
+			Out.Releves.Reset();
+		}
+	}
 
 	return Out;
 }
@@ -255,6 +275,37 @@ namespace WorldseedClimatePreset
 
 			Out.CloudyPct[S] = Rules.CloudyFloorPct + Rules.CloudySpanPct
 				* (1.0f - FMath::Exp(-Mm / FMath::Max(Rules.CloudyPrecipScaleMm, 1e-6f)));
+		}
+
+		// --- LA COUVERTURE D'UNE VRAIE STATION, QUAND ON SAIT LAQUELLE -------
+		//
+		// ON NE COPIE QUE LE CIEL, PAS LE CLIMAT. Les temperatures et le cumul
+		// de pluie viennent du MONDE -- c'est lui qui decide -- et seule la part
+		// du temps ou le ciel est charge vient du releve. La raison est qu'elle
+		// ne se deduit PAS de la pluie : deux climats a quarante millimetres par
+		// mois portent 35 ou 78 pour cent de couverture selon que la pluie est
+		// convective ou frontale, et la quantite ne dit pas le type. C'est le
+		// seul endroit ou une donnee exterieure apporte ce qu'aucun calcul
+		// n'atteint.
+		if (Rules.bCouvertureDepuisReleves && Rules.Releves.Num() > 0)
+		{
+			const FWorldseedKoppenEntree Entree = WorldseedKoppen::DepuisChamps(
+				Sample.TempMeanC, Sample.PrecipMm, Sample.SeasonalAmpC,
+				(Sample.SummerRainFrac >= 0.0f) ? Sample.SummerRainFrac : 0.5f,
+				Rules.SeasonContrastExponent);
+
+			const EWorldseedKoppen Classe = WorldseedKoppen::Classer(
+				Entree, Rules.KoppenPointeMensuelleC);
+
+			for (const FWorldseedReleveReel& R : Rules.Releves)
+			{
+				if (R.Koppen != Classe) { continue; }
+				for (int32 S = 0; S < NumSeasons; ++S)
+				{
+					Out.CloudyPct[S] = R.CouvertPct[S];
+				}
+				break;
+			}
 		}
 
 		Out.bDustPresent = (Sample.PrecipMm < Rules.DustPrecipMaxMm) && (T > 5.0f);

@@ -12,6 +12,8 @@
 
 #include "CoreMinimal.h"
 
+#include "Procedural/WorldseedClimatsReels.h"
+
 class UWorldseedRules;
 
 /** Index des saisons, dans l'ordre du Python. */
@@ -124,6 +126,49 @@ struct WORLDSEED_API FWorldseedClimatePresetRules
 	 * CINQUANTE, quand une repartition lineaire plafonne vers dix.
 	 */
 	float SeasonContrastExponent = 1.7f;
+
+	/**
+	 * LA COUVERTURE NUAGEUSE VIENT-ELLE D'UNE STATION REELLE ?
+	 *
+	 * A vrai, la cellule est classee en climat de Koppen et recoit la
+	 * couverture du releve correspondant, saison par saison. A faux, elle est
+	 * calculee depuis la pluie par la courbe exponentielle.
+	 *
+	 * POURQUOI CE CHOIX EXISTE, et pourquoi il penche du cote des releves.
+	 * Mesure sur les vingt-trois climats reels : la courbe s'ecarte de 15,3
+	 * points, la meilleure courbe possible de 12,7, et aucune forme ne passe
+	 * sous 6,74 -- la dispersion entre les quatre saisons d'un meme climat, que
+	 * nulle formule ne capture. Classer puis COPIER descend a 4,3 points
+	 * attendus, parce que la copie prend cette dispersion avec le reste.
+	 *
+	 * CE QU'IL FAUT SAVOIR AVANT DE S'EN REJOUIR : ce chiffre suppose que notre
+	 * monde produise des climats que la Terre connait. Une cellule bien classee
+	 * recoit la meteo d'une vraie station ; une cellule mal classee celle d'un
+	 * AUTRE climat, ce qui coute 16,5 points en moyenne et jusqu'a 66 entre une
+	 * foret tropicale et un desert. La qualite ne tient donc plus a un calage
+	 * mais a un TAUX -- 17 sur 23 en classe exacte, 20 sur 23 sur le groupe.
+	 */
+	bool bCouvertureDepuisReleves = true;
+
+	/**
+	 * Ecart entre un extreme MENSUEL et l'extreme SAISONNIER, en degres.
+	 *
+	 * Koppen se definit sur les mois, nous n'avons que des saisons, et la
+	 * moyenne de trois mois adoucit les pointes. Sans cette correction, des
+	 * continentaux franchissent la frontiere du groupe tempere. Balayee sur les
+	 * releves plutot que devinee.
+	 */
+	float KoppenPointeMensuelleC = 0.5f;
+
+	/**
+	 * Les vingt-trois releves, charges UNE FOIS avec les regles.
+	 *
+	 * Ils vivent ici plutot que dans une statique parce que `Build` tourne deux
+	 * fois par seconde et ne doit pas relire un fichier ; et parce qu'une sonde
+	 * qui veut essayer d'autres reglages doit pouvoir copier la structure sans
+	 * emporter un etat global avec elle.
+	 */
+	TArray<FWorldseedReleveReel> Releves;
 
 	static FWorldseedClimatePresetRules FromRules(const UWorldseedRules& Rules);
 };
