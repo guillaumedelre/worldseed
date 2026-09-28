@@ -189,6 +189,53 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 			Meilleur, MeilleurEcart, ReglesPreset.SeasonContrastExponent));
 	}
 
+	// --- ET CE QUE COUTERAIT DE RECALIBRER LA COURBE DE COUVERTURE -----------
+	//
+	// L'ARBITRAGE N'EST PAS UNE MOYENNE, ET C'EST TOUT L'OBJET DE CE BLOC. Une
+	// echelle de pluie plus longue ameliore l'ecart MOYEN, et le paie sur les
+	// climats SECS -- dont le ciel se couvre alors qu'il devrait rester
+	// degage. Or le desert est justement la ou notre formule tombe juste
+	// aujourd'hui, et ou un ciel gris se remarque le plus. On rend donc les
+	// deux chiffres : la moyenne, et ce que les climats arides encaissent.
+	{
+		L.Add(TEXT(""));
+		L.Add(TEXT("balayage de l'echelle de pluie (uds.cloudyPrecipScaleMm) :"));
+		L.Add(TEXT("   echelle   ecart moyen   ecart sur les climats ARIDES (< 300 mm/an)"));
+		for (float Echelle = 60.0f; Echelle <= 181.0f; Echelle += 20.0f)
+		{
+			FWorldseedClimatePresetRules Essai = ReglesPreset;
+			Essai.CloudyPrecipScaleMm = Echelle;
+
+			double Tout = 0.0, Arides = 0.0;
+			int32 NTout = 0, NArides = 0;
+			for (const FWorldseedReleveReel& R : Releves)
+			{
+				FWorldseedClimateSample S;
+				S.TempMeanC = R.TmoyC;
+				S.PrecipMm = R.PluieMm;
+				S.SeasonalAmpC = R.AmplitudeC;
+				S.Continentality = FMath::Clamp(R.AmplitudeC / 30.0f, 0.0f, 1.0f);
+				S.LatitudeDeg = R.LatitudeDeg;
+				FWorldseedGeometry G;
+				G.LatSpanDeg = 180.0f;
+				S.SummerRainFrac = WorldseedClimate::SummerRainFraction(
+					*Regles, G, R.LatitudeDeg);
+
+				const FWorldseedClimatePreset P = WorldseedClimatePreset::Build(S, Essai);
+				for (int32 Sa = 0; Sa < 4; ++Sa)
+				{
+					const double E = FMath::Abs(P.CloudyPct[Sa] - R.CouvertPct[Sa]);
+					Tout += E; ++NTout;
+					if (R.PluieMm < 300.0f) { Arides += E; ++NArides; }
+				}
+			}
+			L.Add(FString::Printf(TEXT("   %6.0f   %9.1f   %14.1f%s"),
+				Echelle, Tout / FMath::Max(1, NTout), Arides / FMath::Max(1, NArides),
+				FMath::IsNearlyEqual(Echelle, ReglesPreset.CloudyPrecipScaleMm, 0.5f)
+					? TEXT("   <- en vigueur") : TEXT("")));
+		}
+	}
+
 	// --- LA FRACTION ESTIVALE : LA PREDIT-ON SEULEMENT ? ---------------------
 	//
 	// POURQUOI CE CONTROLE EXISTE. Une mesure hors moteur a montre que

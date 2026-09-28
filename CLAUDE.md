@@ -10325,3 +10325,47 @@ pistes ont ete essayees et refutees -- recalibrer les trois cles, ajouter un
 plancher fonction de la pluie annuelle, interpoler les releves, ajouter un terme
 de continentalite (coefficient optimal NUL). Ne pas les reprendre sans une
 variable nouvelle qui distingue le TYPE de precipitation.
+
+**LE TYPE DE PRECIPITATION : DEMANDE, MESURE, ET REFUSE (28 septembre 2026).**
+Une averse convective tombe en deux heures sous un ciel par ailleurs degage,
+une pluie frontale sous un gris permanent : c'est ce qui explique que deux
+climats a quarante millimetres par mois portent 35 ou 78 pour cent de
+couverture. Restait a savoir si nous pouvions PREDIRE ce type.
+
+**LA LATITUDE N'EXPLIQUE RIEN, et c'etait mon hypothese.** Correlation du
+residu avec |latitude| : **+0,013**. Les tropiques ne sont pas
+systematiquement plus convectifs que les moyennes latitudes, ou du moins la
+couverture ne s'en ressent pas dans ces releves.
+
+**LA TEMPERATURE, ELLE, PORTE UN VRAI SIGNAL -- ET IL NE RAPPORTE RIEN.**
+Correlation -0,230 apres calage de la courbe : plus il fait chaud, moins il y
+a de nuages pour la meme pluie, ce qui EST la signature convective. Mais
+traduite en modele, elle ne donne rien :
+
+    courbe calee, sans temperature            12,66 points
+    A  echelle croissante avec la temperature 12,66   coefficient NUL
+    B  retrait proportionnel a la chaleur     12,60   soit 0,06 point
+
+**LE PLANCHER EST STRUCTUREL, ET SA DECOMPOSITION LE DIT.** Sur 12,66 points
+d'ecart, **6,74 sont de la dispersion INTRA-climat** -- entre les quatre
+saisons d'un meme climat -- et le reste un biais CONSTANT par climat. Aucune
+formule saisonniere ne passe sous 6,74, et le biais par climat est l'identite
+du climat lui-meme, que cinq variables continues ne distinguent pas.
+
+    REGLE : avant de chercher une variable explicative, DECOMPOSER le residu
+    en part intra-groupe et part inter-groupe. Si le gros est inter-groupe,
+    aucune variable continue ne le capturera -- il faut un IDENTIFIANT.
+
+**CE QUI RESTE GAGNABLE, ET C'EST MESURE SUR LA VRAIE CHAINE.** Le balayage de
+`uds.cloudyPrecipScaleMm` vit desormais dans `ProbeMeteo`, avec sa
+CONTREPARTIE affichee : l'ecart sur les climats arides, ou notre formule tombe
+juste aujourd'hui et ou un ciel gris se remarque le plus.
+
+    echelle   ecart moyen   climats arides
+        60       15,3           13,5   <- en vigueur
+        80       13,7           14,8
+       100       14,0           15,8
+       120       14,9           16,7
+
+Une moyenne ne suffit pas a trancher : c'est pourquoi la sonde rend les deux
+colonnes.
