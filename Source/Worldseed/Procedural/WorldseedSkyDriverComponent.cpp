@@ -28,13 +28,26 @@ namespace
 	 * regionale mais laisse cette variable a zero pour toute la partie. Aucun
 	 * reglage de climat ne pouvait donc produire un seul eclair.
 	 *
-	 * « Aurora Intensity » n'etait pas touchee non plus, et son defaut vaut
-	 * 0,12 : le monde portait une aurore faible et permanente A TOUTES LES
-	 * LATITUDES, equateur compris.
+	 * L'AURORE A UN INTERRUPTEUR MAITRE, ET IL ARRIVE ETEINT.
+	 *
+	 * « Use Auroras » vaut FALSE par defaut -- releve sur le defaut de classe
+	 * d'`Ultra_Dynamic_Sky_C`, avec `Using Either Aurora` et
+	 * `Using Volumetric Aurora`, tous deux derives et faux eux aussi. On
+	 * pouvait donc ecrire « Aurora Intensity » fidelement, la relire, la voir
+	 * acceptee, et n'avoir JAMAIS un seul photon a l'ecran : c'est le piege
+	 * que ce depot consigne sous « une couleur invisible a deux causes
+	 * opposees -- le terme qui ne s'evalue jamais, et le terme dont rien
+	 * n'atteint l'ecran ».
+	 *
+	 * CORRECTION D'UNE NOTE FAUSSE : ce commentaire affirmait que le defaut de
+	 * 0,12 posait « une aurore faible et permanente a toutes les latitudes ».
+	 * Il n'y en avait aucune, nulle part. 0,12 etait l'intensite d'une
+	 * fonctionnalite eteinte.
 	 */
 	const FName NameThunder = TEXT("Thunder/Lightning");
 	const FName NameThunderManuel = TEXT("Thunder/Lightning - Manual Override");
 	const FName NameAurora = TEXT("Aurora Intensity");
+	const FName NameAuroreActive = TEXT("Use Auroras");
 
 	/** Plages de temperature, dans l'ordre des saisons du prereglage. */
 	const FName SeasonRangeNames[FWorldseedClimatePreset::SeasonCount] = {
@@ -291,6 +304,30 @@ void UWorldseedSkyDriverComponent::ArmerHorloge(const UWorldseedRules& Rules)
 		Nuit, bNuit ? TEXT("") : TEXT(" (REFUSEE)"),
 		bReveillee ? TEXT("appele") : TEXT("INTROUVABLE"));
 
+	// --- CHOISIR L'HEURE DE DEPART, POUR ALLER VOIR CE QUI N'ARRIVE QUE LA NUIT
+	//
+	// L'AURORE NE SE VOIT QUE DANS LE NOIR : UDS porte une « Daytime Aurora
+	// Intensity » a zero et fait le fondu lui-meme. Or la journee dure trente
+	// minutes contre quinze de nuit : arriver a midi, c'est une demi-heure
+	// d'attente avant de pouvoir juger. La meme raison que la compression du
+	// cycle meteo -- on ne regarde pas un phenomene rare en temps reel.
+	//
+	// L'ECHELLE D'UDS EST EN CENTIEMES D'HEURE ET NON EN HEURES : minuit vaut
+	// 0, midi 1200, vingt-trois heures 2300. On accepte donc les deux ecritures
+	// -- 23 comme 2300 -- parce que se tromper d'un facteur cent poserait midi
+	// pile en croyant poser vingt-trois heures, et l'aurore serait invisible
+	// sans qu'une ligne ne l'explique.
+	float Heure = -1.0f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedHeure="), Heure) && Heure >= 0.0f)
+	{
+		const float EnUds = (Heure <= 24.0f) ? (Heure * 100.0f) : Heure;
+		const bool bPosee = Bridge.WriteNumber(TEXT("Time of Day"), EnUds);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] horloge : heure de depart posee a %.0f (soit %.1f h) -- %s"),
+			EnUds, EnUds / 100.0f,
+			bPosee ? TEXT("acceptee") : TEXT("REFUSEE, « Time of Day » introuvable"));
+	}
+
 	// ON MEMORISE L'HEURE POUR VERIFIER QU'ELLE AVANCE. Armer n'est pas faire
 	// avancer : la valeur peut etre posee et le temps rester fige, et c'est
 	// precisement le genre d'echec muet que ce depot a paye plusieurs fois.
@@ -341,6 +378,23 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 	if (bControle)
 	{
 		Bridge.WriteBool(NameThunderManuel, true);
+
+		// ET L'INTERRUPTEUR MAITRE DE L'AURORE, AVEC SON RAPPEL.
+		//
+		// `Use Auroras` est une variable repliquee a RepNotify, comme
+		// `Animate Time of Day` : la poser par reflexion arme le drapeau -- il
+		// se relit meme a vrai -- sans reveiller quoi que ce soit, parce que
+		// c'est `OnRep_Use Auroras` qui recalcule `Using Either Aurora` et
+		// `Using Volumetric Aurora`, les deux drapeaux derives que le rendu
+		// consulte. Ce depot a paye exactement cela sur l'horloge : tous les
+		// controles disaient oui, et l'heure restait figee.
+		const bool bAurorePosee = Bridge.WriteBool(NameAuroreActive, true);
+		const bool bAuroreReveillee = Bridge.CallFunction(TEXT("OnRep_Use Auroras"));
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] ciel : aurores %s, rappel OnRep %s"),
+			bAurorePosee ? TEXT("ARMEES") : TEXT("REFUSEES (rien ne s'affichera)"),
+			bAuroreReveillee ? TEXT("appele") : TEXT("INTROUVABLE"));
 	}
 	Ecrire(NameThunder, Current.Thunder);
 	Ecrire(NameAurora, Current.Aurora);
