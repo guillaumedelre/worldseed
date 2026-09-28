@@ -10563,3 +10563,109 @@ emerge. La piste est donc `poleContinentBonusM` et la mise a l'echelle
 verticale -- de la TECTONIQUE, pas du climat. Ne pas y toucher sans mesurer
 d'abord la part emergee par bande APRES changement : la regle existe pour que
 le pole EMERGE, et l'amputer le ferait disparaitre.
+
+### Le monde n'est pas trop froid, et aucun de mes deux leviers n'etait le bon (28 septembre 2026)
+
+Chantier ouvert sur ma conclusion de la veille : « la piste est
+`poleContinentBonusM` et la mise a l'echelle verticale -- de la TECTONIQUE, pas
+du climat ». **Les mesures l'ont refutee, et elles ont refute la premisse avec.**
+
+**REFERENCE, graine 20260909, 512 lignes, relevee AVANT de toucher a quoi que ce
+soit** -- la regle du depot : un temoin se refait dans l'etat courant.
+
+    ET 13,52 + EF 15,09 = 28,61 %   (Terre 16)
+    calotte glaciaire       16,02 % (Terre 10)
+    ecart absolu moyen a la Terre : 2,71 points sur 22 classes
+
+#### 1. Le rayon du forcage polaire : REFUTE
+
+`poleForcingRadiusDegSouth` 30 -> 22.
+
+    ET+EF        28,61 -> 26,91   (-1,7)
+    calotte      16,02 -> 15,12
+    ecart moyen   2,71 ->  2,69   (rien)
+
+**ET IL COUTE SON SOURCAGE** : le commentaire de la regle fonde le 30 sur le
+fait que l'Antarctique atteint 63 degres sud a la pointe de sa peninsule, ce qui
+est vrai.
+
+**POURQUOI SI PEU, ET C'EST LE FAIT INSTRUCTIF.** La part emergee est recalibree
+a 29,2 % : retirer des terres forcees au sud abaisse le niveau marin, et le
+relief NATUREL austral emerge a la place. Mesure, bande -70..-60 :
+**690 m et 69,7 % emerge -> 857 m et 54,2 %.** Elle MONTE en perdant son
+forcage, parce qu'il y a une chaine sous le plateau.
+
+*Par extrapolation, non mesure* : 228 m d'altitude en moins sur la bande
+-80..-70 n'ont rapporte que 0,9 point de calotte. `poleContinentBonusM` joue
+dans la meme fourchette, donc la piste que j'annoncais comme principale vaut au
+mieux un point ou deux. Cela reste une extrapolation.
+
+#### 2. Le plateau austral est une CONSTANTE, et c'est le fait dur
+
+Quatre graines independantes (20260909, 1337, 424242, 7), rayon d'origine :
+
+| bande | 20260909 | 1337 | 424242 | 7 |
+|---|---|---|---|---|
+| -80--70, part emergee | **100,0** | **100,0** | **100,0** | **100,0** % |
+| -80--70, part des terres | **8,03** | **8,03** | **8,03** | **8,03** % |
+| -90--80, part emergee | **100,0** | **100,0** | **100,0** | **100,0** % |
+| -90--80, part des terres | **2,68** | **2,68** | **2,68** | **2,68** % |
+| 70-80 N, part emergee | 8,1 | 7,6 | 7,5 | **62,6** % |
+
+**Identique au centieme sur quatre graines** -- le signe que ce depot connait
+par coeur, et pour une fois il ne denonce pas une mesure fausse, il PROUVE :
+**10,71 % des terres sont un plateau impose, que la graine ne touche pas.**
+L'Antarctique pese 9,3 % des terres. **Le budget terrestre de calotte est donc
+consomme ENTIER par le seul forcage, avant la moindre terre naturelle.** Le
+nord, lui, depend bien de la graine -- de 7,5 a 62,6 % emerge a 70-80.
+
+ET+EF par graine : **28,6 / 24,4 / 28,1 / 38,4 %** pour 16 attendus. EF descend
+jusqu'a 9,5 sur la meilleure graine ; **ET n'est JAMAIS sous 13,5 pour 8
+attendus.** L'exces systematique est donc ET, pas EF.
+
+#### 3. Le refroidissement continental : le seul levier qui morde
+
+`climate.continentalCoolingC` 14 -> 8 degres.
+
+    EF          15,09 -> 8,19   (Terre 8,0)   <- quasi exact
+    calotte     16,02 -> 8,91   (Terre 10)
+    Dfc (taiga)  6,95 -> 8,03   (Terre 9)
+    ecart moyen  2,71 -> 2,48
+    60-70 N      -6,5 -> -5,2   (Terre -6,0)
+    50-60 N       2,1 ->  3,0   (Terre  2,0)
+    ET          13,52 -> 17,49  (Terre 8)     <- la calotte devient TOUNDRA
+
+**ET+EF ne descend qu'a 25,68 : l'exces CHANGE DE CASE, il ne disparait pas.**
+
+**UNE NUANCE DE SOURCE, ET ELLE COMPTE.** Le commentaire de la regle fonde les
+14 degres sur Iakoutsk (-8,8) contre Bergen (+7,6), soit 16,4. C'est la paire la
+plus EXTREME de la Terre -- Iakoutsk est le pole du froid boreal. Des paires
+ordinaires donnent bien moins : Moscou (+5,8) contre Bergen = **1,8** ; Winnipeg
+(+3,0) contre Vancouver (+10,1) = **7,1**. **Meme famille que « 715 mm n'est pas
+une mediane » : une valeur sourcee prise dans la QUEUE de la distribution et lue
+comme typique.** Et le commentaire avoue lui-meme une calibration peu
+discriminante -- 0 degre donnait 13,8 % de biomes froids, 14 en donne 16,5, soit
+2,7 points sur toute la plage.
+
+#### LE MONDE N'EST PAS TROP FROID -- MESURE
+
+- notre pole sud tient **-34 a -35 degres** quand le pole Sud reel a une moyenne
+  annuelle de **-49** (Vostok -55). **Notre Antarctique est quatorze degres trop
+  CHAUD** ;
+- nos terres a 50-60 N sont a **+2,1** quand la Siberie et le Canada a 55 N sont
+  entre -3 et -8.
+
+**CE QUI EST REELLEMENT EN EXCES EST ALPIN.** Colonne « alpin » du profil zonal :
+**38,1 % a -50..-40 et 27,3 % a -60..-50**, quand la toundra alpine terrestre
+pese environ 3 % des terres. Nos latitudes moyennes australes sont une chaine de
+montagnes -- 628 a 715 m de moyenne -- la ou leur symetrique nord est a 71-111 m.
+
+**LA PISTE SUIVANTE EST DONC LE RELIEF AUSTRAL DE LATITUDE MOYENNE, ni le
+forcage polaire ni le climat.** Et elle depend de la graine : la meme colonne
+tombe a 4,7 % sur la graine 1337.
+
+**CE QUE LE PROPRIETAIRE DOIT ARBITRER** : `continentalCoolingC` a 8 ameliore EF
+(8,19 pour 8,0), la calotte (8,91 pour 10), la taiga et l'ecart moyen, et
+degrade ET. C'est un recalibrage qui regenere tous les mondes en cache. Rien n'a
+ete pose : le depot interdit de trancher en silence un arbitrage qui engage le
+rendu.
