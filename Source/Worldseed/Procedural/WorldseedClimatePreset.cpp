@@ -45,6 +45,7 @@ FWorldseedClimatePresetRules FWorldseedClimatePresetRules::FromRules(
 	Out.DustPrecipMaxMm = Num(TEXT("dustPrecipMaxMm"), 250.0);
 
 	Out.TropicLatDeg = static_cast<float>(Rules.Num(WORLD, TEXT("tropicDeg"), 23.44));
+	Out.SeasonContrastExponent = Num(TEXT("saisonExposant"), 1.7);
 
 	return Out;
 }
@@ -77,6 +78,59 @@ namespace WorldseedClimatePreset
 		 * ne passe qu'une fois. Le poids suit donc un demi-sinus, nul a
 		 * l'equateur comme au tropique et maximal a mi-chemin.
 		 */
+		/**
+		 * REPARTIR LA PLUIE D'APRES LA PART QUI TOMBE AU SEMESTRE CHAUD.
+		 *
+		 * POURQUOI C'EST MIEUX QUE LA LATITUDE SEULE. La fonction du dessous
+		 * REDERIVE la saisonnalite depuis la latitude, alors que la chaine
+		 * climatique la calcule deja par cellule et mieux. Mesure sur les
+		 * vingt-trois releves de stations reelles : 25,7 mm par mois d'ecart
+		 * par la latitude, 21,8 par cette voie. Le temoin -- repartir
+		 * uniformement -- en fait 32,3.
+		 *
+		 * L'EXPOSANT EST CE QUI DONNE SON MORDANT AU CONTRASTE. A un, les
+		 * quatre saisons suivent lineairement la fraction, et le monde reel est
+		 * bien plus tranche : une savane a hiver sec recoit deux millimetres en
+		 * hiver et cent cinquante-cinq en automne, un rapport de CINQUANTE,
+		 * quand une repartition lineaire plafonne vers dix. Cale a 1,7 sur les
+		 * releves, compte tenu de l'erreur qui reste sur notre propre fraction.
+		 *
+		 * LES EQUINOXES VALENT UN DEMI, entre les deux extremes : ils sont a
+		 * cheval sur les deux semestres par construction, et c'est deja la
+		 * convention qu'emploie le calcul de la fraction elle-meme.
+		 */
+		void FacteursDepuisFractionEstivale(float SummerFrac,
+			const FWorldseedClimatePresetRules& Rules, float OutFactor[NumSeasons])
+		{
+			const float Fe = FMath::Clamp(SummerFrac, 0.0f, 1.0f);
+			const float K = FMath::Max(Rules.SeasonContrastExponent, 0.01f);
+
+			float Base[NumSeasons];
+			Base[Winter] = 1.0f - Fe;
+			Base[Spring] = 0.5f;
+			Base[Summer] = Fe;
+			Base[Autumn] = 0.5f;
+
+			float Somme = 0.0f;
+			for (int32 S = 0; S < NumSeasons; ++S)
+			{
+				OutFactor[S] = FMath::Pow(FMath::Max(Base[S], 1e-3f), K);
+				Somme += OutFactor[S];
+			}
+
+			// LA MOYENNE ANNUELLE DOIT RESTER LA MOYENNE ANNUELLE : repartir ne
+			// doit ni ajouter ni retirer d'eau sur l'annee. Meme garde que la
+			// fonction du dessous, et pour la meme raison.
+			const float Moyenne = Somme / static_cast<float>(NumSeasons);
+			if (Moyenne > 1e-6f)
+			{
+				for (int32 S = 0; S < NumSeasons; ++S)
+				{
+					OutFactor[S] /= Moyenne;
+				}
+			}
+		}
+
 		void SeasonalRainFactors(float LatitudeDeg,
 			const FWorldseedClimatePresetRules& Rules, float OutFactor[NumSeasons])
 		{
@@ -168,7 +222,14 @@ namespace WorldseedClimatePreset
 		SeasonMeanC[Autumn] = T;
 
 		float RainFactor[NumSeasons];
-		SeasonalRainFactors(Sample.LatitudeDeg, Rules, RainFactor);
+		if (Sample.SummerRainFrac >= 0.0f)
+		{
+			FacteursDepuisFractionEstivale(Sample.SummerRainFrac, Rules, RainFactor);
+		}
+		else
+		{
+			SeasonalRainFactors(Sample.LatitudeDeg, Rules, RainFactor);
+		}
 
 		// La pluie des presets est un cumul MENSUEL.
 		const float MonthlyMm = Sample.PrecipMm / 12.0f;

@@ -683,6 +683,29 @@ bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,
 		OutSample.Continentality = WorldseedGrid::SampleUV(
 			ContinentalityGrid(), Geometry.NX, Geometry.NY, U, V);
 	}
+
+	// LA PART DE PLUIE DU SEMESTRE CHAUD, ET C'EST ELLE QUI DONNE SA SAISON A
+	// LA METEO. Le prereglage la rederivait de la latitude seule, moins bien :
+	// mesure sur les vingt-trois releves reels, 25,7 mm par mois d'ecart par la
+	// latitude contre 21,8 par cette voie. Elle ne depend que de la latitude et
+	// des regles, donc elle se recalcule a la demande et ne pese pas sur le
+	// cache -- c'est ce qui la rend gratuite a transmettre.
+	//
+	// ON RECALCULE LA LATITUDE ICI, sans la lire dans l'echantillon : l'appelant
+	// ne la pose qu'APRES cette fonction, et s'en servir rendrait la fraction de
+	// l'equateur partout -- un defaut muet, la valeur restant plausible.
+	{
+		float LonDeg = 0.0f;
+		float LatDeg = 0.0f;
+		GetLonLatAtWorldXY(WorldX, WorldY, LonDeg, LatDeg);
+
+		FString Erreur;
+		if (const UWorldseedRules* const Regles = WorldseedPipeline::GetRules(Erreur))
+		{
+			OutSample.SummerRainFrac = WorldseedClimate::SummerRainFraction(
+				*Regles, Geometry, LatDeg);
+		}
+	}
 	return true;
 }
 

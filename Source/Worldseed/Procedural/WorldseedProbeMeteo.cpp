@@ -86,6 +86,16 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 		Sample.Continentality = FMath::Clamp(R.AmplitudeC / 30.0f, 0.0f, 1.0f);
 		Sample.LatitudeDeg = R.LatitudeDeg;
 
+		// LA MEME FRACTION QUE LE JEU TRANSMET, calculee par la meme fonction :
+		// le bulletin doit juger la chaine telle qu'elle tourne, et non une
+		// variante qui lui ressemble.
+		{
+			FWorldseedGeometry G;
+			G.LatSpanDeg = 180.0f;
+			Sample.SummerRainFrac = WorldseedClimate::SummerRainFraction(
+				*Regles, G, R.LatitudeDeg);
+		}
+
 		const FWorldseedClimatePreset P =
 			WorldseedClimatePreset::Build(Sample, ReglesPreset);
 
@@ -126,6 +136,58 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 	L.Add(FString::Printf(
 		TEXT("ecart absolu moyen sur %d saisons-climats : couvert %.1f points, pluie %.1f mm/mois"),
 		N, SommeEcartCouvert / FMath::Max(1, N), SommeEcartMm / FMath::Max(1, N)));
+
+	// --- LE MEILLEUR EXPOSANT, CHERCHE ICI ET NON EN EDITANT LES REGLES ------
+	//
+	// Ce depot a une regle contre les A/B qui rouvrent `world_rules.json` : son
+	// empreinte change, donc le monde se regenere entre les deux moities et
+	// l'on ne compare plus la meme chose. Une session y a meme VIDE le fichier,
+	// une restauration posee en fin de commande n'ayant pas survecu a un
+	// depassement de delai. La sonde balaie donc elle-meme.
+	{
+		L.Add(TEXT(""));
+		L.Add(TEXT("balayage du mordant (uds.saisonExposant) -- ecart de pluie :"));
+		float Meilleur = -1.0f;
+		float MeilleurEcart = TNumericLimits<float>::Max();
+		FString Ligne;
+		for (float K = 1.0f; K <= 3.61f; K += 0.3f)
+		{
+			FWorldseedClimatePresetRules Essai = ReglesPreset;
+			Essai.SeasonContrastExponent = K;
+
+			double Somme = 0.0;
+			int32 Compte = 0;
+			for (const FWorldseedReleveReel& R : Releves)
+			{
+				FWorldseedClimateSample S;
+				S.TempMeanC = R.TmoyC;
+				S.PrecipMm = R.PluieMm;
+				S.SeasonalAmpC = R.AmplitudeC;
+				S.Continentality = FMath::Clamp(R.AmplitudeC / 30.0f, 0.0f, 1.0f);
+				S.LatitudeDeg = R.LatitudeDeg;
+				FWorldseedGeometry G;
+				G.LatSpanDeg = 180.0f;
+				S.SummerRainFrac = WorldseedClimate::SummerRainFraction(
+					*Regles, G, R.LatitudeDeg);
+
+				const FWorldseedClimatePreset P =
+					WorldseedClimatePreset::Build(S, Essai);
+				for (int32 Sa = 0; Sa < 4; ++Sa)
+				{
+					Somme += FMath::Abs((P.RainfallMm[Sa] + P.SnowfallMm[Sa])
+						- (R.PluieSaisonMm[Sa] + R.NeigeSaisonMm[Sa]));
+					++Compte;
+				}
+			}
+			const float E = static_cast<float>(Somme / FMath::Max(1, Compte));
+			Ligne += FString::Printf(TEXT("  %.1f->%.1f"), K, E);
+			if (E < MeilleurEcart) { MeilleurEcart = E; Meilleur = K; }
+		}
+		L.Add(Ligne);
+		L.Add(FString::Printf(
+			TEXT("  meilleur : %.1f  (%.1f mm/mois) -- en vigueur : %.1f"),
+			Meilleur, MeilleurEcart, ReglesPreset.SeasonContrastExponent));
+	}
 
 	// --- LA FRACTION ESTIVALE : LA PREDIT-ON SEULEMENT ? ---------------------
 	//

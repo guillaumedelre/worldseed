@@ -10264,3 +10264,64 @@ passe de `3.88` a `3.89` dans une meme partie, la ou il affichait `3.78` sur
 toutes les lignes avant. Le temps, lui, va de 1300,34 a 1303,66 en 5,5 s.
 
 `Tools/UE/calendrier_worldseed.py` rejoue l'operation, idempotent par constat.
+
+### Le chantier climat : ce que la mesure a rendu, et ce qu'elle a refuse (28 septembre 2026)
+
+Suite du bulletin meteo, et fin du chantier. Deux corrections posees, chacune
+calee sur les vingt-trois releves de stations reelles -- la seule reference
+EXTERIEURE au projet.
+
+**1. L'OSCILLATION SAISONNIERE ETAIT DEUX FOIS TROP FORTE.** `SummerRainFraction`
+s'ecartait du reel de **0,185** en moyenne, quand REPONDRE 0,5 PARTOUT -- ne
+rien predire du tout -- n'en fait que **0,157**. Elle ajoutait donc du bruit
+plutot que de l'information, et aucune mesure interne ne pouvait le dire.
+
+**MAIS L'ERREUR ETAIT STRUCTUREE, ET C'EST CE QUI L'A RENDUE CORRIGIBLE.**
+Rangee par latitude, elle dessine un motif : trop estivale sous les tropiques
+(+0,05 a +0,40) et aux hautes latitudes (+0,09 a +0,31), trop hivernale aux
+moyennes (-0,08 a -0,34). Bonne FORME, mauvaise amplitude.
+`precipitation.saisonAmortissement` = 0,54 la ramene a **0,102**.
+
+    REGLE : avant de jeter un modele parce que son erreur est grande, la RANGER
+    par la variable dont il depend. Une erreur structuree est un reglage ; une
+    erreur dispersee est un modele a refaire.
+
+**LE SEUIL MEDITERRANEEN DEVAIT SUIVRE, ET C'EST LE PIEGE DE CETTE CORRECTION.**
+`biomes.mediterraneanSummerFracMax` s'applique a cette fraction : l'amortir sans
+le deplacer aurait supprime le biome. Il passe de 0,25 a **0,365**, qui est la
+MEME frontiere dans la nouvelle echelle -- `0,5 + k(S - 0,5)`. Verifie :
+mediterraneen a **2,71 % des terres avant comme apres**, bulletin terrestre a
+20 sur 23 dans les deux cas, memes echecs. **Deux reglages lies doivent bouger
+ensemble, et le fichier de regles le dit aux DEUX endroits.**
+
+**2. LA PLUIE SE REPARTIT DESORMAIS PAR CETTE FRACTION**, et non plus par la
+latitude que `SeasonalRainFactors` rederivait moins bien. Bilan mesure :
+
+| | couverture | pluie |
+|---|---|---|
+| au depart | 16,3 points | 25,7 mm/mois |
+| fraction amortie seule | 16,3 | 25,7 (elle n'etait pas encore lue) |
+| + repartition par la fraction | **15,3** | **24,2** |
+| temoin : repartition uniforme | -- | 32,3 |
+
+**ET J'AVAIS ANNONCE 21,8 mm, LA MESURE EN REND 24,2.** L'ecart vient de ma
+simulation : pour estimer ce que vaudrait une fraction imparfaite, j'avais
+ajoute un bruit de +/- 0,102 de signe aleatoire -- alors que la vraie erreur est
+STRUCTUREE par latitude, donc bien moins favorable qu'un bruit. **Simuler une
+erreur par du bruit surestime ce qu'on gagnera** : le bruit se compense, une
+erreur systematique non.
+
+**LE MORDANT SE CHERCHE DANS LA SONDE, PAS EN EDITANT LES REGLES.** Le balayage
+de `uds.saisonExposant` vit dans `ProbeMeteo` : rouvrir `world_rules.json` entre
+deux moities d'un A/B change son empreinte, donc regenere le monde -- et ce
+depot a deja VIDE ce fichier avec une boucle de ce genre. Releve :
+1,0 -> 26,6 | 1,6 -> 24,8 | **1,9 -> 24,2** | 2,5 -> 24,8 | 3,4 -> 28,1.
+
+**CE QUI RESTE HORS DE PORTEE, ET C'EST MESURE.** La couverture nuageuse
+plafonne vers douze points quelle que soit la forme : deux climats a quarante
+millimetres par mois portent 35 ou 78 pour cent de ciel couvert selon que la
+pluie est convective ou frontale, et la quantite ne dit pas le type. Quatre
+pistes ont ete essayees et refutees -- recalibrer les trois cles, ajouter un
+plancher fonction de la pluie annuelle, interpoler les releves, ajouter un terme
+de continentalite (coefficient optimal NUL). Ne pas les reprendre sans une
+variable nouvelle qui distingue le TYPE de precipitation.

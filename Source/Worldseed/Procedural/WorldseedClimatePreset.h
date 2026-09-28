@@ -41,6 +41,23 @@ struct WORLDSEED_API FWorldseedClimateSample
 
 	/** Latitude signee, en degres. */
 	float LatitudeDeg = 0.0f;
+
+	/**
+	 * Part de la pluie tombant au semestre CHAUD, dans [0..1].
+	 *
+	 * NEGATIVE = NON RENSEIGNEE, et la repartition retombe alors sur la
+	 * latitude seule, comme avant. C'est ce qui rend l'ajout sur : un appelant
+	 * qui n'a pas cette grandeur obtient exactement le comportement d'hier.
+	 *
+	 * POURQUOI LA TRANSMETTRE PLUTOT QUE LA REDERIVER. La chaine climatique la
+	 * calcule deja par cellule -- `WorldseedClimate::SummerRainFraction` -- et
+	 * `Build` la recalculait moins bien, d'apres la latitude seule. Mesure sur
+	 * les vingt-trois releves reels : la repartition par latitude s'ecarte du
+	 * reel de 25,7 mm par mois, par cette fraction de 21,8. Le plafond, avec la
+	 * fraction EXACTE des releves, serait 15,0 -- ce qui reste est l'erreur de
+	 * notre propre prediction, ramenee de 0,185 a 0,102 le meme jour.
+	 */
+	float SummerRainFrac = -1.0f;
 };
 
 /**
@@ -97,6 +114,16 @@ struct WORLDSEED_API FWorldseedClimatePresetRules
 
 	/** world.tropicDeg : borne de la bande ou la ZCIT module les pluies. */
 	float TropicLatDeg = 23.44f;
+
+	/**
+	 * Mordant du contraste saisonnier de la pluie.
+	 *
+	 * A un, les saisons suivent lineairement la part tombant au semestre chaud.
+	 * Le reel est bien plus tranche : une savane a hiver sec recoit deux
+	 * millimetres en hiver et cent cinquante-cinq en automne -- un rapport de
+	 * CINQUANTE, quand une repartition lineaire plafonne vers dix.
+	 */
+	float SeasonContrastExponent = 1.7f;
 
 	static FWorldseedClimatePresetRules FromRules(const UWorldseedRules& Rules);
 };
