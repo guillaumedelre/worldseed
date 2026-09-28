@@ -247,12 +247,17 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			const FWorldseedWeather Cible =
 				WorldseedWeatherState::Evaluate(Echantillon, ReglesPreset, Params);
 
-			// LE MEME FONDU QU'EN JEU. Prendre la cible brute ferait sauter la
-			// meteo d'un pas a l'autre et gonflerait le compte d'episodes : ce
-			// qu'on veut mesurer est ce que le joueur TRAVERSE, pas ce que le
-			// modele designe.
+			// LE MEME FONDU QU'EN JEU -- ET CETTE FOIS C'EST VRAI.
+			//
+			// Cette ligne calculait `pas / periode`, soit une constante de
+			// temps d'une PERIODE ENTIERE, quand le jeu fond sur douze
+			// secondes reelles : quinze fois plus fort. Le commentaire
+			// annoncait deja « le meme fondu qu'en jeu », et c'est ce qui l'a
+			// rendu invisible. La sonde rendait 9 orages par an pour 119
+			// designes -- un chiffre de l'INSTRUMENT, pas du monde.
 			WorldseedWeatherState::BlendTowards(Courant, Cible,
-				static_cast<float>(PasS) / FMath::Max(Params.VariationPeriodS, 1.0f));
+				WorldseedWeatherState::AlphaDeFondu(
+					static_cast<float>(PasS), WorldseedWeatherState::FonduDefautS));
 
 			PluieCible.Voir(Cible.Rain >= SeuilPluie);
 			OrageCible.Voir(Cible.Thunder >= SeuilOrage);

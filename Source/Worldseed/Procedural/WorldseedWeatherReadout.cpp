@@ -15,6 +15,18 @@ namespace WorldseedWeatherReadout
 		constexpr int32 KeyValues = 9002;
 		constexpr int32 KeyClimate = 9003;
 		constexpr int32 KeyPlace = 9004;
+		constexpr int32 KeyEvenements = 9005;
+
+		/**
+		 * LES SEUILS DE VISIBILITE DE LA SONDE, ET C'EST DELIBERE.
+		 *
+		 * `ProbeCiel` compte un orage au-dela de 3,0 et une aurore au-dela de
+		 * 0,30 ; le bandeau doit donc s'allumer aux MEMES valeurs, sans quoi
+		 * « la sonde en annonce soixante-six par an » et « je n'en vois
+		 * jamais » resteraient impossibles a confronter.
+		 */
+		constexpr float SeuilOrage = 3.0f;
+		constexpr float SeuilAurore = 0.30f;
 
 		const TCHAR* SeasonName(float Phase)
 		{
@@ -48,6 +60,22 @@ namespace WorldseedWeatherReadout
 		Line(KeyValues, FColor::Cyan, FString::Printf(
 			TEXT("  pluie %.2f   neige %.2f   brouillard %.2f   poussiere %.2f"),
 			Weather.Rain, Weather.Snow, Weather.Fog, Weather.Dust));
+
+		// L'ORAGE ET L'AURORE SUR LEUR PROPRE LIGNE, ET QUI CHANGE DE COULEUR.
+		//
+		// Ce sont les deux seules grandeurs du releve qui decrivent un
+		// EVENEMENT rare plutot qu'un etat : sans elles, « je ne vois pas
+		// d'eclair » ne se distingue pas de « le modele n'en demande aucun »,
+		// et ce depot vient de perdre une seance entiere sur exactement cette
+		// confusion pour l'aurore. La couleur porte le verdict a l'oeil ; les
+		// chiffres, eux, se comparent a ce que la sonde annonce.
+		const bool bOrage = Weather.Thunder >= SeuilOrage;
+		const bool bAurore = Weather.Aurora >= SeuilAurore;
+		Line(KeyEvenements, (bOrage || bAurore) ? FColor::Orange : FColor::Silver,
+			FString::Printf(
+				TEXT("  orage %.2f %s   aurore %.2f %s"),
+				Weather.Thunder, bOrage ? TEXT("<< EN COURS") : TEXT(""),
+				Weather.Aurora, bAurore ? TEXT("<< EN COURS") : TEXT("")));
 
 		Line(KeyClimate, FColor::Yellow, FString::Printf(
 			TEXT("  CLIMAT ICI : %.1f C   %.0f mm/an   saisons +/-%.1f C   continentalite %.2f"),

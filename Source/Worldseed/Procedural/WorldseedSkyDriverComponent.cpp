@@ -188,9 +188,8 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	}
 	else
 	{
-		const float Alpha = 1.0f - FMath::Exp(
-			-FMath::Max(DeltaSeconds, 0.0f) / FMath::Max(BlendSeconds, 0.1f));
-		WorldseedWeatherState::BlendTowards(Current, Target, Alpha);
+		WorldseedWeatherState::BlendTowards(Current, Target,
+			WorldseedWeatherState::AlphaDeFondu(DeltaSeconds, BlendSeconds));
 	}
 
 	PushWeather();

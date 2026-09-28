@@ -99,4 +99,24 @@ namespace WorldseedWeatherState
 	 */
 	WORLDSEED_API void BlendTowards(FWorldseedWeather& Current,
 		const FWorldseedWeather& Target, float Alpha);
+
+	/**
+	 * LA CONSTANTE DE TEMPS DU FONDU, EN SECONDES REELLES.
+	 *
+	 * Elle vit ICI et non dans l'acteur parce que la SONDE doit rejouer le
+	 * meme fondu que le jeu. Elle ne le faisait pas : la sonde lissait sur
+	 * `pas / periode`, soit une periode entiere -- quinze fois plus fort --
+	 * sous un commentaire qui annoncait « le meme fondu qu'en jeu ». Elle
+	 * rendait donc 9 orages par an la ou le modele en designe 119, et ce
+	 * chiffre etait une propriete de l'INSTRUMENT, pas du monde.
+	 */
+	constexpr float FonduDefautS = 12.0f;
+
+	/**
+	 * La part de chemin parcourue sur un pas, pour une constante de temps
+	 * donnee. Exponentielle, donc INDEPENDANTE de la cadence d'appel : un
+	 * fondu pose en « fraction par pas » changerait de vitesse avec le nombre
+	 * d'images par seconde.
+	 */
+	WORLDSEED_API float AlphaDeFondu(float DeltaSeconds, float ConstanteS);
 }

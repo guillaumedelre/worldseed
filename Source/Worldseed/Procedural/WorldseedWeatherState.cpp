@@ -231,6 +231,12 @@ namespace WorldseedWeatherState
 		return Out;
 	}
 
+	float AlphaDeFondu(float DeltaSeconds, float ConstanteS)
+	{
+		return 1.0f - FMath::Exp(
+			-FMath::Max(DeltaSeconds, 0.0f) / FMath::Max(ConstanteS, 0.1f));
+	}
+
 	void BlendTowards(FWorldseedWeather& Current, const FWorldseedWeather& Target,
 		float Alpha)
 	{
