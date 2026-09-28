@@ -38,6 +38,24 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	 */
 	bool ReadSeasonPhase(float& OutPhase) const;
 
+	/**
+	 * L'HORLOGE D'UDS TOURNE-T-ELLE ?
+	 *
+	 * CE N'EST PAS UN DETAIL D'AFFICHAGE : la phase de l'annee que le pilote
+	 * emploie est LUE dans UDS, et UDS ne la fait avancer que si son
+	 * `Animate Time of Day` est arme. Horloge arretee, la saison ne bouge
+	 * jamais -- et tout le calage saisonnier des prereglages, quatre saisons
+	 * par climat et inversion des hemispheres, devient decoratif.
+	 *
+	 * ON LIT SANS ECRIRE, a dessein. Armer l'horloge est un choix de jeu -- la
+	 * duree d'une journee, celle d'une annee -- qui appartient a la carte et
+	 * non au pilote du ciel.
+	 */
+	bool ReadClockRunning(bool& OutRunning) const;
+
+	/** Lit une grandeur nommee sur l'un des deux acteurs, sans la modifier. */
+	bool ReadNumber(FName PropertyName, double& OutValue) const;
+
 	// --- ecriture ------------------------------------------------------------
 
 	bool WriteLatLon(float LatitudeDeg, float LongitudeDeg) const;

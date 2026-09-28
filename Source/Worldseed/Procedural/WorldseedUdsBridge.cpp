@@ -184,6 +184,32 @@ bool FWorldseedUdsBridge::ReadSeasonPhase(float& OutPhase) const
 	return true;
 }
 
+bool FWorldseedUdsBridge::ReadNumber(FName PropertyName, double& OutValue) const
+{
+	return GetNumber(WeatherActor.Get(), PropertyName, OutValue)
+		|| GetNumber(SkyActor.Get(), PropertyName, OutValue);
+}
+
+bool FWorldseedUdsBridge::ReadClockRunning(bool& OutRunning) const
+{
+	// DEUX ORTHOGRAPHES, comme ailleurs dans ce pont : UDS expose ses variables
+	// Blueprint avec des espaces, que certaines versions suppriment.
+	for (const TCHAR* Nom : { TEXT("Animate Time of Day"), TEXT("AnimateTimeOfDay") })
+	{
+		for (AActor* const Acteur : { SkyActor.Get(), WeatherActor.Get() })
+		{
+			if (!Acteur) { continue; }
+			if (const FBoolProperty* const Prop = CastField<FBoolProperty>(
+					Acteur->GetClass()->FindPropertyByName(FName(Nom))))
+			{
+				OutRunning = Prop->GetPropertyValue_InContainer(Acteur);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 bool FWorldseedUdsBridge::WriteLatLon(float LatitudeDeg, float LongitudeDeg) const
 {
 	AActor* Sky = SkyActor.Get();

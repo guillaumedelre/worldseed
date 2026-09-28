@@ -10149,3 +10149,54 @@ pistes ne fait mieux. Le vrai defaut est d'un cran en amont --
 CLIMAT, pas de meteo. Le reel va jusqu'a CINQUANTE fois entre saison seche et
 humide (savane a hiver sec : 2 mm en hiver, 155 en automne) quand nos facteurs
 ITCZ plafonnent a neuf.
+
+### La meteo est branchee, mais L'HORLOGE EST ARRETEE (28 septembre 2026)
+
+Question du proprietaire : « que manque-t-il pour avoir une meteo credible dans
+chacun des climats, et que faudrait-il pour la brancher a UDW ? ». La seconde
+moitie avait sa reponse -- c'est branche depuis le matin -- mais il fallait le
+PROUVER, et le faire a trouve un defaut plus gros.
+
+**PREUVE DU BRANCHEMENT, variable par variable.** `PushWeather` ecrit onze
+grandeurs dans UDS/UDW et **IGNORAIT le booleen que `WriteNumber` rend** : un
+nom absent aurait fait echouer l'ecriture en silence, exactement comme les
+trois parametres de la rampe du decor devenus des no-op. Le controle est
+desormais fait UNE FOIS au premier passage, et il dit : *les 11 variables
+d'UDS/UDW acceptent l'ecriture*. Le pont tient.
+
+**MAIS LA PHASE DE L'ANNEE EST LUE DANS UDS, PAS CALCULEE.** Et UDS ne la fait
+avancer que si son `Animate Time of Day` est arme. Mesure ajoutee au meme
+controle : **l'horloge est ARRETEE dans `L_Worldseed_Proc`**, saison figee a
+3,78 sur 12. Consequences : pas de cycle jour/nuit, et la meteo d'UNE SEULE
+saison pour toute la partie -- quel que soit le modele en amont. C'est le
+defaut dominant, et il rend decoratif tout le calage saisonnier : quatre
+saisons par prereglage, inversion des hemispheres, tout cela sans effet.
+
+**LA CAUSE EST UN RESTE DU PORTAGE.** `BP_WorldseedClimat` armait l'horloge au
+BeginPlay depuis le 12 septembre, et assignait `CAL_Worldseed` -- le calendrier
+de trente-six jours qui ramene l'annee de deux cent soixante-quatorze heures a
+vingt-sept. Ce Blueprint n'est plus employe depuis que la generation est passee
+en C++, et ces deux reglages sont partis avec lui. Meme famille que `FeedSky`
+sans appelant, trouve le matin meme : le portage a emporte le calcul et laisse
+les fils.
+
+**CE QU'ON N'A PAS SU LIRE, ET ON LE DIT** : la longueur de l'annee est
+CALCULEE dans l'asset `UDS_Calendar`, pas exposee sur l'acteur -- donc le
+controle ne peut pas verifier que `CAL_Worldseed` est assigne. Il journalise
+son impuissance plutot que de se taire : un silence se lirait « le calendrier
+va bien ».
+
+**L'ORDRE D'IMPORTANCE, MESURE ET NON SUPPOSE :**
+
+| ce qui manque | effet | ou cela se corrige |
+|---|---|---|
+| horloge arretee | une seule saison, pas de jour/nuit | la CARTE |
+| calendrier non verifie | annee de 274 h si absent | la CARTE |
+| contraste saisonnier de la pluie | un cinquieme du signal reel | le CLIMAT |
+| type de precipitation inconnu | 12 points de couverture irreductibles | le MODELE |
+| intensite des orages | jamais mesuree | la section `uds` |
+
+Les deux premieres lignes coutent deux cases a cocher et dominent tout le
+reste ; les trois suivantes sont des chantiers. **Regler un modele dont
+l'horloge est arretee n'aurait rien donne**, et c'est pourquoi ce controle vient
+avant.

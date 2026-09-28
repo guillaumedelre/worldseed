@@ -143,13 +143,35 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 
 void UWorldseedSkyDriverComponent::PushWeather() const
 {
-	Bridge.WriteNumber(NameRain, Current.Rain);
-	Bridge.WriteNumber(NameSnow, Current.Snow);
-	Bridge.WriteNumber(NameFog, Current.Fog);
-	Bridge.WriteNumber(NameDust, Current.Dust);
-	Bridge.WriteNumber(NameCloudCoverage, Current.CloudCoverage);
-	Bridge.WriteNumber(NameWindIntensity, Current.WindIntensity);
-	Bridge.WriteNumber(NameWindDirection, Current.WindDirectionDeg);
+	// ON RELIT CE QU'ON ECRIT, UNE FOIS. `WriteNumber` rend un booleen que ce
+	// corps ignorait : un nom de variable absent d'Ultra Dynamic Weather fait
+	// donc echouer l'ecriture EN SILENCE, et la meteo resterait sur ses valeurs
+	// propres sans qu'une ligne ne bouge. Ce depot a exactement ce precedent
+	// avec la rampe du decor -- trois ecritures de parametre devenues des no-op,
+	// trouvees des mois plus tard -- et la parade y est la meme : relire.
+	//
+	// UNE SEULE FOIS, parce que les noms ne changent pas en cours de partie :
+	// un controle par demi-seconde n'apprendrait rien de plus et remplirait le
+	// journal.
+	const bool bControle = !bNomsVerifies;
+	bNomsVerifies = true;
+	TArray<FString> Refusees;
+	auto Ecrire = [this, bControle, &Refusees](FName Nom, double Valeur)
+	{
+		const bool bPrise = Bridge.WriteNumber(Nom, Valeur);
+		if (bControle && !bPrise)
+		{
+			Refusees.Add(Nom.ToString());
+		}
+	};
+
+	Ecrire(NameRain, Current.Rain);
+	Ecrire(NameSnow, Current.Snow);
+	Ecrire(NameFog, Current.Fog);
+	Ecrire(NameDust, Current.Dust);
+	Ecrire(NameCloudCoverage, Current.CloudCoverage);
+	Ecrire(NameWindIntensity, Current.WindIntensity);
+	Ecrire(NameWindDirection, Current.WindDirectionDeg);
 
 	const bool bFahrenheit =
 		Bridge.TemperatureScale == FWorldseedUdsBridge::ETemperatureScale::Fahrenheit;
@@ -162,6 +184,81 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 				CelsiusToFahrenheit(static_cast<float>(C.Y)))
 			: C;
 
-		Bridge.WriteRange(SeasonRangeNames[S], Value);
+		if (!Bridge.WriteRange(SeasonRangeNames[S], Value) && bControle)
+		{
+			Refusees.Add(SeasonRangeNames[S].ToString());
+		}
+	}
+
+	if (bControle)
+	{
+		// L'HORLOGE EST LE SECOND POINT DE RUPTURE POSSIBLE, et il est muet lui
+		// aussi : la phase de l'annee est LUE dans UDS, qui ne la fait avancer
+		// que si `Animate Time of Day` est arme. Horloge arretee, la saison ne
+		// bouge jamais et tout le calage saisonnier devient decoratif -- quatre
+		// saisons par climat, inversion des hemispheres, tout cela sans effet.
+		bool bHorloge = false;
+		if (!Bridge.ReadClockRunning(bHorloge))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : « Animate Time of Day » introuvable sur %s ")
+				TEXT("-- impossible de dire si la saison avancera"), *Bridge.Describe());
+		}
+		else if (!bHorloge)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : L'HORLOGE D'UDS EST ARRETEE. La saison ne ")
+				TEXT("bougera pas, donc la meteo restera celle d'une seule saison ")
+				TEXT("toute la partie. Armer « Animate Time of Day » sur l'acteur ")
+				TEXT("Ultra Dynamic Sky de la carte."));
+		}
+
+		// ET LA LONGUEUR DE L'ANNEE, second reglage que `BP_WorldseedClimat`
+		// posait avant le portage. Une annee de 365 jours dure ici deux cent
+		// soixante-quatorze HEURES reelles -- la saison ne changerait jamais,
+		// horloge armee ou non. `CAL_Worldseed` la ramene a trente-six jours,
+		// soit vingt-sept heures, et une saison a six heures quarante-cinq.
+		double Jours = 0.0;
+		if (Bridge.ReadNumber(TEXT("Number of Days in Year"), Jours) && Jours > 0.0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] meteo : annee de %.0f jours"), Jours);
+			if (Jours > 100.0)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] meteo : ANNEE DE %.0f JOURS -- a quarante-cinq ")
+					TEXT("minutes reelles par journee, elle dure %.0f heures. La saison ")
+					TEXT("ne changera pas en pratique. Assigner CAL_Worldseed."),
+					Jours, Jours * 0.75);
+			}
+		}
+		else
+		{
+			// ON LE DIT PLUTOT QUE DE SE TAIRE. Un silence ici se lirait comme
+			// « le calendrier va bien », alors qu'il veut dire « je n'ai pas su
+			// regarder » : la longueur de l'annee est CALCULEE dans l'asset
+			// `UDS_Calendar` et non exposee sur l'acteur. Verifier a la main que
+			// `CAL_Worldseed` y est assigne -- sans lui l'annee fait 365 jours,
+			// soit deux cent soixante-quatorze heures reelles.
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] meteo : longueur de l'annee non lisible depuis ")
+				TEXT("l'acteur (elle vit dans l'asset calendrier) -- verifier a la ")
+				TEXT("main que CAL_Worldseed est assigne"));
+		}
+
+		if (Refusees.IsEmpty())
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] meteo : les 11 variables d'UDS/UDW acceptent l'ecriture")
+				TEXT(" -- horloge %s"), bHorloge ? TEXT("EN MARCHE") : TEXT("arretee"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : %d variable(s) REFUSEE(S) par %s -- %s. ")
+				TEXT("Ces grandeurs ne seront jamais pilotees : le nom a change ")
+				TEXT("de version, ou l'acteur ne les porte pas."),
+				Refusees.Num(), *Bridge.Describe(), *FString::Join(Refusees, TEXT(", ")));
+		}
 	}
 }

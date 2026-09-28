@@ -88,6 +88,15 @@ private:
 	bool bWeatherStarted = false;
 
 	/**
+	 * Le controle des noms a-t-il ete fait ?
+	 *
+	 * `mutable` parce que `PushWeather` est const : elle ne change rien a l'etat
+	 * du pilote, seulement a celui du ciel. Le controle, lui, doit se souvenir
+	 * qu'il a eu lieu -- sans quoi il crierait deux fois par seconde.
+	 */
+	mutable bool bNomsVerifies = false;
+
+	/**
 	 * Derniere latitude transmise au ciel.
 	 *
 	 * Un demi-degre vaut une cinquantaine de kilometres : en deca, la course du
