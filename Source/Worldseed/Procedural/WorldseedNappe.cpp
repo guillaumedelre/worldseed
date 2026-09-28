@@ -67,6 +67,7 @@ void WorldseedNappe::Batir(const FWorldseedWorldData& Monde,
 	TArray<FVector2D> UVs;
 	TArray<FVector2D> TintRG;
 	TArray<FVector2D> TintB;
+	TArray<float> Neige;
 	TArray<FProcMeshTangent> Tangents;
 	TArray<FLinearColor> Colors;
 	TArray<int32> Triangles;
@@ -76,6 +77,7 @@ void WorldseedNappe::Batir(const FWorldseedWorldData& Monde,
 	UVs.SetNumUninitialized(Verts);
 	TintRG.SetNumUninitialized(Verts);
 	TintB.SetNumUninitialized(Verts);
+	Neige.SetNumUninitialized(Verts);
 	Tangents.SetNumUninitialized(Verts);
 	Colors.SetNumUninitialized(Verts);
 
@@ -230,7 +232,8 @@ void WorldseedNappe::Batir(const FWorldseedWorldData& Monde,
 				static_cast<float>(SY) / static_cast<float>(Geo.NY));
 
 			WorldseedApparence::Sommet(Monde, ReglesSurf, Cell, HereM, N,
-				Mode, Colors[Index], TintRG[Index], TintB[Index]);
+				Mode, Colors[Index], TintRG[Index], TintB[Index],
+				Neige[Index]);
 
 			SousZero[Index] = (HereM < 0.0f) ? 1 : 0;
 			if (HereM < 0.0f) { ++SommetsSousZero; }
@@ -278,6 +281,7 @@ void WorldseedNappe::Batir(const FWorldseedWorldData& Monde,
 	Out.UV0 = MoveTemp(UVs);
 	Out.TeinteRG = MoveTemp(TintRG);
 	Out.TeinteB = MoveTemp(TintB);
+	Out.Neige = MoveTemp(Neige);
 	Out.Tangentes = MoveTemp(Tangents);
 	Out.Couleurs = MoveTemp(Colors);
 	Out.Triangles = MoveTemp(Triangles);
@@ -358,6 +362,7 @@ void WorldseedNappe::Decimer(const FWorldseedNappeMaillage& Source,
 		TArray<FVector2D> TeinteRG;
 		TArray<FVector2D> TeinteB;
 		TArray<FVector2D> PlafondCm;
+		TArray<float> Neige;
 		TArray<FProcMeshTangent> Tangentes;
 		TArray<FLinearColor> Couleurs;
 		TArray<int32> Triangles;
@@ -368,6 +373,7 @@ void WorldseedNappe::Decimer(const FWorldseedNappeMaillage& Source,
 		TeinteRG.SetNumUninitialized(Verts);
 		TeinteB.SetNumUninitialized(Verts);
 		PlafondCm.SetNumUninitialized(Verts);
+		Neige.SetNumUninitialized(Verts);
 		Tangentes.SetNumUninitialized(Verts);
 		Couleurs.SetNumUninitialized(Verts);
 
@@ -441,8 +447,17 @@ void WorldseedNappe::Decimer(const FWorldseedNappeMaillage& Source,
 				// au rythme des pas. Or le plafond vaut zero des qu'on approche
 				// du niveau de la mer : le rivage ne bouge pas, par
 				// construction.
+				// UV3 = (ENFONCEMENT, PART DE NEIGE). Sa composante Y etait
+				// restee a zero depuis la pose de la rampe ; elle porte
+				// desormais la neige permanente, que DLWE lit par son entree
+				// `Offset Coverage`. Un seul canal sert donc les deux
+				// maillages -- les chunks du terrain y mettent (0, neige) --
+				// et aucune porte n'est necessaire pour les distinguer.
+				Neige[Dst] = Source.Neige.IsValidIndex(Src)
+					? Source.Neige[Src] : 0.0f;
 				PlafondCm[Dst] = FVector2D(
-					EnfonceM * WorldseedMetersToCm * R.ExagerationZ, 0.0);
+					EnfonceM * WorldseedMetersToCm * R.ExagerationZ,
+					Neige[Dst]);
 				Normales[Dst] = Source.Normales[Src];
 				UV0[Dst] = Source.UV0[Src];
 				TeinteRG[Dst] = Source.TeinteRG[Src];
@@ -519,6 +534,7 @@ void WorldseedNappe::Decimer(const FWorldseedNappeMaillage& Source,
 	Out.UV0 = MoveTemp(UV0);
 	Out.TeinteRG = MoveTemp(TeinteRG);
 	Out.TeinteB = MoveTemp(TeinteB);
+	Out.Neige = MoveTemp(Neige);
 	Out.Tangentes = MoveTemp(Tangentes);
 	Out.Couleurs = MoveTemp(Couleurs);
 	Out.Triangles = MoveTemp(Triangles);

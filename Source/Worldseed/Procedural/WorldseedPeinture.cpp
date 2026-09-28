@@ -69,11 +69,17 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 	{
 		Mesh.TintRG.SetNumUninitialized(Count);
 		Mesh.TintB.SetNumUninitialized(Count);
+		// UV3.Y PORTE LA PART DE NEIGE PERMANENTE, que DLWE lit par son entree
+		// `Offset Coverage`. Le canal n'existe qu'en mode pack de textures : en
+		// couleur de biome le materiau lit tout dans RGBA et n'a que faire
+		// d'une neige, la calotte y etant deja peinte en blanc.
+		Mesh.Neige.SetNumUninitialized(Count);
 	}
 	else
 	{
 		Mesh.TintRG.Reset();
 		Mesh.TintB.Reset();
+		Mesh.Neige.Reset();
 	}
 
 	// CE QU'UNE PAROI PORTE QUAND LE SOL EST HABILLE PAR UN PACK : de la
@@ -124,6 +130,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 				Mesh.Colours[I] = PoidsRoche;
 				Mesh.TintRG[I] = FVector2D(1.0, 1.0);
 				Mesh.TintB[I] = FVector2D(1.0, 0.0);
+				Mesh.Neige[I] = FVector2D(0.0, 0.0);
 			}
 			++Releve.ParCause[static_cast<int32>(Cause)];
 			if (Repli.GetLuminance() < SeuilSombre)
@@ -191,6 +198,12 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 		// corrige, transpose d'un canal a l'autre.
 		float Estran = WorldseedApparence::PartEstran(Biome);
 
+		// LA NEIGE SE MOYENNE POUR LA MEME RAISON QUE L'ESTRAN. Laissee
+		// franche pendant que les poids de matiere se lissent, elle ferait
+		// sauter le manteau blanc d'une cellule a l'autre au bord de la
+		// calotte -- le meme escalier, transpose d'un canal a l'autre.
+		float Neige = WorldseedApparence::PartNeige(Biome);
+
 		if (C.bMelangerLesBiomes)
 		{
 			const double FX = U * C.Geo.NX - 0.5;
@@ -203,6 +216,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 			FLinearColor SommeT(0.0f, 0.0f, 0.0f, 0.0f);
 			FLinearColor SommeP(0.0f, 0.0f, 0.0f, 0.0f);
 			double SommeE = 0.0;
+			double SommeN = 0.0;
 			double SommePoids = 0.0;
 
 			for (int32 DY = 0; DY <= 1; ++DY)
@@ -235,6 +249,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 					SommeT += WorldseedBiomes::Colour(BV) * static_cast<float>(Poids);
 					SommeP += WorldseedBiomes::SlotWeights(BV) * static_cast<float>(Poids);
 					SommeE += WorldseedApparence::PartEstran(BV) * Poids;
+					SommeN += WorldseedApparence::PartNeige(BV) * Poids;
 					SommePoids += Poids;
 				}
 			}
@@ -247,6 +262,7 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 				Teinte = SommeT * Inv;
 				PoidsBiome = SommeP * Inv;
 				Estran = static_cast<float>(SommeE) * Inv;
+				Neige = static_cast<float>(SommeN) * Inv;
 			}
 		}
 
@@ -411,6 +427,12 @@ void WorldseedPeinture::Sommets(FWorldseedVoxelMesh& Mesh,
 			Mesh.TintRG[I] = FVector2D(Normalisee.R, Normalisee.G);
 			Mesh.TintB[I] = FVector2D(Normalisee.B,
 				(Cause == WorldseedPeinture::ECause::Biome) ? Estran : 0.0f);
+			// LA NEIGE SUIT LA MEME REGLE QUE L'ESTRAN, ET IL LE FAUT : sous
+			// terre c'est de la roche. Une galerie creusee sous la calotte
+			// glaciaire n'a pas de neige a son plafond, pas plus qu'une grotte
+			// sous une plage n'a de sable de rivage.
+			Mesh.Neige[I] = FVector2D(0.0,
+				(Cause == WorldseedPeinture::ECause::Biome) ? Neige : 0.0f);
 			continue;
 		}
 

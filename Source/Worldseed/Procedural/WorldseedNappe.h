@@ -115,6 +115,21 @@ struct WORLDSEED_API FWorldseedNappeMaillage
 	/** Un sommet par bit : son relief est-il sous le niveau de la mer ? */
 	TArray<uint8> SousZero;
 
+	/**
+	 * Part de neige permanente, qui partira dans UV3.Y.
+	 *
+	 * ELLE NE VOYAGE PAS SEULE : UV3.X porte deja l'enfoncement de la rampe,
+	 * et les deux se composent au moment du transvasement. C'est ce partage
+	 * qui evite un canal de plus -- la composante Y du plafond etait a zero
+	 * depuis toujours.
+	 *
+	 * SANS ELLE, LA CALOTTE S'ARRETE AU RAYON DE VUE. Le terrain voxel la rend
+	 * blanche jusqu'a 2400 m et le decor d'horizon la rendrait grise au-dela,
+	 * ce qui tracerait un cercle autour du joueur -- exactement le genre de
+	 * couture que ce decor existe pour effacer.
+	 */
+	TArray<float> Neige;
+
 	int32 Sommets() const { return CountX * CountY; }
 };
 

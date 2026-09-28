@@ -56,8 +56,9 @@ namespace
 			FLinearColor C = FLinearColor::Black;
 			FVector2D RG = FVector2D::ZeroVector;
 			FVector2D B = FVector2D::ZeroVector;
+			float N = 0.0f;
 			WorldseedApparence::Sommet(Monde, Regles, Cell, HeightM,
-				NormaleDePente(PenteDeg), Mode, C, RG, B);
+				NormaleDePente(PenteDeg), Mode, C, RG, B, N);
 			return C;
 		}
 	};
@@ -359,8 +360,9 @@ bool FWorldseedEstranArriveDansLeSommet::RunTest(const FString&)
 		FLinearColor C = FLinearColor::Black;
 		FVector2D RG = FVector2D::ZeroVector;
 		FVector2D B = FVector2D::ZeroVector;
+		float N = 0.0f;
 		WorldseedApparence::Sommet(D.Monde, D.Regles, Cell, 2.0f,
-			FVector(0.0, 0.0, 1.0), D.Mode, C, RG, B);
+			FVector(0.0, 0.0, 1.0), D.Mode, C, RG, B, N);
 		return B.Y;
 	};
 
@@ -373,6 +375,73 @@ bool FWorldseedEstranArriveDansLeSommet::RunTest(const FString&)
 	TestEqual(TEXT("UV2.Y vaut un sur l'estran"), SurLaPlage, 1.0f);
 	TestEqual(TEXT("et zero sur le desert, MEME MATIERE POURTANT"),
 		SurLeDesert, 0.0f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedNeigeArriveDansLeSommet,
+	"Worldseed.Apparence.NeigeArriveDansLeSommet",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ * LE DEFAUT QU'IL GARDE : la calotte glaciaire rendait GRISE en jeu pendant
+ * que le globe la peignait blanche. Le registre lui donne des matieres
+ * [0, 0, 1, 0] -- cent pour cent de roche -- et sa couleur blanche ne pouvait
+ * pas la sauver, `TeinteNormalisee` divisant par la luminance.
+ *
+ * IL PORTE SON PROPRE TEMOIN, et il le faut : un `PartNeige` qui rendrait
+ * zero PARTOUT passerait "la calotte est blanche" si l'on ne testait que la
+ * calotte -- le depot a paye quatre fixtures muettes en une seule journee. On
+ * exige donc aussi qu'un biome tempere n'ait AUCUNE neige, sans quoi la
+ * mesure ne discrimine rien.
+ */
+bool FWorldseedNeigeArriveDansLeSommet::RunTest(const FString&)
+{
+	FDecor D;
+
+	D.Mode.bColourByBiome = false;
+	D.Mode.bTexturePack = true;
+
+	const int32 Calotte = 3;
+	const int32 Foret = 4;
+	D.Monde.Biomes.Cover[Calotte] = static_cast<uint8>(EWorldseedCover::None);
+	D.Monde.Biomes.Cover[Foret] = static_cast<uint8>(EWorldseedCover::None);
+	D.Monde.Biomes.Index[Calotte] = static_cast<uint8>(EWorldseedBiome::IceCap);
+	D.Monde.Biomes.Index[Foret] =
+		static_cast<uint8>(EWorldseedBiome::TemperateForest);
+
+	auto Lire = [&D](int32 Cell)
+	{
+		FLinearColor C = FLinearColor::Black;
+		FVector2D RG = FVector2D::ZeroVector;
+		FVector2D B = FVector2D::ZeroVector;
+		float N = -1.0f;
+		WorldseedApparence::Sommet(D.Monde, D.Regles, Cell, 2.0f,
+			FVector(0.0, 0.0, 1.0), D.Mode, C, RG, B, N);
+		return N;
+	};
+
+	const float SurLaCalotte = Lire(Calotte);
+	const float SurLaForet = Lire(Foret);
+
+	AddInfo(FString::Printf(TEXT("UV3.Y : calotte %.3f, foret temperee %.3f"),
+		SurLaCalotte, SurLaForet));
+
+	TestEqual(TEXT("UV3.Y vaut un sur la calotte glaciaire"),
+		SurLaCalotte, 1.0f);
+	TestEqual(TEXT("et zero sur une foret temperee -- SANS QUOI LA MESURE NE "
+		"DISCRIMINE RIEN"), SurLaForet, 0.0f);
+
+	// LA MEME PART, LUE PAR LES DEUX CONSOMMATEURS. La nappe d'horizon passe
+	// par `Sommet`, le terrain voxel par `WorldseedPeinture` : les deux
+	// appellent `PartNeige`, et le depot interdit de recopier une formule
+	// dans deux fichiers. Une divergence se verrait exactement la ou les deux
+	// maillages se rencontrent -- au rayon de vue, en cercle autour du joueur.
+	TestEqual(TEXT("PartNeige rend la meme chose que le sommet, calotte"),
+		WorldseedApparence::PartNeige(EWorldseedBiome::IceCap), SurLaCalotte);
+	TestEqual(TEXT("PartNeige rend la meme chose que le sommet, foret"),
+		WorldseedApparence::PartNeige(EWorldseedBiome::TemperateForest),
+		SurLaForet);
 
 	return true;
 }

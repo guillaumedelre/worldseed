@@ -32,11 +32,36 @@ float PartEstran(EWorldseedBiome BiomeApparent)
 	return BiomeApparent == EWorldseedBiome::Beach ? 1.0f : 0.0f;
 }
 
+float PartNeige(EWorldseedBiome BiomeApparent)
+{
+	// UN SEUIL FRANC, POUR LA MEME RAISON QUE L'ESTRAN : une cellule est de la
+	// calotte ou elle ne l'est pas, et ce qui adoucit la frontiere n'est pas ce
+	// test mais ce qu'on en fait -- la peinture moyenne cette part sur les
+	// quatre cellules voisines, puis l'interpolation des UV l'etale sur le
+	// triangle.
+	//
+	// LA CALOTTE SEULE, ET C'EST DELIBERE POUR CE PREMIER JET. L'alpin et la
+	// toundra portent eux aussi de la neige une partie de l'annee, mais elle
+	// est SAISONNIERE : c'est le travail de la meteo, qui pilote deja DLWE par
+	// la collection d'UDW. Leur donner une part permanente les figerait sous la
+	// neige en plein ete. La calotte, elle, se definit par le fait que son mois
+	// le plus chaud reste sous zero -- ce qui fond en ete n'y tient pas
+	// l'annee -- donc elle est blanche par nature et non par saison.
+	return BiomeApparent == EWorldseedBiome::IceCap ? 1.0f : 0.0f;
+}
+
 void Sommet(const FWorldseedWorldData& Monde, const FWorldseedSurfaceRegles& Regles,
 	int32 Cell, float HeightM, const FVector& Normal,
 	const FWorldseedAppearance& Mode,
-	FLinearColor& OutColour, FVector2D& OutTintRG, FVector2D& OutTintB)
+	FLinearColor& OutColour, FVector2D& OutTintRG, FVector2D& OutTintB,
+	float& OutNeige)
 {
+	// LA VALEUR DE REPLI EST POSEE D'ABORD, ET TOUS LES CHEMINS LA GARDENT
+	// SAUF UN. Cette fonction sort par plusieurs `return` -- mer opaque,
+	// couleur de biome, pack de textures -- et une sortie oubliee laisserait
+	// une part de neige INDETERMINEE dans un tableau non initialise, donc de
+	// la neige au hasard sur le decor. Zero est le seul repli sur.
+	OutNeige = 0.0f;
 	// La pente se lit directement sur la composante verticale de la normale :
 	// cos(pente), sans arc cosinus.
 	const float CosRockStart = FMath::Cos(FMath::DegreesToRadians(Regles.RockSlopeStartDeg));
@@ -167,6 +192,10 @@ void Sommet(const FWorldseedWorldData& Monde, const FWorldseedSurfaceRegles& Reg
 		OutTintRG = FVector2D(Normalised.R, Normalised.G);
 		OutTintB = FVector2D(Normalised.B,
 			WorldseedApparence::PartEstran(Biome));
+
+		// LA NEIGE SUIT L'ESTRAN, canal voisin et meme raisonnement : c'est
+		// une part derivee du biome d'APPARENCE, pas un poids de matiere.
+		OutNeige = WorldseedApparence::PartNeige(Biome);
 	}
 	else if (bColourByBiome)
 	{

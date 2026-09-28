@@ -16,7 +16,8 @@ int32 FWorldseedVoxelMesh::BytesUsed() const
 {
 	return Positions.GetAllocatedSize() + Triangles.GetAllocatedSize()
 		+ Normals.GetAllocatedSize() + Colours.GetAllocatedSize()
-		+ TintRG.GetAllocatedSize() + TintB.GetAllocatedSize();
+		+ TintRG.GetAllocatedSize() + TintB.GetAllocatedSize()
+		+ Neige.GetAllocatedSize();
 }
 
 namespace WorldseedVoxelChunk

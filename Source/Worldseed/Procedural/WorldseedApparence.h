@@ -119,7 +119,8 @@ namespace WorldseedApparence
 		const FWorldseedSurfaceRegles& Regles,
 		int32 Cell, float HeightM, const FVector& Normal,
 		const FWorldseedAppearance& Mode,
-		FLinearColor& OutColour, FVector2D& OutTintRG, FVector2D& OutTintB);
+		FLinearColor& OutColour, FVector2D& OutTintRG, FVector2D& OutTintB,
+		float& OutNeige);
 
 	/**
 	 * UNE TEINTE DE BIOME RAMENEE A LUMINANCE UN, POUR QUE LE MATERIAU SE
@@ -170,4 +171,32 @@ namespace WorldseedApparence
 	 * meme sur une plage.
 	 */
 	WORLDSEED_API float PartEstran(EWorldseedBiome BiomeApparent);
+
+	/**
+	 * PART DE NEIGE PERMANENTE D'UN SOMMET, DANS [0..1].
+	 *
+	 * LE GLOBE ET LE SOL NE PEIGNAIENT PAS LA MEME CHOSE, et c'est le defaut
+	 * qu'elle corrige. Le registre donne a la calotte glaciaire une COULEUR
+	 * blanche (242/246/250) que le globe emploie, et des MATIERES [0, 0, 1, 0]
+	 * -- ordre herbe, aride, roche, mousse -- donc cent pour cent de ROCHE. En
+	 * jeu la calotte rendait donc grise, et aucune teinte ne pouvait la sauver :
+	 * `TeinteNormalisee` DIVISE par la luminance, si bien qu'un blanc sort
+	 * neutre. C'est delibere -- la teinte transporte la chrominance, jamais la
+	 * clarte -- donc un biome ne peut etre blanchi que par une MATIERE.
+	 *
+	 * ELLE NE PASSE PAS PAR UN CINQUIEME POIDS, et c'est ce qui evite de faire
+	 * regenerer son monde a tout le monde : les quatre poids voyagent dans le
+	 * RGBA du sommet, qui est plein, et en ajouter un cinquieme au registre
+	 * changerait l'empreinte de `world_rules.json`. Elle voyage donc par UV3.Y,
+	 * exactement comme `PartEstran` voyage par UV2.Y depuis le 26 septembre.
+	 *
+	 * OU ELLE ABOUTIT : l'entree `Offset Coverage` de DLWE_V3, la fonction de
+	 * neige d'Ultra Dynamic Sky. Elle est SCALAIRE -- releve du 28 septembre
+	 * 2026, et c'est ce fait qui a decide la route -- donc pilotable par
+	 * sommet. Une seule chaine donne ainsi la calotte PERMANENTE et la neige
+	 * METEO, plus l'accumulation et les traces de pas.
+	 *
+	 * ELLE PREND LE BIOME D'APPARENCE, comme sa soeur, et pour la meme raison.
+	 */
+	WORLDSEED_API float PartNeige(EWorldseedBiome BiomeApparent);
 }

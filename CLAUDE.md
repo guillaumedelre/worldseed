@@ -11237,3 +11237,190 @@ n'est pas le drapeau mais un maillage dont un emplacement n'a pas de materiau.
 **RESTE OUVERT, et c'est ce cas-la** : `SFL:SM_Flower_2` porte
 `WorldGridMaterial` a son emplacement [1]. Aucun drapeau ne corrigera cela --
 il faut lui assigner un vrai materiau, ou retirer l'espece des recettes.
+
+### Le globe et le sol ne peignaient pas la meme chose (28 septembre 2026)
+
+Signale : « je vois la calotte glaciere au pole nord sur le globe mais pas
+in-game, pourquoi ? ». Il y avait DEUX defauts distincts derriere cette
+question, et le second attendait au pole sud.
+
+#### 1. Au pole NORD ce n'est pas une calotte, c'est de la BANQUISE
+
+`world_rules.json:27` -- `"northPole": "ocean"`. **Il n'y a aucune terre au
+pole nord et il n'y en aura jamais**, par construction, comme l'Arctique. Ce
+que le globe peint en blanc la-haut est donc la mer prise en glace :
+`EWorldseedCover::SeaIce`, une COUVERTURE et non un biome.
+
+**ELLE A EXACTEMENT UN CONSOMMATEUR VISUEL DANS TOUT LE PROJET :**
+
+    WorldseedGlobe.cpp:309    Color = CoverColour(SeaIce)    0,82 / 0,88 / 0,94
+
+Ni la carte plein ecran, ni la minimap, ni le jeu ne la connaissent --
+`AppearanceBiome` ne traduit que `Rock` et `Beach`, tout le reste tombe dans
+son `default`. **Il n'existe donc ni geometrie ni materiau de glace de mer** :
+en jeu, la surface au pole nord est le plan d'eau du plugin Water, et elle est
+bleue. La banquise est une couleur sur une carte, pas un objet du monde.
+**NON CORRIGE** -- c'est un chantier a part, et DLWE n'y peut rien : il habille
+un materiau de SOL, et la-haut il n'y a pas de sol.
+
+#### 2. La VRAIE calotte rendait GRISE, et la teinte ne pouvait pas la sauver
+
+    "cle": "calotte"
+    "couleur":  [242, 246, 250]        <- ce que peint le GLOBE : blanc
+    "matieres": [0.0, 0.0, 1.0, 0.0]   <- ce que peint le SOL
+
+L'ordre des matieres est *herbe, aride, roche, mousse* : la calotte glaciaire
+etait donc peinte **a cent pour cent avec la texture de ROCHE**. Et l'habillage
+Orasot n'a AUCUNE texture de neige -- releve, zero asset sous
+`Content/Orasot_Bundle`.
+
+**ET LA TEINTE NE RATTRAPE RIEN, ce qui est le point qu'on rate volontiers.**
+`TeinteNormalisee` DIVISE par la luminance : un blanc sort a (1, 1, 1), neutre.
+C'est delibere -- la teinte transporte la CHROMINANCE, jamais la clarte, sans
+quoi elle ecraserait le grain des textures. **Un biome ne peut donc pas etre
+blanchi par sa couleur ; il ne peut l'etre que par une MATIERE.**
+
+**LA REGLE GENERALE** : le globe peint des IDENTIFIANTS, le sol melange QUATRE
+TEXTURES. Les deux ne peuvent pas s'accorder partout ou l'habillage n'a pas la
+matiere correspondante.
+
+#### LA MESURE QUI A DECIDE LA ROUTE
+
+Deux voies s'offraient -- une cinquieme matiere, ou DLWE d'Ultra Dynamic Sky.
+Une seule question tranchait : la couverture de neige de DLWE se pilote-t-elle
+par SOMMET ou seulement globalement ? Relevee dans le graphe plutot que
+supposee :
+
+    DLWE_Snow / DLWE_V3
+        Mask Snow/Dust Coverage      FUNCTION_INPUT_SCALAR    optionnelle
+        Offset Coverage              FUNCTION_INPUT_SCALAR    optionnelle
+        Snow Color and Alpha         FUNCTION_INPUT_VECTOR4   optionnelle
+        Mask Below Water Level Height  STATIC_BOOL            optionnelle
+
+Ce sont des SCALAIRES d'entree, donc pilotables par sommet. **Une seule chaine
+donne alors la calotte PERMANENTE et la neige METEO**, plus l'accumulation, les
+etincelles et les traces de pas.
+
+**LA METRIQUE A ETE VALIDEE SUR UN TEMOIN CONNU**, comme l'exige ce depot : le
+registre du 11 septembre affirme que `Apply Snow/Dust` et
+`Apply Wetness/Puddles` sont les seules entrees OBLIGATOIRES. Le releve les
+ressort exactement comme les seules a `defaut=False`, avec `Material
+Attributes`. La lecture est donc fiable.
+
+#### J'AI DONNE UN TABLEAU COMPARATIF FAUX, ET SUR LE POINT QUI DECIDAIT
+
+J'avais ecrit que la cinquieme matiere changerait `matieres` dans le registre,
+**donc regenererait tous les mondes en cache**. C'est FAUX, et c'etait
+l'argument qui pesait le plus contre elle : la part de neige n'a pas besoin
+d'etre un cinquieme POIDS, elle peut etre une PART transportee par sommet,
+exactement comme l'estran l'est par UV2.Y depuis le 26 septembre -- et
+`PartEstran` n'a jamais touche au registre. Corrige devant le proprietaire, qui
+a maintenu DLWE en connaissance de cause.
+
+    REGLE : un tableau comparatif est une MESURE, pas une mise en forme. Une
+    colonne fausse y pese autant qu'un chiffre faux dans un releve, et elle
+    oriente une decision qu'on ne reprendra pas.
+
+#### UV3.Y, ET POURQUOI IL N'A FALLU NI PORTE NI PARAMETRE
+
+    nappe d'horizon : PlafondCm[i] = FVector2D(enfoncement, 0,0)   <- .Y libre
+    chunks du terrain : UV3 = TArray<FVector2D>()                  <- vide
+
+La composante Y du canal etait libre des DEUX cotes. Une seule convention --
+**UV3 = (enfoncement de rampe, part de neige)** -- sert donc les deux maillages
+sans porte ni parametre pour les distinguer. C'est exactement ce que UV2 fait
+deja avec (teinte B, part d'estran).
+
+**ET MON PREMIER RELEVE D'UV ETAIT INCOMPLET.** Il ne comptait que les
+`TextureCoordinate` presents dans le materiau et annoncait « UV3 libre », alors
+que `MF_WorldseedNappeRampe` lit UV3 **a l'interieur de la fonction**. C'est le
+piege deja consigne pour la RVT -- « un echantillonnage peut etre cache dans
+une fonction de materiau » -- et il aurait fait ecraser la rampe. Ce qui a
+sauve la mesure est d'etre alle lire ce que les APPELANTS posent reellement,
+plutot que ce que le materiau declare.
+
+#### LE PIEGE DE LA GREFFE, ET IL ETAIT DANGEREUX
+
+Passer un materiau en `use_material_attributes` **deplace
+`WorldPositionOffset` dans le bloc d'attributs**. Ne pas y rebrancher
+`MF_WorldseedNappeRampe` recasserait exactement le defaut du 27 septembre --
+le decor d'horizon cesse de s'enfoncer et le joueur se retrouve ENTERRE dedans.
+Le script le verifie et le journalise ; le jeu le confirme a chaque partie par
+« rampe ARMEE et RELUE sur MI_WorldseedGround_Orasot ».
+
+Le `RuntimeVirtualTextureOutput` devait survivre aussi -- je l'ai deja detruit
+une fois par un elagage.
+
+#### MA RELECTURE A VALIDE UNE GREFFE INCOMPLETE
+
+La premiere passe a rapporte « greffe posee et relue » sur cinq controles
+verts, **alors qu'une ligne disait** :
+
+    !! entree '' introuvable sur MaterialExpressionComponentMask
+
+UV3 n'etait pas relie au masque, donc `Offset Coverage` recevait zero et la
+calotte serait restee grise. La cause est le piege documente -- **une broche
+d'entree UNIQUE se designe par la chaine VIDE, jamais par son nom** -- et mon
+helper cherchait un nom AVANT d'appeler.
+
+    REGLE, et c'est la meme que celle de `build_graph` en septembre : un
+    rapport vert ne dit rien des liaisons qu'on ne lui a pas demande de
+    verifier. La relecture exige desormais que `Offset Coverage` REMONTE
+    jusqu'a un TextureCoordinate d'index 3, et non qu'il soit simplement
+    branche a quelque chose.
+
+Le materiau etant sous `Content/Worldseed/`, `git checkout` l'a restaure et la
+greffe corrigee a ete rejouee de zero -- ce qui a EPROUVE le script entier au
+lieu de le rapiecer.
+
+#### DEUX PIEGES D'OUTILLAGE
+
+- **`-script=` du commandlet ne prend qu'un CHEMIN.** Tout ce qu'on lui accole
+  part dans le nom de fichier : « Could not load Python file 'D... ». Le mode
+  verification passe donc par une VARIABLE D'ENVIRONNEMENT
+  (`WORLDSEED_VERIFIER=1`), seule voie qui traverse.
+- **Les proprietes d'un materiau sont PROTEGEES en lecture depuis Python** --
+  `base_color`, `normal`, `roughness`, les quinze. Impossible de reconstruire
+  le graphe en les lisant. Ce qui marche est
+  `get_inputs_for_material_expression` sur les EXPRESSIONS, sortie
+  personnalisee comprise : la sortie RVT porte BaseColor, donc elle nomme la
+  chaine de couleur. C'est la technique de `sable_de_plage.py`, reutilisee.
+
+#### UNE CAPTURE NE VAUT QUE PAR SON SUJET -- REFAIT
+
+Premiere vue de controle prise a (0, -15000) « vers le pole sud », au juge :
+du SABLE et de l'HERBE, latitude -69,6. La calotte de cette graine est a -75 a
+-83 degres. Trouvee en ECRIVANT une carte fraiche (`probe_carte`) et en y
+cherchant la couleur du registre avec quatre voisins de la meme teinte --
+2296 pixels groupes. **Et une carte deja presente dans `Saved/` ne sert a
+rien** : celles qui y dormaient dataient d'avant la regeneration du 28.
+
+#### CE QUI EST VERIFIE
+
+- **la calotte est BLANCHE en jeu**, chunks ET horizon lointain, vue a
+  (2250, -15750) -- neige avec relief et ondulations, donc bien DLWE et non un
+  aplat ;
+- **le desert est intact**, vue a (14516, 7984) : sable, palmier a tronc brun,
+  herbe. Aucune neige parasite ;
+- **128 oracles verts, 0 rouge** ;
+- **le nouvel oracle discrimine** : `PartNeige` rendue a zero fait tomber
+  « Expected 'UV3.Y vaut un sur la calotte glaciaire' to be 1.000000, but it
+  was 0.000000 ». Temoin monte puis retire.
+
+**LE MATERIAU NE GAGNE QUE SIX EXPRESSIONS (53 -> 59), et ce chiffre ne dit
+PAS le cout** : DLWE est un APPEL DE FONCTION, ses 388 expressions vivent dans
+la fonction. Le prix se paie en instructions de shader, **et il n'a pas ete
+mesure**.
+
+#### RESTE OUVERT
+
+- **la banquise du pole nord** -- la question d'origine ; aucune geometrie ne
+  la porte ;
+- **le cout shader de DLWE**, jamais chiffre, sur des milliers de
+  `ProceduralMeshComponent` ;
+- **la RVT ne voit pas la neige** : la sortie RVT lit la couleur AVANT DLWE,
+  donc le dessus des pans de falaise et le feuillage ne prendront pas le ton
+  du manteau blanc ;
+- **l'alpin et la toundra n'ont aucune part de neige**, a dessein : leur neige
+  est SAISONNIERE et revient a la meteo, qui pilote deja DLWE. Leur donner une
+  part permanente les figerait sous la neige en plein ete.

@@ -26,6 +26,20 @@ struct WORLDSEED_API FWorldseedVoxelMesh
 	TArray<FVector2D> TintRG;
 	TArray<FVector2D> TintB;
 
+	/**
+	 * UV3 : (rien, PART DE NEIGE).
+	 *
+	 * LE CANAL EST PARTAGE AVEC LA NAPPE D'HORIZON SANS CONFLIT, et c'est ce
+	 * qui a decide de l'employer : la nappe pose UV3 = (enfoncement, 0,0) pour
+	 * sa rampe, donc sa composante Y est libre ; les chunks, eux, ne posaient
+	 * aucun UV3. Une seule convention sert les deux maillages, sans porte ni
+	 * parametre pour les distinguer -- exactement comme UV2.Y porte deja la
+	 * part d'estran a cote de la teinte B.
+	 *
+	 * La composante X reste a zero ici : un chunk ne s'enfonce pas.
+	 */
+	TArray<FVector2D> Neige;
+
 	bool IsEmpty() const { return Triangles.Num() == 0; }
 	int32 TriangleCount() const { return Triangles.Num() / 3; }
 
@@ -37,6 +51,7 @@ struct WORLDSEED_API FWorldseedVoxelMesh
 		Colours.Reset();
 		TintRG.Reset();
 		TintB.Reset();
+		Neige.Reset();
 	}
 
 	/** Octets reellement occupes, pour les releves. */

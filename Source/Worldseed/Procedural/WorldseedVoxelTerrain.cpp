@@ -2301,9 +2301,15 @@ void AWorldseedVoxelTerrain::UploadChunk(const FWorldseedChunkKey& Key,
 	// d'horizon, qui la tient depuis toujours : UV0 le placage, UV1 la teinte
 	// RG, UV2 la teinte B. Les trois tableaux sont vides en mode couleur de
 	// biome, ou `M_WorldseedBiome` lit tout dans RGBA.
+	// ET UV3 PORTE LA NEIGE PERMANENTE. Le canal etait vide ici et sa
+	// composante Y l'est aussi sur la nappe d'horizon, qui n'y met que son
+	// enfoncement de rampe : une seule convention, (enfoncement, neige), sert
+	// donc les deux maillages sans porte ni parametre pour les distinguer.
+	// Sans cette ligne la calotte glaciaire reste GRISE -- le materiau lit
+	// `Offset Coverage` dans UV3.Y, et un canal absent vaut zero.
 	State.Mesh->CreateMeshSection_LinearColor(0, Job->Mesh.Positions,
 		Job->Mesh.Triangles, Job->Mesh.Normals, TArray<FVector2D>(),
-		Job->Mesh.TintRG, Job->Mesh.TintB, TArray<FVector2D>(),
+		Job->Mesh.TintRG, Job->Mesh.TintB, Job->Mesh.Neige,
 		Job->Mesh.Colours, TArray<FProcMeshTangent>(), true);
 
 	State.bHasCollision = true;
