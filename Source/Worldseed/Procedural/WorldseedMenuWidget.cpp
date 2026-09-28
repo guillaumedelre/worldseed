@@ -21,6 +21,7 @@
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -416,8 +417,20 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 					const float HautIcone = static_cast<float>(Mesure->GetMaxCharacterHeight(FontIcone));
 					const float HautMot = static_cast<float>(Mesure->GetMaxCharacterHeight(FontMot));
 
-					const float Ecart = (BaseMot - HautMot * 0.5f)
-						- (BaseIcone - HautIcone * 0.5f);
+					// ATTENTION AU SENS DE `GetBaseline` : Slate rend le
+					// DESCENDANT, une valeur NEGATIVE (-2 pour l'icone, -4 pour
+					// le mot), et non la distance depuis le haut. La ligne de
+					// base se trouve donc a `Hauteur + Baseline` du haut de la
+					// boite, soit `Hauteur / 2 + Baseline` de son centre.
+					//
+					// La premiere version ecrivait `Baseline - Hauteur / 2`,
+					// le signe de la hauteur inverse : elle rendait 0,50 px la
+					// ou l'ecart reel vaut -4,50. Un demi-pixel ne corrige
+					// rien, et c'est ce qui m'a fait croire que le defaut
+					// n'etait pas la position. Le proprietaire a signale que
+					// l'icone restait mal alignee ; il avait raison.
+					const float Ecart = (HautMot * 0.5f + BaseMot)
+						- (HautIcone * 0.5f + BaseIcone);
 					Icone->SetRenderTranslation(FVector2D(0.0f, Ecart));
 
 					// ON JOURNALISE LES METRIQUES, une ligne par bouton : sans
@@ -539,13 +552,20 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 		// `PreviewImage->GetCachedGeometry()`, donc la geometrie reelle de
 		// l'image, ou qu'elle se trouve dans l'arbre.
 		{
-			// `ScaleToFit` garde le globe ROND quoi qu'il arrive : il met a
-			// l'echelle sur la plus petite des deux dimensions. Une fenetre
-			// large donne donc un globe haut comme elle, une fenetre haute un
-			// globe large comme elle -- et jamais un ovale.
+			// `ScaleToFill` : LA TEXTURE COUVRE LES DEUX DIMENSIONS.
+			//
+			// Elle est donc mise a l'echelle sur la plus GRANDE des deux, et
+			// la taille du disque a l'ecran depend alors du rapport d'aspect :
+			// ce qui tient dans une fenetre 16:9 deborderait d'une fenetre
+			// large de deux ecrans. CE N'EST PAS UNE RAISON DE REVENIR A
+			// `ScaleToFit` -- la compensation se fait dans la PROJECTION, ou
+			// le zoom vit deja, et `GlobeReglages` s'en charge.
+			//
+			// NE PAS PRENDRE `Fill` : celui-la etire sans garder le rapport et
+			// rendrait le globe OVALE sur toute fenetre qui n'est pas carree.
 			UScaleBox* GlobeScale = WidgetTree->ConstructWidget<UScaleBox>(
 				UScaleBox::StaticClass(), TEXT("GlobeScale"));
-			GlobeScale->SetStretch(EStretch::ScaleToFit);
+			GlobeScale->SetStretch(EStretch::ScaleToFill);
 
 			PreviewImage = WidgetTree->ConstructWidget<UImage>(
 				UImage::StaticClass(), TEXT("PreviewImage"));
@@ -2385,7 +2405,43 @@ void UWorldseedMenuWidget::PoserLaProjection(
 	// cette chaine depuis un test -- elle demande un widget, donc un monde.
 	Reglages.LongitudeOffsetDeg = GlobeLongitudeDeg;
 	Reglages.TiltDeg = GlobeTiltDeg;
-	Reglages.Zoom = GlobeZoom;
+
+	// --- RECULER LA CAMERA, ET COMPENSER LA FORME DE LA FENETRE -------------
+	//
+	// Le globe doit se voir EN ENTIER et de LOIN, comme depuis l'espace. Deux
+	// choses s'y opposaient, et il faut les traiter ensemble.
+	//
+	// 1. `RayonDisque` vaut 0,92 : le disque remplit presque toute sa texture,
+	//    d'ou l'impression d'etre colle a la planete. On ne touche PAS a cette
+	//    constante -- elle existe pour que le bord ait la place d'etre fondu
+	//    sur un pixel -- on recule par le ZOOM, qui est fait pour cela.
+	//
+	// 2. Le `ScaleBox` est en `ScaleToFill`, donc il met la texture a
+	//    l'echelle sur la plus GRANDE dimension de la fenetre : le diametre a
+	//    l'ecran vaut `RayonDisque * Zoom * max(largeur, hauteur)`. Sans
+	//    compensation, un cadrage juste en 16:9 deborderait d'une fenetre
+	//    large de deux ecrans -- ce depot en a une, et elle a deja fausse une
+	//    mesure ce jour-la.
+	//
+	// On vise donc une FRACTION DE LA PLUS PETITE dimension, ce qui rend le
+	// cadrage invariant : 72 % de la hauteur en 16:9 comme en 3,7:1.
+	constexpr float PartDeLaFenetre = 0.70f;
+	float Aspect = 1.0f;
+	if (const UWorld* Monde = GetWorld())
+	{
+		const FVector2D Vue = UWidgetLayoutLibrary::GetViewportSize(
+			const_cast<UWorldseedMenuWidget*>(this));
+		const float Grand = static_cast<float>(FMath::Max(Vue.X, Vue.Y));
+		const float Petit = static_cast<float>(FMath::Min(Vue.X, Vue.Y));
+		// Une taille nulle arrive a la toute premiere trame : on garde 1, ce
+		// qui rend le cadrage d'une fenetre carree -- jamais un globe geant.
+		if (Grand > 1.0f && Petit > 1.0f)
+		{
+			Aspect = Petit / Grand;
+		}
+	}
+	Reglages.Zoom = GlobeZoom * PartDeLaFenetre * Aspect
+		/ FMath::Max(WorldseedGlobe::RayonDisque, KINDA_SMALL_NUMBER);
 }
 
 
