@@ -15,6 +15,12 @@
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedRules.h"
 
+// Les metriques de police : c'est par elles qu'on aligne les lignes de base
+// des icones sur celles des mots, au lieu de centrer deux boites qui n'ont pas
+// la meme hauteur.
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
+
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -377,6 +383,52 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 				{
 					S->SetVerticalAlignment(VAlign_Center);
 				}
+
+				// --- ALIGNER LES LIGNES DE BASE, PAS LES BOITES -------------
+				//
+				// `VAlign_Center` centre les BOITES. Or l'icone et le mot ne
+				// portent pas la meme police -- Material Symbols a `Size + 3`
+				// d'un cote, la police de l'ecran a `Size` de l'autre -- et
+				// deux polices n'ont ni la meme hauteur ni la meme repartition
+				// autour de leur ligne de base. Leurs centres de boite
+				// coincident donc, et leurs centres OPTIQUES non : l'icone
+				// flottait au-dessus du mot sur « Generer » et sous lui sur
+				// « ENTRER ». Le signe de l'ecart changeait d'un bouton a
+				// l'autre, ce qui interdit toute correction en dur.
+				//
+				// Dans une boite centree, la ligne de base se trouve a
+				// `Baseline - Hauteur / 2` du centre. On decale donc l'icone
+				// de la difference des deux, ce qui fait coincider les lignes
+				// de base quelles que soient les tailles.
+				//
+				// `SetRenderTranslation` et non un padding : le decalage est
+				// un fait de RENDU, il ne doit pas deplacer la mise en page ni
+				// changer la taille du bouton.
+				if (FSlateApplication::IsInitialized())
+				{
+					const TSharedRef<FSlateFontMeasure> Mesure =
+						FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+					const FSlateFontInfo FontIcone = Icone->GetFont();
+					const FSlateFontInfo FontMot = Mot->GetFont();
+
+					const float BaseIcone = static_cast<float>(Mesure->GetBaseline(FontIcone));
+					const float BaseMot = static_cast<float>(Mesure->GetBaseline(FontMot));
+					const float HautIcone = static_cast<float>(Mesure->GetMaxCharacterHeight(FontIcone));
+					const float HautMot = static_cast<float>(Mesure->GetMaxCharacterHeight(FontMot));
+
+					const float Ecart = (BaseMot - HautMot * 0.5f)
+						- (BaseIcone - HautIcone * 0.5f);
+					Icone->SetRenderTranslation(FVector2D(0.0f, Ecart));
+
+					// ON JOURNALISE LES METRIQUES, une ligne par bouton : sans
+					// elles, un decalage qui rend mal ne se distingue pas d'un
+					// signe inverse, et l'on regle au hasard.
+					UE_LOG(LogTemp, Log,
+						TEXT("[Worldseed] menu : bouton « %s » -- icone base %.1f haut %.1f, ")
+						TEXT("mot base %.1f haut %.1f, decalage %.2f px"),
+						*Label, BaseIcone, HautIcone, BaseMot, HautMot, Ecart);
+				}
+
 				B->AddChild(Row);
 			}
 
@@ -467,6 +519,56 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 		{
 			S->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
 			S->SetOffsets(FMargin(0.0f));
+		}
+
+		// ============================================================== GLOBE
+		//
+		// IL EST POSE SUR LA RACINE, PLEIN ECRAN, ET NON DANS LE CORPS.
+		//
+		// Dans le corps il etait pris en sandwich entre l'en-tete et le
+		// bandeau, donc borne a la hauteur qui restait : un disque de sept
+		// cents pixels sur une fenetre qui en fait neuf cents. Ici il occupe
+		// la fenetre entiere et les deux barres flottent par-dessus -- ce que
+		// le volet des statistiques fait deja.
+		//
+		// L'ORDRE D'AJOUT D'UN CANVAS EST L'ORDRE DE DESSIN : pose entre le
+		// fond et la colonne maitresse, le globe passe donc DERRIERE l'en-tete
+		// et le bandeau, sans qu'aucun d'eux ait a devenir transparent.
+		//
+		// ET LE POINTAGE SUIT SANS QU'ON LUI DISE RIEN : il lit
+		// `PreviewImage->GetCachedGeometry()`, donc la geometrie reelle de
+		// l'image, ou qu'elle se trouve dans l'arbre.
+		{
+			// `ScaleToFit` garde le globe ROND quoi qu'il arrive : il met a
+			// l'echelle sur la plus petite des deux dimensions. Une fenetre
+			// large donne donc un globe haut comme elle, une fenetre haute un
+			// globe large comme elle -- et jamais un ovale.
+			UScaleBox* GlobeScale = WidgetTree->ConstructWidget<UScaleBox>(
+				UScaleBox::StaticClass(), TEXT("GlobeScale"));
+			GlobeScale->SetStretch(EStretch::ScaleToFit);
+
+			PreviewImage = WidgetTree->ConstructWidget<UImage>(
+				UImage::StaticClass(), TEXT("PreviewImage"));
+			PreviewImage->SetDesiredSizeOverride(FVector2D(GlobeSize, GlobeSize));
+
+			// UN `UImage` SANS TEXTURE DESSINE UN CARRE BLANC PLEIN, et c'est
+			// ce qu'on voyait avant que le monde soit calcule : 255/255/255 au
+			// milieu d'un fond a 48/53/62, soit le contraste maximal possible,
+			// sur la moitie de l'ecran. On le CACHE plutot que de le teinter :
+			// teinter la brosse multiplierait ensuite la texture du globe par
+			// cette teinte, et il faudrait penser a la remettre a blanc.
+			//
+			// `Hidden` et non `Collapsed` : la place reste reservee, donc la
+			// mise en page ne saute pas quand le globe arrive.
+			PreviewImage->SetVisibility(ESlateVisibility::Hidden);
+
+			GlobeScale->AddChild(PreviewImage);
+
+			if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Root->AddChild(GlobeScale)))
+			{
+				S->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+				S->SetOffsets(FMargin(0.0f));
+			}
 		}
 
 		// La colonne maitresse occupe la fenetre entiere, moins une marge.
@@ -652,27 +754,8 @@ TSharedRef<SWidget> UWorldseedMenuWidget::RebuildWidget()
 		}
 
 		// --- le monde, plein cadre -----------------------------------------
-		{
-			// `ScaleToFit` garde le globe ROND quoi qu'il arrive : il met a
-			// l'echelle sur la plus petite des deux dimensions. Une fenetre
-			// large donne donc un globe haut comme le corps, une fenetre
-			// haute un globe large comme lui -- et jamais un ovale.
-			UScaleBox* GlobeScale = WidgetTree->ConstructWidget<UScaleBox>(
-				UScaleBox::StaticClass(), TEXT("GlobeScale"));
-			GlobeScale->SetStretch(EStretch::ScaleToFit);
-
-			PreviewImage = WidgetTree->ConstructWidget<UImage>(
-				UImage::StaticClass(), TEXT("PreviewImage"));
-			PreviewImage->SetDesiredSizeOverride(FVector2D(GlobeSize, GlobeSize));
-
-			GlobeScale->AddChild(PreviewImage);
-
-			if (UOverlaySlot* S = Body->AddChildToOverlay(GlobeScale))
-			{
-				S->SetHorizontalAlignment(HAlign_Fill);
-				S->SetVerticalAlignment(VAlign_Fill);
-			}
-		}
+		// Le globe n'est PLUS ici : il est pose plein ecran sur la racine, en
+		// dessous de cette colonne. Voir le bloc GLOBE plus haut.
 
 		// --- les statistiques, en surimpression a droite --------------------
 		{
@@ -1806,6 +1889,9 @@ bool UWorldseedMenuWidget::BakeGlobe()
 	if (PreviewImage)
 	{
 		PreviewImage->SetBrushFromMaterial(GlobeMaterial);
+		// L'image arrive CACHEE, pour qu'aucun carre blanc ne s'affiche avant
+		// que le monde existe. Elle se montre des qu'elle porte quelque chose.
+		PreviewImage->SetVisibility(ESlateVisibility::Visible);
 		PreviewImage->SetDesiredSizeOverride(FVector2D(GlobeSize, GlobeSize));
 	}
 
@@ -1989,6 +2075,8 @@ void UWorldseedMenuWidget::RedrawGlobe()
 		if (PreviewImage)
 		{
 			PreviewImage->SetBrushFromTexture(PreviewTexture, false);
+			// Meme raison que pour le materiau : elle arrive cachee.
+			PreviewImage->SetVisibility(ESlateVisibility::Visible);
 			PreviewImage->SetDesiredSizeOverride(FVector2D(GlobeSize, GlobeSize));
 		}
 		return;
