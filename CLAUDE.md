@@ -11078,3 +11078,28 @@ rend « fenetre absente » pour toujours, et cela a coute deux series completes.
 `-replace` suivi d'un `Out-File -NoNewline` les colle en une seule ligne et
 detruit le message de commit. Joindre explicitement, ou reecrire le message
 entier depuis un here-string.
+
+#### CE QUI RESTE OUVERT, ET IL FAUT LE DIRE
+
+**LES SIX EVENEMENTS DE LA LISTE DU PROPRIETAIRE SONT VUS** -- pluie, ciel
+degage, ciel couvert, neige, aurore, orage. Mais **l'orage a ete vu par le
+TEMOIN**, donc force : ce qui est prouve est que la chaine atteint l'ecran et
+que les trois grandeurs sont coherentes, pas la frequence.
+
+**ET UNE MESURE NE SE RECOUPE PAS :**
+
+    la sonde annonce          109 orages/an en foret tropicale seche
+    le guet en jeu a rendu    0 sur 9 minutes, cycle comprime a 60 s
+
+A 109 par an on attendait un episode toutes les cinq minutes. Deux explications
+possibles, AUCUNE VERIFIEE : la compression a 60 s amortit plus que je ne l'ai
+estime -- les douze secondes de fondu y pesent 20 % de la periode contre 6,7 en
+regime nominal -- ou bien le point ou le pion s'est pose n'est pas celui que la
+sonde a mesure, le HUD disant *Savane, 885 mm/an* la ou elle annoncait *foret
+tropicale seche, 942*. **Tant que ce n'est pas tranche, « 109 par an » reste un
+chiffre de sonde et non un fait de jeu.**
+
+**DECISION DU PROPRIETAIRE, 28 septembre 2026** : ne pas attendre un orage
+naturel pour clore -- « je suis sur que je le verrai en jeu ». Le controle qui
+trancherait, le jour ou l'on y revient, est un guet a cadence NOMINALE (180 s)
+sur le site exact de la sonde, avec le biome relu au HUD avant de compter.
