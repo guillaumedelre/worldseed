@@ -11160,3 +11160,80 @@ modification qui ne regle pas ce qu'on voit.
 **RESTE OUVERT** : d'ou vient ce gris-bleu, puisque ni la RVT ni son ecrivain ne
 le determinent ; et les **plantes blanches du premier plan**, defaut DISTINCT
 qui n'a pas ete touche.
+
+### Un materiau non marque « Instanced Static Meshes » rend un DAMIER (28 septembre 2026)
+
+Signale en jeu : dans une oasis, deux palmiers cote a cote -- celui d'Orasot
+impeccable, ecorce brune et palmes vert clair ; celui du pack Egypt avec un
+tronc GRIS en damier et un ramage plat.
+
+**LA CAUSE, ET ELLE TIENT EN QUATRE LIGNES :**
+
+    M_tree             (tronc du palmier egyptien)   ISM = FALSE   <-- le coupable
+    M_plants           (palmes du meme palmier)      ISM = True
+    M_Assets_MasterMat (ecorce Orasot)               ISM = True
+    M_Master_Leaf      (palme Orasot)                ISM = True
+
+Un materiau non marque `used_with_instanced_static_meshes` **ne compile pas
+pour ce cas**, et le moteur lui substitue le materiau par DEFAUT -- le damier
+gris. Aucune erreur, aucun avertissement.
+
+**CE QUI REND CE DEFAUT SI DIFFICILE A VOIR** : la carte de demonstration du
+pack rend PARFAITEMENT, parce qu'elle pose des `StaticMeshActor`, ou le drapeau
+n'est pas requis. Notre semis, lui, pose **UN ISM PAR CHUNK** depuis le
+26 septembre. Le defaut est donc apparu sans qu'aucun asset du pack ne bouge,
+et il est invisible partout ailleurs que chez nous.
+
+**ET IL EXPLIQUE CHAQUE DETAIL DU SIGNALEMENT**, ce qu'aucune autre piste ne
+faisait : le TRONC seul est touche et pas les palmes ; les palmiers Orasot
+voisins vont bien ; la demo va bien.
+
+#### Quatre pistes fermees avant, et une hypothese fausse que j'ai defendue
+
+| piste | verdict |
+|---|---|
+| la demo assigne des materiaux que nous n'avons pas | **non** : elle pose ZERO override, elle rend les defauts du maillage |
+| notre semis ecrase le materiau du tronc | **non** : il ne pose aucun override non plus |
+| la RVT, comme pour les pans de falaise | **non** : `M_tree` ne porte AUCUNE expression de RVT |
+| une texture manquante ou corrompue | **non** : 2048x2048 et 1024x1024, sRGB, mips, bien assignees |
+| deux `SM_tree_01` homonymes, on charge le mauvais | **non** : le resolveur construit le chemin COMPLET, et l'autre n'est semé nulle part |
+
+**J'AI DEFENDU LE POOL DE TEXTURES, ET C'ETAIT FAUX.** L'argument etait
+seduisant -- le tronc porte 2048x2048 contre 1024 pour les palmes, donc il
+serait le premier sacrifie quand le pool deborde, ce qui expliquait « in-game
+oui, demo non ». Il n'expliquait NI le damier NI pourquoi le tronc seul.
+**Une hypothese qui explique une partie des faits et pas les autres n'est pas
+une hypothese faible : c'est une hypothese fausse**, et il faut la traiter
+comme telle au lieu de lui chercher des circonstances.
+
+#### Le balayage exhaustif, et pourquoi il fallait partir des RECETTES
+
+Un premier balayage ne cherchait que « palm » et « tree » dans les NOMS de
+maillage : il n'a rien trouve. Reparti des recettes -- donc de ce que le semis
+pose reellement -- il rend **3 maitres sans le drapeau sur 19**, et le defaut
+touche **quatre especes**, pas une :
+
+    M_tree     -> EGP:SM_tree_01                            le palmier
+    M_stones   -> EGS:SM_stone_01, _02, _03                 trois pierres
+
+**Chercher par le NOM de l'objet rate ce qui ne porte pas le mot qu'on
+cherche.** On part de la liste de ce qui est POSE, jamais d'une intuition sur
+les noms.
+
+#### La correction est un SCRIPT, parce que l'asset n'est pas versionne
+
+`Content/Stylized_Egypt/` n'est pas dans le depot -- seul `Content/Worldseed/`
+l'est. Une case cochee dans l'editeur serait perdue au prochain clone sans que
+rien ne le signale, et ce depot a deja paye cette lecon trois fois (le
+PlayerStart qui revient, les acteurs d'eclairage disparus, la grille climatique
+qu'aucun script ne rejouait). D'ou `Tools/UE/materiaux_ism.py`, idempotent par
+CONSTAT : il lit le drapeau et ne touche qu'aux materiaux qui en manquent.
+
+Il **relit** ce qu'il ecrit -- ce depot a paye qu'une ecriture de propriete de
+materiau peut ne rien faire sans rien dire -- et il **ne touche pas aux assets
+du moteur** : quand `WorldGridMaterial` apparait dans le releve, le defaut
+n'est pas le drapeau mais un maillage dont un emplacement n'a pas de materiau.
+
+**RESTE OUVERT, et c'est ce cas-la** : `SFL:SM_Flower_2` porte
+`WorldGridMaterial` a son emplacement [1]. Aucun drapeau ne corrigera cela --
+il faut lui assigner un vrai materiau, ou retirer l'espece des recettes.
