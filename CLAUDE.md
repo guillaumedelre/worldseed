@@ -10461,3 +10461,47 @@ fait promettre un chiffre hors d'atteinte.
 saisons, et la moyenne de trois mois adoucit les pointes -- au point de faire
 passer des continentaux dans le groupe tempere. Le correctif est un ecart
 unique, BALAYE sur les releves (0 a 6 degres) plutot que devine : un demi-degre.
+
+### La distribution des classes de Koppen : ce que le monde produit vraiment (28 septembre 2026)
+
+`ProbeKoppen` compte les classes sur les terres emergees et les confronte aux
+parts terrestres. Elle repond a la question qui conditionnait tout le chantier :
+notre monde produit-il des climats que la Terre connait ?
+
+**LA REPONSE EST OUI, ET C'EST LA LIGNE QUI COMPTE : zero pour cent de cellules
+sans releve.** Toute cellule emergee tombe dans une classe qui a une station
+reelle, donc recoit une vraie meteo -- il n'y a pas de melange entre la voie
+des releves et la voie de la courbe, qui se verrait comme une couture
+climatique. Ecart absolu moyen a la Terre : **2,71 points sur 22 classes**.
+
+**MAIS QUATRE CLASSES NE SONT JAMAIS ATTEINTES**, et leur releve ne sert
+jamais : `As`, `Cwa`, `Cwb`, `Dfd`. Les deux du milieu sont la MOUSSON D'ASIE
+-- un hiver sec en climat tempere -- que notre modele ne sait pas produire :
+`itczWinterFactor` ne module qu'entre les tropiques, et rien ne dessine un
+regime de mousson aux latitudes moyennes. Quatre pour cent et demi des terres
+terrestres n'ont donc pas d'equivalent ici.
+
+**ET LA SONDE RE-MESURE UN DEFAUT CONNU PAR UN CHEMIN INDEPENDANT** :
+
+    ET + EF (polaires)   28,6 %   contre 16 attendus   -- DEUX FOIS TROP
+    Aw (savane)           2,6 %   contre 11            -- QUATRE FOIS TROP PEU
+    Cfa (subtropical)    13,8 %   contre 6
+
+Le registre note depuis le 18 septembre que « 30,9 % des terres ont un ete sous
+10 degres quand la Terre en a 18 ». Or `ET` et `EF` se definissent EXACTEMENT
+par ce critere -- le mois le plus chaud sous dix degres. Deux mesures sans
+rapport l'une avec l'autre, le bulletin des biomes et le classement de Koppen,
+donnent donc le meme verdict : **ce monde est trop froid, et c'est le defaut de
+climat le plus solidement etabli du depot.**
+
+    REGLE : une sonde neuve qui retrouve un defaut deja connu par un autre
+    chemin vaut mieux qu'une sonde qui n'en trouve aucun -- c'est ce qui
+    distingue une mesure d'un compteur.
+
+**CE QUI RESTE GAGNABLE ET N'A PAS ETE FAIT** : la chaine calcule `TempMinC` et
+`TempMaxC` -- les moyennes du mois le plus froid et du plus chaud, exactement ce
+que Koppen demande -- alors que le prereglage les RECONSTRUIT depuis l'amplitude
+saisonniere. C'est cette reconstruction qui explique l'ecart entre les 4,3
+points attendus et les 7,5 mesures. Les transmettre par
+`FWorldseedClimateSample` supprimerait cette erreur ; la sonde les emploie deja,
+le jeu non.

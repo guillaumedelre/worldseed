@@ -221,6 +221,22 @@ public:
 	static FString ProbeMeteo();
 
 	/**
+	 * LA DISTRIBUTION DES CLASSES DE KOPPEN SUR LES TERRES DU MONDE.
+	 *
+	 * POURQUOI ELLE EST NECESSAIRE DEPUIS QUE LE CIEL VIENT DES RELEVES. La
+	 * couverture nuageuse d'une cellule est desormais celle d'une vraie station
+	 * du meme climat -- ce qui suppose que notre monde produise des climats que
+	 * la Terre connait. Une classe jamais atteinte est un releve qui ne sert
+	 * jamais ; une classe sur-representee est un ciel qu'on verra partout.
+	 *
+	 * ELLE JUGE LE MONDE, pas la traduction -- contrairement a `ProbeMeteo` --
+	 * donc elle prend une graine et une taille, et elle regenere.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeKoppen(int32 Seed = 20260909, float HeightMeters = 32000.0f,
+		int32 ResolutionY = 1024);
+
+	/**
 	 * LE PROFIL PAR BANDE DE LATITUDE -- fait-il froid LA OU il doit ?
 	 *
 	 * POURQUOI ELLE MANQUAIT. ProbeBiomes donne des PARTS, ProbeTerre des

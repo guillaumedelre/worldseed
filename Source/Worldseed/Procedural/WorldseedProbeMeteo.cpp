@@ -297,3 +297,133 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 
 	return FString::Join(L, TEXT("\n"));
 }
+
+FString UWorldseedProbeLibrary::ProbeKoppen(int32 Seed, float HeightMeters,
+	int32 ResolutionY)
+{
+	WorldseedPipeline::ReloadRules();
+
+	WorldseedPipeline::FResult Monde;
+	FString Erreur;
+	if (!WorldseedPipeline::Generate(Seed, HeightMeters, ResolutionY, Monde, Erreur))
+	{
+		return FString::Printf(TEXT("generation impossible : %s"), *Erreur);
+	}
+	const UWorldseedRules* const Regles = WorldseedPipeline::GetRules(Erreur);
+	if (!Regles) { return FString::Printf(TEXT("regles illisibles : %s"), *Erreur); }
+	if (!Monde.bHasClimate) { return TEXT("le climat n'a pas tourne"); }
+
+	const FWorldseedClimatePresetRules ReglesPreset =
+		FWorldseedClimatePresetRules::FromRules(*Regles);
+
+	TArray<FWorldseedReleveReel> Releves;
+	WorldseedClimatsReels::Charger(Releves, Erreur);
+
+	const FWorldseedGeometry& Geo = Monde.Geometry;
+	const int32 Total = Geo.CellCount();
+
+	TArray<int32> Compte;
+	Compte.SetNumZeroed(static_cast<int32>(EWorldseedKoppen::Count));
+	int32 Terres = 0;
+
+	for (int32 I = 0; I < Total; ++I)
+	{
+		// LES TERRES SEULEMENT : la mer a bien un climat -- c'est meme lui que
+		// le joueur subit en bateau -- mais la comparaison qui suit porte sur
+		// des parts de TERRES emergees, seules valeurs terrestres publiees.
+		if (Monde.ElevationM[I] <= 0.0f) { continue; }
+		++Terres;
+
+		const int32 Row = I / Geo.NX;
+		const float Lat = Geo.LatitudeDegForRow(Row);
+
+		const FWorldseedClimateResult& Cl = Monde.Climate;
+		FWorldseedKoppenEntree E = WorldseedKoppen::DepuisChamps(
+			Cl.TempMeanC[I], Cl.PrecipMm[I],
+			Cl.SeasonalAmpC.IsValidIndex(I) ? Cl.SeasonalAmpC[I] : 12.0f,
+			WorldseedClimate::SummerRainFraction(*Regles, Geo, Lat),
+			ReglesPreset.SeasonContrastExponent);
+
+		// LES VRAIES POINTES, QUAND LE MONDE LES PORTE. La chaine calcule
+		// `TempMinC` et `TempMaxC` -- les moyennes du mois le plus froid et du
+		// plus chaud, exactement ce que Koppen demande -- alors que le
+		// prereglage les RECONSTRUIT depuis l'amplitude. Les employer ici dit ce
+		// que le classement vaudrait si on les lui transmettait, et c'est un
+		// chantier a part : `FWorldseedClimateSample` ne les porte pas encore.
+		if (Cl.TempMinC.IsValidIndex(I) && Cl.TempMaxC.IsValidIndex(I))
+		{
+			E.TFroidC = Cl.TempMinC[I];
+			E.TChaudC = Cl.TempMaxC[I];
+		}
+
+		const EWorldseedKoppen K = WorldseedKoppen::Classer(
+			E, ReglesPreset.KoppenPointeMensuelleC);
+		++Compte[static_cast<int32>(K)];
+	}
+
+	// LA REFERENCE TERRESTRE, en part des terres emergees. Valeurs usuelles de
+	// la litterature, arrondies : elles servent d'ORDRE DE GRANDEUR, pas de
+	// cible -- nos continents ne sont pas ceux de la Terre, et le depot a deja
+	// une regle contre les scores qui jugent au lieu de comparer.
+	struct FRef { EWorldseedKoppen K; float Pct; };
+	static const FRef Terre[] = {
+		{ EWorldseedKoppen::Af,  6.0f }, { EWorldseedKoppen::Am,  4.0f },
+		{ EWorldseedKoppen::Aw, 11.0f }, { EWorldseedKoppen::As,  1.0f },
+		{ EWorldseedKoppen::BWh, 9.0f }, { EWorldseedKoppen::BWk, 5.0f },
+		{ EWorldseedKoppen::BSh, 6.0f }, { EWorldseedKoppen::BSk, 8.0f },
+		{ EWorldseedKoppen::Csa, 1.5f }, { EWorldseedKoppen::Csb, 0.8f },
+		{ EWorldseedKoppen::Csc, 0.1f }, { EWorldseedKoppen::Cwa, 3.0f },
+		{ EWorldseedKoppen::Cwb, 1.5f }, { EWorldseedKoppen::Cfa, 6.0f },
+		{ EWorldseedKoppen::Cfb, 4.0f }, { EWorldseedKoppen::Cfc, 0.3f },
+		{ EWorldseedKoppen::Dfa, 2.0f }, { EWorldseedKoppen::Dfb, 5.0f },
+		{ EWorldseedKoppen::Dfc, 9.0f }, { EWorldseedKoppen::Dfd, 1.0f },
+		{ EWorldseedKoppen::ET,  8.0f }, { EWorldseedKoppen::EF,  8.0f },
+	};
+
+	TArray<FString> L;
+	L.Add(FString::Printf(
+		TEXT("=== CLASSES DE KOPPEN SUR LES TERRES -- graine %d, %.0f km, %d lignes ==="),
+		Seed, HeightMeters / 1000.0f, ResolutionY));
+	L.Add(FString::Printf(TEXT("%d cellules emergees sur %d"), Terres, Total));
+	L.Add(TEXT(""));
+	L.Add(TEXT("classe   part des terres   Terre   ecart   releve"));
+	L.Add(TEXT("---------------------------------------------------------"));
+
+	const float Inv = (Terres > 0) ? 100.0f / Terres : 0.0f;
+	double SommeEcart = 0.0;
+	int32 SansReleve = 0;
+	int32 Jamais = 0;
+
+	for (const FRef& R : Terre)
+	{
+		const float Part = Compte[static_cast<int32>(R.K)] * Inv;
+		const bool bReleve = Releves.ContainsByPredicate(
+			[&R](const FWorldseedReleveReel& X) { return X.Koppen == R.K; });
+		if (!bReleve && Compte[static_cast<int32>(R.K)] > 0)
+		{
+			SansReleve += Compte[static_cast<int32>(R.K)];
+		}
+		if (Compte[static_cast<int32>(R.K)] == 0) { ++Jamais; }
+		SommeEcart += FMath::Abs(Part - R.Pct);
+
+		L.Add(FString::Printf(TEXT("%-7s %13.2f %%  %5.1f %%  %+6.1f   %s"),
+			WorldseedKoppen::Nom(R.K), Part, R.Pct, Part - R.Pct,
+			bReleve ? TEXT("oui") : TEXT("AUCUN")));
+	}
+
+	L.Add(TEXT("---------------------------------------------------------"));
+	L.Add(FString::Printf(
+		TEXT("ecart absolu moyen a la Terre : %.2f points sur 22 classes"),
+		SommeEcart / 22.0));
+	L.Add(FString::Printf(
+		TEXT("classes JAMAIS atteintes : %d sur 22 -- leur releve ne sert jamais"),
+		Jamais));
+
+	// LE CHIFFRE QUI DECIDE SI LE CLASSEMENT EST UTILISABLE : une cellule dont
+	// la classe n'a pas de releve retomberait sur la courbe, et le melange des
+	// deux voies se verrait comme une couture climatique.
+	L.Add(FString::Printf(
+		TEXT("cellules sans releve pour leur classe : %.2f %% des terres"),
+		SansReleve * Inv));
+	return FString::Join(L, TEXT("\n"));
+}
