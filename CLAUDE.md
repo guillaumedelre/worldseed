@@ -9946,3 +9946,84 @@ Et le fichier avait **une ligne en LF seul** au milieu d'un fichier CRLF,
 laissee par une edition precedente : c'est ce qui a fait echouer la variante
 « awk avec ORS=CRLF », qui aurait normalise cette ligne au passage. Un
 `grep -c` de fin de ligne ne l'avait pas vue ; `od -c` si.
+
+### Trois packs rebrasses, et les temoins qui ont evite quatre fautes (28 septembre 2026)
+
+Session de remaniement de l'habillage : l'Egypte rendue aux biomes secs,
+LowPolyForest remplace par Stylized_Forest, et un sable propre a la plage. Ce
+qui vaut d'etre garde n'est pas le resultat mais les mesures qui ont corrige
+la route en chemin.
+
+**LE RATIO HAUTEUR/LARGEUR NE DISTINGUE PAS UN CONIFERE D'UN FEUILLU.** Je
+m'appretais a classer `SFT:SM_tree_04` et `_05` comme coniferes sur leur
+elancement (2,41 et 2,75). Releve sur des TEMOINS CONNUS : coniferes 1,39 /
+1,64 / 1,97 / 2,04, feuillus 1,44 / 1,59 / 1,44. **Les plages se recouvrent**,
+le discriminant ne discrimine rien. Une mesure qui ne sait pas classer le cas
+dont on connait deja la reponse ne peut pas trancher les autres -- la taiga et
+l'alpin gardent donc `SFL:SM_Pine` / `SM_Pine_2`, et l'allure des sept arbres
+de Stylized_Forest reste **a REGARDER**.
+
+**UNE CRAINTE ANNONCEE DANS UN CORPS DE COMMIT, PUIS REFUTEE PAR LA MESURE.**
+J'avais ecrit que remplacer `LPF:SM_Env_Grass_small` -- quatre triangles --
+pouvait couter cher, le tapis pesant 67 % des instances du monde. Mesure :
+les tapis passent de 231 a 175 triangles moyens, **-24 % a -43 %**. Les trois
+herbes de Stylized_Forest font 40 a 48 triangles et DILUENT `SFL:SM_Grass`,
+qui en fait 307 et portait seul le gros du poids. Ajouter des maillages
+LEGERS a une couche l'allege, parce que le cout se lit en moyenne PONDEREE et
+non par maillage.
+
+**ET LA MEME MESURE A TROUVE UN MUR QUE JE VENAIS DE POSER.** `SFT:SM_stump_02`
+fait 3,83 m, soit 4,6 m rendus a l'echelle de la couche, quand les souches
+voisines en font 1,5. D'ou `Tools/UE/releve_couches.py`, qui compare deux
+etats du fichier de recettes et rend, par couche, les triangles moyens
+ponderes ET la hauteur rendue du plus grand. **Les deux pieges de ce depot --
+le mur et le cout -- ne se voient que la.**
+
+**`clear_all_material_instance_parameters` EFFACE TOUTE L'INSTANCE.** Employe
+pour retirer UNE surcharge de temoin, il a emporte `TexArid`, `TexGrass`,
+`TexRock` et `TexMoss` -- soit l'habillage entier du pack. Rattrape par
+`git checkout`, l'asset etant sous `Content/Worldseed/`. Pour retirer une
+surcharge, reposer la valeur voulue ; pour un A/B, restaurer par git.
+
+**`T_Moss` N'EST PAS UN TEMOIN DE COULEUR FRANCHE.** Pose dans le canal du
+sable de plage pour voir OU il mord, il n'a pas rendu du vert : les textures
+de ce materiau sont peu colorees, la couleur venant de la TEINTE du biome
+qui les multiplie. Le temoin restait utilisable -- la zone a bouge de 111,6
+sur 765 quand la falaise bougeait de 20,8 et le ciel de 12,2 -- mais par son
+ECART, pas par sa couleur. Un vrai temoin franc demande une texture unie et
+saturee, pas une texture du pack.
+
+**UNE CAPTURE NE VAUT QUE PAR SON SUJET, et l'arret `falaise` n'a pas de
+plage.** Premiere serie de photos prise au pied d'une falaise cotiere : la
+bande claire qu'on y prend pour un estran n'en est pas un, l'estran demandant
+une pente DOUCE (`beachSlopeSteepDeg` = 30 degres). Le temoin n'a donc rien
+montre, et j'ai failli conclure que la greffe ne marchait pas.
+
+**COMMENT TROUVER UN POINT D'UN BIOME DONNE, sans sonde dediee.**
+`probe_carte(graine, hauteur, resolution)` ecrit la carte du monde a plat,
+UN PIXEL PAR CELLULE, dans `Saved/Worldseed/Cartes/`. On y cherche la couleur
+du biome voulu -- celle du registre, 226/212/172 pour la plage -- en exigeant
+des VOISINS de la meme couleur, sans quoi on tombe sur un pixel isole. Puis
+`X = (col / largeur - 0,5) * 64000` et `Y = (ligne / hauteur - 0,5) * 32000`,
+la ligne 0 etant au SUD. Mesure : 951 plages groupees sur la graine 20260909.
+La graine du lancement DIRECT est `FallbackSeed` = 20260909, 32000 m, 2048.
+
+**L'API DES EXPRESSIONS DE MATERIAU EST `MaterialEditingLibrary`, pas une
+propriete.** `M.get_editor_property("expressions")` est PROTEGE et
+`expression_collection` n'existe pas ; c'est
+`unreal.MaterialEditingLibrary.get_material_expressions(M)`, avec
+`get_inputs_for_material_expression`, `get_material_expression_input_names` et
+`connect_material_expressions`. De quoi cartographier un graphe entier depuis
+un commandlet, donc SANS MCP -- ce qui compte, le lien tombant a chaque
+recompilation.
+
+**PIEGE POWERSHELL REFAIT : les variables y sont INSENSIBLES A LA CASSE.**
+`$a = Moy $A ...` ecrase le chemin `$A` avec le resultat des la premiere
+iteration, et les suivantes echouent sur « impossible de trouver une surcharge
+pour FromFile ». Deja consigne en septembre ; refait. Ne jamais faire differer
+deux variables par la seule casse.
+
+**UNE SECTION HORS DE `biomes` DANS LES RECETTES.** `estran` porte ses propres
+couches, et une boucle qui ne parcourt que `biomes` lui retire ses galets --
+donc tout ce qui pousse sur la plage. Verifier les cles de premier niveau
+avant tout traitement de masse sur ce fichier.
