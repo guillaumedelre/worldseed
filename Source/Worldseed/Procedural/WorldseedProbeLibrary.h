@@ -205,6 +205,22 @@ public:
 		int32 ResolutionY = 1024);
 
 	/**
+	 * LE BULLETIN METEO : notre ciel ressemble-t-il a celui de la Terre ?
+	 *
+	 * `ProbeTerre` employait deja les vingt-trois releves de stations reelles,
+	 * mais pour juger la CASE de Whittaker ou chacun tombe. Les memes releves
+	 * portent, saison par saison, le pourcentage de ciel couvert, la pluie et
+	 * la neige -- et personne n'avait confronte cela a notre conversion.
+	 *
+	 * ELLE NE PREND NI GRAINE NI TAILLE, et c'est voulu : elle ne juge pas le
+	 * monde mais la TRADUCTION des millimetres vers un prereglage UDS. Les
+	 * climats d'entree sont ceux de la Terre. Un ecart se corrige donc dans la
+	 * section `uds` de world_rules.json, jamais dans le climat.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Worldseed|Sondes")
+	static FString ProbeMeteo();
+
+	/**
 	 * LE PROFIL PAR BANDE DE LATITUDE -- fait-il froid LA OU il doit ?
 	 *
 	 * POURQUOI ELLE MANQUAIT. ProbeBiomes donne des PARTS, ProbeTerre des

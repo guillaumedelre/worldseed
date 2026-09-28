@@ -168,6 +168,35 @@ namespace WorldseedClimatsReels
 			R.FractionEte = static_cast<float>(FractionEte(*Preset));
 			R.AttenduA = A.A;
 			R.AttenduB = A.B;
+
+			// LE DETAIL PAR SAISON, pour le bulletin METEO. Les noms suivent
+			// l'ordre de `EWorldseedSeason`, et non celui du fichier, qui
+			// commence lui aussi par l'hiver -- les deux coincident, mais la
+			// table le dit au lieu de le supposer.
+			// ON EMPLOIE LA TABLE `Saisons` DU FICHIER, et non une seconde :
+			// mon premier jet en declarait une locale, que le compilateur a
+			// refusee -- « masque la declaration globale ». Il avait raison
+			// deux fois, la duplication etant aussi ce que le depot interdit.
+			float TmoyMin = TNumericLimits<float>::Max();
+			float TmoyMax = TNumericLimits<float>::Lowest();
+			for (int32 S = 0; S < 4; ++S)
+			{
+				const FString Prefixe(Saisons[S]);
+				R.CouvertPct[S] = static_cast<float>(
+					Champ(*Preset, Prefixe + TEXT(" Cloudy Percentage")));
+				R.PluieSaisonMm[S] = static_cast<float>(
+					Champ(*Preset, Prefixe + TEXT(" Rainfall (mm)")));
+				R.NeigeSaisonMm[S] = static_cast<float>(
+					Champ(*Preset, Prefixe + TEXT(" Snowfall (mm)")));
+
+				const float Moyenne = 0.5f * static_cast<float>(
+					Champ(*Preset, Prefixe + TEXT(" Average High Temp (C)"))
+					+ Champ(*Preset, Prefixe + TEXT(" Average Low Temp (C)")));
+				TmoyMin = FMath::Min(TmoyMin, Moyenne);
+				TmoyMax = FMath::Max(TmoyMax, Moyenne);
+			}
+			R.AmplitudeC = TmoyMax - TmoyMin;
+
 			Out.Add(MoveTemp(R));
 		}
 

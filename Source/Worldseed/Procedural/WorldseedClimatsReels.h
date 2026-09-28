@@ -45,6 +45,29 @@ struct WORLDSEED_API FWorldseedReleveReel
 	{
 		return Case == AttenduA || Case == AttenduB;
 	}
+
+	// --- CE QUE LE BULLETIN DES BIOMES N'AVAIT PAS BESOIN DE SAVOIR ----------
+	//
+	// Les quatre champs ci-dessus resument l'annee, ce qui suffit a ranger un
+	// climat dans une case de Whittaker. La METEO, elle, se juge saison par
+	// saison : c'est la meme donnee source, lue une seule fois, et c'est tout
+	// l'interet de l'etendre ici plutot que de relire le JSON ailleurs.
+	//
+	// ORDRE DES SAISONS : hiver, printemps, ete, automne -- celui de
+	// `EWorldseedSeason`, pour qu'un indice se promene d'une structure a
+	// l'autre sans traduction.
+
+	/** Part du temps ou le ciel est charge, en pourcentage. */
+	float CouvertPct[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	/** Pluie de la saison, en millimetres par MOIS -- pas par saison. */
+	float PluieSaisonMm[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	/** Neige de la saison, en EQUIVALENT-EAU mensuel, jamais une hauteur. */
+	float NeigeSaisonMm[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	/** Ecart entre la saison la plus froide et la plus chaude, en degres. */
+	float AmplitudeC = 0.0f;
 };
 
 /**
