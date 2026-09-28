@@ -18,6 +18,7 @@
 
 #include "Procedural/WorldseedProbeLibrary.h"
 
+#include "Procedural/WorldseedClimate.h"
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedClimatsReels.h"
 #include "Procedural/WorldseedPipeline.h"
@@ -125,6 +126,36 @@ FString UWorldseedProbeLibrary::ProbeMeteo()
 	L.Add(FString::Printf(
 		TEXT("ecart absolu moyen sur %d saisons-climats : couvert %.1f points, pluie %.1f mm/mois"),
 		N, SommeEcartCouvert / FMath::Max(1, N), SommeEcartMm / FMath::Max(1, N)));
+
+	// --- LA FRACTION ESTIVALE : LA PREDIT-ON SEULEMENT ? ---------------------
+	//
+	// POURQUOI CE CONTROLE EXISTE. Une mesure hors moteur a montre que
+	// repartir la pluie d'apres la part tombant au semestre chaud ramenerait
+	// l'ecart de 25,7 a 15,0 mm par mois. Mais elle employait la fraction
+	// estivale REELLE des releves -- c'est donc un PLAFOND, atteignable
+	// seulement si notre modele sait predire cette fraction. Le verifier avant
+	// de coder evite de viser une cible hors de portee.
+	{
+		FWorldseedGeometry Geo;
+		Geo.LatSpanDeg = 180.0f;
+
+		double SommeEcartFe = 0.0;
+		double SommeFeNotre = 0.0;
+		double SommeFeReelle = 0.0;
+		for (const FWorldseedReleveReel& R : Releves)
+		{
+			const float Notre = WorldseedClimate::SummerRainFraction(
+				*Regles, Geo, R.LatitudeDeg);
+			SommeEcartFe += FMath::Abs(Notre - R.FractionEte);
+			SommeFeNotre += Notre;
+			SommeFeReelle += R.FractionEte;
+		}
+		const int32 M = FMath::Max(1, Releves.Num());
+		L.Add(FString::Printf(
+			TEXT("fraction estivale : la notre %.3f en moyenne, le reel %.3f, ecart moyen %.3f"),
+			SommeFeNotre / M, SommeFeReelle / M, SommeEcartFe / M));
+		L.Add(TEXT("  (0,5 = pluie egale entre semestres ; 1 = tout au semestre chaud)"));
+	}
 	L.Add(FString::Printf(TEXT("pire ecart de couverture : %+.1f points  (%s)"),
 		PireCouvert, *PireNom));
 	L.Add(TEXT(""));

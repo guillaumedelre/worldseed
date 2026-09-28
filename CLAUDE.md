@@ -10088,3 +10088,64 @@ controle qui le verrait est la ligne de journal ci-dessus.
 prereglage traduit la pluie annuelle en frequence de ciel couvert ; ce qu'il
 atteint en pointe se regle dans la section `uds` de `world_rules.json`, et
 personne ne l'a encore chiffre.
+
+### Regler la meteo : trois pistes mesurees, TROIS REFUTEES (28 septembre 2026)
+
+Demande du proprietaire : « constater pour chaque climat les habitudes de
+precipitation moyennes sur Terre et relier ce constat a UDW ». Le constat
+existait deja -- `climats_reels.json` porte, saison par saison, le ciel
+couvert, la pluie et la neige de vingt-trois stations -- mais personne ne
+l'avait confronte a notre conversion. D'ou `ProbeMeteo`, qui appelle
+`WorldseedClimatePreset::Build`, la MEME fonction que le pilote du ciel.
+
+**LE BULLETIN A SERVI A CE POUR QUOI IL EXISTE : il a dit ou NE PAS chercher.**
+
+| piste | ecart de couverture | ecart de pluie |
+|---|---|---|
+| etat actuel | 16,3 points | 25,7 mm/mois |
+| recalibrer les trois cles au mieux | **12,7** | -- |
+| + plancher fonction de la pluie ANNUELLE | **12,2** | -- |
+| interpoler les vingt-trois releves | 13,9 | **37,8 -- pire** |
+| repartir par la fraction estivale REELLE | -- | **15,0** |
+| ... par la NOTRE, fausse de 0,185 | -- | **34,0 -- pire** |
+| temoin : repartition uniforme | -- | 32,3 |
+
+**LA COUVERTURE NE SE PREDIT PAS DEPUIS LA PLUIE, et c'est physique.** Aucune
+forme testee ne passe sous douze points, et la meilleure parametrisation
+DEGRADE les deserts -- deux pour cent de ciel couvert rendus trente. La raison :
+deux climats a quarante millimetres par mois portent 35 ou 78 pour cent de
+couverture selon que la pluie est convective ou frontale. Une averse tropicale
+tombe en deux heures sous un ciel par ailleurs degage ; une pluie frontale
+oceanique tombe sous un gris permanent. **La quantite ne dit pas le type.** Ne
+pas retoucher `cloudyFloorPct`, `cloudySpanPct` ni `cloudyPrecipScaleMm` : le
+gain plafonne a trois points et il se paie sur les cas qui marchent.
+
+**ET LA PISTE QUI SEMBLAIT LA BONNE AURAIT REGRESSE.** `SeasonalRainFactors`
+repartit la pluie d'apres la LATITUDE SEULE, alors que la chaine calcule deja
+une fraction estivale par cellule (`WorldseedClimate::SummerRainFraction`).
+Mesure hors moteur : s'en servir ramenerait l'ecart de 25,7 a 15,0 mm par mois,
+soit 41 pour cent. J'ai propose de le coder, et le proprietaire a accepte.
+
+**LE CONTROLE QUI A SAUVE LE CHANTIER TIENT EN UNE LIGNE** : ce plafond
+employait la fraction estivale REELLE des releves. Notre modele la predit-il
+seulement ? Mesure ajoutee au bulletin -- moyenne 0,515 contre 0,494 pour le
+reel, donc JUSTE EN MOYENNE, mais **ecart individuel 0,185** sur une grandeur
+bornee a [0, 1]. Avec une fraction fausse de 0,185, la repartition rend
+**34,0 mm : pire que le modele actuel, et pire que l'uniforme.**
+
+    REGLE : un plafond mesure avec la donnee PARFAITE n'est atteignable que si
+    l'on sait produire cette donnee. Verifier qu'on la predit AVANT de batir
+    dessus -- ici, le plafond etait a 15 et le resultat reel a 34.
+
+C'est le meme piege que le score de `terre.py` qui COMPARE sans juger, ou que
+l'estimation JavaScript qui recopiait une formule : une mesure juste sur une
+question qui n'est pas celle qu'on croit poser.
+
+**CE QUI RESTE VRAI, ET C'EST LE RESULTAT UTILE.** Le modele en vigueur est
+MEILLEUR que toutes les alternatives testees : il capture un cinquieme du
+signal saisonnier la ou l'uniforme n'en capture rien, et aucune des quatre
+pistes ne fait mieux. Le vrai defaut est d'un cran en amont --
+`SummerRainFraction` se trompe de 0,185 par climat -- et c'est un chantier de
+CLIMAT, pas de meteo. Le reel va jusqu'a CINQUANTE fois entre saison seche et
+humide (savane a hiver sec : 2 mm en hiver, 155 en automne) quand nos facteurs
+ITCZ plafonnent a neuf.
