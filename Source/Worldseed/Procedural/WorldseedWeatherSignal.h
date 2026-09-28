@@ -32,4 +32,28 @@ namespace WorldseedWeatherSignal
 	 * arriver avec la pluie, alors qu'il se leve justement quand elle cesse.
 	 */
 	WORLDSEED_API float Haze(float TimeSeconds, float PeriodS, int32 Seed);
+
+	/**
+	 * Rend UNIFORME la sortie de `Storminess`, pour qu'un seuil soit une part.
+	 *
+	 * POURQUOI C'EST NECESSAIRE. `Storminess` somme trois octaves : sa loi est
+	 * une cloche resserree autour d'un demi, pas une loi uniforme. Seuiller
+	 * directement dessus ne rend donc PAS la fraction de temps qu'on demande --
+	 * c'est le piege du « seuil n'est pas une part » que ce depot a paye quatre
+	 * fois. Apres cette transformee, demander les cinq pour cent du haut donne
+	 * bien cinq pour cent du temps.
+	 *
+	 * ⚠ SA TABLE EST UNE MESURE, PAS UN CALCUL, et c'est tout le point. Une
+	 * premiere version posait une cloche d'ecart-type 0,186, obtenu par
+	 * l'algebre d'une somme de trois lois uniformes. Deux choses y etaient
+	 * fausses : `ValueNoise` n'est pas uniforme -- il interpole deux tirages par
+	 * un smoothstep, ce qui resserre la loi -- et la somme a un SUPPORT BORNE,
+	 * donc ses queues tombent bien plus vite qu'une cloche. La taiga voyait
+	 * alors 0,5 % de precipitation pour les 6 % visees, un facteur douze.
+	 *
+	 * `Worldseed.Meteo.LeSignalEstUniforme` releve la loi reelle et verifie que
+	 * cette table lui correspond encore : changer les poids des octaves fait
+	 * donc tomber un test, au lieu de deregler le ciel en silence.
+	 */
+	WORLDSEED_API float Uniformiser(float Storm);
 }

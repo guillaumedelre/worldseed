@@ -27,21 +27,6 @@ namespace
 	 */
 	constexpr float UdsEchelle = 10.0f;
 
-	/**
-	 * L'ecart-type du signal d'agitation, qui sert a le rendre UNIFORME.
-	 *
-	 * `Storminess` somme trois octaves de bruit aux poids 0,55 / 0,30 / 0,15 :
-	 * si chaque octave est uniforme sur [0, 1], la somme a pour ecart-type la
-	 * racine de (0,55^2 + 0,30^2 + 0,15^2) / 12, soit 0,186. C'est une loi en
-	 * cloche, et c'est pourquoi un seuil pose dessus ne rend pas la part qu'on
-	 * lui demande.
-	 *
-	 * ELLE DECRIT LE SIGNAL, PAS LE MONDE : sa place n'est donc pas dans
-	 * world_rules.json, qui ne parle que du monde. Elle se REMESURE si les
-	 * poids des octaves changent -- le bulletin du ciel le verrait tout de
-	 * suite, la part de temps sous la pluie cessant de suivre la quantite.
-	 */
-	constexpr float StormEcartType = 0.186f;
 
 	// SEUILS D'AFFICHAGE DU REGIME DOMINANT, SUR L'ECHELLE D'UDS.
 	//
@@ -122,10 +107,14 @@ namespace WorldseedWeatherState
 		// tropicale humide : un seuil pose a 0,15 donnait 96 % du temps sous la
 		// pluie, le meme pose a 0,75 en donnait 0,4 -- deux fois faux, et dans
 		// les deux sens. On rend donc le signal UNIFORME avant de le comparer,
-		// par l'approximation logistique de la loi normale, apres quoi une part
-		// demandee est la part obtenue.
-		const float StormUniforme = 1.0f / (1.0f + FMath::Exp(
-			-1.702f * (Storm - 0.5f) / StormEcartType));
+		// apres quoi une part demandee est la part obtenue.
+		//
+		// ET LA TRANSFORMEE EST UNE MESURE, PAS UN CALCUL. Une premiere version
+		// posait ici une cloche d'ecart-type 0,186, obtenu par l'algebre d'une
+		// somme de trois lois uniformes -- sans jamais relever la loi reelle.
+		// `ValueNoise` n'est pas uniforme, et la somme a un support borne : la
+		// taiga voyait alors 0,5 % de precipitation pour les 6 % visees.
+		const float StormUniforme = WorldseedWeatherSignal::Uniformiser(Storm);
 
 		const float Threshold = 1.0f - FractionPluvieuse;
 		const float Occurrence = FMath::Clamp(

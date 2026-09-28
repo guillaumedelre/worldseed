@@ -6,6 +6,7 @@
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedWeatherState.h"
+#include "Procedural/WorldseedWeatherSignal.h"
 
 #include "Misc/AutomationTest.h"
 
@@ -109,8 +110,17 @@ bool FWorldseedMeteoDistingueLesClimats::RunTest(const FString&)
 
 	// LE TEMOIN : une foret tropicale doit pleuvoir souvent, sans quoi
 	// « plus qu'un desert » pourrait vouloir dire 2 % contre 0 %.
-	TestTrue(TEXT("la foret tropicale est arrosee plus d'un tiers du temps"),
-		Tropique > 0.33f);
+	//
+	// LE SEUIL EST PASSE D'UN TIERS A UN CINQUIEME LE 28 SEPTEMBRE 2026, et ce
+	// n'est pas un elargissement de complaisance : l'attendu etait cale sur un
+	// modele ou la pluie se declenchait des qu'il y avait des NUAGES, ce qui
+	// donnait 96 % du temps sous la pluie en foret tropicale. La frequence vient
+	// desormais de la QUANTITE, et le releve terrestre place une foret tropicale
+	// entre vingt et trente pour cent du temps -- on en mesure 32. C'est donc
+	// l'ancien attendu qui etait faux, pas la mesure, et le garder aurait exige
+	// de rendre le modele moins juste pour qu'un test passe.
+	TestTrue(TEXT("la foret tropicale est arrosee au moins un cinquieme du temps"),
+		Tropique > 0.20f);
 
 	return true;
 }
@@ -167,6 +177,114 @@ bool FWorldseedMeteoNeigeAuFroid::RunTest(const FString&)
 
 	TestTrue(TEXT("il neige quand il fait froid"), NeigeFroide > 0.05f);
 	TestTrue(TEXT("et jamais a quatorze degres, A PLUIE EGALE"), NeigeDouce < 0.01f);
+
+	return true;
+}
+
+
+/**
+ * LA LOI DU SIGNAL D'AGITATION SE MESURE, ELLE NE SE CALCULE PAS.
+ *
+ * ⚠ CE TEST EXISTE PARCE QUE J'AI FAIT L'INVERSE, le 28 septembre 2026, dans
+ * l'heure meme ou j'ecrivais au registre qu'un seuil n'est pas une part.
+ * `Storminess` somme trois octaves : sa loi est une cloche, donc un seuil pose
+ * dessus ne rend pas la fraction demandee, et il faut l'uniformiser avant. J'ai
+ * pose son ecart-type par l'algebre d'une somme de trois lois uniformes --
+ * 0,186 -- sans jamais le relever. Deux choses etaient fausses :
+ *   - `ValueNoise` n'est PAS uniforme : il interpole deux tirages uniformes par
+ *     un smoothstep, ce qui resserre la loi autour de sa moyenne ;
+ *   - la somme a un SUPPORT BORNE, donc ses queues tombent bien plus vite que
+ *     celles d'une cloche -- et c'est precisement dans les queues que le seuil
+ *     de pluie travaille.
+ * Consequence mesuree : la taiga voyait 0,5 % de precipitation pour les 6 %
+ * que le modele visait, soit un facteur DOUZE.
+ *
+ * CE QU'IL GARDE : que `Uniformiser` rende bien une loi UNIFORME sur le signal
+ * reel. Si les poids des octaves changent, ou si `ValueNoise` change de forme,
+ * la table interne cesse de correspondre et ce test tombe -- au lieu que le ciel
+ * se deregle en silence.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoSignalUniforme,
+	"Worldseed.Meteo.LeSignalEstUniforme",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoSignalUniforme::RunTest(const FString& Parameters)
+{
+	// ON ECHANTILLONNE COMME LE JEU, pas au hasard : meme periode, meme pas que
+	// la sonde du ciel, et plusieurs graines pour ne pas mesurer une seule
+	// realisation du bruit.
+	constexpr float PeriodeS = 180.0f;
+	constexpr float PasS = PeriodeS / 24.0f;
+	constexpr int32 ParGraine = 12960;
+	const int32 Graines[] = { 20260909, 1337, 424242, 7 };
+
+	TArray<float> Brut;
+	TArray<float> Uniforme;
+	Brut.Reserve(ParGraine * UE_ARRAY_COUNT(Graines));
+	Uniforme.Reserve(Brut.Max());
+
+	for (const int32 Graine : Graines)
+	{
+		for (int32 N = 0; N < ParGraine; ++N)
+		{
+			const float S = WorldseedWeatherSignal::Storminess(
+				static_cast<float>(N) * PasS, PeriodeS, Graine);
+			Brut.Add(S);
+			Uniforme.Add(WorldseedWeatherSignal::Uniformiser(S));
+		}
+	}
+
+	Brut.Sort();
+	Uniforme.Sort();
+
+	auto Quantile = [](const TArray<float>& Tri, float P)
+	{
+		const int32 I = FMath::Clamp(
+			FMath::RoundToInt(P * (Tri.Num() - 1)), 0, Tri.Num() - 1);
+		return Tri[I];
+	};
+
+	// LE RELEVE PART AU JOURNAL MEME QUAND LE TEST PASSE : c'est lui qui
+	// permettra de recalibrer la table sans refaire l'instrument.
+	FString LigneBrut, LigneUni;
+	for (int32 K = 0; K <= 20; ++K)
+	{
+		const float P = static_cast<float>(K) / 20.0f;
+		LigneBrut += FString::Printf(TEXT("%.4f, "), Quantile(Brut, P));
+		LigneUni += FString::Printf(TEXT("%.3f "), Quantile(Uniforme, P));
+	}
+	AddInfo(FString::Printf(TEXT("quantiles du signal BRUT (pas de 5 %%) :\n    %s"), *LigneBrut));
+	AddInfo(FString::Printf(TEXT("quantiles APRES uniformisation           :\n    %s"), *LigneUni));
+
+	float Moyenne = 0.0f;
+	for (const float S : Brut) { Moyenne += S; }
+	Moyenne /= FMath::Max(Brut.Num(), 1);
+	float Variance = 0.0f;
+	for (const float S : Brut) { Variance += (S - Moyenne) * (S - Moyenne); }
+	Variance /= FMath::Max(Brut.Num() - 1, 1);
+	AddInfo(FString::Printf(
+		TEXT("signal brut : moyenne %.4f, ecart-type %.4f, borne %.4f a %.4f"),
+		Moyenne, FMath::Sqrt(Variance), Brut[0], Brut.Last()));
+
+	// L'ASSERTION : apres uniformisation, le quantile P doit valoir P.
+	//
+	// LA TOLERANCE PORTE SUR LES DECILES ET NON SUR LA MOYENNE, parce que c'est
+	// dans les QUEUES que le seuil de pluie travaille : une loi dont la moyenne
+	// est juste et les queues fausses donne exactement le defaut qu'on corrige.
+	float PireEcart = 0.0f;
+	float PireP = 0.0f;
+	for (int32 K = 1; K <= 19; ++K)
+	{
+		const float P = static_cast<float>(K) / 20.0f;
+		const float E = FMath::Abs(Quantile(Uniforme, P) - P);
+		if (E > PireEcart) { PireEcart = E; PireP = P; }
+	}
+	AddInfo(FString::Printf(
+		TEXT("pire ecart a l'uniforme : %.4f, au quantile %.2f"), PireEcart, PireP));
+
+	TestTrue(FString::Printf(
+		TEXT("le signal uniformise est uniforme a 0,04 pres (pire ecart %.4f au quantile %.2f)"),
+		PireEcart, PireP), PireEcart < 0.04f);
 
 	return true;
 }

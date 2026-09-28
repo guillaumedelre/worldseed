@@ -47,6 +47,39 @@ namespace WorldseedWeatherSignal
 			0.0f, 1.0f);
 	}
 
+	float Uniformiser(float Storm)
+	{
+		// LA FONCTION DE REPARTITION DU SIGNAL, RELEVEE ET NON CALCULEE.
+		//
+		// Vingt-et-une valeurs, un quantile tous les cinq pour cent, mesurees
+		// par `Worldseed.Meteo.LeSignalEstUniforme` sur quatre graines et une
+		// annee de jeu chacune. Interpoler entre elles rend la fonction de
+		// repartition empirique, donc une loi uniforme en sortie.
+		// Releve du 28 septembre 2026 : moyenne 0,5011, ecart-type 0,1616, et un
+		// support BORNE a [0,0435 ; 0,9327]. L'ecart-type calcule valait 0,186,
+		// soit quinze pour cent de trop -- et surtout la vraie loi n'a pas de
+		// queues gaussiennes, ce qui est tout ce qui compte ici : au quantile
+		// 0,95 le signal vaut 0,7642 quand la cloche posee le placait a 0,918.
+		static const float Quantiles[] = {
+			0.0435f, 0.2315f, 0.2855f, 0.3244f, 0.3558f, 0.3832f, 0.4098f,
+			0.4342f, 0.4575f, 0.4801f, 0.5027f, 0.5250f, 0.5474f, 0.5707f,
+			0.5946f, 0.6194f, 0.6469f, 0.6785f, 0.7152f, 0.7642f, 0.9327f
+		};
+		constexpr int32 N = UE_ARRAY_COUNT(Quantiles);
+
+		const float X = FMath::Clamp(Storm, Quantiles[0], Quantiles[N - 1]);
+		for (int32 K = 1; K < N; ++K)
+		{
+			if (X <= Quantiles[K])
+			{
+				const float Large = Quantiles[K] - Quantiles[K - 1];
+				const float Part = (Large > 1e-6f) ? (X - Quantiles[K - 1]) / Large : 0.0f;
+				return (static_cast<float>(K - 1) + Part) / static_cast<float>(N - 1);
+			}
+		}
+		return 1.0f;
+	}
+
 	float Haze(float TimeSeconds, float PeriodS, int32 Seed)
 	{
 		// Plus lent que l'agitation : une nappe de brouillard tient, quand une

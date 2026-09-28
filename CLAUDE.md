@@ -10865,3 +10865,66 @@ les chiffres calcules qu'on n'a pas mesures.
 Ce qui est livre reste un PROGRES NET et sans regression : avant, la pluie etait
 invisible PARTOUT, il n'y avait aucun orage, aucune aurore, et une aurore
 parasite a l'equateur.
+
+#### La loi de `Storminess`, enfin MESUREE -- et elle rend deux a trois fois plus (28 septembre 2026)
+
+Suite immediate du chantier ci-dessus, et reparation de la faute qu'il avouait :
+j'avais CALCULE l'ecart-type du signal d'agitation au lieu de le RELEVER.
+
+**LE RELEVE**, quatre graines, une annee de jeu chacune, 51 840 tirages :
+
+    moyenne 0,5011   ecart-type 0,1616   support BORNE a [0,0435 ; 0,9327]
+    quantiles (pas de 5 %) : 0,0435 0,2315 0,2855 0,3244 0,3558 0,3832 0,4098
+      0,4342 0,4575 0,4801 0,5027 0,5250 0,5474 0,5707 0,5946 0,6194 0,6469
+      0,6785 0,7152 0,7642 0,9327
+
+**DEUX CHOSES ETAIENT FAUSSES DANS MON CALCUL, et la seconde comptait le plus :**
+
+- `ValueNoise` n'est PAS uniforme. Il interpole DEUX tirages uniformes par un
+  smoothstep, ce qui resserre la loi autour de sa moyenne : l'ecart-type reel
+  est 0,1616 quand l'algebre d'une somme de trois uniformes en donne 0,186 ;
+- **la somme a un SUPPORT BORNE, donc ses queues tombent bien plus vite que
+  celles d'une cloche** -- et c'est exactement la que le seuil de pluie
+  travaille. Au quantile 0,95 le signal vaut 0,7642 quand la logistique posee
+  le placait a 0,918. L'erreur de quinze pour cent sur l'ecart-type etait
+  benigne ; celle sur la FORME des queues valait un facteur trois.
+
+**LA TRANSFORMEE EST DESORMAIS UNE TABLE DE QUANTILES MESUREE**, interpolee --
+c'est-a-dire la fonction de repartition empirique. Verification :
+
+    pire ecart a l'uniforme   0,1858  ->  0,0001
+
+**ET L'ORACLE GARDE LA CORRESPONDANCE, pas le chiffre.**
+`Worldseed.Meteo.LeSignalEstUniforme` releve la loi du signal REEL et exige que
+`Uniformiser` la rende uniforme a quatre centiemes pres. Changer les poids des
+octaves, ou la forme de `ValueNoise`, fait donc tomber un test au lieu de
+deregler le ciel en silence -- et le releve part au journal meme quand il passe,
+pour que recalibrer la table ne demande pas de refaire l'instrument.
+
+**CE QUE CA DONNE, bulletin du ciel, memes sites :**
+
+| site | avant | apres |
+|---|---|---|
+| foret tropicale, 0 deg | 21,7 % de pluie, 42 orages/an | **25,9 %, 66 orages** |
+| subtropicale humide, 15 deg | 3,0 %, 0 orage | **6,9 %, 1 orage** |
+| mediterraneen, 45 deg | 0,8 % | **2,4 %** |
+| taiga, 60 deg | 0,5 % de neige | **1,9 % de neige, 0,5 % de pluie** |
+
+Tout a double ou triple, et la foret tropicale tombe au centre de la fourchette
+terrestre -- vingt a trente pour cent du temps sous la pluie.
+
+**UN ATTENDU DE TEST EST TOMBE, ET IL AVAIT TORT.** `Worldseed.Meteo.
+DistingueLesClimats` exigeait qu'une foret tropicale pleuve plus d'UN TIERS du
+temps : cet attendu avait ete cale sur le modele ou la pluie se declenchait des
+qu'il y avait des nuages -- celui qui donnait 96 %. Le releve terrestre place une
+foret tropicale entre vingt et trente pour cent, on en mesure 32, donc le seuil
+descend a un cinquieme. **Le garder aurait exige de rendre le modele moins juste
+pour qu'un test passe** ; ce n'est pas un elargissement de complaisance, et la
+raison est ecrite dans le test.
+
+**CE QUI RESTE, DIT SANS L'ADOUCIR.** Les climats froids restent bas -- taiga
+1,9 % de precipitation pour 593 mm par an, la ou la frequence NOMINALE du modele
+en vise 7,5. Il reste donc un facteur trois, et il ne vient plus du signal :
+l'echelle de frequence est concave, si bien que la moyenne des quatre saisons
+rend MOINS que la frequence de la moyenne -- inegalite de Jensen -- et le seuil
+de visibilite mange le reste. C'est un calage, plus un defaut de forme.
