@@ -677,6 +677,31 @@ public:
 	float VegetationRayonM = 350.0f;
 
 	/**
+	 * Garder les materiaux du PACK plutot que les dix-neuf instances sans RVT.
+	 *
+	 * MEME HISTOIRE QUE `bParoiMateriauDuPack`, ET MEME PREMISSE TOMBEE. Les
+	 * instances de `FWorldseedRecettes::SansRVT` ont ete creees quand le niveau
+	 * n'avait AUCUNE Runtime Virtual Texture, depuis la disparition du
+	 * Landscape : les switchs statiques `UseRVT`, `UseTopLayerRvt` et
+	 * `UseTopVertexRVTMask` echantillonnaient du vide et rendaient un BLEU
+	 * ELECTRIQUE sur la face du dessus -- signale en jeu sur les rochers de
+	 * desert. `WorldseedNappeRvt` REMPLIT desormais la RVT de couleur, donc le
+	 * contournement ne protege plus de rien ; et sur les pans, la meme
+	 * substitution s'etait revelee NUISIBLE, elle les aplatissait.
+	 *
+	 * CE QUI RESTE A EPROUVER, ET QUI N'EST PAS SYMETRIQUE AVEC LES PANS : la
+	 * RVT de HAUTEUR est posee mais PERSONNE NE L'ECRIT -- `WorldseedNappeRvt`
+	 * filtre explicitement `WorldHeight`. Un materiau qui s'en sert pour son
+	 * fondu lira donc une hauteur vide. C'est pourquoi ce drapeau existe au
+	 * lieu d'une suppression seche.
+	 *
+	 * `-WorldseedVegetationPack=0` revient aux instances sans RVT, pour que
+	 * l'A/B se fasse sur le MEME binaire.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Vegetation")
+	bool bVegetationMateriauDuPack = true;
+
+	/**
 	 * Vrai : chaque chunk possede ses propres composants d'instances.
 	 * Faux : un composant GLOBAL par espece, garni et vide par les chunks.
 	 *

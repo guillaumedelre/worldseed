@@ -690,6 +690,16 @@ void AWorldseedVoxelTerrain::BeginPlay()
 			bParoiMateriauDuPack = (Pack != 0);
 		}
 
+		// LE MEME ARBITRAGE, POUR LES DIX-NEUF INSTANCES DU SEMIS. Voir
+		// `bVegetationMateriauDuPack` : la premisse « ce niveau n'a pas de
+		// RVT » est tombee, et sur les pans le remplacement s'etait revele
+		// nuisible. On compare sur le MEME binaire plutot que de supposer.
+		int32 PackVeg = bVegetationMateriauDuPack ? 1 : 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVegetationPack="), PackVeg))
+		{
+			bVegetationMateriauDuPack = (PackVeg != 0);
+		}
+
 		float Montee = ParoiMonteeMaxFrac;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParoiMontee="), Montee))
 		{
@@ -1830,7 +1840,8 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 		// en bloc parce qu'un maillage a plusieurs sections peut meler un
 		// materiau fautif -- l'ecorce -- et un materiau sain -- le feuillage ;
 		// remplacer les deux ecraserait le second par le premier.
-		for (int32 S = 0; S < Maillage->GetStaticMaterials().Num(); ++S)
+		for (int32 S = 0; S < Maillage->GetStaticMaterials().Num()
+			&& !bVegetationMateriauDuPack; ++S)
 		{
 			const UMaterialInterface* const Origine = Maillage->GetMaterial(S);
 			if (!Origine)
@@ -1878,10 +1889,27 @@ void AWorldseedVoxelTerrain::PreparerVegetation()
 		PlanteComposants.Add(ISM);
 	}
 
-	UE_LOG(LogTemp, Log,
-		TEXT("[Worldseed] vegetation : %d emplacement(s) de materiau passes en ")
-		TEXT("SANS RVT sur %d correspondances connues"),
-		RvtRemplaces, Recettes.SansRVT.Num());
+	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le mot qui dit quelle moitie
+	// tourne, les deux passes d'un A/B se ressemblent au journal, et le depot a
+	// deja conclu sur une moitie qui n'avait pas pris.
+	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le mot qui dit quelle moitie
+	// tourne, les deux passes d'un A/B se ressemblent au journal, et le depot a
+	// deja conclu sur une moitie qui n'avait pas pris.
+	if (bVegetationMateriauDuPack)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] vegetation : materiaux du PACK gardes -- la RVT de ")
+			TEXT("couleur est remplie, les %d correspondances SANS RVT sont ")
+			TEXT("connues et NON employees"),
+			Recettes.SansRVT.Num());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] vegetation : %d emplacement(s) de materiau passes en ")
+			TEXT("SANS RVT sur %d correspondances connues"),
+			RvtRemplaces, Recettes.SansRVT.Num());
+	}
 
 	// UN RELEVE QUI PORTE SA CONFIGURATION : sans le compte des especes
 	// solides, « aucun obstacle en jeu » ne se distinguerait pas d'un drapeau
