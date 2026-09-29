@@ -478,6 +478,20 @@ private:
 	/** Vrai une fois l'armement tente : il ne vaut que la premiere fois. */
 	bool bOragesRadiauxArmes = false;
 
+	/**
+	 * MODE MESURE : on force une tempete et on la compte.
+	 *
+	 * SEPARE DE L'ALLUMAGE, parce que les tempetes tournent desormais en partie
+	 * NORMALE. Sans cette separation, chaque partie forcerait une tempete a la
+	 * naissance du joueur -- ce qui n'est pas de la meteo mais un banc -- et
+	 * balaierait tous les acteurs du monde toutes les dix secondes pour une
+	 * ligne que personne ne lit en jouant.
+	 *
+	 * Arme par `-WorldseedOrageRadial`, et aussi par `-WorldseedOrageFace=` :
+	 * aller VOIR une tempete exige de savoir ou elle est.
+	 */
+	bool bOragesEnMesure = false;
+
 	/** Temps depuis l'armement, et nombre de relevés faits. */
 	float TempsDepuisOrageS = 0.0f;
 	int32 ReleveesDesOrages = 0;

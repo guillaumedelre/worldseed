@@ -270,7 +270,7 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	// et le debut du trajet ; sa duree de vie livree est de 500 a 700 s, donc on
 	// ne verra pas sa fin et ce n'est pas le sujet.
 	ArmerLesOragesRadiaux();
-	if (bOragesRadiauxArmes && ReleveesDesOrages < 6)
+	if (bOragesEnMesure && ReleveesDesOrages < 6)
 	{
 		TempsDepuisOrageS += DeltaSeconds;
 		if (TempsDepuisOrageS > 10.0f * static_cast<float>(ReleveesDesOrages + 1))
@@ -1992,12 +1992,37 @@ namespace
 
 void UWorldseedSkyDriverComponent::ArmerLesOragesRadiaux()
 {
-	if (bOragesRadiauxArmes
-		|| !FParse::Param(FCommandLine::Get(), TEXT("WorldseedOrageRadial")))
+	if (bOragesRadiauxArmes)
 	{
 		return;
 	}
 	bOragesRadiauxArmes = true;
+
+	// LES TEMPETES SONT ALLUMEES EN PARTIE NORMALE, arbitrage du proprietaire du
+	// 29 septembre 2026, apres avoir vu et valide leur echelle recadree.
+	// `-WorldseedOrages=0` les eteint -- et cet interrupteur n'est pas un bouton
+	// inerte : c'est lui qui permettra de chiffrer ce qu'elles coutent, en
+	// comparant deux lancements.
+	int32 Voulues = 1;
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedOrages="), Voulues);
+	if (Voulues == 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] orage radial : ETEINT par -WorldseedOrages=0"));
+		return;
+	}
+
+	// LE MODE MESURE EST SEPARE DE L'ALLUMAGE, et c'est ce qui evite deux
+	// defauts opposes. Sans cette separation, chaque partie forcerait une
+	// tempete a la naissance du joueur -- ce qui n'est pas de la meteo, c'est un
+	// banc -- et journaliserait toutes les dix secondes un balayage de tous les
+	// acteurs du monde, pour une ligne que personne ne lit en jouant.
+	//
+	// `-WorldseedOrageFace=` l'active aussi : aller VOIR une tempete exige de
+	// savoir ou elle est, donc de la compter.
+	bOragesEnMesure =
+		FParse::Param(FCommandLine::Get(), TEXT("WorldseedOrageRadial"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("WorldseedOrageFace"));
 
 	// L'ETAT D'AVANT, PARCE QU'UN TEMOIN COMMENCE PAR LA. Le pack livre faux ;
 	// si on lisait vrai, c'est que la carte l'a deja arme et l'experience ne
@@ -2032,15 +2057,35 @@ void UWorldseedSkyDriverComponent::ArmerLesOragesRadiaux()
 	// `Radial Storm Class Hard`, et le pack livre `Load Radial Storm Class`
 	// pour resoudre l'un dans l'autre. Un spawn sur une classe nulle ne fait
 	// rien -- et ne le dit pas.
+	// LA CLASSE SE CHARGE DANS LES DEUX MODES : le minuteur du pack en a besoin
+	// autant que notre spawn manuel.
 	const bool bCharge = Bridge.CallFunction(NomChargementOrage);
 	UE_LOG(LogTemp, Warning,
-		TEXT("[Worldseed] orage radial : « %s » %s. Le spawn est DIFFERE au ")
-		TEXT("premier releve : un softclass peut se charger de facon asynchrone, ")
-		TEXT("et spawner dans la meme trame retomberait sur une classe nulle."),
+		TEXT("[Worldseed] orage radial : « %s » %s.%s"),
 		*NomChargementOrage.ToString(),
-		bCharge ? TEXT("appelee") : TEXT("ABSENTE"));
+		bCharge ? TEXT("appelee") : TEXT("ABSENTE"),
+		// ET LA SUITE DE LA PHRASE DEPEND DU MODE, sinon elle MENT. En partie
+		// normale il n'y a aucun releve auquel differer quoi que ce soit, et
+		// annoncer un report qui n'existe pas ferait chercher une ligne absente.
+		bOragesEnMesure
+			? TEXT(" Le spawn force est DIFFERE au premier releve : un softclass"
+				" peut se charger de facon asynchrone, et spawner dans la meme"
+				" trame retomberait sur une classe nulle.")
+			: TEXT(""));
 
 	RecadrerLaGeometrieDesOrages();
+
+	if (!bOragesEnMesure)
+	{
+		// ET ON N'EN FORCE PAS. En partie normale, c'est le minuteur du pack qui
+		// decide -- attente livree de 1000 a 2000 s, premier delai a moitie. La
+		// ligne le DIT, pour qu'un joueur qui ne voit rien pendant dix minutes
+		// sache que c'est voulu et non casse.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] orage radial : ALLUME. La premiere tempete ")
+			TEXT("viendra du minuteur du pack, dans 8 a 17 minutes ; ensuite ")
+			TEXT("toutes les 17 a 33. Rien n'est force."));
+	}
 }
 
 void UWorldseedSkyDriverComponent::RecadrerLaGeometrieDesOrages() const
