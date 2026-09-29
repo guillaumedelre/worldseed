@@ -11557,8 +11557,19 @@ Le pas 0->2 vaut **quarante-quatre fois** le bruit. A l'image : 0 = ciel bleu
 franc et palmiers nets jusqu'au fond ; 5 = voile leger, lointain estompe, c'est
 le « sable qui vole sans tempete » ; 10 = horizon entierement mange.
 
-**CONSEQUENCE : UN PLANCHER PERMANENT A 1,5 SERAIT INVISIBLE.** Toute rampe de
-poussiere doit passer l'essentiel de son temps entre 4 et 10.
+> **CETTE LIGNE DISAIT « UN PLANCHER PERMANENT A 1,5 SERAIT INVISIBLE » ET ELLE
+> ETAIT FAUSSE**, contredite par la mesure du paragraphe juste au-dessus. Je
+> l'avais tiree de ma lecture A L'OEIL du cas 2 -- que la mesure venait pourtant
+> de dementir dans la meme seance. Deux affirmations incompatibles a six lignes
+> d'ecart. **Un voile permanent DOIT etre discret a l'oeil et net a la mesure**,
+> et c'est exactement ce que rend `Dust = 2` : +4,4 de clarte, quarante-quatre
+> fois le bruit. La valeur retenue est donc 2,0, et elle est vue en jeu --
+> clarte naturelle 128,0 contre 128,8 pour le temoin force a 2.
+>
+> **LA LECON N'EST PAS LE CHIFFRE, C'EST L'ENCHAINEMENT** : j'ai mesure, la
+> mesure m'a dementi, je l'ai ecrit -- puis j'ai quand meme conclu avec mon
+> impression de depart. Une mesure qui dement une intuition doit remplacer
+> l'intuition PARTOUT, y compris dans la conclusion qu'on avait deja redigee.
 
 **LA SATURATION N'EST PAS UNE BONNE METRIQUE ICI** : elle baisse de 0 a 5 puis
 REMONTE a 10, parce que le voile n'est pas gris mais OCRE, donc lui-meme sature.
@@ -11627,3 +11638,74 @@ faut pas la citer.
   Coverage 1. La meme chaine servira, et le vent y est encore l'axe.
 - **`Max Dust Coverage` vaut 0,5** : la couverture de poussiere est plafonnee a
   la moitie, et personne n'a mesure ce que cela coute.
+
+### La poussiere sort du vent : ce que la sonde a trouve APRES coup (29 septembre 2026)
+
+Suite du meme chantier. La forme est ecrite -- le vent sort du signal
+d'agitation, la poussiere sort du vent -- et **c'est la sonde qui a trouve les
+deux defauts que je n'avais pas vus**, dont un absurde.
+
+**LA CALOTTE GLACIAIRE POUDROYAIT.** Retirer le `T > 5` en dur a bien rendu sa
+poussiere au Gobi -- c'etait le but, et l'arbitrage du proprietaire -- et il a
+aussi donne **99,9 % de voile et 56 tempetes par an a -18,8 C**. Un desert
+polaire est couvert de GLACE. Le bon critere n'est donc pas la CHALEUR mais le
+**GEL PERMANENT** : sous une certaine moyenne annuelle, le sol reste en
+pergelisol et sous la neige toute l'annee, et il n'a rien a donner au vent.
+C'est le critere EF de Koppen, pose en continu. **Les deux termes se
+MULTIPLIENT** : il faut un sol sec ET degele.
+
+**LE VENT SOUFFLAIT SANS CESSE, ET LE SIGNE ETAIT LE MEME QUE D'HABITUDE.**
+6,3 sur 10 en moyenne, **IDENTIQUE sur les vingt-deux sites** -- plus du double
+d'`Overcast` (3) en permanence. Cause : `Souffle` est UNIFORME par construction,
+c'est tout l'objet d'`Uniformiser`, donc une rampe lineaire rend une moyenne au
+MILIEU de la plage. Le vent reel est tres dissymetrique (loi de Weibull) :
+`ventForme = 3` ramene la moyenne a 3,25 sans toucher au maximum.
+
+    site                  voile %      sable %      tempetes/an   vent moy
+    calotte glaciaire     99,9 -> 0,0   0,0          56 -> 0       6,3 -> 3,5
+    desert chaud BWh      99,9          9,6 -> 1,4   50 -> 12      6,3 -> 3,5
+    desert froid BWk      99,9          8,3 -> 1,1   44 -> 12      6,3 -> 3,5
+    taiga, savane, forets   0,0         0,0          0             3,6
+
+**LE FONDU NE DECAPITE RIEN, et c'etait le risque principal.** La colonne CIBLE
+de la sonde -- meme seuil, sans fondu -- rend **12 la ou le vecu rend 12**. Ce
+depot avait exactement ce piege sur les orages (9 annonces pour 119 designes),
+et `poussierePeriodeFacteur = 3` le couvre : ralentir le signal ne deplace aucun
+quantile, mais troque du NOMBRE d'episodes contre de la DUREE, ce qui laisse au
+fondu de douze secondes le temps de suivre.
+
+#### Un defaut d'INSTRUMENT qui aurait fait regler le mauvais bouton
+
+`ProbeCiel` prenait la cellule **MEDIANE en pluie** de chaque ligne de latitude,
+et son commentaire dit pourquoi : « un echantillon arbitraire n'est pas une
+mesure ». C'est juste pour la pluie. Mais **la cellule mediane de la ligne 30
+degres n'est pas le Sahara** : elle ne porte presque jamais d'aridite, donc la
+colonne poussiere aurait rendu ZERO quel que soit le modele -- et l'on aurait
+conclu que la chaine ne marchait pas. Un second site au **decile inferieur** de
+pluie repare cela ; pas le minimum, qui serait l'extremum arbitraire que le
+commentaire denonce.
+
+#### La promesse « le monde ne bouge pas » se PROUVE
+
+Changer `world_rules.json` invalide tout cache par son empreinte MD5, donc
+impose une regeneration -- ici 4 min en 4096x2048. Le controle qui tranche est
+de comparer le **CORPS** du fichier (tout sauf l'en-tete de 68 octets, qui porte
+justement l'empreinte) : trois caches de **CLES differentes**, dont un anterieur
+au chantier, portent le meme MD5 `CE255F6745CA1D2E` sur 82 461 649 octets.
+Devant un cache dont la cle a bouge sans que le code du monde change, comparer
+les corps et non les noms de fichier.
+
+#### Reste ouvert
+
+- **LE VENT EST LE MEME PARTOUT DANS LE MONDE au meme instant** : le signal
+  d'agitation ne depend que du TEMPS, jamais du lieu. La colonne « vent max » le
+  rend visible en affichant 10,0 sur les vingt-deux sites. Le rendre local
+  demanderait de le lier a la latitude -- les rails de depressions existent deja
+  dans le modele de climat -- mais ce n'etait pas demande.
+- **`Max Dust Coverage` vaut 0,5 dans UDW**, et personne n'a mesure ce que ce
+  plafond coute a l'image.
+- **Le sable au ras du sol (volet B) n'est pas commence.** Le releve donne son
+  point d'entree : `Dust Niagara System` sur l'acteur meteo, et ses 53
+  parametres utilisateur -- dont `Spawn Box Height`, `World Spawn Offset` et
+  `Stick Particles to Surface`. « Du sable qui rampe » n'est pas un systeme a
+  ecrire, c'est celui du pack APLATI.
