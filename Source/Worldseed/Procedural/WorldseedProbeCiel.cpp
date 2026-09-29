@@ -55,6 +55,20 @@ namespace
 	/** Au-dessous, le rideau ne se distingue pas du fond du ciel. */
 	constexpr float SeuilAurore = 0.30f;
 
+	/**
+	 * LA POUSSIERE A DEUX SEUILS, PARCE QU'ELLE A DEUX REGIMES.
+	 *
+	 * `Sand_Dust_Storm` pose 10, qui est le maximum du pack : on place donc la
+	 * TEMPETE a la moitie, comme « averse » est a la moitie de la pluie forte.
+	 * Et le VOILE juste sous le plancher permanent (2,0), pour qu'il se compte.
+	 *
+	 * Mesure du 29 septembre 2026, clarte du lointain : Dust 2 -> +4,4 sur 124
+	 * (discret, c'est le voile) ; Dust 5 -> +11,9 (le lointain s'estompe) ;
+	 * Dust 10 -> +16,1 (l'horizon disparait).
+	 */
+	constexpr float SeuilVoile = 1.0f;
+	constexpr float SeuilTempete = 5.0f;
+
 	/** Un compteur de duree ET d'episodes : les deux se lisent differemment. */
 	struct FCompteur
 	{
@@ -131,9 +145,9 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		AnneeS / 3600.0, JourMin, NuitMin, JoursParAn, Pas, PasS));
 	L.Add(TEXT(""));
 	L.Add(TEXT("site                      lat   Koppen   T an  mm/an   pluie averse  neige  degage couvert")
-		TEXT("   orages   aurore   | CIBLE, sans fondu"));
+		TEXT("   orages   aurore   voile  sable tempe   vent  vent   | CIBLE, sans fondu"));
 	L.Add(TEXT("                                             C    mm       %     %       %       %      %")
-		TEXT("    (episodes/an)     | pluie %  orages        X       Y (m)"));
+		TEXT("    (episodes/an)       %      %  /an    moy   max   | pluie %  orages sable        X       Y (m)"));
 
 	// --- les sites, repartis en latitude -------------------------------------
 	//
@@ -147,11 +161,37 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 	// foret tropicale, et le bulletin annoncait alors zero averse pour tout le
 	// monde. Un echantillon arbitraire n'est pas une mesure -- il decrit un
 	// endroit, pas une latitude.
-	const float LatitudesCibles[] =
-		{ 75.0f, 60.0f, 45.0f, 30.0f, 15.0f, 0.0f, -15.0f, -30.0f, -45.0f, -60.0f, -75.0f };
+	// --- DEUX SITES PAR LATITUDE, ET LE SECOND REPARE UN DEFAUT D'INSTRUMENT --
+	//
+	// Cette sonde prenait la cellule MEDIANE en pluie de chaque ligne, et son
+	// commentaire dit pourquoi : « un echantillon arbitraire n'est pas une
+	// mesure ». C'est juste pour la pluie. Mais LA CELLULE MEDIANE DE LA LIGNE
+	// 30 DEGRES N'EST PAS LE SAHARA : elle ne porte presque jamais d'aridite, si
+	// bien qu'en l'etat la sonde NE POUVAIT PAS VOIR UNE TEMPETE DE SABLE, quel
+	// que soit le modele -- elle aurait rendu zero et l'on aurait regle le
+	// mauvais bouton.
+	//
+	// On ajoute donc un site au DECILE INFERIEUR de pluie. Pas le minimum, qui
+	// serait exactement l'extremum arbitraire que le commentaire denonce : le
+	// decile est encore un rang, donc une statistique.
+	struct FSite { float Lat; bool bAride; };
+	const FSite Sites[] = {
+		{  75.0f, false }, {  75.0f, true },
+		{  60.0f, false }, {  60.0f, true },
+		{  45.0f, false }, {  45.0f, true },
+		{  30.0f, false }, {  30.0f, true },
+		{  15.0f, false }, {  15.0f, true },
+		{   0.0f, false }, {   0.0f, true },
+		{ -15.0f, false }, { -15.0f, true },
+		{ -30.0f, false }, { -30.0f, true },
+		{ -45.0f, false }, { -45.0f, true },
+		{ -60.0f, false }, { -60.0f, true },
+		{ -75.0f, false }, { -75.0f, true },
+	};
 
-	for (const float LatCible : LatitudesCibles)
+	for (const FSite& Site : Sites)
 	{
+		const float LatCible = Site.Lat;
 		// La ligne dont la latitude approche le mieux la cible.
 		int32 MeilleureLigne = INDEX_NONE;
 		float MeilleurEcart = TNumericLimits<float>::Max();
@@ -183,7 +223,9 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 					? Monde.Climate.PrecipMm[B] : 0.0f;
 				return PA < PB;
 			});
-			Cellule = Terres[Terres.Num() / 2];
+			Cellule = Site.bAride
+				? Terres[Terres.Num() / 10]
+				: Terres[Terres.Num() / 2];
 		}
 		if (Cellule == INDEX_NONE)
 		{
@@ -236,7 +278,16 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		// pour corriger un defaut de lissage.
 		FCompteur Pluie, Averse, Neige, Degage, Couvert, Orage, Aurore;
 		FCompteur PluieCible, OrageCible;
+		FCompteur Voile, Sable, SableCible;
 		FWorldseedWeather Courant;
+
+		// LE VENT N'EST PAS UN COMPTEUR, C'EST UNE AMPLITUDE -- et il faut les
+		// deux colonnes : sans elles, « aucune tempete » ne se separe pas en
+		// « le vent ne s'est jamais leve » et « il s'est leve et la poussiere
+		// n'a pas suivi ». C'est la regle « guetter un evenement rare ne separe
+		// pas les deux causes », appliquee a une sonde au lieu d'une capture.
+		double VentSomme = 0.0;
+		float VentMax = 0.0f;
 
 		for (int32 N = 0; N < Pas; ++N)
 		{
@@ -261,6 +312,7 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 
 			PluieCible.Voir(Cible.Rain >= SeuilPluie);
 			OrageCible.Voir(Cible.Thunder >= SeuilOrage);
+			SableCible.Voir(Cible.Dust >= SeuilTempete);
 
 			Pluie.Voir(Courant.Rain >= SeuilPluie);
 			Averse.Voir(Courant.Rain >= SeuilAverse);
@@ -269,6 +321,11 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			Couvert.Voir(Courant.CloudCoverage >= SeuilCouvert);
 			Orage.Voir(Courant.Thunder >= SeuilOrage);
 			Aurore.Voir(Courant.Aurora >= SeuilAurore);
+			Voile.Voir(Courant.Dust >= SeuilVoile);
+			Sable.Voir(Courant.Dust >= SeuilTempete);
+
+			VentSomme += Courant.WindIntensity;
+			VentMax = FMath::Max(VentMax, Courant.WindIntensity);
 		}
 
 		// OU C EST, en metres du monde -- une meteo qu on ne sait pas aller voir
@@ -278,15 +335,22 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		const float YM = (static_cast<float>(MeilleureLigne) / Geo.NY - 0.5f) * Geo.HeightM;
 
 		const float Cent = 100.0f / FMath::Max(Pas, 1);
+		const FString Etiquette = Site.bAride
+			? (NomBiome.Left(16) + TEXT(" (aride)"))
+			: NomBiome.Left(24);
+
 		L.Add(FString::Printf(
 			TEXT("%-24s %5.0f   %-6s %5.1f %6.0f  %5.1f %5.1f  %5.1f   %5.1f  %5.1f    %4d     %4d")
-			TEXT("   |%6.1f %5d   %7.0f %7.0f"),
-			*NomBiome.Left(24), Echantillon.LatitudeDeg, WorldseedKoppen::Nom(Classe),
+			TEXT("  %6.1f %6.1f %5d  %5.1f %5.1f")
+			TEXT("   |%6.1f %5d %5d   %7.0f %7.0f"),
+			*Etiquette, Echantillon.LatitudeDeg, WorldseedKoppen::Nom(Classe),
 			Echantillon.TempMeanC, Echantillon.PrecipMm,
 			Pluie.Pas * Cent, Averse.Pas * Cent, Neige.Pas * Cent,
 			Degage.Pas * Cent, Couvert.Pas * Cent,
 			Orage.Episodes, Aurore.Episodes,
-			PluieCible.Pas * Cent, OrageCible.Episodes, XM, YM));
+			Voile.Pas * Cent, Sable.Pas * Cent, Sable.Episodes,
+			static_cast<float>(VentSomme / FMath::Max(Pas, 1)), VentMax,
+			PluieCible.Pas * Cent, OrageCible.Episodes, SableCible.Episodes, XM, YM));
 	}
 
 	L.Add(TEXT(""));
