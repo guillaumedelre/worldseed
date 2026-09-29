@@ -680,6 +680,14 @@ void AWorldseedTerrain::FeedSky(float DeltaSeconds)
 	// suffit : on sort de la foret, les oiseaux s'arretent.
 	SkyDriver->PiloterAmbiance(BiomeApparent, Couverture);
 
+	// --- ET QUELLE TEMPETE PEUT PASSER ICI ----------------------------------
+	//
+	// MEME RAISON, MEME ENDROIT : le pack ne connait pas le biome, et sa regle
+	// de tempete radiale est purement SAISONNIERE -- d'ou un blizzard en hiver
+	// a l'equateur. On lui apporte le climat, au meme moment qu'on lui apporte
+	// l'ambiance, parce que c'est ici que le biome apparent est connu.
+	SkyDriver->PiloterLesOrages(BiomeApparent);
+
 	// --- CE QUI RAMPE SOUS LES PIEDS ----------------------------------------
 	if (Reptation)
 	{

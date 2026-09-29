@@ -104,6 +104,28 @@ public:
 	 */
 	void PiloterAmbiance(EWorldseedBiome Biome, EWorldseedCover Couverture);
 
+	/**
+	 * QUELLE TEMPETE RADIALE PEUT PASSER ICI, d'apres le climat.
+	 *
+	 * CE QU'ELLE REMPLACE. Le pack livre quatre tables de probabilite indexees
+	 * par SAISON, et le releve du 29 septembre 2026 montre qu'elles ne portent
+	 * qu'une entree chacune a probabilite 1,0 : orage au printemps, en ete et en
+	 * automne, blizzard en hiver. Ce n'est donc pas un tirage au sort mais une
+	 * regle purement saisonniere, qui ignore le lieu -- un blizzard en hiver a
+	 * l'equateur, un orage dans le desert.
+	 *
+	 * ON GARDE LA STRUCTURE, ON CHANGE LE CONTENU : les quatre tables sont
+	 * remplies avec le choix qui convient a CE biome dans CETTE saison, par
+	 * `WorldseedOrage::Choisir`. La saison continue donc de compter la ou elle
+	 * doit -- neige l'hiver en foret temperee -- et cesse de compter la ou elle
+	 * n'a pas de sens.
+	 *
+	 * IDEMPOTENTE PAR CONSTAT : appelee a chaque evaluation du biome, elle
+	 * n'ecrit que si le choix a CHANGE. Quatre ecritures de table par trame
+	 * seraient du gaspillage pur.
+	 */
+	void PiloterLesOrages(EWorldseedBiome Biome);
+
 private:
 	/** Ecrit l'etat courant dans UDS. */
 	void PushWeather() const;
@@ -474,6 +496,16 @@ private:
 
 	/** Vrai une fois le joueur envoye : il ne vaut que la premiere fois. */
 	bool bJoueurEnvoyeVoirLOrage = false;
+
+	/**
+	 * Le biome pour lequel les quatre tables ont deja ete ecrites.
+	 *
+	 * `Count` VAUT « ON N'A ENCORE RIEN POSE », et ce n'est pas un biome :
+	 * meme distinction que `AmbianceCourante`, et pour la meme raison -- au
+	 * tout premier passage il faut bel et bien ecrire, meme si le choix se
+	 * trouve etre celui que le pack livrait.
+	 */
+	EWorldseedBiome BiomeDesOrages = EWorldseedBiome::Count;
 
 	/** Vrai une fois l'armement tente : il ne vaut que la premiere fois. */
 	bool bOragesRadiauxArmes = false;

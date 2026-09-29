@@ -11,6 +11,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedClimatePreset.h"
+#include "Procedural/WorldseedOrage.h"
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
@@ -2330,4 +2333,112 @@ void UWorldseedSkyDriverComponent::EnvoyerLeJoueurVoirLOrage(const AActor* Orage
 		TEXT("site %.0f deg"),
 		Vue.X / WorldseedMetersToCm, Vue.Y / WorldseedMetersToCm,
 		DistanceKm, Visee.Yaw, Visee.Pitch);
+}
+
+void UWorldseedSkyDriverComponent::PiloterLesOrages(EWorldseedBiome Biome)
+{
+	if (!bOragesRadiauxArmes || Biome == BiomeDesOrages)
+	{
+		return;
+	}
+	BiomeDesOrages = Biome;
+
+	AActor* const Meteo = Bridge.MeteoBrute();
+	if (!Meteo)
+	{
+		return;
+	}
+
+	// LES QUATRE SAISONS, ET L'ORDRE DES NOMS EST CELUI DU PACK. Notre
+	// enumeration commence par l'hiver, la sienne par le printemps : on apparie
+	// donc explicitement plutot que de compter sur un ordinal commun -- deux
+	// enumerations qui se ressemblent finissent toujours par diverger.
+	struct FSaisonOrage
+	{
+		EWorldseedSeason Notre;
+		const TCHAR* Sienne;
+	};
+	static const FSaisonOrage Saisons[] = {
+		{ EWorldseedSeason::Spring, TEXT("Spring") },
+		{ EWorldseedSeason::Summer, TEXT("Summer") },
+		{ EWorldseedSeason::Autumn, TEXT("Autumn") },
+		{ EWorldseedSeason::Winter, TEXT("Winter") },
+	};
+
+	int32 Posees = 0;
+	TArray<FString> Detail;
+	for (const FSaisonOrage& S : Saisons)
+	{
+		const EWorldseedOrage Choix = WorldseedOrage::Choisir(Biome, S.Notre);
+		const TCHAR* const Nom = WorldseedOrage::NomDAsset(Choix);
+
+		const FName Propriete(*FString::Printf(
+			TEXT("Radial Storm Probabilities (%s)"), S.Sienne));
+
+		if (!Nom || *Nom == TEXT('\0'))
+		{
+			// `Aucune` -- l'eau libre. On VIDE la table plutot que d'y laisser
+			// le choix du pack : une tempete sur l'ocean n'a pas de sens, et
+			// laisser l'ancien contenu ferait passer un blizzard sur la mer.
+			if (FWorldseedUdsBridge::PoserTableUneEntree(Meteo, Propriete,
+					nullptr, 0.0f))
+			{
+				++Posees;
+			}
+			Detail.Add(FString::Printf(TEXT("%s=aucune"), S.Sienne));
+			continue;
+		}
+
+		// LE PREREGLAGE SE CHARGE PAR CHEMIN MOU : c'est un asset d'un pack
+		// payant, absent du depot, donc une reference en dur empecherait le
+		// projet de se construire sans lui.
+		const FString Chemin = FString::Printf(
+			TEXT("/Game/UltraDynamicSky/Blueprints/Weather_Effects/")
+			TEXT("Weather_Presets/%s.%s"), Nom, Nom);
+		UObject* const Preset = StaticLoadObject(UObject::StaticClass(),
+			nullptr, *Chemin);
+		if (!Preset)
+		{
+			Detail.Add(FString::Printf(TEXT("%s=%s INTROUVABLE"), S.Sienne, Nom));
+			continue;
+		}
+
+		if (FWorldseedUdsBridge::PoserTableUneEntree(Meteo, Propriete,
+				Preset, 1.0f))
+		{
+			++Posees;
+		}
+		Detail.Add(FString::Printf(TEXT("%s=%s"), S.Sienne, Nom));
+	}
+
+	// ET L'ON RELIT LES QUATRE, parce qu'une ecriture par reflexion ne signale
+	// rien quand elle echoue -- cinq fois paye dans ce chantier.
+	TArray<FString> Relu;
+	for (const FSaisonOrage& S : Saisons)
+	{
+		const FName Propriete(*FString::Printf(
+			TEXT("Radial Storm Probabilities (%s)"), S.Sienne));
+		TMap<UObject*, float> Table;
+		if (!FWorldseedUdsBridge::LireTableObjetFlottant(Meteo, Propriete, Table))
+		{
+			Relu.Add(FString::Printf(TEXT("%s ILLISIBLE"), S.Sienne));
+			continue;
+		}
+		if (Table.IsEmpty())
+		{
+			Relu.Add(FString::Printf(TEXT("%s vide"), S.Sienne));
+			continue;
+		}
+		for (const TPair<UObject*, float>& E : Table)
+		{
+			Relu.Add(FString::Printf(TEXT("%s=%s(%.2f)"), S.Sienne,
+				E.Key ? *E.Key->GetName() : TEXT("<nul>"), E.Value));
+		}
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] orage radial : biome %d -> %s | %d/4 table(s) ")
+		TEXT("posee(s), relu %s"),
+		static_cast<int32>(Biome), *FString::Join(Detail, TEXT(" ")),
+		Posees, *FString::Join(Relu, TEXT(" ")));
 }

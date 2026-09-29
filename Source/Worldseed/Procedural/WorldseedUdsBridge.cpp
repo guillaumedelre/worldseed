@@ -417,6 +417,143 @@ bool FWorldseedUdsBridge::LireTableauObjets(const UObject* Cible,
 	return true;
 }
 
+namespace
+{
+	/**
+	 * La table `objet -> flottant` d'une propriete, avec ses deux types.
+	 *
+	 * TROIS CONTROLES, ET AUCUN N'EST DECORATIF : que ce soit une table, que sa
+	 * CLE soit un pointeur d'objet, et que sa VALEUR soit un flottant. Ecrire un
+	 * flottant dans une valeur qui serait un pointeur corromprait la memoire au
+	 * lieu d'echouer -- meme danger que pour les tableaux.
+	 */
+	FMapProperty* TrouverTableObjetFlottant(const UStruct* Classe,
+		FName Propriete, FObjectPropertyBase*& OutCle,
+		FProperty*& OutValeur)
+	{
+		OutCle = nullptr;
+		OutValeur = nullptr;
+		if (!Classe)
+		{
+			return nullptr;
+		}
+		FMapProperty* const Table =
+			CastField<FMapProperty>(Classe->FindPropertyByName(Propriete));
+		if (!Table)
+		{
+			return nullptr;
+		}
+		OutCle = CastField<FObjectPropertyBase>(Table->KeyProp);
+		FProperty* const Val = Table->ValueProp;
+		const bool bFlottant = CastField<FFloatProperty>(Val) != nullptr
+			|| CastField<FDoubleProperty>(Val) != nullptr;
+		OutValeur = bFlottant ? Val : nullptr;
+		return (OutCle && OutValeur) ? Table : nullptr;
+	}
+
+	/** Ecrire un flottant dans une valeur qui peut etre float OU double. */
+	void PoserFlottant(const FProperty* Prop, void* Adresse, float Valeur)
+	{
+		if (const FFloatProperty* const F = CastField<FFloatProperty>(Prop))
+		{
+			F->SetPropertyValue(Adresse, Valeur);
+		}
+		else if (const FDoubleProperty* const D = CastField<FDoubleProperty>(Prop))
+		{
+			D->SetPropertyValue(Adresse, static_cast<double>(Valeur));
+		}
+	}
+
+	/** Lire un flottant qui peut etre float OU double. */
+	float LireFlottant(const FProperty* Prop, const void* Adresse)
+	{
+		if (const FFloatProperty* const F = CastField<FFloatProperty>(Prop))
+		{
+			return F->GetPropertyValue(Adresse);
+		}
+		if (const FDoubleProperty* const D = CastField<FDoubleProperty>(Prop))
+		{
+			return static_cast<float>(D->GetPropertyValue(Adresse));
+		}
+		return 0.0f;
+	}
+}
+
+bool FWorldseedUdsBridge::LireTableObjetFlottant(const UObject* Cible,
+	FName Propriete, TMap<UObject*, float>& OutTable)
+{
+	OutTable.Reset();
+	if (!Cible)
+	{
+		return false;
+	}
+
+	FObjectPropertyBase* Cle = nullptr;
+	FProperty* Valeur = nullptr;
+	FMapProperty* const Table = TrouverTableObjetFlottant(
+		Cible->GetClass(), Propriete, Cle, Valeur);
+	if (!Table)
+	{
+		return false;
+	}
+
+	FScriptMapHelper Helper(Table,
+		Table->ContainerPtrToValuePtr<void>(const_cast<UObject*>(Cible)));
+	// L'ITERATEUR SE PASSE TEL QUEL A `GetKeyPtr` : il ne se dereference pas en
+	// indice, et `FScriptMapHelper` fournit des surcharges pour lui.
+	for (FScriptMapHelper::FIterator It(Helper); It; ++It)
+	{
+		UObject* const K = Cle->GetObjectPropertyValue(Helper.GetKeyPtr(It));
+		OutTable.Add(K, LireFlottant(Valeur, Helper.GetValuePtr(It)));
+	}
+	return true;
+}
+
+bool FWorldseedUdsBridge::PoserTableUneEntree(UObject* Cible, FName Propriete,
+	UObject* Cle, float Valeur)
+{
+	if (!Cible)
+	{
+		return false;
+	}
+
+	FObjectPropertyBase* PropCle = nullptr;
+	FProperty* PropValeur = nullptr;
+	FMapProperty* const Table = TrouverTableObjetFlottant(
+		Cible->GetClass(), Propriete, PropCle, PropValeur);
+	if (!Table)
+	{
+		return false;
+	}
+
+	// ON REFUSE PLUTOT QUE DE DEVINER : une cle d'une autre classe ferait lire
+	// au pack un pointeur qu'il n'attend pas.
+	if (Cle && (!PropCle->PropertyClass || !Cle->IsA(PropCle->PropertyClass)))
+	{
+		return false;
+	}
+
+	FScriptMapHelper Helper(Table, Table->ContainerPtrToValuePtr<void>(Cible));
+	Helper.EmptyValues();
+
+	// UNE CLE NULLE VIDE LA TABLE, ET C'EST UN CONTRAT EXPLICITE, pas un
+	// accident. L'appelant en a besoin pour dire « aucune tempete ne convient
+	// ici » -- sur l'eau libre -- et laisser l'ancien contenu ferait passer un
+	// blizzard sur la mer. Le refuser aurait echoue en SILENCE, ce qui est
+	// exactement ce que ce fichier existe pour eviter.
+	if (!Cle)
+	{
+		Helper.Rehash();
+		return true;
+	}
+
+	const int32 Index = Helper.AddDefaultValue_Invalid_NeedsRehash();
+	PropCle->SetObjectPropertyValue(Helper.GetKeyPtr(Index), Cle);
+	PoserFlottant(PropValeur, Helper.GetValuePtr(Index), Valeur);
+	Helper.Rehash();
+	return true;
+}
+
 bool FWorldseedUdsBridge::LireNombreDe(const UObject* Cible, FName Propriete,
 	double& OutValeur)
 {

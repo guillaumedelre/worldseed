@@ -100,6 +100,38 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	static bool LireBooleenDe(const UObject* Cible, FName Propriete,
 		bool& OutValeur);
 
+	/**
+	 * POSER UNE TABLE `objet -> flottant` A UNE SEULE ENTREE.
+	 *
+	 * ELLE EXISTE POUR LES QUATRE TABLES DE PROBABILITE DES TEMPETES RADIALES,
+	 * `TMap<UDS_Weather_Settings, float>`, une par saison.
+	 *
+	 * POURQUOI ELLE REMPLACE, ALORS QUE LA REGLE DU DEPOT EST NON DESTRUCTIVE.
+	 * La regle interdit d'effacer pour faire passer une ecriture, ou de
+	 * remplacer un objet entier pour changer un champ. Ici le CONTENU de la
+	 * table EST le reglage : « une entree a probabilite 1,0 » veut dire « cette
+	 * tempete-la ». Ajouter une entree signifierait « l'une ou l'autre », donc
+	 * introduirait le tirage au sort que ce chantier retire. Remplacer est donc
+	 * l'operation juste, et non un contournement.
+	 *
+	 * ET ELLE REFUSE PLUTOT QUE DE DEVINER, comme ses voisines : la propriete
+	 * doit etre une table, sa CLE un pointeur d'objet de la classe attendue, et
+	 * sa VALEUR un flottant. Une table dont la valeur serait un objet
+	 * accepterait un flottant a l'ecriture et corromprait la memoire.
+	 *
+	 * UNE CLE NULLE VIDE LA TABLE, et c'est un contrat EXPLICITE : l'appelant en
+	 * a besoin pour dire « aucun choix ne convient ici », et laisser l'ancien
+	 * contenu ferait passer un blizzard sur l'ocean.
+	 */
+	static bool PoserTableUneEntree(UObject* Cible, FName Propriete,
+		UObject* Cle, float Valeur);
+
+	/** Relire une table `objet -> flottant`. Faux si la propriete n'en est pas
+	 *  une -- et l'appelant doit relire, une ecriture par reflexion ne signalant
+	 *  rien quand elle echoue. */
+	static bool LireTableObjetFlottant(const UObject* Cible, FName Propriete,
+		TMap<UObject*, float>& OutTable);
+
 	/** Cherche les acteurs UDS du monde. Faux si le niveau n'en contient aucun. */
 	bool Resolve(UWorld* World);
 
