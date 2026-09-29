@@ -21,6 +21,53 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	/** Unite de temperature attendue par UDS. */
 	enum class ETemperatureScale : uint8 { Fahrenheit, Celsius };
 
+	// --- tableaux d'objets, SUR UNE CIBLE QUELCONQUE -------------------------
+	//
+	// POURQUOI CES DEUX-LA SONT STATIQUES, quand tout le reste du pont vise les
+	// deux acteurs. La liste blanche de DLWE n'est PAS portee par l'acteur du
+	// ciel ni par celui de la meteo : elle vit sur
+	// `UDS_DLWE_Interaction_Settings`, un objet de reglages que CHAQUE composant
+	// `DLWE_Interaction` tient par instance. Mesure du 29 septembre 2026 : les
+	// 925 variables du ciel et les 584 de la meteo ont ete enumerees avec un
+	// motif large, et `Physical Materials which enable DLWE Interactions on
+	// non-Landscapes` n'y figure pas. Le registre la donnait pourtant a declarer
+	// sans dire ou -- une lecture de documentation prise pour un emplacement.
+	//
+	// La cible est donc un parametre, mais la reflexion reste ICI : c'est la
+	// promesse de ce fichier, que toute la fragilite du couplage y soit
+	// concentree.
+
+	/**
+	 * AJOUTER UN OBJET A UN TABLEAU D'OBJETS, SANS RIEN EFFACER.
+	 *
+	 * NON DESTRUCTIF PAR CONSTRUCTION, et pas seulement parce que le tableau se
+	 * trouve vide aujourd'hui : on AJOUTE, et l'on ne fait rien si la valeur y
+	 * est deja. Un pack qui peuplerait sa propre liste dans une version future
+	 * nous trouverait donc inoffensifs.
+	 *
+	 * ET ELLE REFUSE PLUTOT QUE DE DEVINER. Le type interne est verifie contre
+	 * la valeur proposee : pose sur un `TArray<double>` qui porterait le meme
+	 * nom, une ecriture non verifiee corromprait la memoire. C'est la meme
+	 * prudence que `ChangerAmbiance`, qui compte ses parametres avant
+	 * d'empiler -- un pack qui change de forme nous trouve muets plutot que
+	 * dangereux.
+	 *
+	 * `OutTaille`, s'il est fourni, recoit la taille du tableau APRES l'appel :
+	 * c'est ce qui permet a l'appelant de journaliser un COMPTE, donc de
+	 * distinguer « ajoute » de « deja la » de « refuse ».
+	 */
+	static bool AjouterAuTableauObjets(UObject* Cible, FName Propriete,
+		UObject* Valeur, int32* OutTaille = nullptr);
+
+	/**
+	 * Relire un tableau d'objets. Faux si la propriete manque ou n'en est pas un.
+	 *
+	 * ELLE EXISTE PARCE QU'UNE ECRITURE SE RELIT. Ce depot a paye douze fois le
+	 * fait qu'une ecriture par reflexion ne signale rien quand elle echoue.
+	 */
+	static bool LireTableauObjets(const UObject* Cible, FName Propriete,
+		TArray<UObject*>& OutValeurs);
+
 	/** Cherche les acteurs UDS du monde. Faux si le niveau n'en contient aucun. */
 	bool Resolve(UWorld* World);
 

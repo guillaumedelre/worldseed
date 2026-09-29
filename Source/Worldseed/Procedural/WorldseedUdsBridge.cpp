@@ -353,6 +353,119 @@ bool FWorldseedUdsBridge::ChangerAmbiance(UObject* NouveauSon, float FonduS,
 	return true;
 }
 
+namespace
+{
+	/**
+	 * Le tableau d'objets d'une propriete, ou nullptr -- avec son type interne.
+	 *
+	 * DEUX CONTROLES, ET AUCUN N'EST DECORATIF. Que la propriete soit bien un
+	 * tableau, et que son INTERIEUR soit bien un pointeur d'objet : ecrire un
+	 * pointeur dans un `TArray<double>` qui porterait le meme nom corromprait la
+	 * memoire au lieu d'echouer.
+	 */
+	FArrayProperty* TrouverTableauObjets(const UStruct* Classe, FName Propriete,
+		FObjectPropertyBase*& OutInterieur)
+	{
+		OutInterieur = nullptr;
+		if (!Classe)
+		{
+			return nullptr;
+		}
+		FArrayProperty* const Tableau =
+			CastField<FArrayProperty>(Classe->FindPropertyByName(Propriete));
+		if (!Tableau)
+		{
+			return nullptr;
+		}
+		OutInterieur = CastField<FObjectPropertyBase>(Tableau->Inner);
+		return OutInterieur ? Tableau : nullptr;
+	}
+}
+
+bool FWorldseedUdsBridge::LireTableauObjets(const UObject* Cible,
+	FName Propriete, TArray<UObject*>& OutValeurs)
+{
+	OutValeurs.Reset();
+	if (!Cible)
+	{
+		return false;
+	}
+
+	FObjectPropertyBase* Interieur = nullptr;
+	FArrayProperty* const Tableau =
+		TrouverTableauObjets(Cible->GetClass(), Propriete, Interieur);
+	if (!Tableau)
+	{
+		return false;
+	}
+
+	// LE POINTEUR EST CONST, LE HELPER NE L'EST PAS : on ne modifie rien ici,
+	// mais `FScriptArrayHelper` n'a pas de variante constante.
+	FScriptArrayHelper Helper(Tableau,
+		Tableau->ContainerPtrToValuePtr<void>(const_cast<UObject*>(Cible)));
+	OutValeurs.Reserve(Helper.Num());
+	for (int32 i = 0; i < Helper.Num(); ++i)
+	{
+		OutValeurs.Add(Interieur->GetObjectPropertyValue(Helper.GetRawPtr(i)));
+	}
+	return true;
+}
+
+bool FWorldseedUdsBridge::AjouterAuTableauObjets(UObject* Cible,
+	FName Propriete, UObject* Valeur, int32* OutTaille)
+{
+	if (OutTaille)
+	{
+		*OutTaille = 0;
+	}
+	if (!Cible || !Valeur)
+	{
+		return false;
+	}
+
+	FObjectPropertyBase* Interieur = nullptr;
+	FArrayProperty* const Tableau =
+		TrouverTableauObjets(Cible->GetClass(), Propriete, Interieur);
+	if (!Tableau)
+	{
+		return false;
+	}
+
+	// ON REFUSE PLUTOT QUE DE DEVINER. Un `TArray<USoundBase*>` accepterait un
+	// physmat sans broncher a l'ecriture, et le pack lirait un pointeur d'un
+	// type qu'il n'attend pas.
+	if (!Interieur->PropertyClass || !Valeur->IsA(Interieur->PropertyClass))
+	{
+		return false;
+	}
+
+	FScriptArrayHelper Helper(Tableau,
+		Tableau->ContainerPtrToValuePtr<void>(Cible));
+
+	// IDEMPOTENT : si la valeur y est deja, on ne fait rien et l'on rend VRAI.
+	// Un pilote qui s'execute a chaque apparition de pion ne doit pas empiler
+	// la meme entree a chaque fois.
+	for (int32 i = 0; i < Helper.Num(); ++i)
+	{
+		if (Interieur->GetObjectPropertyValue(Helper.GetRawPtr(i)) == Valeur)
+		{
+			if (OutTaille)
+			{
+				*OutTaille = Helper.Num();
+			}
+			return true;
+		}
+	}
+
+	const int32 Index = Helper.AddValue();
+	Interieur->SetObjectPropertyValue(Helper.GetRawPtr(Index), Valeur);
+	if (OutTaille)
+	{
+		*OutTaille = Helper.Num();
+	}
+	return true;
+}
+
 bool FWorldseedUdsBridge::WriteBool(FName PropertyName, bool bValue) const
 {
 	for (AActor* const Acteur : { WeatherActor.Get(), SkyActor.Get() })
