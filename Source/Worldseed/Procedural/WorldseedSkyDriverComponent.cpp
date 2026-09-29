@@ -6,6 +6,7 @@
 #include "Components/DirectionalLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
 #include "Procedural/WorldseedPipeline.h"
@@ -257,6 +258,24 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	// du joueur. Le cout d'un passage sans rien a faire est une comparaison de
 	// pointeurs.
 	ArmerLesPasDlwe();
+
+	// --- LES TEMPETES RADIALES, ARMEES PUIS COMPTEES -------------------------
+	//
+	// L'ARMEMENT EST A TIR UNIQUE, LE COMPTE NON : une tempete apparait en
+	// fondu, traverse et disparait, donc un seul echantillon ne dit ni si elle
+	// est nee ni si elle vit. Six passages a dix secondes couvrent une naissance
+	// et le debut du trajet ; sa duree de vie livree est de 500 a 700 s, donc on
+	// ne verra pas sa fin et ce n'est pas le sujet.
+	ArmerLesOragesRadiaux();
+	if (bOragesRadiauxArmes && ReleveesDesOrages < 6)
+	{
+		TempsDepuisOrageS += DeltaSeconds;
+		if (TempsDepuisOrageS > 10.0f * static_cast<float>(ReleveesDesOrages + 1))
+		{
+			++ReleveesDesOrages;
+			ReleverLesOragesRadiaux();
+		}
+	}
 
 	// ET ON LES RELIT PENDANT QU'ON MARCHE. Quatre passages a cinq secondes
 	// d'intervalle : le banc commence sa marche apres le premier, et un son de
@@ -1903,4 +1922,154 @@ void UWorldseedSkyDriverComponent::ReleverLesPasDlwe() const
 		TEXT("%d voient de la neige, %d sources (existence, PAS audibilite)"),
 		ReleveesDesPas, Eveilles, PasDlwe.Num(), Armes, VoientDeLaNeige,
 		Sonnent);
+}
+
+// ==================================================== LES TEMPETES RADIALES
+
+namespace
+{
+	/**
+	 * LES NOMS SONT RELEVES SUR L'ACTEUR, PAS LUS DANS LA DOCUMENTATION.
+	 *
+	 * Enumeration du 29 septembre 2026 : 584 variables et 408 fonctions sur
+	 * `Ultra_Dynamic_Weather`. Ce chantier a deja paye deux fois le fait qu'un
+	 * nom de documentation ne dit pas QUI porte la propriete -- la liste blanche
+	 * de DLWE vivait sur un objet de reglages, pas sur l'acteur.
+	 *
+	 * ET L'INTERRUPTEUR PORTE UN `OnRep_`, donc poser le booleen ne suffit pas :
+	 * onze fois paye dans ce depot. On appelle le rappel, puis le demarrage.
+	 */
+	const FName NomInterrupteurOrage(TEXT("Enable Radial Storm Spawning"));
+	const FName NomRappelOrage(TEXT("OnRep_Enable Radial Storm Spawning"));
+	const FName NomDemarrageOrage(TEXT("Start Up Radial Storm Spawning"));
+	const FName NomSpawnOrage(TEXT("Spawn Radial Storm"));
+	const FName NomChargementOrage(TEXT("Load Radial Storm Class"));
+	const FName NomClasseDure(TEXT("Radial Storm Class Hard"));
+}
+
+void UWorldseedSkyDriverComponent::ArmerLesOragesRadiaux()
+{
+	if (bOragesRadiauxArmes
+		|| !FParse::Param(FCommandLine::Get(), TEXT("WorldseedOrageRadial")))
+	{
+		return;
+	}
+	bOragesRadiauxArmes = true;
+
+	// L'ETAT D'AVANT, PARCE QU'UN TEMOIN COMMENCE PAR LA. Le pack livre faux ;
+	// si on lisait vrai, c'est que la carte l'a deja arme et l'experience ne
+	// dirait pas ce qu'on croit.
+	bool bAvant = false;
+	const bool bLu = Bridge.ReadBool(NomInterrupteurOrage, bAvant);
+
+	const bool bEcrit = Bridge.WriteBool(NomInterrupteurOrage, true);
+	const bool bRappel = Bridge.CallFunction(NomRappelOrage);
+	const bool bDemarre = Bridge.CallFunction(NomDemarrageOrage);
+
+	// ET ON RELIT, parce qu'un drapeau pose n'est pas un drapeau lu.
+	bool bApres = false;
+	const bool bRelu = Bridge.ReadBool(NomInterrupteurOrage, bApres);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] orage radial : avant %s%s -> ecrit %s, OnRep_ %s, ")
+		TEXT("demarrage %s, relu %s%s"),
+		bAvant ? TEXT("VRAI") : TEXT("faux"),
+		bLu ? TEXT("") : TEXT(" (ILLISIBLE)"),
+		bEcrit ? TEXT("oui") : TEXT("REFUSE"),
+		bRappel ? TEXT("appele") : TEXT("ABSENT"),
+		bDemarre ? TEXT("appele") : TEXT("ABSENT"),
+		bApres ? TEXT("VRAI") : TEXT("faux"),
+		bRelu ? TEXT("") : TEXT(" (ILLISIBLE)"));
+
+	// LA CLASSE SE CHARGE AVANT DE SPAWNER, ET C'EST UNE LECON PAYEE ICI MEME.
+	// Le premier essai appelait `Spawn Radial Storm` dans la MEME trame que
+	// l'armement : les quatre appels rendaient vrai, l'interrupteur se relisait
+	// VRAI, et ZERO acteur naissait sur soixante secondes. Or l'enumeration
+	// nomme le coupable : `Radial Storm Class` est un SOFTCLASS, double d'un
+	// `Radial Storm Class Hard`, et le pack livre `Load Radial Storm Class`
+	// pour resoudre l'un dans l'autre. Un spawn sur une classe nulle ne fait
+	// rien -- et ne le dit pas.
+	const bool bCharge = Bridge.CallFunction(NomChargementOrage);
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] orage radial : « %s » %s. Le spawn est DIFFERE au ")
+		TEXT("premier releve : un softclass peut se charger de facon asynchrone, ")
+		TEXT("et spawner dans la meme trame retomberait sur une classe nulle."),
+		*NomChargementOrage.ToString(),
+		bCharge ? TEXT("appelee") : TEXT("ABSENTE"));
+}
+
+void UWorldseedSkyDriverComponent::ReleverLesOragesRadiaux() const
+{
+	const UWorld* const Monde = GetWorld();
+	if (!Monde)
+	{
+		return;
+	}
+
+	// LA CLASSE D'ABORD : c'est elle qui separe « le pack refuse de spawner »
+	// de « le pack a spawne et l'acteur est mort ou ailleurs ». Sans cette
+	// colonne, un zero ne se diagnostique pas.
+	const UObject* const ClasseDure = FWorldseedUdsBridge::LireObjet(
+		Bridge.MeteoBrute(), NomClasseDure);
+
+	// ET LE SPAWN SE DECLENCHE ICI, AU PREMIER RELEVE -- donc apres que le
+	// chargement de l'armement a eu une trame pour aboutir.
+	if (ReleveesDesOrages == 1)
+	{
+		const bool bSpawn = ClasseDure
+			? Bridge.CallFunction(NomSpawnOrage) : false;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] orage radial : classe dure %s -- « %s » %s"),
+			ClasseDure ? *ClasseDure->GetName() : TEXT("NULLE"),
+			*NomSpawnOrage.ToString(),
+			bSpawn ? TEXT("appelee") : TEXT("PAS appelee (classe nulle)"));
+	}
+
+	// ON COMPTE LES ACTEURS, ET L'ON NOMME CE QU'ON A COMPTE. Un compte nu se
+	// lit comme une preuve ; un compte avec les noms se verifie. Le filtre
+	// porte sur le nom de CLASSE parce que la classe du pack est un Blueprint
+	// absent du depot -- on ne peut pas la citer a la compilation.
+	// LA REFERENCE EST LE JOUEUR, PAS NOTRE ACTEUR -- ET LE PREMIER JET AVAIT
+	// TORT. Il mesurait depuis `GetOwner()`, l'acteur de climat, qui se tient a
+	// l'origine du monde : il annoncait 56 km quand le pack fait naitre ses
+	// tempetes AUTOUR DU JOUEUR, a 25 de sa distance de depart. Le chiffre
+	// n'etait pas faux, il ne mesurait pas la bonne chose -- et sur un monde de
+	// 64 x 32 km il envoyait chercher hors de la carte.
+	const APawn* const Pion = UGameplayStatics::GetPlayerPawn(
+		const_cast<UWorld*>(Monde), 0);
+	const FVector Oeil = Pion ? Pion->GetActorLocation() : FVector::ZeroVector;
+
+	int32 Orages = 0;
+	TArray<FString> Noms;
+	for (TActorIterator<AActor> It(const_cast<UWorld*>(Monde)); It; ++It)
+	{
+		const AActor* const A = *It;
+		if (!A || !A->GetClass())
+		{
+			continue;
+		}
+		if (A->GetClass()->GetName().Contains(TEXT("Radial_Storm")))
+		{
+			++Orages;
+			if (Noms.Num() < 6)
+			{
+				// ET ON DONNE LE CAP, parce qu'une distance ne dit pas ou
+				// TOURNER LA TETE. Une tempete se juge a l'oeil, et une mesure
+				// qui ne permet pas d'aller voir son sujet ne sert qu'a moitie.
+				const FVector Vers = A->GetActorLocation() - Oeil;
+				Noms.Add(FString::Printf(TEXT("%s a %.1f km, cap %.0f deg"),
+					*A->GetName(), Vers.Size() / 100000.0,
+					FMath::UnwindDegrees(
+						FMath::RadiansToDegrees(FMath::Atan2(Vers.Y, Vers.X)))));
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] orage radial releve %d : classe %s, %d acteur(s) de ")
+		TEXT("tempete%s%s"),
+		ReleveesDesOrages,
+		ClasseDure ? TEXT("chargee") : TEXT("NULLE"), Orages,
+		Orages > 0 ? TEXT(" -- ") : TEXT(""),
+		Orages > 0 ? *FString::Join(Noms, TEXT(", ")) : TEXT(""));
 }

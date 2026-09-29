@@ -391,6 +391,47 @@ private:
 	/** Le pion deja equipe. FAIBLE : une mort du joueur doit re-armer. */
 	TWeakObjectPtr<class APawn> PionEquipe;
 
+	// --------------------------------------------- les tempetes radiales
+
+	/**
+	 * ARMER LES TEMPETES RADIALES, ET EN DECLENCHER UNE TOUT DE SUITE.
+	 *
+	 * ARME PAR `-WorldseedOrageRadial`, et rien autrement : c'est une PREMIERE
+	 * LUEUR, pas un reglage du monde. Le mariage avec notre climat n'est pas
+	 * tranche -- les quatre tables de probabilite du pack sont un tirage au sort
+	 * saisonnier, c'est-a-dire le mecanisme que le proprietaire a ECARTE pour
+	 * l'etat meteo global. On regarde d'abord, on arbitre ensuite.
+	 *
+	 * POURQUOI ON DECLENCHE A LA MAIN AU LIEU D'ATTENDRE. Releve du pack :
+	 * `Radial Storm Wait Interval Range` vaut 1000 a 2000 SECONDES, et
+	 * `First Wait Multiplier` 0,5 -- soit huit a dix-sept minutes avant la
+	 * premiere. Un lancement de mesure ne verrait donc RIEN, et l'on
+	 * conclurait a l'echec en ayant seulement mesure trop tot. `Spawn Radial
+	 * Storm` ne prend aucun parametre, verifie : le pont sait l'appeler.
+	 *
+	 * ⚠ ET CETTE MESURE NE PEUT PAS ETRE APPARIEE. Le ciel d'inspection
+	 * (`-WorldseedCielClair`), qui rend deux lancements comparables, COUPE les
+	 * nuages volumetriques -- il detruirait le sujet. On regarde donc une seule
+	 * image, et il faut le dire plutot que de laisser croire a un A/B.
+	 */
+	void ArmerLesOragesRadiaux();
+
+	/**
+	 * Compter les acteurs de tempete REELLEMENT presents.
+	 *
+	 * C'EST L'EFFET, PAS LE RETOUR D'APPEL. Trois fois aujourd'hui un appel qui
+	 * rend vrai n'a rien prouve -- et une fois un `IsPlaying()` a menti. Un
+	 * acteur `Radial_Storm_C` dans le monde, lui, est une chose qui existe.
+	 */
+	void ReleverLesOragesRadiaux() const;
+
+	/** Vrai une fois l'armement tente : il ne vaut que la premiere fois. */
+	bool bOragesRadiauxArmes = false;
+
+	/** Temps depuis l'armement, et nombre de relevés faits. */
+	float TempsDepuisOrageS = 0.0f;
+	int32 ReleveesDesOrages = 0;
+
 	/**
 	 * Vrai quand la classe du pack est introuvable.
 	 *
