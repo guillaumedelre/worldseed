@@ -73,6 +73,20 @@ public:
 	/** Vrai si un ciel a ete trouve dans le niveau. */
 	bool HasSky() const { return Bridge.IsValid(); }
 
+	/**
+	 * L'ETAT METEO REELLEMENT AFFICHE, fondu compris.
+	 *
+	 * IL FAUT LE VECU, PAS LA CIBLE : ce qui rampe au sol doit suivre ce que le
+	 * joueur VOIT dans le ciel, donc l'etat apres lissage. Rendre la cible
+	 * ferait courir le sable avant que le vent ne se leve a l'ecran, et ce
+	 * depot a exactement ce precedent -- une sonde qui mesurait la cible
+	 * annoncait neuf orages la ou le modele en designait cent dix-neuf.
+	 */
+	const FWorldseedWeather& MeteoCourante() const { return Current; }
+
+	/** Les regles de la section « uds », telles qu'elles ont ete lues. */
+	const FWorldseedClimatePresetRules& ReglesMeteo() const { return PresetRules; }
+
 private:
 	/** Ecrit l'etat courant dans UDS. */
 	void PushWeather() const;
@@ -160,4 +174,15 @@ private:
 	 * 10 au meme point et a la meme heure tranche en quatre captures.
 	 */
 	float TemoinPoussiere = -1.0f;
+
+	/**
+	 * Temoin de VENT force par `-WorldseedVentForce=` ; negatif = inactif.
+	 *
+	 * IL SERT A REGARDER CE QUI RAMPE AU SOL. Le temoin de poussiere force le
+	 * voile ET le vent a la meme valeur : a 10 l'image est entierement noyee, et
+	 * l'on ne peut rien juger de ce qui court au ras du sol. Celui-ci ne pose
+	 * que le vent, la poussiere restant CALCULEE -- ce qui est l'etat reel d'un
+	 * jour venteux, ou le sable court alors que le voile reste modere.
+	 */
+	float TemoinVent = -1.0f;
 };

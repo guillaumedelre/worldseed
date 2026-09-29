@@ -110,6 +110,24 @@ namespace WorldseedWeatherState
 		const FWorldseedClimatePresetRules& PresetRules);
 
 	/**
+	 * LE VOILE DE POUSSIERE QUE CE VENT SOULEVE, sur l'echelle 0..10 d'UDS.
+	 *
+	 * PUBLIQUE POUR LA MEME RAISON QUE `Saltation` : deux appelants, et une
+	 * regle contre les formules recopiees. `Evaluate` s'en sert, et le temoin de
+	 * VENT aussi -- celui qui permet de voir la reptation au sol sans que le
+	 * voile sature l'image.
+	 *
+	 * POURQUOI CE TEMOIN EXISTE. Le temoin de POUSSIERE force `Dust` et le vent
+	 * a la MEME valeur, ce qui n'arrive jamais dans le monde : a vent 9 le
+	 * modele rend un voile de 3,6, pas de 9. Mesure du 29 septembre 2026, vue
+	 * au ras du sol sous un temoin a 10 : l'image est noyee, et couper les
+	 * particules ne la change pas d'un dixieme -- 137,2 contre 136,9 de clarte.
+	 * Le temoin n'etait donc pas representatif pour cette question.
+	 */
+	WORLDSEED_API float PoussiereDepuisVent(float WindIntensity, float DustPart,
+		float Occurrence, const FWorldseedClimatePresetRules& PresetRules);
+
+	/**
 	 * Fondu vers une cible.
 	 *
 	 * Franchir une frontiere climatique ne doit pas commuter le ciel d'un coup :

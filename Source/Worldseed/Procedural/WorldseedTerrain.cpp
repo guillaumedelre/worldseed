@@ -3,6 +3,7 @@
 #include "Procedural/WorldseedTerrain.h"
 #include "Procedural/WorldseedGameInstance.h"
 #include "Procedural/WorldseedSkyDriverComponent.h"
+#include "Procedural/WorldseedReptationComponent.h"
 #include "Procedural/WorldseedWaterComponent.h"
 #include "Procedural/WorldseedGroundProxy.h"
 #include "Procedural/WorldseedNappe.h"
@@ -32,6 +33,7 @@ AWorldseedTerrain::AWorldseedTerrain()
 	SetRootComponent(RootScene);
 
 	SkyDriver = CreateDefaultSubobject<UWorldseedSkyDriverComponent>(TEXT("SkyDriver"));
+	Reptation = CreateDefaultSubobject<UWorldseedReptationComponent>(TEXT("Reptation"));
 	Water = CreateDefaultSubobject<UWorldseedWaterComponent>(TEXT("Water"));
 }
 
@@ -645,6 +647,82 @@ void AWorldseedTerrain::FeedSky(float DeltaSeconds)
 
 	SkyDriver->Drive(Sample, LongitudeDeg, AltitudeM, Geometry.LatSpanDeg,
 		WorldSeed, DeltaSeconds);
+
+	// --- CE QUI RAMPE SOUS LES PIEDS ----------------------------------------
+	//
+	// MEME MINUTEUR, MEME POINT, AUCUN TICK NOUVEAU : ce qui court au sol change
+	// a l'echelle du kilometre, comme le climat. Et l'on relit le sol AU POINT,
+	// pas au centre du chunk.
+	//
+	// APRES `Drive`, et c'est l'ordre qui compte : on veut l'etat meteo VECU,
+	// fondu compris, pas la cible. Le sable ne doit pas courir avant que le vent
+	// ne se leve a l'ecran.
+	if (Reptation && SkyDriver->HasSky())
+	{
+		if (!bReptationRulesLoaded)
+		{
+			FString Erreur;
+			if (const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur))
+			{
+				ReptationRules = FWorldseedReptationRules::FromRules(*R);
+				bReptationRulesLoaded = true;
+			}
+		}
+
+		EWorldseedBiome BiomeApparent = EWorldseedBiome::Ocean;
+		EWorldseedCover Couverture = EWorldseedCover::None;
+		if (LireSolAuPoint(static_cast<float>(Origin.X), static_cast<float>(Origin.Y),
+				BiomeApparent, Couverture))
+		{
+			// LE NIVEAU DE LA MER EST Z = 0 DANS CE MONDE, par construction :
+			// l'ocean du plugin Water est un plan a l'altitude zero, et toute
+			// la chaine s'y cale depuis le calage altimetrique.
+			const FWorldseedReptation Rep = WorldseedReptation::Evaluer(
+				BiomeApparent, Couverture,
+				static_cast<float>(Origin.Z), 0.0f,
+				SkyDriver->MeteoCourante(), SkyDriver->ReglesMeteo(),
+				ReptationRules);
+
+			Reptation->Appliquer(Rep, Origin);
+		}
+	}
+}
+
+bool AWorldseedTerrain::LireSolAuPoint(float WorldX, float WorldY,
+	EWorldseedBiome& OutBiome, EWorldseedCover& OutCover) const
+{
+	const FWorldseedBiomeMap& Carte = Biomes();
+	const int32 Count = Geometry.CellCount();
+	if (Geometry.NX < 2 || Carte.Index.Num() != Count || Carte.Cover.Num() != Count)
+	{
+		return false;
+	}
+
+	// LA MEME CONVERSION QUE `SampleClimateAtWorldXY`, et la longitude s'enroule
+	// tandis que la latitude se borne -- le monde est un cylindre, pas un tore.
+	const FVector Local = GetActorTransform().InverseTransformPosition(
+		FVector(WorldX, WorldY, 0.0f));
+
+	const float WidthCm = Geometry.WidthM() * WorldseedMetersToCm;
+	const float HeightCm = Geometry.HeightM * WorldseedMetersToCm;
+
+	float U = static_cast<float>(Local.X) / WidthCm + 0.5f;
+	U -= FMath::FloorToFloat(U);
+	const float V = FMath::Clamp(
+		static_cast<float>(Local.Y) / HeightCm + 0.5f, 0.0f, 1.0f);
+
+	// ON NE MOYENNE JAMAIS UN IDENTIFIANT : le plus proche voisin, comme
+	// partout ailleurs dans ce depot. Interpoler un numero de biome rend des
+	// biomes qui n'existent pas -- 307 points faux sur 17956, deja payes.
+	const int32 I = FMath::Clamp(
+		FMath::FloorToInt(U * Geometry.NX), 0, Geometry.NX - 1);
+	const int32 J = FMath::Clamp(
+		FMath::FloorToInt(V * Geometry.NY), 0, Geometry.NY - 1);
+	const int32 Cellule = J * Geometry.NX + I;
+
+	OutCover = static_cast<EWorldseedCover>(Carte.Cover[Cellule]);
+	OutBiome = WorldseedBiomes::AppearanceBiome(Carte.Index[Cellule], Carte.Cover[Cellule]);
+	return true;
 }
 
 bool AWorldseedTerrain::SampleClimateAtWorldXY(float WorldX, float WorldY,

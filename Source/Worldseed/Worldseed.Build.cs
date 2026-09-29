@@ -38,7 +38,16 @@ public class Worldseed : ModuleRules
 			// dont on inclut les en-tetes se declare, sans quoi le jour ou Epic
 			// les passe en prive la compilation casse sans raison visible.
 			"RenderCore",
-			"RHI"
+			"RHI",
+			// Particules de la REPTATION -- le sable et la neige qui courent au
+			// ras du sol. On n'ecrit AUCUN systeme : celui d'Ultra Dynamic Sky
+			// est deja le systeme de particules meteo generique du pack (ses 51
+			// parametres utilisateur portent `Snow_Twirl`, `Splash Percentage`
+			// et `Rain Collision Channel`), et le GRAPHE d'un Niagara n'est de
+			// toute facon pas scriptable -- `NiagaraEditorLibrary` n'existe meme
+			// pas cote Python. On se contente donc de l'instancier et de le
+			// regler, ce que `NiagaraComponent` expose largement.
+			"Niagara"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

@@ -8,6 +8,7 @@
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedApparence.h"
 #include "Procedural/WorldseedBiomes.h"
+#include "Procedural/WorldseedReptation.h"
 #include "Procedural/WorldseedCaves.h"
 #include "Procedural/WorldseedLithology.h"
 #include "Procedural/WorldseedVoxelTerrain.h"
@@ -663,6 +664,30 @@ protected:
 	/** Le pilotage du ciel, qui ne sait rien du terrain. */
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Ciel")
 	TObjectPtr<class UWorldseedSkyDriverComponent> SkyDriver;
+
+	/**
+	 * Ce qui rampe au ras du sol -- le sable, et la neige.
+	 *
+	 * IL EST SUR LE TERRAIN ET NON SUR LE PION, parce que c'est le terrain qui
+	 * sait ce qu'il y a SOUS les pieds : le biome, la couverture, l'altitude. Le
+	 * pion ne connait que sa position.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Ciel")
+	TObjectPtr<class UWorldseedReptationComponent> Reptation;
+
+	/** Seuils de la reptation, lus une fois avec le reste des regles. */
+	FWorldseedReptationRules ReptationRules;
+	bool bReptationRulesLoaded = false;
+
+	/**
+	 * Le biome APPARENT et la couverture au point du monde.
+	 *
+	 * AU POINT, PAS AU CENTRE DU CHUNK -- c'est la regle de l'estran : une bande
+	 * littorale fait une trentaine de metres quand un chunk en fait trente-deux,
+	 * et trancher au centre donnerait un trait de cote en marches d'escalier.
+	 */
+	bool LireSolAuPoint(float WorldX, float WorldY,
+		EWorldseedBiome& OutBiome, EWorldseedCover& OutCover) const;
 
 	/** La pose de l'ocean. */
 	UPROPERTY(VisibleAnywhere, Category = "Worldseed|Eau")

@@ -277,6 +277,17 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 				TEXT("temoin, le climat ne decide plus de cette valeur"),
 				TemoinPoussiere);
 		}
+
+		float Ventee = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVentForce="), Ventee)
+			&& Ventee >= 0.0f)
+		{
+			TemoinVent = FMath::Clamp(Ventee, 0.0f, 10.0f);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : VENT FORCE a %.1f sur 10 -- la poussiere, ")
+				TEXT("elle, reste calculee par le modele"),
+				TemoinVent);
+		}
 	}
 	if (TemoinOrage >= 0.0f)
 	{
@@ -321,6 +332,29 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		Current.Dust = TemoinPoussiere;
 		Current.WindIntensity = FMath::Max(Current.WindIntensity, TemoinPoussiere);
 		Current.Fog = 1.0f;
+		Current.Rain = 0.0f;
+		Current.Snow = 0.0f;
+	}
+
+	if (TemoinVent >= 0.0f)
+	{
+		// LE TEMOIN DE VENT, ET IL REPOND A UNE QUESTION QUE L'AUTRE NE SAIT
+		// PAS POSER.
+		//
+		// Le temoin de POUSSIERE force `Dust` et le vent a la MEME valeur, ce
+		// qui n'arrive jamais dans le monde : a vent 9 le modele rend un voile
+		// de 3,6, pas de 9. Pour REGARDER ce qui rampe au ras du sol -- lequel
+		// ne se leve qu'au-dela du seuil de saltation -- il faut donc un vent
+		// fort SANS que le voile sature l'image. Mesure qui l'a impose : sous un
+		// temoin de poussiere a 10, couper les particules ne change pas l'image
+		// d'un dixieme (137,2 contre 136,9 de clarte). On ne voyait rien parce
+		// qu'il n'y avait rien a voir : tout etait noye.
+		//
+		// LA POUSSIERE RESTE CALCULEE, par la meme fonction que `Evaluate` --
+		// on ne recopie pas la formule, on la rappelle avec le vent force.
+		Current.WindIntensity = TemoinVent;
+		Current.Dust = WorldseedWeatherState::PoussiereDepuisVent(
+			TemoinVent, /*DustPart=*/1.0f, /*Occurrence=*/0.0f, PresetRules);
 		Current.Rain = 0.0f;
 		Current.Snow = 0.0f;
 	}

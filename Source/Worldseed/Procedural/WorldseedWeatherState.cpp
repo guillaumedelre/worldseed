@@ -80,6 +80,18 @@ namespace WorldseedWeatherState
 			0.0f, 1.0f);
 	}
 
+	float PoussiereDepuisVent(float WindIntensity, float DustPart,
+		float Occurrence, const FWorldseedClimatePresetRules& PresetRules)
+	{
+		// LA PLUIE RABAT LA POUSSIERE -- meme fait physique que le brouillard
+		// qui se leve quand il ne pleut pas.
+		const float Arrachement = Saltation(WindIntensity, PresetRules);
+		return DustPart * (1.0f - Occurrence) * FMath::Max(
+			PresetRules.PoussiereVoile,
+			PresetRules.VentMaxUds
+				* FMath::Pow(Arrachement, PresetRules.PoussiereVentMordant));
+	}
+
 	FWorldseedWeather Evaluate(const FWorldseedClimateSample& Sample,
 		const FWorldseedClimatePresetRules& PresetRules,
 		const FWorldseedWeatherParams& Params)
@@ -297,18 +309,12 @@ namespace WorldseedWeatherState
 
 		// --- LA POUSSIERE SORT DU VENT ------------------------------------------
 		//
-		// LA SALTATION EST PARTAGEE AVEC LA REPTATION AU RAS DU SOL, qui decide
-		// si le sable -- ou la neige -- se met a courir. Les deux decrivent le
-		// meme fait physique et doivent bouger ensemble : d'ou une fonction, et
-		// non deux copies de la meme formule.
-		const float Arrachement = Saltation(Out.WindIntensity, PresetRules);
-
-		// ET LA PLUIE RABAT LA POUSSIERE -- meme fait physique que le brouillard
-		// qui se leve quand il ne pleut pas, quelques lignes plus haut.
-		Out.Dust = Preset.DustPart * (1.0f - Occurrence) * FMath::Max(
-			PresetRules.PoussiereVoile,
-			PresetRules.VentMaxUds
-				* FMath::Pow(Arrachement, PresetRules.PoussiereVentMordant));
+		// LES DEUX MOITIES SONT DES FONCTIONS PUBLIQUES, et c'est la regle du
+		// depot contre les formules recopiees : `Saltation` est partagee avec la
+		// REPTATION au ras du sol -- qui decide si le sable ou la neige se met a
+		// courir -- et `PoussiereDepuisVent` avec le temoin de VENT.
+		Out.Dust = PoussiereDepuisVent(Out.WindIntensity, Preset.DustPart,
+			Occurrence, PresetRules);
 
 		return Out;
 	}
