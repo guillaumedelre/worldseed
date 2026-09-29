@@ -20,6 +20,37 @@ namespace
 	const FName NameWindDirection = TEXT("Wind Direction");
 
 	/**
+	 * LES SURCHARGES MANUELLES DE LA POUSSIERE ET DU VENT, ET C'ETAIT LA CAUSE.
+	 *
+	 * SIGNALE : « je vois assez rarement de la pluie ou des orages tres fort,
+	 * est-il bien branche sur le climat ? » -- et pour la poussiere, jamais.
+	 *
+	 * UDW PORTE UNE SURCHARGE PAR CURSEUR, ET NOUS N'EN POSIONS QU'UNE. Releve
+	 * du 29 septembre 2026 sur l'acteur de la carte, instance ET defaut de
+	 * classe : `Dust - Manual Override`, `Wind Intensity - Manual Override`,
+	 * `Rain`, `Snow`, `Fog`, `Cloud Coverage`, `Material Dust Coverage` --
+	 * TOUTES a faux. Seule celle du tonnerre etait armee par notre code, et le
+	 * commentaire qui l'accompagne dit exactement pourquoi il le faut : sans
+	 * elle, UDS reprend la main depuis son propre systeme de types et notre
+	 * ecriture est ecrasee au tick suivant. Le raisonnement vaut mot pour mot
+	 * pour la poussiere et pour le vent, et que la pluie soit visible ne prouve
+	 * rien : ce sont des booleens INDEPENDANTS.
+	 *
+	 * CE N'ETAIT PAS UN INTERRUPTEUR ETEINT, et il fallait le verifier avant de
+	 * regler quoi que ce soit -- l'aurore avait coute une seance pour cela.
+	 * `Enable Dust Particles` vaut VRAI par defaut, `PPWF Intensity from Dust`
+	 * vaut 1,4 : la chaine est armee, c'est notre valeur qui ne survivait pas.
+	 *
+	 * ET LEURS RAPPELS EXISTENT : `OnRep_Dust - Manual Override` et
+	 * `OnRep_Wind Intensity - Manual Override` sont tous deux presents -- releve
+	 * par une sonde VALIDEE sur un temoin connu (`OnRep_Animate Time of Day`,
+	 * que notre code appelle avec succes). Poser un booleen par reflexion ne
+	 * declenche aucun rappel, et ce depot l'a paye trois fois.
+	 */
+	const FName NameDustManuel = TEXT("Dust - Manual Override");
+	const FName NameWindManuel = TEXT("Wind Intensity - Manual Override");
+
+	/**
 	 * L'ORAGE ET L'AURORE, QUI N'ETAIENT PILOTES NI L'UN NI L'AUTRE.
 	 *
 	 * UDS n'arme « Thunder/Lightning » que par ses TYPES de meteo tout faits --
@@ -235,6 +266,17 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 				TEXT("temoin, le climat ne decide plus de cette valeur"),
 				TemoinOrage);
 		}
+
+		float Poussiere = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPoussiereForce="), Poussiere)
+			&& Poussiere >= 0.0f)
+		{
+			TemoinPoussiere = FMath::Clamp(Poussiere, 0.0f, 10.0f);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : POUSSIERE FORCEE a %.1f sur 10 -- ")
+				TEXT("temoin, le climat ne decide plus de cette valeur"),
+				TemoinPoussiere);
+		}
 	}
 	if (TemoinOrage >= 0.0f)
 	{
@@ -254,6 +296,33 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		Current.Thunder = TemoinOrage;
 		Current.Rain = TemoinOrage;
 		Current.CloudCoverage = FMath::Max(Current.CloudCoverage, 9.0f);
+	}
+
+	if (TemoinPoussiere >= 0.0f)
+	{
+		// L'ETAT COHERENT EST CELUI DE `Sand_Dust_Storm`, ET IL EST MESURE.
+		//
+		// Releve dans les deux prereglages de sable du pack, le 29 septembre
+		// 2026 : `Dust 10`, `Fog 1`, et `Cloud Coverage` NON SURCHARGEE.
+		// `Sand_Dust_Calm` et `Sand_Dust_Storm` ne se distinguent que par
+		// `Wind Intensity`, 1 contre 10 -- la tempete du pack est un etat de
+		// VENT, la poussiere en etant l'effet, ce qui est aussi la physique de
+		// la saltation. Le temoin fait donc monter le vent AVEC la poussiere.
+		//
+		// ⚠ ON NE COPIE PAS LE TEMOIN D'ORAGE. Celui-ci monte `CloudCoverage` a
+		// 9, et ce serait une chimere A L'ENVERS ici : ni l'un ni l'autre des
+		// deux prereglages de sable ne touche a la nebulosite, et tous deux
+		// posent `Fog = 1`, la valeur neutre. Notre `Fog` calcule monte a 2,5 :
+		// le laisser courir ferait deboguer la mauvaise nappe.
+		//
+		// ET LA PLUIE TOMBE A ZERO. Une tempete de sable ne mouille pas, et sans
+		// cela on obtiendrait pluie ET sable -- la chimere symetrique des
+		// eclairs sous un ciel bleu.
+		Current.Dust = TemoinPoussiere;
+		Current.WindIntensity = FMath::Max(Current.WindIntensity, TemoinPoussiere);
+		Current.Fog = 1.0f;
+		Current.Rain = 0.0f;
+		Current.Snow = 0.0f;
 	}
 
 	PushWeather();
@@ -477,9 +546,17 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 	// journal.
 	const bool bControle = !bNomsVerifies;
 	bNomsVerifies = true;
+	// LE COMPTE SE DERIVE, IL NE S'ECRIT PAS EN DUR.
+	//
+	// La ligne de bilan annoncait « les 13 variables d'UDS/UDW acceptent
+	// l'ecriture » avec le treize dans la CHAINE : ajouter une ecriture laissait
+	// donc le journal mentir, et ce depot a une entree entiere sur cette classe
+	// de defaut -- un chiffre plausible qu'on lit comme une mesure.
 	TArray<FString> Refusees;
-	auto Ecrire = [this, bControle, &Refusees](FName Nom, double Valeur)
+	int32 Tentees = 0;
+	auto Ecrire = [this, bControle, &Refusees, &Tentees](FName Nom, double Valeur)
 	{
+		++Tentees;
 		const bool bPrise = Bridge.WriteNumber(Nom, Valeur);
 		if (bControle && !bPrise)
 		{
@@ -487,25 +564,72 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 		}
 	};
 
-	Ecrire(NameRain, Current.Rain);
-	Ecrire(NameSnow, Current.Snow);
-	Ecrire(NameFog, Current.Fog);
-	Ecrire(NameDust, Current.Dust);
-	Ecrire(NameCloudCoverage, Current.CloudCoverage);
-	Ecrire(NameWindIntensity, Current.WindIntensity);
-	Ecrire(NameWindDirection, Current.WindDirectionDeg);
-
-	// LA SURCHARGE MANUELLE S'ARME UNE FOIS, ET AVANT LA VALEUR.
+	// --- LES SURCHARGES S'ARMENT UNE FOIS, ET AVANT TOUTE VALEUR --------------
 	//
-	// Sans elle, UDS reprend la main sur « Thunder/Lightning » depuis son
-	// propre systeme de types -- qui ne tire jamais rien chez nous -- et notre
-	// ecriture serait ecrasee au tick suivant. Le booleen se pose au premier
-	// passage seulement : le reposer deux fois par seconde ne servirait a rien
-	// et ce depot a deja paye qu'une ecriture de propriete declenche un rappel
-	// meme quand la valeur ne change pas.
+	// Sans elles, UDS reprend la main sur chaque curseur depuis son propre
+	// systeme de TYPES de meteo -- qui ne tire jamais rien chez nous, puisque
+	// nous posons des valeurs continues -- et notre ecriture est ecrasee au tick
+	// suivant. Le booleen se pose au premier passage seulement : le reposer deux
+	// fois par seconde ne servirait a rien, et ce depot a deja paye qu'une
+	// ecriture de propriete declenche un rappel meme quand la valeur ne change
+	// pas -- c'est ce qui faisait tomber l'editeur sur les composants PCG.
+	//
+	// ⚠ CE BLOC ETAIT PLACE APRES LES ECRITURES, et son propre commentaire
+	// disait deja « ET AVANT LA VALEUR ». Le tonnerre s'en tirait parce qu'il
+	// ecrit plus bas, mais `Dust`, `Wind Intensity` et les quatre autres
+	// partaient AVANT que leur surcharge soit armee : une trame perdue au
+	// premier passage, et un temoin lance avec `-WorldseedQuitter` peut ne
+	// photographier que celle-la. L'ordre est desormais le bon pour TOUS.
 	if (bControle)
 	{
 		Bridge.WriteBool(NameThunderManuel, true);
+
+		// L'A/B QUI SEPARE LES DEUX CHANGEMENTS, et il manquait.
+		//
+		// Le temoin de poussiere et ces surcharges ont ete poses ENSEMBLE, puis
+		// mesures une seule fois : deux changements pour une mesure, ce qui ne
+		// permet d'attribuer l'effet a aucun des deux. Ce depot proscrit
+		// exactement ce montage, et il a deja regle quatre fois le mauvais
+		// bouton faute de l'avoir monte.
+		//
+		// `-WorldseedPoussiereSurcharge=0` desarme les deux surcharges SANS
+		// toucher au temoin : si l'image ne bouge pas, elles ne servaient pas a
+		// rendre la poussiere visible -- elles resteraient justes pour autant,
+		// puisque le releve les donne a faux et que le commentaire du tonnerre
+		// dit ce que cela coute.
+		int32 Surcharge = 1;
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedPoussiereSurcharge="), Surcharge);
+		if (Surcharge == 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : surcharges manuelles DESARMEES a la ")
+				TEXT("demande (-WorldseedPoussiereSurcharge=0) -- temoin d'A/B"));
+		}
+
+		// LA POUSSIERE ET LE VENT, ET C'ETAIT LA CAUSE DU « je n'en vois jamais ».
+		//
+		// Releve du 29 septembre 2026 : les deux surcharges arrivent a FAUX,
+		// instance comme defaut de classe, donc UDW recalculait ses propres
+		// valeurs par-dessus les notres a chaque tick. Leurs rappels existent --
+		// sonde validee sur `OnRep_Animate Time of Day`, que ce code appelle
+		// deja avec succes -- et un booleen pose par reflexion n'en declenche
+		// aucun.
+		const bool bDustManuel = (Surcharge != 0)
+			&& Bridge.WriteBool(NameDustManuel, true);
+		const bool bDustReveille = (Surcharge != 0)
+			&& Bridge.CallFunction(TEXT("OnRep_Dust - Manual Override"));
+		const bool bVentManuel = (Surcharge != 0)
+			&& Bridge.WriteBool(NameWindManuel, true);
+		const bool bVentReveille = (Surcharge != 0)
+			&& Bridge.CallFunction(TEXT("OnRep_Wind Intensity - Manual Override"));
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] meteo : surcharge manuelle -- poussiere %s (rappel %s), ")
+			TEXT("vent %s (rappel %s)"),
+			bDustManuel ? TEXT("ARMEE") : TEXT("REFUSEE (UDW ecrasera notre valeur)"),
+			bDustReveille ? TEXT("appele") : TEXT("INTROUVABLE"),
+			bVentManuel ? TEXT("ARMEE") : TEXT("REFUSEE (UDW ecrasera notre valeur)"),
+			bVentReveille ? TEXT("appele") : TEXT("INTROUVABLE"));
 
 		// ET L'INTERRUPTEUR MAITRE DE L'AURORE, AVEC SON RAPPEL.
 		//
@@ -524,6 +648,14 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 			bAurorePosee ? TEXT("ARMEES") : TEXT("REFUSEES (rien ne s'affichera)"),
 			bAuroreReveillee ? TEXT("appele") : TEXT("INTROUVABLE"));
 	}
+
+	Ecrire(NameRain, Current.Rain);
+	Ecrire(NameSnow, Current.Snow);
+	Ecrire(NameFog, Current.Fog);
+	Ecrire(NameDust, Current.Dust);
+	Ecrire(NameCloudCoverage, Current.CloudCoverage);
+	Ecrire(NameWindIntensity, Current.WindIntensity);
+	Ecrire(NameWindDirection, Current.WindDirectionDeg);
 	Ecrire(NameThunder, Current.Thunder);
 	Ecrire(NameAurora, Current.Aurora);
 
@@ -538,6 +670,7 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 				CelsiusToFahrenheit(static_cast<float>(C.Y)))
 			: C;
 
+		++Tentees;
 		if (!Bridge.WriteRange(SeasonRangeNames[S], Value) && bControle)
 		{
 			Refusees.Add(SeasonRangeNames[S].ToString());
@@ -602,8 +735,9 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 		if (Refusees.IsEmpty())
 		{
 			UE_LOG(LogTemp, Log,
-				TEXT("[Worldseed] meteo : les 13 variables d'UDS/UDW acceptent l'ecriture")
-				TEXT(" -- horloge %s"), bHorloge ? TEXT("EN MARCHE") : TEXT("arretee"));
+				TEXT("[Worldseed] meteo : les %d variables d'UDS/UDW acceptent l'ecriture")
+				TEXT(" -- horloge %s"), Tentees,
+				bHorloge ? TEXT("EN MARCHE") : TEXT("arretee"));
 		}
 		else
 		{

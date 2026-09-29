@@ -147,4 +147,17 @@ private:
 	/** Temoin d'orage force par `-WorldseedOrageForce=` ; negatif = inactif. */
 	bool bTemoinLu = false;
 	float TemoinOrage = -1.0f;
+
+	/**
+	 * Temoin de poussiere force par `-WorldseedPoussiereForce=` ; negatif =
+	 * inactif.
+	 *
+	 * IL SERT AUSSI A SAVOIR SI « Dust » DOSE OU COMMUTE, et c'est sa premiere
+	 * question. Les DEUX prereglages de sable du pack posent `Dust = 10` -- le
+	 * calme comme la tempete -- et ne different que par le vent : il est donc
+	 * possible que ce curseur soit un interrupteur deguise, et que l'intensite
+	 * visuelle vienne entierement de `Wind Intensity`. Un balayage a 0, 2, 5 et
+	 * 10 au meme point et a la meme heure tranche en quatre captures.
+	 */
+	float TemoinPoussiere = -1.0f;
 };
