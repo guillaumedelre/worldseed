@@ -2524,6 +2524,65 @@ part entiere et non un detail de cablage.
 > sinon l'ecriture par reflexion echoue en SILENCE. Septieme supposition que ce
 > chantier paie a ses propres notes.
 
+### Les douze derniers assets jouent : 99 sur 99 (29 septembre 2026)
+
+**LE PROPRIETAIRE A MARCHE DANS LA NEIGE ET A RAPPORTE : les empreintes, le son
+des pas, le givre d'ecran, la tempete.** C'est la preuve, et c'est une oreille
+et un oeil -- aucune ligne de journal ne pouvait la donner.
+
+**LA CHAINE, DE BOUT EN BOUT :**
+
+    PM_WorldseedTerre  ->  slot PhysMaterial des deux materiaux parents
+                       ->  liste blanche de reglages DUPLIQUES, par composant
+                       ->  2 DLWE_Interaction aux sockets foot_*_Socket
+                       ->  empreintes vues, son entendu
+
+Trois points valent d'etre retenus. Le physmat vient du SLOT DU MATERIAU, donc
+zero ligne sur le chemin chaud du streaming, parce que nos chunks portent
+`bUseComplexAsSimpleCollision`. La liste blanche vit sur
+`UDS_DLWE_Interaction_Settings`, que chaque composant tient PAR INSTANCE -- on
+duplique, donc rien du pack n'est touche. Et l'attachement se fait depuis le
+PILOTE DE CIEL, arbitrage du proprietaire : c'est le seul endroit qui connaisse
+UDS par construction, et il est versionne, alors que le Blueprint du pion est
+hors du depot.
+
+#### ⚠ LE PIEGE PAYE, ET IL ETAIT DEJA ECRIT DANS LE GUIDE
+
+**J'AI SOUPCONNE LE PACK PENDANT DEUX LANCEMENTS A CAUSE DE MON PROPRE BANC.**
+L'entonnoir rendait `Asleep = VRAI` sur les deux composants, dans les deux etats
+d'un A/B -- et j'ai designe la logique de veille d'UDS comme suspecte. C'etait
+faux :
+
+| | au banc, neige 10 | au banc, temoin | en JEU, neige 10 |
+|---|---|---|---|
+| `Snow Depth` | 14,000 | 0,000 | 14,000 |
+| `Active Distance` | 4000 | 4000 | 4000 |
+| `Asleep` | **VRAI** | **VRAI** | **faux** |
+
+**`-WorldseedBanc` DEPLACE LE PION, IL NE LE FAIT PAS MARCHER**, et c'est ce
+deplacement qui endormait les composants. La regle existait : *un temoin doit
+poser un etat COHERENT, que le monde puisse produire, sinon on debogue une
+chimere.* Je l'avais lue et j'ai quand meme choisi le banc, parce qu'il marche
+tout seul et que c'etait commode. **Le confort d'un temoin n'est pas un critere
+de validite.**
+
+#### ET UN INSTRUMENT QUI MENTAIT, ECRIT LE JOUR MEME
+
+La premiere version de l'entonnoir imprimait « 2 SONNENT », sur la foi de
+`UAudioComponent::IsPlaying()`. **Le temoin l'a dementi : vrai avec ZERO
+neige.** C'est un MetaSound PERSISTANT, que le pack instancie et laisse tourner
+en gatant a l'interieur du graphe -- un composant audio qui « joue » ne prouve
+donc rien. La colonne est gardee, parce qu'une ABSENCE de source serait
+concluante, mais elle s'appelle desormais « sources (existence, PAS
+audibilite) ». Deuxieme fois que ce chantier paie du bruit lu comme une
+information sur un releve sonore.
+
+**CE QUE L'ENTONNOIR VAUT DESORMAIS.** Il ne prouve pas l'audibilite, mais il a
+ete CALIBRE une fois contre une oreille : un entonnoir vert -- deux composants
+non endormis, armes, voyant de la neige -- correspondait a un son audible. Il
+tient donc lieu de preuve indirecte pour la suite, et c'est le seul controle
+rejouable que ce chantier laisse.
+
 #### Ce qui n'a PAS ete touche, et pourquoi
 
 **LES CINQ CURSEURS DE VOLUME PAR FAMILLE.** La documentation dit que le volume

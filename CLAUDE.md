@@ -370,9 +370,13 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[3] UN TEMOIN SE REFAIT DANS L'ETAT COURANT**, jamais repris d'un releve
   anterieur, meme quand on croit que rien n'a change. `git stash` coute cinq
   minutes ; une fausse regression coute une journee.
-- **UN TEMOIN QUI NE PEUT PAS RENDRE UN RESULTAT NEGATIF N'EST PAS UN TEMOIN**,
-  et il doit poser un etat COHERENT, que le monde puisse produire — sinon on
-  debogue une chimere.
+- **[2] UN TEMOIN QUI NE PEUT PAS RENDRE UN RESULTAT NEGATIF N'EST PAS UN
+  TEMOIN**, et il doit poser un etat COHERENT, que le monde puisse produire —
+  sinon on debogue une chimere. **LE CONFORT D'UN TEMOIN N'EST PAS UN CRITERE DE
+  VALIDITE** : `-WorldseedBanc` a ete choisi parce qu'il marche tout seul, or il
+  DEPLACE le pion sans le faire marcher — d'ou deux lancements passes a
+  soupconner la veille d'un pack qui n'avait rien fait. Ce qu'on automatise, on
+  le confronte une fois a une vraie partie.
 - **LOCALISER LES PIXELS COMPTES AVANT DE LIRE LE COMPTE.** 1 746 pixels
   « sable » etaient la dune du premier plan et la jambe du personnage.
 - **DECOMPOSER UN RESIDU EN PART INTRA-GROUPE ET INTER-GROUPE** avant de
