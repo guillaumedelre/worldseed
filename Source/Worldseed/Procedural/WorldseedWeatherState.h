@@ -91,6 +91,25 @@ namespace WorldseedWeatherState
 		const FWorldseedWeatherParams& Params);
 
 	/**
+	 * A QUEL POINT LE VENT ARRACHE LA MATIERE AU SOL, de zero a un.
+	 *
+	 * ELLE EST PUBLIQUE PARCE QU'ELLE A DEUX CONSOMMATEURS, et que ce depot a
+	 * une regle contre les formules recopiees dans deux fichiers : `Evaluate`
+	 * s'en sert pour le voile atmospherique, et la REPTATION au ras du sol s'en
+	 * sert pour decider si le sable -- ou la neige -- se met a courir. Les deux
+	 * decrivent le meme fait physique, la saltation, et doivent donc bouger
+	 * ensemble.
+	 *
+	 * LA SALTATION A UN SEUIL, ET LE FLUX CROIT COMME LE CUBE de la vitesse
+	 * (Bagnold, 1941) -- l'exposant est source, pas un curseur d'ambiance.
+	 *
+	 * ELLE NE CONNAIT QUE LE VENT : ce qu'il y a AU SOL -- du sable, de la
+	 * neige, ou rien -- est une autre question, et elle se pose ailleurs.
+	 */
+	WORLDSEED_API float Saltation(float WindIntensity,
+		const FWorldseedClimatePresetRules& PresetRules);
+
+	/**
 	 * Fondu vers une cible.
 	 *
 	 * Franchir une frontiere climatique ne doit pas commuter le ciel d'un coup :

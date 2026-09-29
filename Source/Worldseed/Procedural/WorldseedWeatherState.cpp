@@ -71,6 +71,15 @@ FString FWorldseedWeather::DescribeRegime() const
 
 namespace WorldseedWeatherState
 {
+	float Saltation(float WindIntensity,
+		const FWorldseedClimatePresetRules& PresetRules)
+	{
+		return FMath::Clamp(
+			(WindIntensity - PresetRules.PoussiereVentSeuil)
+				/ FMath::Max(PresetRules.VentMaxUds - PresetRules.PoussiereVentSeuil, 1e-3f),
+			0.0f, 1.0f);
+	}
+
 	FWorldseedWeather Evaluate(const FWorldseedClimateSample& Sample,
 		const FWorldseedClimatePresetRules& PresetRules,
 		const FWorldseedWeatherParams& Params)
@@ -288,20 +297,18 @@ namespace WorldseedWeatherState
 
 		// --- LA POUSSIERE SORT DU VENT ------------------------------------------
 		//
-		// LA SALTATION A UN SEUIL, ET LE FLUX CROIT COMME LE CUBE de la vitesse
-		// (Bagnold, 1941) : c'est cet exposant, et non un rationnement, qui rend
-		// la tempete rare tout en laissant le voile permanent.
-		const float Saltation = FMath::Clamp(
-			(Out.WindIntensity - PresetRules.PoussiereVentSeuil)
-				/ FMath::Max(PresetRules.VentMaxUds - PresetRules.PoussiereVentSeuil, 1e-3f),
-			0.0f, 1.0f);
+		// LA SALTATION EST PARTAGEE AVEC LA REPTATION AU RAS DU SOL, qui decide
+		// si le sable -- ou la neige -- se met a courir. Les deux decrivent le
+		// meme fait physique et doivent bouger ensemble : d'ou une fonction, et
+		// non deux copies de la meme formule.
+		const float Arrachement = Saltation(Out.WindIntensity, PresetRules);
 
 		// ET LA PLUIE RABAT LA POUSSIERE -- meme fait physique que le brouillard
 		// qui se leve quand il ne pleut pas, quelques lignes plus haut.
 		Out.Dust = Preset.DustPart * (1.0f - Occurrence) * FMath::Max(
 			PresetRules.PoussiereVoile,
 			PresetRules.VentMaxUds
-				* FMath::Pow(Saltation, PresetRules.PoussiereVentMordant));
+				* FMath::Pow(Arrachement, PresetRules.PoussiereVentMordant));
 
 		return Out;
 	}
