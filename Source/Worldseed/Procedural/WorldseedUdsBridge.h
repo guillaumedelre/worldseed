@@ -40,6 +40,9 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	 */
 	AActor* CielBrut() const { return SkyActor.Get(); }
 
+	/** L'acteur meteo lui-meme, pour le releve des composants audio. */
+	AActor* MeteoBrute() const { return WeatherActor.Get(); }
+
 	// --- lecture -------------------------------------------------------------
 
 	/**
@@ -67,11 +70,53 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	/** Lit une grandeur nommee sur l'un des deux acteurs, sans la modifier. */
 	bool ReadNumber(FName PropertyName, double& OutValue) const;
 
+	/**
+	 * Lit un BOOLEEN nomme.
+	 *
+	 * ELLE EXISTE PARCE QUE `ReadNumber` NE SAIT PAS LE FAIRE, et que s'en
+	 * servir quand meme produit un mensonge : elle rend faux pour une variable
+	 * parfaitement presente, et le journal annonce « ILLISIBLE ». Ce depot a
+	 * deja RETIRE une ligne pour cette raison exacte -- la relecture de
+	 * `Simulate Real Sun`, le 29 septembre 2026 -- au lieu de la reparer. La
+	 * reparation, la voici.
+	 *
+	 * UN DRAPEAU RELU NE PROUVE TOUJOURS RIEN SUR L'EFFET : il se relit a vrai
+	 * des qu'on le pose. Ce qu'il prouve, c'est ce que le pack a par DEFAUT,
+	 * avant qu'on y touche -- et c'est cela qu'on veut savoir.
+	 */
+	bool ReadBool(FName PropertyName, bool& OutValue) const;
+
 	/** Pose un booleen nomme sur celui des deux acteurs qui le porte. */
 	bool WriteBool(FName PropertyName, bool bValue) const;
 
 	/** Appelle une fonction SANS ARGUMENT sur l'un des deux acteurs. */
 	bool CallFunction(FName FunctionName) const;
+
+	/**
+	 * Change le SON D'AMBIANCE, avec un fondu.
+	 *
+	 * LA SEULE FONCTION A PARAMETRES DE CE PONT, et elle l'est par necessite :
+	 * `Change Environment Sound` prend trois arguments -- l'asset, la duree du
+	 * fondu, et s'il faut charger la source de facon asynchrone -- releves le
+	 * 29 septembre 2026 par `list_functions`. La voie d'a cote -- ecrire la
+	 * variable `Environment Sound` puis appeler `Start Up Environment Sound`,
+	 * qui ne prend rien -- existe, mais la documentation du pack la reserve au
+	 * BeginPlay : c'est `Change Environment Sound` qui sait enchainer deux
+	 * ambiances sans coupure, et c'est exactement ce dont on a besoin quand le
+	 * joueur sort de la foret.
+	 *
+	 * LA PILE SE CONSTRUIT PAR LES PROPRIETES DE LA FONCTION, jamais par une
+	 * structure devinee : un decalage d'un octet corromprait la memoire, et
+	 * c'est pour cela que `CallFunction` refusait jusqu'ici tout ce qui prend
+	 * un argument. On APPARIE PAR TYPE -- un objet, un reel, un booleen -- et
+	 * l'on refuse si la signature ne compte pas exactement ces trois-la : un
+	 * pack qui en ajouterait un quatrieme nous trouverait muets plutot que
+	 * dangereux.
+	 *
+	 * `NouveauSon` a nullptr ARRETE l'ambiance : c'est la voie que le pack
+	 * documente pour cela, et c'est ce qu'on emploie dans un desert.
+	 */
+	bool ChangerAmbiance(UObject* NouveauSon, float FonduS, bool bChargementAsync) const;
 
 	/**
 	 * Nom du calendrier en vigueur, et sa longueur en jours.

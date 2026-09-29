@@ -53,6 +53,17 @@ namespace
 			OutValue = AsFloat->GetPropertyValue_InContainer(Actor);
 			return true;
 		}
+		// LES ENTIERS SE LISENT AUSSI, et leur absence faisait mentir un releve.
+		// UDW expose ses trois etats d'ambiance en INT -- `Environment Sound
+		// Time Integer`, `... Weather Integer`, `... Wind Integer` -- et le
+		// journal les annoncait « illisibles » pour des variables parfaitement
+		// presentes. Du bruit qu'on lit comme une information, exactement ce que
+		// ce depot a deja retire une fois sur `Simulate Real Sun`.
+		if (const FIntProperty* AsInt = CastField<FIntProperty>(Property))
+		{
+			OutValue = AsInt->GetPropertyValue_InContainer(Actor);
+			return true;
+		}
 		return false;
 	}
 
@@ -248,6 +259,100 @@ bool FWorldseedUdsBridge::CallFunction(FName FunctionName) const
 	return false;
 }
 
+bool FWorldseedUdsBridge::ChangerAmbiance(UObject* NouveauSon, float FonduS,
+	bool bChargementAsync) const
+{
+	AActor* const Acteur = WeatherActor.Get();
+	if (!Acteur)
+	{
+		return false;
+	}
+
+	UFunction* const Fn = Acteur->FindFunction(TEXT("Change Environment Sound"));
+	if (!Fn)
+	{
+		return false;
+	}
+
+	// --- ON RECONNAIT LA SIGNATURE AVANT DE LA REMPLIR ----------------------
+	//
+	// Trois parametres exactement, et un de chaque type. On apparie par TYPE et
+	// non par nom : les noms Blueprint portent des espaces (« New Sound »,
+	// « Fade Duration », « Async Load Source ») que la reflexion assainit d'une
+	// version a l'autre, alors que les types, eux, ne bougent pas. Et l'on
+	// COMPTE : un pack qui ajouterait un quatrieme argument doit nous trouver
+	// muets, pas approximatifs.
+	FObjectProperty* Son = nullptr;
+	FProperty* Fondu = nullptr;
+	FBoolProperty* Async = nullptr;
+	int32 Nombre = 0;
+
+	for (TFieldIterator<FProperty> It(Fn); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+	{
+		FProperty* const P = *It;
+		if (P->HasAnyPropertyFlags(CPF_ReturnParm))
+		{
+			continue;
+		}
+		++Nombre;
+
+		if (FObjectProperty* const O = CastField<FObjectProperty>(P))
+		{
+			if (!Son) { Son = O; continue; }
+		}
+		else if (CastField<FDoubleProperty>(P) || CastField<FFloatProperty>(P))
+		{
+			if (!Fondu) { Fondu = P; continue; }
+		}
+		else if (FBoolProperty* const B = CastField<FBoolProperty>(P))
+		{
+			if (!Async) { Async = B; continue; }
+		}
+		// Un parametre d'un type inattendu : on renonce plutot que de deviner.
+		return false;
+	}
+
+	if (Nombre != 3 || !Son || !Fondu || !Async)
+	{
+		return false;
+	}
+
+	// LE SON DOIT ETRE DU TYPE QUE LA FONCTION ATTEND. Lui passer autre chose
+	// ferait un `Cast` nul cote Blueprint -- donc une ambiance coupee en
+	// silence, exactement le genre d'echec muet que ce pont existe pour eviter.
+	if (NouveauSon && Son->PropertyClass && !NouveauSon->IsA(Son->PropertyClass))
+	{
+		return false;
+	}
+
+	// --- LA PILE, INITIALISEE PUIS DETRUITE ---------------------------------
+	uint8* const Pile = static_cast<uint8*>(FMemory_Alloca(Fn->ParmsSize));
+	FMemory::Memzero(Pile, Fn->ParmsSize);
+	for (TFieldIterator<FProperty> It(Fn); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+	{
+		It->InitializeValue_InContainer(Pile);
+	}
+
+	Son->SetObjectPropertyValue_InContainer(Pile, NouveauSon);
+	Async->SetPropertyValue_InContainer(Pile, bChargementAsync);
+	if (FDoubleProperty* const D = CastField<FDoubleProperty>(Fondu))
+	{
+		D->SetPropertyValue_InContainer(Pile, FonduS);
+	}
+	else if (FFloatProperty* const F = CastField<FFloatProperty>(Fondu))
+	{
+		F->SetPropertyValue_InContainer(Pile, FonduS);
+	}
+
+	Acteur->ProcessEvent(Fn, Pile);
+
+	for (TFieldIterator<FProperty> It(Fn); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+	{
+		It->DestroyValue_InContainer(Pile);
+	}
+	return true;
+}
+
 bool FWorldseedUdsBridge::WriteBool(FName PropertyName, bool bValue) const
 {
 	for (AActor* const Acteur : { WeatherActor.Get(), SkyActor.Get() })
@@ -267,6 +372,23 @@ bool FWorldseedUdsBridge::ReadNumber(FName PropertyName, double& OutValue) const
 {
 	return GetNumber(WeatherActor.Get(), PropertyName, OutValue)
 		|| GetNumber(SkyActor.Get(), PropertyName, OutValue);
+}
+
+bool FWorldseedUdsBridge::ReadBool(FName PropertyName, bool& OutValue) const
+{
+	// MEME ORDRE QUE L'ECRITURE -- meteo d'abord, ciel ensuite -- pour qu'une
+	// variable portee par les deux soit lue la ou elle est ecrite.
+	for (const AActor* const Acteur : { WeatherActor.Get(), SkyActor.Get() })
+	{
+		if (!Acteur) { continue; }
+		if (const FBoolProperty* const Prop = CastField<FBoolProperty>(
+				Acteur->GetClass()->FindPropertyByName(PropertyName)))
+		{
+			OutValue = Prop->GetPropertyValue_InContainer(Acteur);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool FWorldseedUdsBridge::ReadClockRunning(bool& OutRunning) const
