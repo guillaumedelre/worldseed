@@ -11502,3 +11502,128 @@ globe montrent du blanc.
 **ET UNE INCONNUE NON MESUREE** : on ne sait pas si le personnage sait nager.
 Si non, une banquise praticable serait le SEUL moyen d'atteindre le pole, ce
 qui change son interet.
+
+### Le sable vole : ce qui l'empechait, et ce qui ne l'empechait PAS (29 septembre 2026)
+
+Demande : « est-il possible d'utiliser UDS/UDW pour des tempetes de sable, ou
+sans parler de tempete de voir du sable voler ? ». Oui, et c'etait deja branche.
+
+**LE DEFAUT LE PLUS UTILE DE LA SEANCE N'ETAIT PAS LA POUSSIERE.**
+`-WorldseedCielClair` NE FIGEAIT PLUS L'HORLOGE depuis le 28 septembre.
+`CielDInspection` la fige au BeginPlay ; `ArmerHorloge`, appelee sept secondes
+plus tard par le minuteur du ciel, la reposait a vrai sans jamais consulter le
+drapeau. Le dernier ecrivain gagnait. **Preuve sur SEPT journaux independants** :
+« horloge figee sur 1 acteur(s) UDS », puis « horloge : armee », puis « le temps
+passe -- 1300,0000 a 1303,3407 en 5,5 s », coherent sept fois.
+
+**ET FIGER N'EST PAS ARRETER** : `CielDInspection` posait le booleen par
+reflexion, ce qui ne declenche AUCUN rappel -- or `OnRep_Animate Time of Day`
+demarre ET arrete la boucle. Ce depot avait paye la moitie « demarrer » trois
+fois, et la moitie « arreter » etait restee.
+
+**CE QUE LE CORRECTIF RAPPORTE DEPASSE CE CHANTIER.** Le registre mesurait
+**60 a 82 % de pixels changes entre deux lancements REPUTES IDENTIQUES**, et en
+tirait qu'un A/B d'image par lancements successifs ne vaut rien. Horloge
+reellement figee, deux lancements identiques rendent **0,1 sur 124 de clarte**.
+Les A/B d'image sont redevenus utilisables ; le bruit venait de la, pas de Lumen
+ni de TSR.
+
+#### Ce qui n'etait PAS la cause, et je l'avais ecrit dans un commit
+
+UDW porte **dix** surcharges `<curseur> - Manual Override`, toutes a FAUX, et
+nous n'en posions qu'une. J'en ai conclu que `Dust` etait ecrase au tick suivant
+-- le commentaire du tonnerre le dit pour lui-meme -- et j'ai pose le temoin ET
+les surcharges ENSEMBLE, puis mesure une fois. **Deux changements, une mesure.**
+
+L'A/B monte apres coup (`-WorldseedPoussiereSurcharge=0`) tranche :
+
+    surcharges ARMEES     clarte 139,9
+    surcharges DESARMEES  clarte 140,9     (sans poussiere : 124,4)
+
+Desarmer ne ramene pas vers 124 : **elles ne changent rien a la visibilite**,
+parce qu'on ecrit `Dust` deux fois par seconde -- ecrase au tick d'UDW, il est
+reecrit au notre. Elles sont gardees en CEINTURE, pas en correctif. Le corps du
+commit a ete corrige.
+
+#### Ce qui est etabli, et par quelle mesure
+
+**`Dust` DOSE, et tres non lineairement.** Balayage au meme point (desert chaud
+BWh, 22 C, 163 mm/an), horloge figee, clarte du lointain :
+
+    Dust 0      124,4    |  Dust 0 bis  124,3   <- TEMOIN de bruit
+    Dust 2      128,8    |  Dust 5      136,3   |  Dust 10   140,5
+
+Le pas 0->2 vaut **quarante-quatre fois** le bruit. A l'image : 0 = ciel bleu
+franc et palmiers nets jusqu'au fond ; 5 = voile leger, lointain estompe, c'est
+le « sable qui vole sans tempete » ; 10 = horizon entierement mange.
+
+**CONSEQUENCE : UN PLANCHER PERMANENT A 1,5 SERAIT INVISIBLE.** Toute rampe de
+poussiere doit passer l'essentiel de son temps entre 4 et 10.
+
+**LA SATURATION N'EST PAS UNE BONNE METRIQUE ICI** : elle baisse de 0 a 5 puis
+REMONTE a 10, parce que le voile n'est pas gris mais OCRE, donc lui-meme sature.
+C'est la CLARTE qui est monotone -- un voile eclaircit le lointain par
+diffusion. Et j'avais juge le cas 2 « imperceptible » a l'oeil : il vaut -25 %
+de saturation. **L'oeil a tort sur les faibles doses ; la mesure tranche.**
+
+#### Les deux prereglages de sable ne different QUE par le vent
+
+Releve par l'API sur les treize prereglages du pack :
+
+    Sand_Dust_Calm    Dust 10   Wind  1   Fog 1   Cloud NON surchargee
+    Sand_Dust_Storm   Dust 10   Wind 10   Fog 1   Cloud NON surchargee
+
+La tempete du pack est un etat de **VENT**, la poussiere en etant l'effet -- ce
+qui est aussi la physique de la saltation. Un temoin de poussiere ne doit donc
+PAS copier celui de l'orage, qui monte la nebulosite a 9 : ce serait une chimere
+a l'envers.
+
+#### La reserve sur le parsing binaire etait justifiee
+
+Les valeurs avaient d'abord ete tirees d'un **parsing binaire des `.uasset`**,
+ce que la regle du projet interdit. L'API confirme toutes les VALEURS -- mais
+quatre NOMS de ce releve ne sont pas des variables : `Dusty`, `Dust Bias`,
+`Dust Spawn Rate Scale`, `Wind Gust Update Period`. **La table de noms d'un
+paquet contient aussi les fonctions et les broches.** `Knots at Wind Intensity 10`
+n'existe pas non plus : **l'unite physique du vent reste NON ETABLIE**, et il ne
+faut pas la citer.
+
+#### Trois gardes a reprendre dans toute sonde d'inventaire
+
+- **le COMPTE s'imprime** (925 variables sur le ciel, 584 sur la meteo) : un
+  inventaire tronque se lit exactement comme un inventaire complet ;
+- **les noms se demandent UN PAR UN**, et une absence doit etre bruyante ;
+- **une sonde de fonctions se valide sur un cas connu.** `OnRep_Animate Time of
+  Day` existe, puisque le C++ l'appelle avec succes : sans ce temoin, « aucun
+  rappel trouve » ne se distingue pas de « la sonde est cassee ».
+
+#### Divers, paye comptant
+
+- **Les « Error: Condition failed » au demarrage d'une passe d'automation sont
+  du BRUIT DU MOTEUR**, pas nos oracles : ils suivent des lignes
+  `UE::UnifiedErrorTest` et tombent pendant le chargement, avant que nos tests
+  ne demarrent. Le decompte qui vaut est `LogAutomationController ... Test
+  Completed` -- **130 sur 130 en Success** ce jour-la.
+- **Le moteur est dans `C:\Program Files\Epic Games\UE_5.8`**, pas sous `D:\UE`,
+  et il n'est declare NI dans `HKLM\SOFTWARE\EpicGames` NI dans
+  `HKCU\...\Builds`. `BuildAndLaunchGame.ps1` le trouve par sa liste de chemins
+  usuels ; une compilation directe passe par
+  `Engine\Build\BatchFiles\Build.bat WorldseedEditor Win64 Development -Project=...`.
+- **Une vue libre coute 38 s** avec `-WorldseedQuitter` a 1280x720, et les photos
+  vont dans `Saved/Photos/<nom>.png`. C'est abordable, contrairement a la
+  tournee des formes.
+
+#### Reste ouvert
+
+- **La vraie cause du « je n'en vois jamais » n'est PAS etablie.** Elle est
+  probablement dans le MODELE : `bDustPresent` exige moins de 250 mm/an ET plus
+  de 5 C -- ce qui exclut le Gobi -- et le seuil de 0,62 est pose sur le signal
+  d'agitation BRUT, non uniformise : le defaut « un seuil n'est pas une part »,
+  cinquieme fois. La pluie, vingt lignes plus haut dans le meme fichier, passe
+  par `Uniformiser` pour cette raison exacte.
+- **`Snow - Manual Override` est a faux lui aussi** -- utile le jour ou l'on
+  fera les tempetes de NEIGE, demandees le 29 septembre. `Snow_Blizzard` existe
+  deja dans le pack : Snow 10, **Wind 10**, Cloud 10, Fog 10, Material Snow
+  Coverage 1. La meme chaine servira, et le vent y est encore l'axe.
+- **`Max Dust Coverage` vaut 0,5** : la couverture de poussiere est plafonnee a
+  la moitie, et personne n'a mesure ce que cela coute.
