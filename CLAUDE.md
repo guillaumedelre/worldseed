@@ -411,6 +411,11 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[4] TOUT A/B PAR LANCEMENTS SUCCESSIFS SE FAIT AVEC `-WorldseedCielClair`**,
   et le journal doit montrer « horloge figee ». Sans cela : 60 a 82 % de pixels
   changes entre deux lancements RIGOUREUSEMENT identiques.
+- **MAIS LE HARNAIS D'A/B PEUT DETRUIRE LE SUJET.** `-WorldseedCielClair` COUPE
+  les nuages volumetriques : tout sujet qui vit dedans — tempete radiale,
+  couverture nuageuse, ombre de nuage — est INMESURABLE par cette voie. On
+  regarde alors une seule image, et **on le dit** plutot que de laisser croire a
+  un A/B. Verifier ce que le temoin eteint avant de s'y fier.
 - **ON NE POUSSE PAS UN DEFAUT HORS DE PORTEE DU TRAITEMENT QU'ON VEUT JUGER.**
   Un temoin de rayon doit couvrir la distance qu'on photographie.
 - **UN TEMOIN DE COULEUR FRANCHE ne se compare a rien : il est la ou il n'est
@@ -432,6 +437,12 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[12] TOUTE ECRITURE DE PARAMETRE DE MATERIAU DEPUIS LE C++ SE RELIT.** L'API
   ne signale pas un nom inconnu : pose sur un parametre absent, elle ne rend
   rien, ne journalise rien, et ne fait rien.
+- **UN `SOFTCLASS` DOUBLE D'UNE VARIANTE « HARD » VEUT DIRE QU'IL FAUT
+  CHARGER.** Le pack livre alors une fonction `Load <nom> Class` a appeler
+  AVANT : un spawn sur une classe nulle ne fait rien et ne le dit pas. Signe qui
+  trahit — tous les appels rendent vrai, le drapeau se relit vrai, et l'acteur
+  n'existe pas. Et le chargement se separe du spawn D'UNE TRAME, un softclass
+  pouvant se resoudre de facon asynchrone.
 - **UN NOM LU DANS UNE DOCUMENTATION N'EST PAS UN OBJET TROUVE.** La doc nomme
   la propriete, jamais QUI la porte — et l'ecriture par reflexion sur le mauvais
   objet echoue en SILENCE. On ENUMERE l'objet avant d'ecrire dessus. La liste

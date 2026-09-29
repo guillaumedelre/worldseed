@@ -2615,3 +2615,110 @@ verifies, retires**. Le monde n'a pas bouge d'un octet malgre le changement
 d'empreinte des regles : le CORPS du cache rend le meme MD5
 `ce255f6745ca1d2ee5cdc80a29e10991` sur trois entrees de cles differentes, dont
 une anterieure au chantier.
+
+### Tempetes radiales : premiere lueur, et elle a ete VUE (29 septembre 2026)
+
+**LE PROPRIETAIRE L'A VUE**, en vol a 2000 m, a dix kilometres d'elle. La
+reserve que l'inventaire portait depuis le debut -- « les effets visibles de
+l'exterieur exigent le mode Volumetric Clouds » -- est donc levee, et c'etait
+la seule question qu'aucune mesure ne pouvait trancher.
+
+**Ce que ca rapporte** : le LIEU. Le fichier de regles documente lui-meme la
+limite que ces tempetes comblent -- *« le signal d'agitation ne depend que du
+TEMPS, jamais du lieu -- le vent est donc le meme partout dans le monde au meme
+instant »*.
+
+#### L'API, RELEVEE ET NON LUE
+
+Enumeration sur `Ultra_Dynamic_Weather` : 584 variables, 408 fonctions.
+
+    Enable Radial Storm Spawning      bool  + OnRep_      livre a FAUX
+    Spawn / Start Up / Load Class     ZERO parametre      le pont sait deja
+    Radial Storm Probabilities x4     TMap, 1 entree chacune -- PEUPLEES
+    Start Distance 25, Outer Radius 13, End Distance 25    EN KILOMETRES
+    Lifetime 500-700 s, Wait Interval 1000-2000 s
+
+Les cinq fonctions ne prenant aucun parametre, **aucune primitive n'etait a
+ecrire** -- et les tables etant peuplees, aucune ecriture de `TMap` non plus.
+Le chantier s'est donc revele bien plus petit que prevu.
+
+#### LE PIEGE PAYE : LE SOFTCLASS
+
+Le premier essai appelait `Spawn Radial Storm` dans la MEME trame que
+l'armement. Les quatre appels rendaient vrai, l'interrupteur se relisait VRAI,
+et **ZERO acteur** naissait sur soixante secondes. `Radial Storm Class` est un
+SOFTCLASS, double d'un `Radial Storm Class Hard`, et le pack livre
+`Load Radial Storm Class` pour resoudre l'un dans l'autre. **Un spawn sur une
+classe nulle ne fait rien, et ne le dit pas.** Chargement a l'armement, spawn au
+releve suivant. Regle en section B3.
+
+#### DEUX PIEGES EVITES PAR LA MESURE
+
+**L'attente livree est de 1000 a 2000 SECONDES**, premier delai a moitie : huit
+a dix-sept minutes avant la premiere tempete. Un lancement de mesure n'aurait
+rien vu, et l'on aurait conclu a l'echec en ayant seulement mesure trop tot.
+D'ou l'appel direct au spawn.
+
+**`-WorldseedCielClair` COUPE LES NUAGES VOLUMETRIQUES.** Le harnais d'A/B du
+depot -- celui qui rend deux lancements comparables -- detruit donc le sujet.
+Cette mesure ne peut pas etre appariee, et il faut le DIRE. Regle en section B2 :
+verifier ce que le temoin eteint avant de s'y fier.
+
+#### UN INSTRUMENT CORRIGE, ET UNE UNITE DECOUVERTE
+
+La premiere colonne de distance mesurait depuis `GetOwner()`, l'acteur de climat,
+qui se tient a l'origine du monde : elle annoncait **56 km**, hors de la carte,
+pour une tempete qui nait AUTOUR DU JOUEUR. Le chiffre n'etait pas faux, il ne
+mesurait pas la bonne chose. Corrige sur le pion, il rend **25,0 km** -- soit
+exactement `Radial Storm Start Distance`, ce qui etablit que **l'unite est le
+kilometre**, ce que rien ne disait. Elle se rapproche de 0,8 km par dix
+secondes, donc environ cinq minutes avant l'arrivee.
+
+Le cap est journalise avec la distance : une mesure qui ne permet pas d'aller
+VOIR son sujet ne sert qu'a moitie.
+
+#### LA TOURNEE PHOTO NE CONVIENT PAS A CE SUJET
+
+Ses huit vues visent des cibles a 15 a 800 m -- arches, canyons, tables -- et
+**aucune ne regarde l'horizon** ; elle teleporte en outre la camera a travers le
+monde, ce qui prive la distance a la tempete de tout sens. D'ou
+`-WorldseedOrageFace=<km>`, qui met le joueur EN VOL a distance choisie, cap sur
+elle.
+
+**POURQUOI EN VOL, ET C'EST UN CHOIX DU PROPRIETAIRE.** Il resout deux problemes
+d'un coup : 71 % de ce monde est ocean, donc viser une coordonnee a vingt
+kilometres serait jouer a pile ou face avec la mer -- et l'altitude degage
+l'horizon, qui est le sujet. Une requete « est-ce de la terre ferme ? » avait
+commence a etre ecrite pour le cas pose au sol ; elle a ete RETIREE, le vol la
+rendant inutile. On ne garde pas ce que rien ne lit.
+
+#### CE QUI RESTE, ET C'EST UNE QUESTION D'ECHELLE
+
+Le pack pose des metriques **FIGEES** : naissance a 25 km, rayon 13 km, mort a
+25 km. Sur 64 x 32 km, une tempete de 13 km de large couvre **40 % de la hauteur
+du monde**, et un trajet de 50 km en sort. La regle d'echelle de ce projet veut
+qu'un reglage s'exprime en FRACTION du monde, jamais en metrique figee -- faute
+de quoi la tempete risque de reproduire le defaut qu'elle devait corriger, une
+meteo quasi uniforme avec seulement un bord qui se deplace.
+
+Et les quatre tables de probabilite sont un **tirage au sort saisonnier**, soit
+exactement le mecanisme ECARTE pour l'etat meteo global : *« nous posons des
+curseurs continus cales sur le climat de Koppen de la cellule »*. Arbitrage
+ouvert.
+
+#### ET L'ARC-EN-CIEL EST VALIDE A L'OEIL, LE MEME JOUR
+
+Le proprietaire l'a confirme dans la meme seance. **Cette ligne n'avait jusque-la
+qu'une preuve indirecte** : 87 a 102 episodes par an (un compte du modele, pas
+une observation) et `Current Rainbow Strength` relu a 0,500. Or *« armer n'est
+pas afficher »* est un piege paye QUATRE fois dans ce depot -- le givre s'est vu
+tout de suite, les gouttes non. Une confirmation a l'oeil change donc la nature
+de la preuve, et pas seulement son nombre.
+
+**CE QUE CELA DIT DE LA METHODE.** Trois lignes ont ete validees a l'oeil ou a
+l'oreille aujourd'hui -- les sons de pas, les empreintes, la tempete radiale,
+plus l'arc-en-ciel -- et AUCUNE ne l'aurait ete par un oracle. Le depot n'a pas
+de harnais pour l'audibilite ni pour « est-ce que ca se voit » ; le releve de
+l'entonnoir et les comptes d'acteurs sont des preuves INDIRECTES, utiles parce
+que calibrees une fois contre un sens humain. C'est une limite a assumer, pas a
+masquer.
