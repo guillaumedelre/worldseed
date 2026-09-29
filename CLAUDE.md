@@ -710,6 +710,7 @@ ont ete repayes ce mois-la pour cette seule raison.
 | `outillage.md` | 92 Ko | 26 | cache du monde, oracles, bancs, performance, memoire, refactors, menage, protocoles de mesure rates |
 | `interface.md` | 56 Ko | 16 | menu, globe, carte, minimap, icones, generateur de noms, Slate |
 | `unreal-pieges.md` | 28 Ko | 7 + s.11 | le MOTEUR et ses plugins : Landscape, World Partition, PCG, Water, sauvegarde d'acteurs, API Python |
+| `plans-suspendus.md` | 34 Ko | — | les plans DETAILLES de chantiers ouverts puis suspendus : les etapes prevues, les predictions a falsifier, les incertitudes non levees. **Doublement perissable** : une etape peut avoir ete jouee depuis |
 
 **Comment chercher.** Le nom du sujet suffit presque toujours :
 
