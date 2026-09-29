@@ -2764,3 +2764,59 @@ MODELE COMPRIME : 32 km d'un pole a l'autre contre 20 000 reels, soit un facteur
 625, quand la journee de 30 minutes comprime le temps d'un facteur 48 seulement.
 Comparer au reel exige donc de decider QUEL FACTEUR D'ECHELLE S'APPLIQUE AU
 TEMPS, et cet arbitrage depasse les tempetes.
+
+### La carte du ciel reelle, validee a l'oeil (29 septembre 2026)
+
+**LE PROPRIETAIRE A VALIDE LE CIEL DE NUIT.** Le pack repetait la meme texture
+d'etoiles **2,5 fois** sur la voute -- `Stars Tiling` -- et `Simulate Real Stars`
+lui substitue une carte a 360 degres orientee par la LATITUDE et la DATE.
+
+**LE PREREQUIS N'ETAIT ACQUIS QUE DEPUIS LE MEME JOUR**, et c'est ce qui rendait
+la ligne mure : un ciel reel ne veut rien dire sans latitude, or `Simulate Real
+Sun` arrivait a FAUX et la latitude qu'on ecrivait n'etait pas evaluee. D'ou
+l'ordre d'armement -- **les etoiles APRES le soleil**.
+
+Rien a fabriquer, releve et non suppose : `Real Stars Texture` pointe
+`Real_Stars`, et `Real Stars Sprites Starmap` un catalogue `Starmap500k`.
+
+**`Static Properties - <categorie>` A SUFFI UNE TROISIEME FOIS**, ce qui en fait
+un patron et non une coincidence. Aucun `OnRep_Simulate Real Stars` n'existe --
+verifie sur les 568 fonctions du ciel -- mais bien `Static Properties - Stars`.
+Le releve :
+
+    avant faux -> ecrit oui, OnRep_ ABSENT (attendu),
+                  Static Properties - Stars appelee, relu VRAI
+                  repetition 2.50, sprites NODE_AddNiagaraComponent-3
+
+Le composant Niagara des sprites passe de NUL a un objet : un effet, pas un
+drapeau -- mais faible, et journalise sans en faire une preuve. **La justesse du
+ciel ne se lisait pas** : elle s'est regardee.
+
+**LA PORTE EST DANS LES REGLES SANS Y ETRE ECRITE**, et c'est un patron a
+reprendre : `Rules.Num` prend un defaut, donc `uds.simulerLesEtoiles` absent vaut
+ARME et apparait au releve des cles manquantes. Aucune empreinte de
+`world_rules.json` touchee, donc aucun monde en cache invalide -- et le reglage
+existe le jour ou l'on acceptera une regeneration pour l'y ecrire.
+
+#### ⚠ ET LE LANCEMENT DE NUIT A REVELE UN MENSONGE DANS UN RELEVE PREEXISTANT
+
+`-WorldseedHeure=1` rendait « soleil : elevation 54,7 deg a 1,0 h ». Impossible
+pour un soleil -- et c'est ce qui a fait tirer le fil.
+
+`ElevationDuSoleil` prend la lumiere directionnelle **la plus INTENSE**, sur le
+motif que « la lune est reglee bien plus bas ». **C'est vrai de jour et faux la
+nuit** : le soleil est alors eteint, la lune gagne, et le releve annoncait son
+elevation en l'appelant « soleil ». Le calcul etait juste ; c'est le NOM qui
+mentait, et 54,7 degres est une elevation de lune parfaitement plausible.
+
+    de nuit  Moon a 54.7 deg a 1.0 h  (hors de midi : l'attendu ne s'applique pas)
+    a midi   Sun  a 62.7 deg a 12.0 h -- attendu 60.4 au midi d'equinoxe
+
+**On ne choisit PAS par nom de composant** -- un pack renomme -- on garde le
+critere d'intensite, qui decrit ce que la scene RECOIT vraiment, et l'on REND le
+nom. La comparaison d'equinoxe ne s'imprime plus qu'autour de midi.
+
+**LA REGLE EN SECTION B1** : un releve cale sur un etat du monde ment dans
+l'autre, et son domaine de validite doit etre DIT. Le cas temoin etait juste ;
+c'est son domaine qui n'etait pas ecrit. Troisieme releve de ce depot corrige le
+meme jour pour avoir dit plus que ce qu'il mesurait.

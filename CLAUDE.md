@@ -361,6 +361,12 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[2] VALIDER LA METRIQUE SUR UN CAS TEMOIN CONNU** avant d'en tirer la
   moindre conclusion. Une mesure qui ne sait pas classer le cas dont on connait
   deja la reponse ne peut pas trancher les autres.
+- **UN RELEVE CALE SUR UN ETAT DU MONDE MENT DANS L'AUTRE, et son domaine de
+  validite doit etre DIT.** Le releve solaire prenait la lumiere directionnelle
+  la plus INTENSE en la nommant « soleil » : juste de jour, faux la nuit ou le
+  soleil est eteint et la LUNE gagne — « elevation 54,7 deg a 1,0 h ». Le calcul
+  etait bon, c'est le NOM qui mentait, et sa comparaison d'equinoxe ne valait
+  qu'a midi. Le cas temoin etait juste ; c'est son domaine qui n'etait pas ecrit.
 - **[8] QUAND UNE CORRECTION NE BOUGE PAS LA MESURE, LA MESURE MELANGE DEUX
   POPULATIONS.** Un agregat sur des choses de natures differentes ne se corrige
   pas, il se DECOMPOSE. Quatre corrections inutiles payees d'affilee dessus.
