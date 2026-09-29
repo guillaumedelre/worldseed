@@ -69,6 +69,24 @@ namespace
 	constexpr float SeuilVoile = 1.0f;
 	constexpr float SeuilTempete = 5.0f;
 
+	/**
+	 * LA BRUME A DEUX SEUILS POUR LA MEME RAISON QUE LA POUSSIERE.
+	 *
+	 * L'echelle du pack ne donne que ses deux bornes : `Foggy` pose 10, les
+	 * douze autres prereglages 1 ou 2. Il n'y a donc RIEN entre les deux a quoi
+	 * se caler, et ces deux seuils sont ARBITRAIRES -- 3 pour une brume qu'on
+	 * remarque, 6 pour un vrai brouillard. Ils servent a COMPARER des sites
+	 * entre eux, jamais a juger dans l'absolu.
+	 *
+	 * ⚠ LE BLIZZARD PASSE PAR LA MEME VARIABLE. `Out.Fog` porte l'humidite ET
+	 * la poudrerie, qui prend le dessus par un `max` : un site neigeux et
+	 * venteux comptera donc du « brouillard » qui est en realite de la neige
+	 * soufflee. Ce n'est pas une erreur de la sonde, c'est ce que le pack
+	 * expose -- et il faut le savoir en lisant la colonne d'une toundra.
+	 */
+	constexpr float SeuilBrume = 3.0f;
+	constexpr float SeuilBrouillard = 6.0f;
+
 	/** Un compteur de duree ET d'episodes : les deux se lisent differemment. */
 	struct FCompteur
 	{
@@ -120,7 +138,11 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 	const double JourMin = Regles->Num(TEXT("uds"), TEXT("dureeJourneeMin"), 30.0);
 	const double NuitMin = Regles->Num(TEXT("uds"), TEXT("dureeNuitMin"), 15.0);
 	constexpr double JoursParAn = 36.0;
-	const double AnneeS = (JourMin + NuitMin) * 60.0 * JoursParAn;
+	const double CycleS = (JourMin + NuitMin) * 60.0;
+	const double AnneeS = CycleS * JoursParAn;
+
+	/** Part du cycle reel passee de jour -- deux tiers aux durees nominales. */
+	const double PartJour = JourMin / FMath::Max(JourMin + NuitMin, 1e-6);
 
 	FWorldseedWeatherParams Params;
 	Params.LatSpanDeg = Geo.LatSpanDeg;
@@ -145,9 +167,11 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		AnneeS / 3600.0, JourMin, NuitMin, JoursParAn, Pas, PasS));
 	L.Add(TEXT(""));
 	L.Add(TEXT("site                      lat   Koppen   T an  mm/an   pluie averse  neige  degage couvert")
-		TEXT("   orages   aurore   voile  sable tempe   vent  vent   | CIBLE, sans fondu"));
+		TEXT("   orages   aurore   voile  sable tempe   vent  vent")
+		TEXT("   brume  epais  max   nuit   jour   | CIBLE, sans fondu"));
 	L.Add(TEXT("                                             C    mm       %     %       %       %      %")
-		TEXT("    (episodes/an)       %      %  /an    moy   max   | pluie %  orages sable        X       Y (m)"));
+		TEXT("    (episodes/an)       %      %  /an    moy   max")
+		TEXT("       %      %  0-10      %      %   | pluie %  orages sable        X       Y (m)"));
 
 	// --- les sites, repartis en latitude -------------------------------------
 	//
@@ -279,6 +303,21 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		FCompteur Pluie, Averse, Neige, Degage, Couvert, Orage, Aurore;
 		FCompteur PluieCible, OrageCible;
 		FCompteur Voile, Sable, SableCible;
+		FCompteur Brume, Brouillard;
+
+		// LA BRUME SE LIT AUSSI PAR HEURE, et c'est la seule facon de voir le
+		// levier diurne : une part annuelle melange la nuit et l'apres-midi, et
+		// un cycle qui double la brume a l'aube s'y noie. On compte donc a part
+		// les pas qui tombent la nuit et ceux qui tombent en pleine journee.
+		int32 PasNuit = 0, PasJour = 0;
+		int32 BrumeNuit = 0, BrumeJour = 0;
+
+		// LE MAXIMUM ATTEINT, comme pour le vent -- et pour la meme raison.
+		// Sans lui, « la brume epaisse n'arrive jamais » ne se separe pas en
+		// « elle arrive et ne dure pas » et « le modele n'y monte jamais ». Les
+		// deux n'appellent pas le meme remede, et c'est ce chiffre qui a montre
+		// que le signal ne passait pas par `Uniformiser`.
+		float BrumeMax = 0.0f;
 		FWorldseedWeather Courant;
 
 		// LE VENT N'EST PAS UN COMPTEUR, C'EST UNE AMPLITUDE -- et il faut les
@@ -294,6 +333,27 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			const double T = static_cast<double>(N) * PasS;
 			Params.TimeSeconds = static_cast<float>(T);
 			Params.SeasonPhase = static_cast<float>(FMath::Fmod(T / AnneeS, 1.0));
+
+			// L'HEURE DU JOUR, ET LA CORRESPONDANCE N'EST PAS LINEAIRE.
+			//
+			// En jeu l'heure vient d'UDS ; ici il faut la rejouer, et une rampe
+			// lineaire sur le cycle serait FAUSSE : la journee dure trente
+			// minutes reelles pour douze heures de jeu et la nuit quinze pour
+			// les douze autres. Un pas de temps reel couvre donc DEUX FOIS plus
+			// d'heures la nuit que le jour -- et la sonde echantillonnant en
+			// temps REEL, une rampe lineaire donnerait a la nuit la moitie des
+			// releves au lieu du tiers, surestimant la brume nocturne de
+			// moitie.
+			//
+			// L'aube a six heures et le crepuscule a dix-huit sont la convention
+			// NOMINALE d'UDS, exacte a l'equateur et a l'equinoxe. Avec
+			// `Simulate Real Sun`, les vraies heures suivent la latitude et la
+			// saison : c'est une approximation, et elle est dite.
+			const double PartDuCycle = FMath::Fmod(T / CycleS, 1.0);
+			Params.HeureDuJour = static_cast<float>(PartDuCycle < PartJour
+				? 6.0 + 12.0 * PartDuCycle / PartJour
+				: FMath::Fmod(18.0 + 12.0 * (PartDuCycle - PartJour)
+					/ FMath::Max(1.0 - PartJour, 1e-6), 24.0));
 
 			const FWorldseedWeather Cible =
 				WorldseedWeatherState::Evaluate(Echantillon, ReglesPreset, Params);
@@ -324,6 +384,25 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			Voile.Voir(Courant.Dust >= SeuilVoile);
 			Sable.Voir(Courant.Dust >= SeuilTempete);
 
+			Brume.Voir(Courant.Fog >= SeuilBrume);
+			Brouillard.Voir(Courant.Fog >= SeuilBrouillard);
+			BrumeMax = FMath::Max(BrumeMax, Courant.Fog);
+
+			// MINUIT A SIX HEURES contre DIX A SEIZE : deux fenetres franches,
+			// separees par les deux transitions ou la brume se leve et se
+			// reforme. Les compter ferait tendre les deux colonnes l'une vers
+			// l'autre et masquerait le cycle qu'on veut voir.
+			if (Params.HeureDuJour < 6.0f)
+			{
+				++PasNuit;
+				if (Courant.Fog >= SeuilBrume) { ++BrumeNuit; }
+			}
+			else if (Params.HeureDuJour >= 10.0f && Params.HeureDuJour < 16.0f)
+			{
+				++PasJour;
+				if (Courant.Fog >= SeuilBrume) { ++BrumeJour; }
+			}
+
 			VentSomme += Courant.WindIntensity;
 			VentMax = FMath::Max(VentMax, Courant.WindIntensity);
 		}
@@ -342,6 +421,7 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		L.Add(FString::Printf(
 			TEXT("%-24s %5.0f   %-6s %5.1f %6.0f  %5.1f %5.1f  %5.1f   %5.1f  %5.1f    %4d     %4d")
 			TEXT("  %6.1f %6.1f %5d  %5.1f %5.1f")
+			TEXT("  %6.1f %6.1f %5.1f %6.1f %6.1f")
 			TEXT("   |%6.1f %5d %5d   %7.0f %7.0f"),
 			*Etiquette, Echantillon.LatitudeDeg, WorldseedKoppen::Nom(Classe),
 			Echantillon.TempMeanC, Echantillon.PrecipMm,
@@ -350,6 +430,9 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			Orage.Episodes, Aurore.Episodes,
 			Voile.Pas * Cent, Sable.Pas * Cent, Sable.Episodes,
 			static_cast<float>(VentSomme / FMath::Max(Pas, 1)), VentMax,
+			Brume.Pas * Cent, Brouillard.Pas * Cent, BrumeMax,
+			BrumeNuit * 100.0f / FMath::Max(PasNuit, 1),
+			BrumeJour * 100.0f / FMath::Max(PasJour, 1),
 			PluieCible.Pas * Cent, OrageCible.Episodes, SableCible.Episodes, XM, YM));
 	}
 

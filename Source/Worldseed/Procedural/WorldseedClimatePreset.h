@@ -267,6 +267,117 @@ struct WORLDSEED_API FWorldseedClimatePresetRules
 	float BlizzardVisibiliteMax = 10.0f;
 
 	/**
+	 * LA BRUME -- et elle n'a AUCUN releve, contrairement a tout le reste.
+	 *
+	 * LES PREREGLAGES DU PACK N'ONT PAS DE CASE POUR ELLE : `Foggy` pose
+	 * `Fog = 10` et les douze autres le laissent a 1 ou 2, ce qui donne les deux
+	 * BORNES de l'echelle et rien entre elles. On ne peut donc pas caler la
+	 * brume sur des mesures, comme on l'a fait pour la couverture nuageuse ou
+	 * pour le vent : on la DEDUIT de champs continus qu'on possede deja, et les
+	 * poids ci-dessous sont ARBITRAIRES au sens de la convention du fichier de
+	 * regles -- a juger a l'image et au bulletin de `ProbeCiel`, pas contre une
+	 * source.
+	 *
+	 * ET JAMAIS D'UNE LISTE DE BIOMES, ce que ce depot proscrit depuis le karst
+	 * et les mesas -- « le placement se lit sur les champs continus, jamais sur
+	 * l'etiquette de biome ». Une liste raterait d'ailleurs le cas le plus
+	 * spectaculaire de la Terre : le brouillard cotier d'un DESERT. L'Atacama et
+	 * le Namib comptent parmi les endroits les plus brumeux du monde, et ce sont
+	 * les deux deserts les plus secs.
+	 */
+	float BrumePlancher = 0.4f;
+	float BrumeMax = 10.0f;
+
+	/**
+	 * LE POIDS DE LA FRAICHEUR, de zero (elle n'entre pas) a un (elle decide).
+	 *
+	 * La brume est de la vapeur condensee : il faut que l'air soit proche de son
+	 * point de rosee, donc frais. C'est le seul des cinq termes qui existait
+	 * avant ce chantier, et il etait alors employe SEUL et a poids plein.
+	 */
+	float BrumePoidsFraicheur = 0.7f;
+
+	/**
+	 * LE POIDS DU LITTORAL -- LA CONTINENTALITE, MAIS RETOURNEE.
+	 *
+	 * C'est le levier qu'on oublie, et il vaut mieux que l'intuition : le
+	 * brouillard d'ADVECTION est un phenomene COTIER, de l'air humide qui passe
+	 * sur une surface plus froide. San Francisco, la Bretagne, les bancs de
+	 * Terre-Neuve, la cote du Namib. `Continentality` existe depuis le calage du
+	 * 11 septembre 2026 et va dans le bon sens des qu'on la retourne : zero est
+	 * un littoral, et c'est LA que la brume est chez elle.
+	 *
+	 * PAS A UN, A DESSEIN : le brouillard de RADIATION, lui, est continental --
+	 * une vallee de l'interieur par nuit claire en est le cas d'ecole. Mettre ce
+	 * poids a un supprimerait cette moitie du phenomene.
+	 */
+	float BrumePoidsLittoral = 0.55f;
+
+	/**
+	 * L'HUMIDITE QU'UN LITTORAL APPORTE A LUI SEUL, sans le moindre nuage.
+	 *
+	 * ELLE EXISTE PARCE QUE LA COUVERTURE NUAGEUSE NE MESURE PAS LA VAPEUR. Un
+	 * ciel charge annonce de l'air humide, mais l'inverse est faux : le Namib
+	 * est l'un des endroits les plus brumeux du monde, et son humidite vient du
+	 * courant froid qui longe la cote.
+	 *
+	 * ⚠ CE TERME A ETE JUSTIFIE PAR UN DEFAUT QUI N'EXISTAIT PAS. J'avais ecrit
+	 * que sans lui la brume manquerait le desert cotier, en SUPPOSANT qu'un
+	 * desert est sans nuages. Le temoin l'a refute : le desert de ce monde est
+	 * couvert 23 % de l'annee, et il rend 2,05 de brume sans ce terme contre
+	 * 2,48 avec. Le terme ajoute un quart, il ne sauve rien. Il est garde parce
+	 * qu'il est physiquement juste et qu'il ne coute rien, pas parce qu'il
+	 * corrige quelque chose -- et AUCUN ORACLE NE LE GARDE.
+	 */
+	float BrumeHumiditeCotiere = 0.45f;
+
+	/**
+	 * LE VENT AU-DELA DUQUEL LA BRUME NE TIENT PLUS, sur l'echelle du pack.
+	 *
+	 * C'est le plus SUR des leviers, et le seul qui ne demande aucun arbitrage :
+	 * le brouillard se disperse des que l'air brasse -- c'est un fait de
+	 * meteorologie elementaire, et c'est aussi ce qui rend la brume exclusive de
+	 * la tempete. Sur l'echelle du pack, ou `Overcast` vaut 3 et les trois etats
+	 * violents 10, quatre est le vent d'un temps deja remuant.
+	 *
+	 * `BrumeVentPlein` est la FRACTION de ce seuil ou la dispersion commence :
+	 * a 0,35, la brume est intacte sous 1,4 et nulle au-dela de 4.
+	 */
+	float BrumeVentNul = 4.0f;
+	float BrumeVentPlein = 0.35f;
+
+	/**
+	 * L'HEURE DU MINIMUM THERMIQUE, et le poids de l'heure.
+	 *
+	 * LE BROUILLARD DE RADIATION SE FORME LA NUIT ET SE LEVE EN MILIEU DE
+	 * MATINEE, parce que le sol rayonne sa chaleur vers un ciel clair, que l'air
+	 * a son contact atteint son point de rosee, et que le soleil defait tout des
+	 * qu'il rechauffe le sol. Le minimum de temperature tombe JUSTE AVANT
+	 * L'AUBE, pas a minuit -- le refroidissement dure toute la nuit.
+	 *
+	 * LA FORME EST LA COURBE DIURNE ELLE-MEME, retournee : un cosinus centre sur
+	 * six heures. Son minimum tombe donc a dix-huit heures, alors que le maximum
+	 * thermique reel est vers quinze : la courbe est en avance de trois heures
+	 * sur l'apres-midi, ce qui est sans consequence puisque la brume y est nulle
+	 * de toute facon.
+	 *
+	 * `BrumePoidsHeure` a zero rend le comportement d'avant -- aucun cycle
+	 * diurne -- ce qui est le temoin d'A/B de ce levier.
+	 */
+	float BrumeHeureMax = 6.0f;
+	float BrumePoidsHeure = 0.6f;
+
+	/**
+	 * COMBIEN LA NAPPE EST PLUS LENTE QUE L'AGITATION.
+	 *
+	 * Une nappe de brouillard TIENT quand une averse passe : elle se forme en
+	 * fin de nuit et met une matinee a se lever. Le signal qui la porte doit
+	 * donc battre plus lentement que celui de la pluie -- et plus lentement
+	 * encore que celui du sable, qui vaut trois.
+	 */
+	float BrumePeriodeFacteur = 5.0f;
+
+	/**
 	 * L'ECHELLE QUI TRANSFORME UN CUMUL MENSUEL EN FREQUENCE DE PLUIE, en mm.
 	 *
 	 * A ne pas confondre avec `CloudyPrecipScaleMm`, qui donne l'INTENSITE : la

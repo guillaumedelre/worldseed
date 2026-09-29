@@ -271,6 +271,19 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	Params.SeasonPhase = FallbackSeasonPhase;
 	Bridge.ReadSeasonPhase(Params.SeasonPhase);
 
+	// L'HEURE VIENT D'UDS, ET ELLE Y EST EN CENTIEMES D'HEURE.
+	//
+	// `Time of Day` va de 0 a 2400, pas de 0 a 24 : la meme convention que
+	// `-WorldseedHeure=`, qui accepte les deux et le dit. La brume de radiation
+	// en depend -- elle se forme la nuit et se leve en milieu de matinee -- et
+	// une lecture qui echoue laisse le defaut a MIDI, donc l'etat sans cycle
+	// diurne. Le silence ne poserait donc pas de brume ou il n'en faut pas.
+	double Horloge = 0.0;
+	if (Bridge.ReadNumber(TEXT("Time of Day"), Horloge))
+	{
+		Params.HeureDuJour = static_cast<float>(Horloge) * 0.01f;
+	}
+
 	const FWorldseedWeather Target =
 		WorldseedWeatherState::Evaluate(Sample, PresetRules, Params);
 
@@ -331,6 +344,16 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Worldseed] meteo : PLUIE FORCEE a %.1f sur 10 -- temoin"),
 				TemoinPluie);
+		}
+
+		float Brumeux = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedBrumeForce="), Brumeux)
+			&& Brumeux >= 0.0f)
+		{
+			TemoinBrume = FMath::Clamp(Brumeux, 0.0f, 10.0f);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : BRUME FORCEE a %.1f sur 10 -- temoin"),
+				TemoinBrume);
 		}
 
 		float Neigeux = -1.0f;
@@ -414,6 +437,24 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		Current.Fog = FMath::Max(Current.Fog, 1.0f + 5.5f * Part);
 		Current.Thunder = 10.0f * Part * Part;
 		Current.Snow = 0.0f;
+		Current.Dust = 0.0f;
+	}
+
+	if (TemoinBrume >= 0.0f)
+	{
+		// L'ETAT DE `Foggy`, RELEVE PAR L'API DANS LES PREREGLAGES DU PACK :
+		// Fog 10, Wind 1, et RIEN d'autre de surcharge. C'est le seul des treize
+		// a monter `Fog` au-dessus de 2, et son vent a 1 est une SOURCE pour
+		// nous : le pack lui-meme dit qu'un brouillard va avec de l'air calme,
+		// ce qui est exactement le levier que le modele emploie.
+		//
+		// LA PLUIE ET LE SABLE TOMBENT A ZERO, comme dans les autres temoins :
+		// une averse lessive l'air et une tempete de sable n'est pas une brume.
+		// Sans cela on obtiendrait une chimere, et ce depot a deja paye « des
+		// eclairs sous un ciel bleu ».
+		Current.Fog = TemoinBrume;
+		Current.WindIntensity = 1.0f;
+		Current.Rain = 0.0f;
 		Current.Dust = 0.0f;
 	}
 

@@ -60,6 +60,18 @@ FWorldseedClimatePresetRules FWorldseedClimatePresetRules::FromRules(
 	Out.VentMaxUds = Num(TEXT("ventMaxUds"), 10.0);
 	Out.VentForme = Num(TEXT("ventForme"), 3.0);
 	Out.BlizzardVisibiliteMax = Num(TEXT("blizzardVisibiliteMax"), 10.0);
+
+	Out.BrumePlancher = Num(TEXT("brumePlancher"), 0.4);
+	Out.BrumeMax = Num(TEXT("brumeMax"), 10.0);
+	Out.BrumePoidsFraicheur = Num(TEXT("brumePoidsFraicheur"), 0.7);
+	Out.BrumePoidsLittoral = Num(TEXT("brumePoidsLittoral"), 0.55);
+	Out.BrumeHumiditeCotiere = Num(TEXT("brumeHumiditeCotiere"), 0.45);
+	Out.BrumeVentNul = Num(TEXT("brumeVentNul"), 4.0);
+	Out.BrumeVentPlein = Num(TEXT("brumeVentPlein"), 0.35);
+	Out.BrumeHeureMax = Num(TEXT("brumeHeureMax"), 6.0);
+	Out.BrumePoidsHeure = Num(TEXT("brumePoidsHeure"), 0.6);
+	Out.BrumePeriodeFacteur = Num(TEXT("brumePeriodeFacteur"), 5.0);
+
 	Out.PluieFrequenceEchelleMm = Num(TEXT("pluieFrequenceEchelleMm"), 625.0);
 	Out.PluieIntensitePlancher = Num(TEXT("pluieIntensitePlancher"), 0.5);
 

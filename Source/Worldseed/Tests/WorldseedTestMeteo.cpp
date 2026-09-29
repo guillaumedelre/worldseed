@@ -627,4 +627,240 @@ bool FWorldseedMeteoSignalUniforme::RunTest(const FString& Parameters)
 	return true;
 }
 
+// ---------------------------------------------------------------------------
+// LA BRUME
+//
+// CES QUATRE ORACLES GARDENT DES PROPRIETES, JAMAIS DES CHIFFRES, et c'est ici
+// plus important qu'ailleurs : la brume est le SEUL terme de cette chaine qui
+// n'ait aucun releve derriere lui -- les prereglages du pack n'ont pas de case
+// pour elle, `Foggy` pose 10 et les douze autres 1 ou 2. Ses poids sont donc
+// ARBITRAIRES et bougeront au reglage ; ce qui ne doit PAS bouger est le SENS
+// de chaque levier, et c'est cela qu'on grave.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	/** Le plus fort brouillard atteint sur un cycle, a une heure donnee. */
+	float BrumeMaximale(const FWorldseedClimateSample& Sample,
+		const FWorldseedClimatePresetRules& Regles, float Heure,
+		int32 Echantillons = 600)
+	{
+		FWorldseedWeatherParams P;
+		P.VariationPeriodS = 180.0f;
+		P.LatSpanDeg = 180.0f;
+		P.SeasonPhase = 0.5f;
+		P.Seed = 20260909;
+		P.HeureDuJour = Heure;
+
+		float Pire = 0.0f;
+		for (int32 I = 0; I < Echantillons; ++I)
+		{
+			P.TimeSeconds = static_cast<float>(I) * 23.0f;
+			Pire = FMath::Max(Pire,
+				WorldseedWeatherState::Evaluate(Sample, Regles, P).Fog);
+		}
+		return Pire;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoBrumeAimeLaCote,
+	"Worldseed.Meteo.LaBrumeAimeLaCote",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoBrumeAimeLaCote::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// MEME CLIMAT, SEULE LA CONTINENTALITE CHANGE. C'est le levier qu'on
+	// oublie, et c'est le seul que ce test regarde : tout le reste est egal,
+	// donc un ecart ne peut venir que de lui.
+	const FWorldseedClimateSample Cote = Climat(11.0f, 900.0f, 12.0f, 0.02f, 48.0f);
+	const FWorldseedClimateSample Interieur = Climat(11.0f, 900.0f, 12.0f, 0.95f, 48.0f);
+
+	const float BrumeCote = BrumeMaximale(Cote, Regles, 4.0f);
+	const float BrumeInterieur = BrumeMaximale(Interieur, Regles, 4.0f);
+
+	AddInfo(FString::Printf(TEXT("brume : littoral %.2f  contre interieur %.2f"),
+		BrumeCote, BrumeInterieur));
+
+	// LA FIXTURE DOIT PRODUIRE DE LA BRUME, sans quoi « la cote en a plus »
+	// serait satisfait par deux zeros. Quatrieme forme de la fixture muette que
+	// ce depot paye regulierement.
+	if (!TestTrue(TEXT("la fixture embrume vraiment"), BrumeCote > 1.0f))
+	{
+		return false;
+	}
+
+	TestTrue(FString::Printf(
+		TEXT("le littoral est plus brumeux que l'interieur (%.2f contre %.2f)"),
+		BrumeCote, BrumeInterieur), BrumeCote > BrumeInterieur * 1.15f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoLeDesertCotierEstBrumeux,
+	"Worldseed.Meteo.LeDesertCotierEstBrumeux",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoLeDesertCotierEstBrumeux::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// LE CAS QUI JUSTIFIE DE NE PAS LISTER DES BIOMES. Le Namib et l'Atacama
+	// sont parmi les endroits les plus brumeux du monde, et ce sont les deux
+	// deserts les plus secs : une liste de biomes brumeux les raterait tous les
+	// deux.
+	//
+	// ⚠ CE QUE CET ORACLE GARDE N'EST PAS CE QUE JE CROYAIS, et le temoin l'a
+	// dit. Il garde `BrumePoidsLittoral` -- le poser a zero le fait tomber --
+	// et NON `BrumeHumiditeCotiere`, que j'avais ajoute en supposant qu'un
+	// desert est sans nuages : a zero, ce terme ne fait tomber aucun test. La
+	// mesure ci-dessous dit pourquoi (le desert de ce monde est couvert pres
+	// d'un quart de l'annee). Garder ce terme par un attendu demanderait un
+	// chiffre grave sur un poids ARBITRAIRE, ce que ce depot refuse ; il est
+	// donc assume comme non garde.
+	const FWorldseedClimateSample Namib = Climat(17.0f, 20.0f, 8.0f, 0.02f, -23.0f);
+
+	// LE TEMOIN EST UN DESERT DE L'INTERIEUR, meme temperature et meme pluie :
+	// lui doit rester sec. Sans ce cas negatif, « le desert cotier est brumeux »
+	// serait satisfait par une brume qui monte partout, ce qui est exactement le
+	// defaut de l'aurore a 0,12.
+	const FWorldseedClimateSample Interieur = Climat(17.0f, 20.0f, 8.0f, 0.95f, -23.0f);
+
+	const float BrumeNamib = BrumeMaximale(Namib, Regles, 4.0f);
+	const float BrumeInterieur = BrumeMaximale(Interieur, Regles, 4.0f);
+
+	// D'OU VIENT L'HUMIDITE DE CE DESERT -- et il a fallu le mesurer, parce
+	// qu'une premiere version de la formule a ete batie sur la SUPPOSITION
+	// qu'un desert est sans nuages. Le releve dit le contraire, et il est
+	// journalise ici pour qu'on ne le suppose plus.
+	const FWorldseedClimatePreset P = WorldseedClimatePreset::Build(Namib, Regles);
+	float Couvert = 0.0f;
+	for (int32 S = 0; S < 4; ++S) { Couvert += P.CloudyPct[S] * 0.25f; }
+	AddInfo(FString::Printf(
+		TEXT("desert : cotier %.2f  contre interieur %.2f  (ciel couvert %.0f %% de l'annee)"),
+		BrumeNamib, BrumeInterieur, Couvert));
+
+	TestTrue(FString::Printf(
+		TEXT("un desert COTIER porte une vraie brume (%.2f)"), BrumeNamib),
+		BrumeNamib > 2.0f);
+
+	TestTrue(FString::Printf(
+		TEXT("un desert de l'INTERIEUR reste sec (%.2f)"), BrumeInterieur),
+		BrumeInterieur < 1.5f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoLeVentDisperseLaBrume,
+	"Worldseed.Meteo.LeVentDisperseLaBrume",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoLeVentDisperseLaBrume::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// UNE COTE FRAICHE ET HUMIDE : le cas ou la brume est la plus forte, donc
+	// celui ou le vent a le plus a disperser.
+	const FWorldseedClimateSample Cote = Climat(9.0f, 1100.0f, 10.0f, 0.05f, 52.0f);
+
+	FWorldseedWeatherParams P;
+	P.VariationPeriodS = 180.0f;
+	P.LatSpanDeg = 180.0f;
+	P.SeasonPhase = 0.5f;
+	P.Seed = 20260909;
+	P.HeureDuJour = 4.0f;
+
+	float BrumeAuCalme = 0.0f, VentAuCalme = 99.0f;
+	float BrumeAuVent = 0.0f, VentFort = 0.0f;
+
+	for (int32 I = 0; I < 3000; ++I)
+	{
+		P.TimeSeconds = static_cast<float>(I) * 17.0f;
+		const FWorldseedWeather W = WorldseedWeatherState::Evaluate(Cote, Regles, P);
+
+		if (W.WindIntensity < 1.5f && W.Fog > BrumeAuCalme)
+		{
+			BrumeAuCalme = W.Fog;
+			VentAuCalme = W.WindIntensity;
+		}
+		// AU VENT FORT ON GARDE LE PIRE CAS POUR LA THESE -- la plus FORTE
+		// brume relevee sous grand vent. Prendre la plus faible rendrait
+		// l'assertion triviale.
+		if (W.WindIntensity > Regles.BrumeVentNul + 1.0f && W.Fog > BrumeAuVent)
+		{
+			BrumeAuVent = W.Fog;
+			VentFort = W.WindIntensity;
+		}
+	}
+
+	AddInfo(FString::Printf(
+		TEXT("brume : vent %.1f -> %.2f  |  vent %.1f -> %.2f"),
+		VentAuCalme, BrumeAuCalme, VentFort, BrumeAuVent));
+
+	// LES DEUX REGIMES DOIVENT AVOIR ETE RENCONTRES. Si le cycle ne montait
+	// jamais au-dessus du seuil de dispersion, le test passerait sans avoir rien
+	// compare -- et il passerait AUSSI si la brume etait nulle partout.
+	if (!TestTrue(TEXT("la fixture embrume vraiment par temps calme"),
+		BrumeAuCalme > 2.0f)) { return false; }
+	if (!TestTrue(TEXT("la fixture rencontre un vent fort"),
+		VentFort > Regles.BrumeVentNul)) { return false; }
+
+	TestTrue(FString::Printf(
+		TEXT("le vent disperse la brume (%.2f au calme, %.2f au vent)"),
+		BrumeAuCalme, BrumeAuVent),
+		BrumeAuVent < BrumeAuCalme * 0.5f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoLaBrumeSeLeveDansLaJournee,
+	"Worldseed.Meteo.LaBrumeSeLeveDansLaJournee",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoLaBrumeSeLeveDansLaJournee::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	const FWorldseedClimateSample Vallee = Climat(9.0f, 900.0f, 14.0f, 0.4f, 47.0f);
+
+	// SEULE L'HEURE CHANGE -- meme climat, meme cycle, meme graine. Le
+	// brouillard de radiation se forme la nuit et se leve en milieu de matinee.
+	const float ALAube = BrumeMaximale(Vallee, Regles, 5.0f);
+	const float ALaMiJournee = BrumeMaximale(Vallee, Regles, 15.0f);
+
+	AddInfo(FString::Printf(TEXT("brume : 5 h %.2f  contre 15 h %.2f"),
+		ALAube, ALaMiJournee));
+
+	if (!TestTrue(TEXT("la fixture embrume vraiment a l'aube"), ALAube > 2.0f))
+	{
+		return false;
+	}
+
+	TestTrue(FString::Printf(
+		TEXT("la brume de l'aube depasse celle de l'apres-midi (%.2f contre %.2f)"),
+		ALAube, ALaMiJournee), ALAube > ALaMiJournee * 1.3f);
+
+	// ET ELLE NE DOIT PAS DISPARAITRE TOUT A FAIT : le brouillard d'ADVECTION
+	// n'a pas de cycle diurne, seul celui de RADIATION en a un. Un poids
+	// d'heure pousse a un supprimerait la moitie du phenomene.
+	TestTrue(FString::Printf(
+		TEXT("l'apres-midi garde une part de brume (%.2f)"), ALaMiJournee),
+		ALaMiJournee > Regles.BrumePlancher * 1.5f);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

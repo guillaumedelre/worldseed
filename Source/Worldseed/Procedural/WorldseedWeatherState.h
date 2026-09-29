@@ -73,6 +73,23 @@ struct WORLDSEED_API FWorldseedWeatherParams
 	int32 Seed = 0;
 
 	float TimeSeconds = 0.0f;
+
+	/**
+	 * L'HEURE DU JOUR, de 0 a 24 -- le quatrieme levier de la brume.
+	 *
+	 * ELLE EST LUE DANS UDS, pas calculee : `Time of Day` est la seule horloge
+	 * du jeu, et c'est elle que le joueur VOIT. La deriver de `TimeSeconds`
+	 * demanderait de rejouer la correspondance temps reel / heure du jeu, qui
+	 * n'est pas lineaire -- la journee dure trente minutes reelles et la nuit
+	 * quinze -- et deux horloges finiraient par diverger.
+	 *
+	 * DEFAUT A MIDI, ET C'EST LE BON DEFAUT : un appelant qui ne renseigne pas
+	 * l'heure obtient l'etat sans brume de radiation, donc le comportement
+	 * d'avant ce levier. Un defaut a zero poserait au contraire la brume
+	 * maximale partout, ce qui est exactement le piege de l'aurore a 0,12 --
+	 * un effet visible que personne n'a demande.
+	 */
+	float HeureDuJour = 12.0f;
 };
 
 namespace WorldseedWeatherState
@@ -107,6 +124,26 @@ namespace WorldseedWeatherState
 	 * neige, ou rien -- est une autre question, et elle se pose ailleurs.
 	 */
 	WORLDSEED_API float Saltation(float WindIntensity,
+		const FWorldseedClimatePresetRules& PresetRules);
+
+	/**
+	 * LE VENT, sur l'echelle 0..10 du pack, depuis le signal d'agitation.
+	 *
+	 * PUBLIQUE POUR LA TROISIEME FOIS DE LA MEME RAISON, et celle-ci etait la
+	 * plus urgente : la BRUME a besoin du vent -- elle ne tient pas quand l'air
+	 * brasse -- et elle se calcule AVANT lui dans `Evaluate`, parce que les
+	 * nuages dont elle depend sont calcules plus haut et la poussiere qui depend
+	 * du vent plus bas. Recopier la formule etait le seul autre choix, et deux
+	 * copies auraient fini par diverger : la brume aurait alors suivi un vent
+	 * qui n'existe pas, sans que rien ne le signale.
+	 *
+	 * L'EXPOSANT N'EST PAS DECORATIF. `Souffle` est UNIFORME -- il sort
+	 * d'`Uniformiser` -- donc une rampe lineaire rendrait une moyenne au MILIEU
+	 * de la plage : mesure, 6,3 sur 10 en permanence sur les vingt-deux sites de
+	 * la sonde, soit plus du double d'`Overcast`. Le vent reel est tres
+	 * dissymetrique, et l'exposant en est la forme la plus simple.
+	 */
+	WORLDSEED_API float VentDepuisSouffle(float Souffle, float Occurrence,
 		const FWorldseedClimatePresetRules& PresetRules);
 
 	/**

@@ -211,6 +211,20 @@ private:
 	 */
 	float TemoinPluie = -1.0f;
 
+	/**
+	 * Temoin de BRUME force par `-WorldseedBrumeForce=` ; negatif = inactif.
+	 *
+	 * IL EXISTE PARCE QUE GUETTER UN EVENEMENT RARE NE SEPARE PAS LES DEUX
+	 * CAUSES -- regle que ce depot a payee sur l'orage. Le bulletin du ciel
+	 * donne la brume entre 0 et 11 % du temps selon le climat : attendre qu'elle
+	 * vienne rendrait un zero compatible avec « le modele n'en demande pas » ET
+	 * avec « il en demande et rien n'atteint l'ecran ».
+	 *
+	 * Il pose l'etat de `Foggy`, releve dans les prereglages du pack : le seul
+	 * des treize a monter `Fog` au-dessus de 2, avec un vent a 1.
+	 */
+	float TemoinBrume = -1.0f;
+
 	/** Le controle differe des effets d'ecran : armer n'est pas afficher. */
 	bool bEcranVerifie = false;
 	float TempsDepuisEcranS = 0.0f;

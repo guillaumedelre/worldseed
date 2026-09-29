@@ -80,6 +80,17 @@ namespace WorldseedWeatherState
 			0.0f, 1.0f);
 	}
 
+	float VentDepuisSouffle(float Souffle, float Occurrence,
+		const FWorldseedClimatePresetRules& PresetRules)
+	{
+		return FMath::Clamp(
+			PresetRules.VentCalme
+			+ PresetRules.VentMordantAgitation
+				* FMath::Pow(Souffle, FMath::Max(PresetRules.VentForme, 0.1f))
+			+ PresetRules.VentPluie * Occurrence,
+			0.5f, PresetRules.VentMaxUds);
+	}
+
 	float PoussiereDepuisVent(float WindIntensity, float DustPart,
 		float Occurrence, const FWorldseedClimatePresetRules& PresetRules)
 	{
@@ -224,18 +235,113 @@ namespace WorldseedWeatherState
 				Params.VariationPeriodS * FMath::Max(PresetRules.PoussierePeriodeFacteur, 0.1f),
 				Params.Seed ^ 0x53414E44u));            // « SAND »
 
-		// --- brouillard ---------------------------------------------------------
-		// LE PYTHON N'EN MODELISE PAS : les prereglages d'UDS n'ont pas de case
-		// pour lui. On le deduit donc du reste sans pretendre le mesurer — il
-		// demande de l'humidite et de la fraicheur, et il se leve quand il ne
-		// pleut PAS, une averse lessivant l'air.
-		const float Coolness = 1.0f - WorldseedPerlin::Smoothstep(5.0f, 25.0f, Sample.TempMeanC);
-		const float HazeNoise = WorldseedWeatherSignal::Haze(
-			Params.TimeSeconds, Params.VariationPeriodS, Params.Seed);
+		// --- LA BRUME -----------------------------------------------------------
+		//
+		// LES PREREGLAGES D'UDS N'ONT PAS DE CASE POUR ELLE : on ne peut donc
+		// pas la caler sur des releves, comme on l'a fait pour la couverture
+		// nuageuse. On la DEDUIT de champs continus qu'on possede deja -- et
+		// jamais d'une liste de biomes, ce que ce depot proscrit depuis le karst
+		// et les mesas : « le placement se lit sur les champs continus, jamais
+		// sur l'etiquette de biome ». Une liste raterait d'ailleurs le cas le
+		// plus spectaculaire, le brouillard cotier d'un DESERT -- l'Atacama et le
+		// Namib sont des deserts brumeux.
+		//
+		// CINQ LEVIERS, chacun un fait physique distinct.
+		//
+		// ⚠ LE SIGNAL PASSE PAR `Uniformiser`, ET LE PREMIER JET NON -- c'est le
+		// defaut « un seuil n'est pas une part » sous sa cinquieme forme dans ce
+		// depot. Il employait `Haze`, un `ValueNoise` brut : sa loi se masse
+		// autour d'un demi, si bien que le produit de cinq facteurs tous bornes
+		// par un n'atteignait JAMAIS le haut de l'echelle. Mesure au bulletin du
+		// ciel avant correction : la brume epaisse -- Fog au-dela de 6 -- tombait
+		// a 0,0 ou 0,1 pour cent sur les VINGT-DEUX sites, y compris les plus
+		// humides. `Uniformiser` rend exactement 1,0 au sommet du support, donc
+		// le brouillard franc redevient atteignable PAR CONSTRUCTION et non par
+		// un reglage qu'il faudrait pousser. Meme raisonnement, mot pour mot,
+		// que celui qui a debloque `Dust = 10`.
+		//
+		// LA GRAINE EST DECALEE et la periode ralentie : une nappe de brouillard
+		// TIENT quand une averse passe, et elle ne doit pas suivre le meme
+		// rythme que la pluie ni que le sable.
+		const float Nappe = WorldseedWeatherSignal::Uniformiser(
+			WorldseedWeatherSignal::Storminess(
+				Params.TimeSeconds,
+				Params.VariationPeriodS * FMath::Max(PresetRules.BrumePeriodeFacteur, 0.1f),
+				Params.Seed ^ 0x42525545u));            // « BRUE »
+
+		// 1. LA FRAICHEUR. La brume est de la vapeur condensee : il faut que
+		//    l'air soit proche de son point de rosee, donc frais.
+		const float Fraicheur =
+			1.0f - WorldseedPerlin::Smoothstep(5.0f, 25.0f, Sample.TempMeanC);
+
+		// 2. LA CONTINENTALITE, MAIS RETOURNEE -- et c'est le levier qu'on
+		//    oublie. Le brouillard d'ADVECTION est un phenomene COTIER : de
+		//    l'air humide qui passe sur une surface plus froide. San Francisco,
+		//    la Bretagne, les bancs de Terre-Neuve, et la cote du Namib. Une
+		//    continentalite de zero est un littoral ; c'est LA que la brume est
+		//    chez elle, pas au coeur des terres.
+		const float Littoral = 1.0f - FMath::Clamp(Sample.Continentality, 0.0f, 1.0f);
+
+		// 3. L'HUMIDITE SANS LA PLUIE. Un ciel charge dit l'air humide ; une
+		//    averse en cours le LESSIVE, et la visibilite revient apres l'ondee.
+		//
+		//    LA MER EST UNE SOURCE D'HUMIDITE QUE LES NUAGES NE DISENT PAS. Un
+		//    ciel charge annonce de l'air humide ; l'inverse est faux. Le Namib
+		//    est l'un des endroits les plus brumeux du monde, et l'humidite y
+		//    vient du courant froid qui longe la cote. Le `max` et non une
+		//    somme : les deux decrivent la MEME grandeur, la teneur en vapeur,
+		//    par deux chemins.
+		//
+		//    ⚠ J'AI JUSTIFIE CE TERME PAR UN DEFAUT QUI N'EXISTAIT PAS, et c'est
+		//    le temoin qui l'a dit. J'avais ecrit que sans lui la brume
+		//    manquerait le desert cotier -- le cas dont ce depot s'est servi
+		//    pour refuser une liste de biomes -- en SUPPOSANT qu'un desert est
+		//    sans nuages. Mesure : le desert de ce monde est couvert 23 % de
+		//    l'annee, et il rend 2,05 de brume sans ce terme contre 2,48 avec.
+		//    Il n'etait donc pas manque ; le terme ajoute un quart, pas tout.
+		//    AUCUN ORACLE NE LE GARDE, faute d'un attendu qui ne soit pas un
+		//    chiffre grave sur un poids arbitraire -- c'est dit dans le test.
+		const float Humide = FMath::Max(CloudyFraction,
+			Littoral * PresetRules.BrumeHumiditeCotiere) * (1.0f - Occurrence);
+
+		// 4. LE VENT, EN NEGATIF, et c'est le plus sur des quatre. Le brouillard
+		//    ne TIENT PAS au vent : il se disperse des que l'air brasse. C'est
+		//    aussi ce qui le rend exclusif de la tempete -- sur l'echelle du
+		//    pack, ou `Overcast` vaut 3 et les etats violents 10, il ne survit
+		//    guere au-dela de quatre.
+		//
+		//    ⚠ IL FAUT LE VENT, QUI N'EST ECRIT QUE PLUS BAS -- les nuages dont
+		//    la brume depend sont calcules plus haut, et la poussiere qui depend
+		//    du vent plus bas encore, si bien qu'aucun ordre ne met les trois
+		//    d'affilee. On appelle donc `VentDepuisSouffle`, LA MEME FONCTION
+		//    QUE `Out.WindIntensity` quelques lignes apres, au lieu d'en recopier
+		//    la formule : deux copies auraient fini par diverger, et la brume
+		//    aurait suivi un vent qui n'existe pas, sans que rien ne le signale.
+		const float Vent = VentDepuisSouffle(Souffle, Occurrence, PresetRules);
+
+		const float Calme = 1.0f - WorldseedPerlin::Smoothstep(
+			PresetRules.BrumeVentNul * PresetRules.BrumeVentPlein,
+			PresetRules.BrumeVentNul, Vent);
+
+		// 5. L'HEURE. Le brouillard de RADIATION se forme la nuit et se leve en
+		//    milieu de matinee : le sol rayonne sa chaleur vers un ciel clair,
+		//    l'air a son contact atteint son point de rosee, et le soleil defait
+		//    tout des qu'il rechauffe le sol. La forme est la courbe diurne
+		//    elle-meme, retournee -- un cosinus centre sur l'heure du minimum
+		//    thermique, qui tombe JUSTE AVANT L'AUBE et non a minuit.
+		const float Nocturne = 0.5f + 0.5f * FMath::Cos(
+			2.0f * PI * (Params.HeureDuJour - PresetRules.BrumeHeureMax) / 24.0f);
 
 		Out.Fog = FMath::Clamp(
-			0.4f + 2.0f * CloudyFraction * Coolness * (1.0f - Occurrence) * HazeNoise,
-			0.4f, 2.5f);
+			PresetRules.BrumePlancher
+			+ PresetRules.BrumeMax
+				* Humide
+				* FMath::Lerp(1.0f, Fraicheur, PresetRules.BrumePoidsFraicheur)
+				* FMath::Lerp(1.0f, Littoral, PresetRules.BrumePoidsLittoral)
+				* FMath::Lerp(1.0f, Nocturne, PresetRules.BrumePoidsHeure)
+				* Calme
+				* Nappe,
+			PresetRules.BrumePlancher, PresetRules.BrumeMax);
 
 		// --- nuages -------------------------------------------------------------
 		Out.CloudCoverage = FMath::Lerp(UdsClearCoverage, UdsOvercastCoverage,
@@ -296,16 +402,10 @@ namespace WorldseedWeatherState
 		Out.WindDirectionDeg = WorldseedWind::PrevailingYawDeg(
 			Sample.LatitudeDeg, Params.LatSpanDeg);
 
-		// L'EXPOSANT N'EST PAS DECORATIF : `Souffle` est UNIFORME, donc une rampe
-		// lineaire rendrait une moyenne au MILIEU de la plage -- mesure, 6,3 sur
-		// 10 en permanence, plus du double d'`Overcast`. Le vent reel est tres
-		// dissymetrique, et l'exposant en est la forme la plus simple.
-		Out.WindIntensity = FMath::Clamp(
-			PresetRules.VentCalme
-			+ PresetRules.VentMordantAgitation
-				* FMath::Pow(Souffle, FMath::Max(PresetRules.VentForme, 0.1f))
-			+ PresetRules.VentPluie * Occurrence,
-			0.5f, PresetRules.VentMaxUds);
+		// LA FORME EST DANS `VentDepuisSouffle`, avec sa justification : la BRUME
+		// s'en sert aussi, cinquante lignes plus haut, et ce depot a une regle
+		// contre les formules recopiees dans deux endroits.
+		Out.WindIntensity = VentDepuisSouffle(Souffle, Occurrence, PresetRules);
 
 		// --- LA POUSSIERE SORT DU VENT ------------------------------------------
 		//
