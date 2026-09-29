@@ -2722,3 +2722,45 @@ de harnais pour l'audibilite ni pour « est-ce que ca se voit » ; le releve de
 l'entonnoir et les comptes d'acteurs sont des preuves INDIRECTES, utiles parce
 que calibrees une fois contre un sens humain. C'est une limite a assumer, pas a
 masquer.
+
+#### LE RECADRAGE EN FRACTIONS, VALIDE A L'OEIL
+
+Le proprietaire a tranche : *« elle remplissait le ciel »*, puis apres
+recadrage *« ca le fait bien »*.
+
+    reglage      fraction de la HAUTEUR    ->  km      relu    avant (pack)
+    rayon              0,125                   4,0     4,0         13
+    distance           0,500                  16,0    16,0         25
+    dispersion         0,125                   4,0     4,0          0
+
+    28 degres sous-tendus a la naissance, 37 a douze kilometres
+
+**LA REFERENCE EST LA HAUTEUR, PAS LA LARGEUR** : c'est la petite dimension,
+donc celle qui contraint, et celle sur laquelle la latitude va d'un pole a
+l'autre. Un reglage exprime sur la largeur passerait deux fois trop grand du
+nord au sud. Le diametre vaut donc un quart de la hauteur du monde, et la
+traversee exactement UNE hauteur -- des quantites qu'on peut dire.
+
+**LA TAILLE DU MONDE SE LIT SUR LE TERRAIN CHARGE**, et la mesure le justifie :
+il rend 32 km quand `UWorldseedRules::Geometry` porte un defaut de 8. Prendre le
+defaut aurait donne des fractions justes d'un monde qui n'existe pas.
+
+**ET RIEN N'EST ENTRE DANS `world_rules.json`, A DESSEIN.** Son empreinte est un
+MD5 du fichier entier : une virgule y aurait invalide tous les mondes en cache
+et impose 210 a 260 s de regeneration, pour un reglage cosmetique. Les fractions
+vivent en C++ avec trois surcharges qui prennent des FRACTIONS et jamais des
+kilometres -- sans quoi on reintroduirait ce qu'on vient de retirer.
+
+**CE QUI RESTE OUVERT.** La tempete n'est armee que par
+`-WorldseedOrageRadial`, donc eteinte en partie normale ; et les quatre tables
+de probabilite restent un tirage au sort saisonnier, qui ignore le climat de
+Koppen de la cellule.
+
+**OBSERVE, NON RESOLU : la vitesse suit la distance.** Elle se rapprochait de
+0,8 km/10 s avant recadrage, 0,5 apres -- le pack derive donc vraisemblablement
+la vitesse de la distance et de la duree de vie. La traversee de 32 km en 500 a
+700 s donne 165 a 230 km/h, rapide pour un orage reel. Mais ce monde est un
+MODELE COMPRIME : 32 km d'un pole a l'autre contre 20 000 reels, soit un facteur
+625, quand la journee de 30 minutes comprime le temps d'un facteur 48 seulement.
+Comparer au reel exige donc de decider QUEL FACTEUR D'ECHELLE S'APPLIQUE AU
+TEMPS, et cet arbitrage depasse les tempetes.
