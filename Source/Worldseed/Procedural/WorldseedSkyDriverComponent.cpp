@@ -323,6 +323,16 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 				TemoinPoussiere);
 		}
 
+		float Pluvieux = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPluieForce="), Pluvieux)
+			&& Pluvieux >= 0.0f)
+		{
+			TemoinPluie = FMath::Clamp(Pluvieux, 0.0f, 10.0f);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : PLUIE FORCEE a %.1f sur 10 -- temoin"),
+				TemoinPluie);
+		}
+
 		float Neigeux = -1.0f;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNeigeForce="), Neigeux)
 			&& Neigeux >= 0.0f)
@@ -391,6 +401,22 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		Current.Snow = 0.0f;
 	}
 
+	if (TemoinPluie >= 0.0f)
+	{
+		// L'ETAT DE `Rain` ET `Rain_Thunderstorm`, MESURE dans les prereglages :
+		// Rain 7 -> Cloud 7,5 Fog 3 Thunder 4 ; Rain_Thunderstorm 10 -> Cloud 8
+		// Fog 6,5 Thunder 10. On interpole entre les deux, et la neige comme la
+		// poussiere tombent a zero -- il ne neige pas sous une averse, et une
+		// averse lessive l'air.
+		const float Part = TemoinPluie / 10.0f;
+		Current.Rain = TemoinPluie;
+		Current.CloudCoverage = FMath::Max(Current.CloudCoverage, 6.0f + 2.0f * Part);
+		Current.Fog = FMath::Max(Current.Fog, 1.0f + 5.5f * Part);
+		Current.Thunder = 10.0f * Part * Part;
+		Current.Snow = 0.0f;
+		Current.Dust = 0.0f;
+	}
+
 	if (TemoinNeige >= 0.0f)
 	{
 		// L'ETAT DE `Snow_Blizzard`, MESURE dans les prereglages du pack :
@@ -429,6 +455,38 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	}
 
 	PushWeather();
+
+	// --- LES EFFETS D'ECRAN MONTENT-ILS VRAIMENT ? ---------------------------
+	//
+	// ARMER N'EST PAS AFFICHER, et le depot a la meme lecon pour l'horloge et
+	// pour l'aurore. Le givre s'est vu immediatement ; les gouttes, non. Or
+	// elles n'ont PAS d'equivalent au `Screen Frost from Snow` du givre, et
+	// elles portent une `Camera Exposure` a zero -- il faut donc lire ce qui
+	// monte reellement plutot que de supposer.
+	//
+	// DIFFERE, parce qu'elles ont des durees de formation : les lire au premier
+	// tick rendrait zero pour la bonne raison, et l'on conclurait de travers.
+	if (!bEcranVerifie)
+	{
+		TempsDepuisEcranS += DeltaSeconds;
+		if (TempsDepuisEcranS > 6.0f)
+		{
+			bEcranVerifie = true;
+			double Givre = 0.0, Gouttes = 0.0, Coule = 0.0, Expo = 0.0;
+			const bool bG = Bridge.ReadNumber(TEXT("Current Screen Frost Intensity"), Givre);
+			const bool bD = Bridge.ReadNumber(TEXT("Current Screen Droplets Intensity"), Gouttes);
+			Bridge.ReadNumber(TEXT("Current Screen Droplets Drips Intensity"), Coule);
+			Bridge.ReadNumber(TEXT("Current Screen Droplets Camera Exposure"), Expo);
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : ecran apres %.0f s -- givre %.3f%s, gouttes ")
+				TEXT("%.3f%s (coulees %.3f, exposition camera %.3f) | pluie %.1f neige %.1f"),
+				TempsDepuisEcranS,
+				Givre, bG ? TEXT("") : TEXT(" ILLISIBLE"),
+				Gouttes, bD ? TEXT("") : TEXT(" ILLISIBLE"),
+				Coule, Expo, Current.Rain, Current.Snow);
+		}
+	}
 
 	// --- L'HEURE AVANCE-T-ELLE VRAIMENT ? ------------------------------------
 	//

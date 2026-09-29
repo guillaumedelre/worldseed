@@ -200,4 +200,19 @@ private:
 	 * Il pose l'etat de `Snow_Blizzard`, releve dans les prereglages du pack.
 	 */
 	float TemoinNeige = -1.0f;
+
+	/**
+	 * Temoin de PLUIE force par `-WorldseedPluieForce=` ; negatif = inactif.
+	 *
+	 * IL SERT A REGARDER LES GOUTTES D'ECRAN, l'equivalent pluvieux du givre :
+	 * `Screen Droplets`, qui arrivait eteint comme lui. Une fonctionnalite
+	 * armee mais jamais VUE n'est pas validee -- c'est une regle du depot, et
+	 * les quatre autres temoins existent pour la meme raison.
+	 */
+	float TemoinPluie = -1.0f;
+
+	/** Le controle differe des effets d'ecran : armer n'est pas afficher. */
+	bool bEcranVerifie = false;
+	float TempsDepuisEcranS = 0.0f;
 };
+
