@@ -2492,6 +2492,38 @@ releve du 29 septembre 2026 est sans appel -- **zero occurrence de
 d'abord donner un materiau physique au terrain voxel, ce qui est un chantier a
 part entiere et non un detail de cablage.
 
+> ⚠ **CORRIGE LE MEME JOUR, PLUS TARD : LE SOL EST FAIT, ET LA PROPRIETE
+> N'EST PAS OU CE PARAGRAPHE LA LAISSE CHERCHER.**
+>
+> **1. Le verrou du sol est leve.** `PM_WorldseedTerre` existe et le terrain le
+> porte -- pose dans le SLOT `PhysMaterial` des deux materiaux parents, ce qui
+> ne coute aucune ligne sur le chemin chaud du streaming : nos chunks portent
+> `bUseComplexAsSimpleCollision`, donc le physmat vient du materiau
+> (`BodyInstance.cpp:3323`). Mesure par TRACE, meme point, meme monde :
+> `DefaultPhysicalMaterial` x49 avant, `PM_WorldseedTerre` x49 apres. Le releve
+> « zero occurrence » ci-dessus etait d'ailleurs trop etroit -- c'etait zero
+> dans TOUT `Source/`, et zero asset dans `Content/`.
+>
+> **2. La propriete n'est sur AUCUN des deux acteurs.** Enumeration des 925
+> variables du ciel et des 584 de la meteo, motif large
+> (`dlwe|physical|interaction|footprint|footstep`) : elle n'y est pas. Les deux
+> seuls `TArray<PhysicalMaterial>` que les acteurs portent sont des listes qui
+> **DESACTIVENT** (`Physical Materials which disable Snow/Dust Sounds and
+> Particles`, et son equivalent pour les flaques).
+>
+> **Elle vit sur `UDS_DLWE_Interaction_Settings`**, que chaque composant
+> `DLWE_Interaction` tient PAR INSTANCE (variable `Interaction Settings`). Donc
+> rien du pack n'a besoin d'etre modifie : on duplique les reglages par
+> composant. Et sur l'instance livree `Standard_DLWE_Interaction_Settings`, le
+> tableau vaut `[]` tandis que `Enable Snow Sound Effects` et `Enable Puddle
+> Sound Effects` valent deja VRAI -- pas d'interrupteur maitre a trouver ici.
+>
+> **LA LECON, ET ELLE N'ETAIT PAS ECRITE :** ce paragraphe citait un nom de
+> propriete tire de la DOCUMENTATION et le presentait comme un emplacement. Un
+> nom lu n'est pas un objet trouve -- on enumere l'objet avant d'ecrire dessus,
+> sinon l'ecriture par reflexion echoue en SILENCE. Septieme supposition que ce
+> chantier paie a ses propres notes.
+
 #### Ce qui n'a PAS ete touche, et pourquoi
 
 **LES CINQ CURSEURS DE VOLUME PAR FAMILLE.** La documentation dit que le volume

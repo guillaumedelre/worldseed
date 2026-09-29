@@ -428,6 +428,12 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[12] TOUTE ECRITURE DE PARAMETRE DE MATERIAU DEPUIS LE C++ SE RELIT.** L'API
   ne signale pas un nom inconnu : pose sur un parametre absent, elle ne rend
   rien, ne journalise rien, et ne fait rien.
+- **UN NOM LU DANS UNE DOCUMENTATION N'EST PAS UN OBJET TROUVE.** La doc nomme
+  la propriete, jamais QUI la porte — et l'ecriture par reflexion sur le mauvais
+  objet echoue en SILENCE. On ENUMERE l'objet avant d'ecrire dessus. La liste
+  blanche de DLWE, donnee pour etre sur l'acteur du ciel, vit sur un objet de
+  reglages que le composant tient par instance : 1509 variables enumerees sur
+  les deux acteurs avant de le voir.
 - **[8] LE BUILD UNIFIE FUSIONNE LES NAMESPACES ANONYMES.** Une constante y
   collisionne avec un fichier qu'on n'a pas touche. Vaut aussi pour les tests.
 - **UN CONTENEUR GLOBAL A INITIALISATION DYNAMIQUE FAIT PLANTER LE MOTEUR**, et
