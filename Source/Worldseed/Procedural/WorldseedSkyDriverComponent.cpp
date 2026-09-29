@@ -70,6 +70,24 @@ namespace
 	 * ne dependent NI du climat NI du temps : elles se posent une fois, dans le
 	 * bloc de controle, et non deux fois par seconde.
 	 */
+	/**
+	 * LES DEUX EFFETS D'ECRAN, ET ILS ARRIVENT ETEINTS TOUS LES DEUX.
+	 *
+	 * Releve du 29 septembre 2026 : `Enable Screen Frost` et
+	 * `Enable Screen Droplets` valent FAUX, instance comme defaut de classe.
+	 * C'est le piege d'`Use Auroras`, pour la troisieme fois -- une
+	 * fonctionnalite complete, cablee, dont l'interrupteur dort.
+	 *
+	 * ET TOUT LE RESTE EST DEJA FAIT. `Screen Frost from Snow` vaut 1, les
+	 * materiaux (`Screen_Frost`, `Screen_Droplets`) et les textures
+	 * (`Snow_Normal`, `Frost_Scatter`) sont assignes, et les durees de formation
+	 * et d'effacement sont reglees -- 8 s et 12 s pour le givre. Il n'y a donc
+	 * RIEN a piloter : le givre suivra la neige et les gouttes la pluie des que
+	 * les deux booleens seront armes.
+	 */
+	const FName NameGivreActif = TEXT("Enable Screen Frost");
+	const FName NameGouttesActives = TEXT("Enable Screen Droplets");
+
 	const FName NameDustNombre = TEXT("Dust Particle Spawn Count");
 	const FName NameDustAlpha = TEXT("Dust Particle Alpha");
 	const FName NameDustTaille = TEXT("Dust Particle Scale");
@@ -715,6 +733,22 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 			bDustReveille ? TEXT("appele") : TEXT("INTROUVABLE"),
 			bVentManuel ? TEXT("ARMEE") : TEXT("REFUSEE (UDW ecrasera notre valeur)"),
 			bVentReveille ? TEXT("appele") : TEXT("INTROUVABLE"));
+
+		// --- LES DEUX EFFETS D'ECRAN, AVEC LEURS RAPPELS --------------------
+		const bool bGivre = Bridge.WriteBool(NameGivreActif, true);
+		const bool bGivreReveille = Bridge.CallFunction(
+			TEXT("OnRep_Enable Screen Frost"));
+		const bool bGouttes = Bridge.WriteBool(NameGouttesActives, true);
+		const bool bGouttesReveillees = Bridge.CallFunction(
+			TEXT("OnRep_Enable Screen Droplets"));
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] meteo : ecran -- givre %s (rappel %s), gouttes %s ")
+			TEXT("(rappel %s)"),
+			bGivre ? TEXT("ARME") : TEXT("REFUSE"),
+			bGivreReveille ? TEXT("appele") : TEXT("absent"),
+			bGouttes ? TEXT("ARMEES") : TEXT("REFUSEES"),
+			bGouttesReveillees ? TEXT("appele") : TEXT("absent"));
 
 		// --- LE DOSAGE DES PARTICULES ---------------------------------------
 		//

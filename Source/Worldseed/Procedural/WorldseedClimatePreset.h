@@ -256,6 +256,17 @@ struct WORLDSEED_API FWorldseedClimatePresetRules
 	float VentForme = 3.0f;
 
 	/**
+	 * LA VISIBILITE QUE MANGE UN BLIZZARD, sur l'echelle de brouillard d'UDS.
+	 *
+	 * SOURCE : `Snow_Blizzard` pose `Fog = 10`, releve dans les prereglages du
+	 * pack. Notre modele rendait 0,4 -- son plancher -- sous une neige a dix,
+	 * parce que son terme d'humidite fait BAISSER le brouillard quand il
+	 * precipite. C'est juste pour une averse, qui lessive l'air ; c'est faux
+	 * pour la neige, un blizzard se DEFINISSANT par sa visibilite reduite.
+	 */
+	float BlizzardVisibiliteMax = 10.0f;
+
+	/**
 	 * L'ECHELLE QUI TRANSFORME UN CUMUL MENSUEL EN FREQUENCE DE PLUIE, en mm.
 	 *
 	 * A ne pas confondre avec `CloudyPrecipScaleMm`, qui donne l'INTENSITE : la

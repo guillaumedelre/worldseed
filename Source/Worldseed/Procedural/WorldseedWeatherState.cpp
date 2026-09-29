@@ -313,8 +313,38 @@ namespace WorldseedWeatherState
 		// depot contre les formules recopiees : `Saltation` est partagee avec la
 		// REPTATION au ras du sol -- qui decide si le sable ou la neige se met a
 		// courir -- et `PoussiereDepuisVent` avec le temoin de VENT.
+		//
+		// ET ELLE SERT UNE TROISIEME FOIS, juste en dessous, pour le BLIZZARD :
+		// la poudrerie qui mange la visibilite est le meme arrachement, applique
+		// a de la neige au lieu du sable.
+		const float Arrachement = Saltation(Out.WindIntensity, PresetRules);
 		Out.Dust = PoussiereDepuisVent(Out.WindIntensity, Preset.DustPart,
 			Occurrence, PresetRules);
+
+		// --- LE BLIZZARD : LA NEIGE SOUFFLEE MANGE LA VISIBILITE ---------------
+		//
+		// ⚠ LE BROUILLARD FAISAIT L'INVERSE, et c'etait le defaut central de la
+		// tempete de neige. Son terme `(1 - Occurrence)` le fait BAISSER quand
+		// il precipite -- ce qui est juste pour une averse, qui lessive l'air, et
+		// FAUX pour la neige : un blizzard se DEFINIT par sa visibilite reduite,
+		// sous 400 m par convention meteorologique. Mesure du desaccord : le
+		// prereglage `Snow_Blizzard` du pack pose `Fog = 10` quand notre modele
+		// rendait 0,4 -- le plancher -- sous une neige a dix.
+		//
+		// CE N'EST PAS DE L'EAU EN SUSPENSION, C'EST DE LA NEIGE. Le blizzard ne
+		// masque pas parce que l'air est sature, mais parce que le vent remplit
+		// l'air de flocons deja tombes : c'est la POUDRERIE, exactement le meme
+		// fait physique que la saltation du sable. D'ou la meme fonction
+		// d'arrachement, et une forme symetrique de celle de la poussiere.
+		//
+		// LE `max` ET NON UNE SOMME : par temps calme le brouillard garde sa
+		// valeur d'humidite, et c'est le blizzard qui prend le dessus quand il
+		// se leve -- pas les deux qui s'additionnent en un voile impossible.
+		const float NeigeSoufflee =
+			FMath::Clamp(Out.Snow / UdsEchelle, 0.0f, 1.0f) * Arrachement;
+
+		Out.Fog = FMath::Max(Out.Fog,
+			PresetRules.BlizzardVisibiliteMax * NeigeSoufflee);
 
 		return Out;
 	}

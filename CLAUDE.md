@@ -11709,3 +11709,83 @@ les corps et non les noms de fichier.
   parametres utilisateur -- dont `Spawn Box Height`, `World Spawn Offset` et
   `Stick Particles to Surface`. « Du sable qui rampe » n'est pas un systeme a
   ecrire, c'est celui du pack APLATI.
+
+### Les nappes rasantes : POURQUOI ON S'ARRETE, et par ou reprendre (29 septembre 2026)
+
+**CHANTIER SUSPENDU PAR DECISION DU PROPRIETAIRE**, apres un diagnostic complet.
+La DECISION est faite, testee et gardee ; c'est l'EFFET qui bute.
+
+**CE QUI MARCHE ET RESTE EN PLACE.** `WorldseedReptation::Evaluer` est une
+fonction PURE qui dit, en un point, ce qui rampe -- sable ou neige -- et a
+quelle force. Une seule mecanique pour deux matieres, parce que c'est le meme
+fait physique : la poudrerie souleve la neige DEJA AU SOL par le vent, comme la
+saltation souleve le sable. Quatre oracles la gardent, dont celui qui verifie
+qu'a part egale et vent egal les deux rampent **exactement pareil**. Le
+declencheur ne s'invente pas : c'est le canal « aride » des poids de matiere,
+celui que le semis de vegetation emploie deja.
+
+**LE MUR : LE SYSTEME NIAGARA DU PACK NE SE REINSTANCIE PAS.** Il tourne --
+etat Active, age qui avance, mille particules par seconde, visible, non elimine
+par la distance -- et il ne dessine RIEN.
+
+    hypothese                      verdict
+    mes reglages de forme          NON : en mode brut (valeurs d'usine), identique
+    le materiau                    NON : GPU_Dust porte bien Dust_ParticleMat
+    `Sprite Scale` a zero          NON : corrige, sans effet
+    attache au terrain (a 14 km)   NON : attache au PION, identique
+    `NewObject` vs SpawnSystem     NON : identique une fois le support corrige
+
+**CE QUI RESTE, ET QUI N'EST PAS VERIFIE** : le systeme porte des interfaces de
+DONNEES -- `Impact Normals` (NiagaraDataInterfaceArrayFloat3), `Start Positions`,
+`End Positions`, `Particle Paths CPU`, `Recycled Paths`. Ce sont des TABLEAUX,
+remplis par le Blueprint d'UDW. Sans trajectoires a suivre, des emetteurs GPU
+peuvent tourner sans rien produire. **C'est l'hypothese a tester en premier si
+l'on reprend**, et elle est coherente avec le fait que le meme systeme, pilote
+PAR UDW, s'affiche parfaitement.
+
+**PAR OU REPRENDRE, dans l'ordre :** verifier cette hypothese des tableaux ;
+sinon, un systeme Niagara a NOUS, fait a la main -- le graphe n'est pas
+scriptable, `NiagaraEditorLibrary` n'existe meme pas cote Python, donc c'est une
+exception a la regle du projet et une decision du proprietaire.
+
+#### Trois defauts de MESURE payes sur ce chantier, et ils se ressemblent
+
+- **J'AI MESURE LA ZONE OU J'ATTENDAIS L'EFFET.** Trois reglages rendaient le
+  meme chiffre au SOL, j'en ai conclu « invisible » -- les grains etaient dans
+  le CIEL, et c'est le proprietaire qui l'a vu en levant les yeux. Une mesure
+  ciblee confirme surtout son propre cadrage : elle doit s'accompagner d'une
+  mesure de l'image ENTIERE.
+- **J'AI CONCLU SUR UNE IMAGE NOYEE, SANS TEMOIN.** « La nappe est trop dense »
+  -- le temoin monte ensuite a rendu 137,2 contre 136,9 : c'etait le voile
+  atmospherique a 10 qui saturait. Et j'avais place l'oeil a 180 METRES du sol
+  en croyant poser des centimetres (`-WorldseedVueH=` est en metres).
+- **LE TEMOIN DE POUSSIERE N'ETAIT PAS REPRESENTATIF** : il force `Dust` ET le
+  vent a la meme valeur, alors qu'a vent 9 le modele rend un voile de 3,6. Un
+  temoin doit poser un etat que le monde peut produire, sinon on regarde une
+  scene qui n'existe pas. D'ou `-WorldseedVentForce=`.
+
+### Le pack livre ses effets DESARMES, et c'est desormais un reflexe (29 septembre 2026)
+
+Quatrieme et cinquieme occurrence du meme piege, apres `Use Auroras` et les dix
+surcharges manuelles d'UDW :
+
+    Enable Screen Frost      faux      Enable Screen Droplets   faux
+
+Les deux effets sont COMPLETS -- materiaux `Screen_Frost` et `Screen_Droplets`
+assignes, textures `Snow_Normal` et `Frost_Scatter` en place, durees de
+formation et d'effacement reglees (8 s et 12 s), et surtout
+`Screen Frost from Snow` = 1, donc le givre suit DEJA la neige. Il n'y avait
+rien a piloter : deux booleens et leurs rappels, et le givre apparait aux
+quatre bords de l'ecran sous un blizzard.
+
+**LE REFLEXE A PRENDRE : devant une fonctionnalite d'un pack tiers qui ne se
+voit pas, chercher son interrupteur AVANT de regler son intensite.** Ce depot l'a
+paye cinq fois en un mois, et les cinq fois le reste etait deja cable.
+
+**ET LE DOSAGE DES PARTICULES EST TRES INEGAL DANS CE PACK** : poussiere 1000
+grains a 0,60 d'opacite, neige et pluie 20 000 a 1,00. Vingt fois moins pour le
+sable. Mesure du renforcement, contraste du lointain sous Dust = 8 : 1000 ->
+36,12 au ciel et 25,41 au sol ; 6000 -> 32,82 et 23,57 ; 12000 -> 29,00 et
+20,35. **C'est le CONTRASTE qui bouge, pas la clarte** -- une densite de grains
+ne deplace pas la luminance moyenne, elle mange les DETAILS. Mesurer la clarte
+sur cette question ne voit rien, et c'est ce qui m'avait egare.

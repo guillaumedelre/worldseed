@@ -59,6 +59,7 @@ FWorldseedClimatePresetRules FWorldseedClimatePresetRules::FromRules(
 	Out.VentPluie = Num(TEXT("ventPluie"), 2.0);
 	Out.VentMaxUds = Num(TEXT("ventMaxUds"), 10.0);
 	Out.VentForme = Num(TEXT("ventForme"), 3.0);
+	Out.BlizzardVisibiliteMax = Num(TEXT("blizzardVisibiliteMax"), 10.0);
 	Out.PluieFrequenceEchelleMm = Num(TEXT("pluieFrequenceEchelleMm"), 625.0);
 	Out.PluieIntensitePlancher = Num(TEXT("pluieIntensitePlancher"), 0.5);
 
@@ -363,3 +364,4 @@ namespace WorldseedClimatePreset
 		return FMath::Lerp(Values[A], Values[B], Scaled - Floor);
 	}
 }
+

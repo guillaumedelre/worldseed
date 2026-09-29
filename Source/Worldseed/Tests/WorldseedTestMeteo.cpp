@@ -299,6 +299,95 @@ bool FWorldseedMeteoPoussiereNeTombePasSousLaPluie::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoBlizzardMangeLaVisibilite,
+	"Worldseed.Meteo.LeBlizzardMangeLaVisibilite",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoBlizzardMangeLaVisibilite::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// UNE TOUNDRA : assez froide pour que tout tombe en neige, assez arrosee
+	// pour qu'il tombe quelque chose.
+	const FWorldseedClimateSample Toundra = Climat(-8.0f, 500.0f, 25.0f, 0.8f, -62.0f);
+
+	FWorldseedWeatherParams P;
+	P.VariationPeriodS = 180.0f;
+	P.LatSpanDeg = 180.0f;
+	P.Seed = 20260909;
+
+	// ON CHERCHE LE PIRE INSTANT, celui ou la neige ET le vent sont forts en
+	// meme temps : c'est la definition du blizzard, et c'est un evenement rare
+	// par construction. Une moyenne le noierait.
+	float FogAuBlizzard = 0.0f, NeigeAlors = 0.0f, VentAlors = 0.0f;
+	float FogCalme = 10.0f, NeigeCalme = 0.0f;
+
+	// ⚠ ON BALAYE AUSSI LA SAISON, ET LA PREMIERE VERSION NE LE FAISAIT PAS.
+	//
+	// Elle posait `SeasonPhase = 0` en l'annotant « l'hiver austral » -- c'etait
+	// faux : `SwapHemisphere` echange les saisons sous l'equateur, donc zero y
+	// designe l'ETE local. La fixture ne produisait aucune neige, le test
+	// echouait sur « neige 0,0 », et il aurait tout aussi bien pu PASSER par
+	// absence de matiere si l'attendu avait ete tourne autrement. C'est le
+	// defaut de fixture muette que ce depot paye regulierement.
+	//
+	// Balayer la phase rend le test independant de cette convention : quelle
+	// que soit la moitie de l'annee qui porte l'hiver, on la traverse.
+	for (int32 I = 0; I < 4000; ++I)
+	{
+		P.TimeSeconds = static_cast<float>(I) * 31.0f;
+		P.SeasonPhase = static_cast<float>(I % 40) / 40.0f;
+		const FWorldseedWeather W = WorldseedWeatherState::Evaluate(Toundra, Regles, P);
+
+		const float Souffle = W.Snow * W.WindIntensity;
+		if (W.Snow > 1.0f && Souffle > NeigeAlors * VentAlors)
+		{
+			FogAuBlizzard = W.Fog;
+			NeigeAlors = W.Snow;
+			VentAlors = W.WindIntensity;
+		}
+		// LE TEMOIN : de la neige SANS vent. Sans lui, « le brouillard monte
+		// quand il neige » serait satisfait par un brouillard qui monte
+		// toujours -- et c'est justement ce qu'on ne veut pas, une chute de
+		// neige calme laissant voir loin.
+		if (W.Snow > 1.0f && W.WindIntensity < 3.0f && W.Fog < FogCalme)
+		{
+			FogCalme = W.Fog;
+			NeigeCalme = W.Snow;
+		}
+	}
+
+	AddInfo(FString::Printf(
+		TEXT("blizzard : neige %.1f vent %.1f -> brouillard %.2f  |  ")
+		TEXT("neige calme %.1f -> brouillard %.2f"),
+		NeigeAlors, VentAlors, FogAuBlizzard, NeigeCalme, FogCalme));
+
+	// LE DEFAUT QUE CET ORACLE GARDE A EXISTE : le terme d'humidite du
+	// brouillard porte `(1 - Occurrence)`, qui le fait BAISSER quand il
+	// precipite. C'est juste pour une averse, qui lessive l'air, et faux pour
+	// la neige -- `Snow_Blizzard` du pack pose Fog = 10 quand notre modele
+	// rendait 0,4, son plancher.
+	// LA FIXTURE DOIT AVOIR PRODUIT DE LA NEIGE, sans quoi tout ce qui suit
+	// passerait -- ou echouerait -- par ABSENCE de matiere et non par la
+	// propriete testee.
+	if (!TestTrue(TEXT("la fixture neige vraiment"), NeigeAlors > 1.0f))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("un blizzard reduit la visibilite"), FogAuBlizzard > 4.0f);
+
+	// ET PAS TOUT LE TEMPS : une chute de neige par temps calme laisse voir.
+	if (NeigeCalme > 0.0f)
+	{
+		TestTrue(TEXT("mais une neige calme laisse voir loin"), FogCalme < 3.0f);
+	}
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoEchelleDuPack,
 	"Worldseed.Meteo.LEchelleEstCelleDuPack",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
