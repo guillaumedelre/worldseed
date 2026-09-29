@@ -255,13 +255,20 @@ fois.
   comment travailler, la **doctrine de mesure** (les pièges nommés, un par
   ligne), et les décisions prises par le propriétaire. Court à dessein — il est
   fait pour être tenu en tête, pas parcouru.
-- **`Docs/registre/`** — la **preuve**. Sept fichiers, 186 séances : ce qui a
-  été mesuré, ce qui a tranché, et surtout **les pistes abandonnées avec la
-  raison de ne pas les rouvrir**. Il ne se lit pas en entier, il se cherche —
-  `grep -n -i '<sujet>' Docs/registre/*.md`. C'est le document le plus utile du
-  dépôt, et il vivait dans `CLAUDE.md` jusqu'au 29 septembre 2026 : l'y laisser
-  coûtait 176 000 tokens à chaque tour, ce qui le rendait trop gros pour être
-  consulté *avant* de chercher — donc inutile là où il servait le plus.
+- **`Docs/registre/`** — la **preuve**. Huit fichiers, 186 séances plus un plan
+  suspendu : ce qui a été mesuré, ce qui a tranché, et surtout **les pistes
+  abandonnées avec la raison de ne pas les rouvrir**. Il ne se lit pas en
+  entier, il se cherche — `grep -n -i '<sujet>' Docs/registre/*.md`. C'est le
+  document le plus utile du dépôt, et il vivait dans `CLAUDE.md` jusqu'au
+  29 septembre 2026 : l'y laisser coûtait 176 000 tokens à chaque tour, ce qui
+  le rendait trop gros pour être consulté *avant* de chercher — donc inutile là
+  où il servait le plus.
+- **`Docs/vibeue-mcp.md`** — le manuel des outils MCP du plugin VibeUE. Sorti de
+  `CLAUDE.md` le même jour : il décrit une voie qui exige l'**éditeur lancé**,
+  alors que ce projet travaille l'**éditeur arrêté** — les deux s'excluent, le
+  plugin écoutant sur le port 8000. À charger le jour où le travail redevient
+  lourd en assets. La méthode réellement employée — commandlet, sondes C++,
+  tournée photo, capture PowerShell — est dans `CLAUDE.md`, section `A ter.`
 - **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — la chaîne de
   génération planétaire, étape par étape : le sous-sol (huit roches, dix bancs,
   et pourquoi c'est la roche qui décide des formes), la sculpture du relief
