@@ -8,9 +8,12 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedRules.h"
+#include "Procedural/WorldseedVoxelTerrain.h"
 #include "Procedural/WorldseedWeatherReadout.h"
 #include "Sound/SoundBase.h"
 #include "UObject/UObjectIterator.h"
@@ -1945,6 +1948,46 @@ namespace
 	const FName NomSpawnOrage(TEXT("Spawn Radial Storm"));
 	const FName NomChargementOrage(TEXT("Load Radial Storm Class"));
 	const FName NomClasseDure(TEXT("Radial Storm Class Hard"));
+
+	// --- LA GEOMETRIE DE LA TEMPETE, EN FRACTIONS DU MONDE -------------------
+	//
+	// LE PACK POSE DES METRIQUES FIGEES, ET ELLES SONT HORS D'ECHELLE ICI :
+	// rayon 13 km, naissance et mort a 25 km. Sur un monde de 64 x 32 km, un
+	// diametre de 26 km fait QUATRE-VINGT-UN POUR CENT de la hauteur du monde --
+	// et le proprietaire l'a constate a l'oeil le 29 septembre 2026 : a dix
+	// kilometres, elle REMPLISSAIT LE CIEL. Une tempete censee rapporter le LIEU
+	// reproduisait donc le defaut qu'elle devait corriger, une meteo quasi
+	// uniforme avec seulement un bord qui bouge.
+	//
+	// LA REGLE DU PROJET EST CELLE-CI : un reglage s'exprime en FRACTION du
+	// monde ou en quantile, jamais en metrique figee -- parce que la taille du
+	// monde est un choix, et qu'un chiffre en kilometres cesse d'etre juste des
+	// qu'elle change.
+	//
+	// LA REFERENCE EST LA HAUTEUR, PAS LA LARGEUR. C'est la petite dimension,
+	// donc celle qui CONTRAINT : un reglage exprime sur la largeur passerait
+	// deux fois trop grand du nord au sud. Et c'est en hauteur que le monde se
+	// lit, la latitude allant d'un pole a l'autre sur cette distance.
+	//
+	// LES TROIS VALEURS, ET POURQUOI CELLES-LA (monde de 32 km de haut) :
+	//
+	//   rayon     1/8  -> 4 km, soit un diametre de 8 km = un quart de la
+	//                     hauteur du monde. A la distance de naissance il
+	//                     sous-tend environ 28 degres : une FORMATION sur
+	//                     l'horizon, ce qu'on cherchait, et non un plafond.
+	//   distance  1/2  -> 16 km : la traversee vaut donc exactement UNE hauteur
+	//                     de monde, ce qui est une quantite qu'on peut dire.
+	//   dispersion 1/8 -> 4 km, pour que deux tempetes ne naissent pas sur le
+	//                     meme cercle -- le pack livre zero, donc une distance
+	//                     de naissance rigoureusement constante.
+	constexpr double FractionRayonOrage = 0.125;
+	constexpr double FractionDistanceOrage = 0.5;
+	constexpr double FractionDispersionOrage = 0.125;
+
+	const FName NomRayonOrage(TEXT("Radial Storm Outer Radius"));
+	const FName NomDistanceDebut(TEXT("Radial Storm Start Distance"));
+	const FName NomDistanceFin(TEXT("Radial Storm End Distance"));
+	const FName NomDispersionOrage(TEXT("Radial Storm Spawn Random Offset"));
 }
 
 void UWorldseedSkyDriverComponent::ArmerLesOragesRadiaux()
@@ -1996,6 +2039,102 @@ void UWorldseedSkyDriverComponent::ArmerLesOragesRadiaux()
 		TEXT("et spawner dans la meme trame retomberait sur une classe nulle."),
 		*NomChargementOrage.ToString(),
 		bCharge ? TEXT("appelee") : TEXT("ABSENTE"));
+
+	RecadrerLaGeometrieDesOrages();
+}
+
+void UWorldseedSkyDriverComponent::RecadrerLaGeometrieDesOrages() const
+{
+	// LA TAILLE DU MONDE SE LIT SUR LE TERRAIN CHARGE, PAS DANS LES REGLES.
+	// `UWorldseedRules::Geometry` porte un defaut de 8 km ; la hauteur REELLE
+	// est celle du monde qu'on a genere, et c'est le terrain qui la detient.
+	// Prendre le defaut donnerait des fractions justes d'un monde qui n'existe
+	// pas -- exactement la forme du piege « un chiffre derive recopie ».
+	// PAS DE BOUCLE AVEC `break` : elle rendrait l'increment de l'iterateur
+	// inatteignable, et ce module compile ses avertissements en erreurs. On
+	// prend le premier et l'on s'arrete, sans boucler.
+	const AWorldseedVoxelTerrain* Terrain = nullptr;
+	if (UWorld* const Monde = GetWorld())
+	{
+		TActorIterator<AWorldseedVoxelTerrain> It(Monde);
+		Terrain = It ? *It : nullptr;
+	}
+	if (!Terrain)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] orage radial : aucun terrain voxel -- la taille ")
+			TEXT("du monde est inconnue, donc les distances du pack sont ")
+			TEXT("LAISSEES TELLES QUELLES (13 et 25 km, hors d'echelle)."));
+		return;
+	}
+
+	const double HauteurKm = Terrain->MondeGeometrie().HeightM / 1000.0;
+	if (HauteurKm <= 0.0)
+	{
+		return;
+	}
+
+	// LES SURCHARGES SONT DES FRACTIONS, PAS DES KILOMETRES, et c'est le point
+	// de toute cette fonction : on itere sans jamais reintroduire un chiffre
+	// figé. Et elles evitent de toucher a `world_rules.json`, dont l'empreinte
+	// est un MD5 du fichier ENTIER -- une virgule y invaliderait tous les
+	// mondes en cache pour un reglage cosmetique.
+	double FracRayon = FractionRayonOrage;
+	double FracDistance = FractionDistanceOrage;
+	double FracDispersion = FractionDispersionOrage;
+	float Lu = 0.0f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedOrageRayon="), Lu))
+	{
+		FracRayon = FMath::Max(0.001f, Lu);
+	}
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedOrageDistance="), Lu))
+	{
+		FracDistance = FMath::Max(0.001f, Lu);
+	}
+	if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedOrageDispersion="), Lu))
+	{
+		FracDispersion = FMath::Max(0.0f, Lu);
+	}
+
+	const double RayonKm = FracRayon * HauteurKm;
+	const double DistanceKm = FracDistance * HauteurKm;
+	const double DispersionKm = FracDispersion * HauteurKm;
+
+	// ⚠ L'UNITE DU PACK EST LE KILOMETRE, et ce n'est pas une supposition : la
+	// tempete est nee a 25,0 km quand `Start Distance` valait 25,0, mesure au
+	// releve du 29 septembre 2026.
+	const bool bRayon = Bridge.WriteNumber(NomRayonOrage, RayonKm);
+	const bool bDebut = Bridge.WriteNumber(NomDistanceDebut, DistanceKm);
+	const bool bFin = Bridge.WriteNumber(NomDistanceFin, DistanceKm);
+	const bool bDisp = Bridge.WriteNumber(NomDispersionOrage, DispersionKm);
+
+	// ET L'ON RELIT LES QUATRE. Une ecriture par reflexion ne signale rien
+	// quand elle echoue, et ce chantier a paye quatre fois aujourd'hui un appel
+	// qui rendait vrai sans rien faire.
+	double RayonRelu = 0.0, DebutRelu = 0.0, FinRelue = 0.0, DispRelue = 0.0;
+	Bridge.ReadNumber(NomRayonOrage, RayonRelu);
+	Bridge.ReadNumber(NomDistanceDebut, DebutRelu);
+	Bridge.ReadNumber(NomDistanceFin, FinRelue);
+	Bridge.ReadNumber(NomDispersionOrage, DispRelue);
+
+	// L'ANGLE EST LA GRANDEUR QUI COMPTE, parce que c'est elle qu'on VOIT. Le
+	// releve precedent disait « elle remplissait le ciel » : a dix kilometres,
+	// un rayon de 13 km met l'observateur DEDANS. Ce chiffre rend la nouvelle
+	// geometrie jugeable sans relancer.
+	const double AngleDeg = 2.0 * FMath::RadiansToDegrees(
+		FMath::Atan2(RayonRelu, FMath::Max(0.001, DebutRelu)));
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] orage radial : monde haut de %.0f km -- rayon %.3f ")
+		TEXT("-> %.1f km (relu %.1f%s), distance %.3f -> %.1f km (relu %.1f/%.1f%s), ")
+		TEXT("dispersion %.3f -> %.1f km (relu %.1f%s) | a la naissance la ")
+		TEXT("tempete sous-tend %.0f degres"),
+		HauteurKm,
+		FracRayon, RayonKm, RayonRelu, bRayon ? TEXT("") : TEXT(" REFUSE"),
+		FracDistance, DistanceKm, DebutRelu, FinRelue,
+		(bDebut && bFin) ? TEXT("") : TEXT(" REFUSE"),
+		FracDispersion, DispersionKm, DispRelue, bDisp ? TEXT("") : TEXT(" REFUSE"),
+		AngleDeg);
 }
 
 void UWorldseedSkyDriverComponent::ReleverLesOragesRadiaux() const
@@ -2051,6 +2190,13 @@ void UWorldseedSkyDriverComponent::ReleverLesOragesRadiaux() const
 		if (A->GetClass()->GetName().Contains(TEXT("Radial_Storm")))
 		{
 			++Orages;
+
+			// ON VA LA VOIR DES QU'ELLE EXISTE, et une seule fois : c'est un
+			// outil de regard, arme par `-WorldseedOrageFace=<km>` et inerte
+			// autrement.
+			const_cast<UWorldseedSkyDriverComponent*>(this)
+				->EnvoyerLeJoueurVoirLOrage(A);
+
 			if (Noms.Num() < 6)
 			{
 				// ET ON DONNE LE CAP, parce qu'une distance ne dit pas ou
@@ -2072,4 +2218,71 @@ void UWorldseedSkyDriverComponent::ReleverLesOragesRadiaux() const
 		ClasseDure ? TEXT("chargee") : TEXT("NULLE"), Orages,
 		Orages > 0 ? TEXT(" -- ") : TEXT(""),
 		Orages > 0 ? *FString::Join(Noms, TEXT(", ")) : TEXT(""));
+}
+
+void UWorldseedSkyDriverComponent::EnvoyerLeJoueurVoirLOrage(const AActor* Orage)
+{
+	float DistanceKm = 0.0f;
+	if (bJoueurEnvoyeVoirLOrage || !Orage
+		|| !FParse::Value(FCommandLine::Get(), TEXT("WorldseedOrageFace="),
+			DistanceKm))
+	{
+		return;
+	}
+	bJoueurEnvoyeVoirLOrage = true;
+
+	UWorld* const Monde = GetWorld();
+	APawn* const Pion = Monde
+		? UGameplayStatics::GetPlayerPawn(Monde, 0) : nullptr;
+	ACharacter* const Perso = Cast<ACharacter>(Pion);
+	UCharacterMovementComponent* const Mouvement =
+		Perso ? Perso->GetCharacterMovement() : nullptr;
+	if (!Mouvement)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] orage radial : aucun pion a deplacer -- ")
+			TEXT("`-WorldseedOrageFace=` ne vaut qu'en jeu."));
+		return;
+	}
+
+	// LE POINT DE VUE EST SUR LE SEGMENT ENTRE LA TEMPETE ET LE JOUEUR, du cote
+	// du joueur : on se rapproche d'elle sans passer derriere, donc elle
+	// continue de venir VERS nous, ce qui est tout l'interet.
+	const FVector PosOrage = Orage->GetActorLocation();
+	const FVector PosPion = Pion->GetActorLocation();
+	const FVector Vers = PosPion - PosOrage;
+	const double DistanceCm = FMath::Max(1.0, DistanceKm * 100000.0);
+	const FVector Vue = PosOrage
+		+ Vers.GetSafeNormal2D() * DistanceCm
+		// L'ALTITUDE EST ABSOLUE, PAS RELATIVE AU SOL. A vingt kilometres du
+		// joueur le chunk n'est pas maille -- le rayon de chargement fait
+		// 250 m -- donc il n'y a RIEN sous les pieds a interroger. Deux mille
+		// metres passent au-dessus du relief de ce monde.
+		+ FVector(0.0, 0.0, 200000.0 - PosPion.Z);
+
+	Pion->SetActorLocation(Vue, /*bSweep=*/false, nullptr,
+		ETeleportType::TeleportPhysics);
+
+	// EN VOL, ET C'EST CE QUI EVITE LA CHUTE. Sans ce mode le pion tomberait de
+	// deux mille metres a travers un monde non maille, et l'on photographierait
+	// une chute libre.
+	Mouvement->SetMovementMode(MOVE_Flying);
+	Mouvement->MaxFlySpeed = 6000.0f;
+	Mouvement->BrakingDecelerationFlying = 4000.0f;
+
+	// LE CAP SE POSE SUR LE CONTROLEUR, pas sur l'acteur : en vue a la
+	// troisieme personne, c'est la rotation de CONTROLE qui oriente la camera.
+	const FRotator Visee = (PosOrage - Vue).Rotation();
+	if (APlayerController* const PC =
+			UGameplayStatics::GetPlayerController(Monde, 0))
+	{
+		PC->SetControlRotation(Visee);
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] orage radial : joueur pose a (%.0f, %.0f) m, ")
+		TEXT("altitude 2000 m, EN VOL, a %.1f km de la tempete -- cap %.0f deg, ")
+		TEXT("site %.0f deg"),
+		Vue.X / WorldseedMetersToCm, Vue.Y / WorldseedMetersToCm,
+		DistanceKm, Visee.Yaw, Visee.Pitch);
 }

@@ -417,6 +417,30 @@ private:
 	void ArmerLesOragesRadiaux();
 
 	/**
+	 * RECADRER LA GEOMETRIE DE LA TEMPETE EN FRACTIONS DU MONDE.
+	 *
+	 * LE PACK POSE DES METRIQUES FIGEES ET ELLES SONT HORS D'ECHELLE : rayon
+	 * 13 km, naissance et mort a 25 km, sur un monde de 64 x 32 km. Un diametre
+	 * de 26 km fait 81 % de la HAUTEUR du monde -- et le proprietaire l'a
+	 * constate a l'oeil le 29 septembre 2026, a dix kilometres elle REMPLISSAIT
+	 * LE CIEL. Une tempete censee rapporter le LIEU reproduisait donc le defaut
+	 * qu'elle devait corriger.
+	 *
+	 * LES TROIS REGLAGES DEVIENNENT DES FRACTIONS DE LA HAUTEUR DU MONDE, la
+	 * petite dimension etant celle qui contraint. Ils se surchargent par
+	 * `-WorldseedOrageRayon=`, `-WorldseedOrageDistance=` et
+	 * `-WorldseedOrageDispersion=` -- EN FRACTIONS, jamais en kilometres, sans
+	 * quoi on reintroduirait ce qu'on vient de retirer.
+	 *
+	 * ET RIEN N'ENTRE DANS `world_rules.json` : son empreinte est un MD5 du
+	 * fichier ENTIER, donc une virgule y invaliderait tous les mondes en cache
+	 * et imposerait 210 a 260 s de regeneration -- pour un reglage cosmetique.
+	 * Si ces fractions doivent devenir des regles, ce sera un changement
+	 * delibere, avec son `BREAKING CHANGE`.
+	 */
+	void RecadrerLaGeometrieDesOrages() const;
+
+	/**
 	 * Compter les acteurs de tempete REELLEMENT presents.
 	 *
 	 * C'EST L'EFFET, PAS LE RETOUR D'APPEL. Trois fois aujourd'hui un appel qui
@@ -424,6 +448,32 @@ private:
 	 * acteur `Radial_Storm_C` dans le monde, lui, est une chose qui existe.
 	 */
 	void ReleverLesOragesRadiaux() const;
+
+	/**
+	 * METTRE LE JOUEUR EN VOL, FACE A LA TEMPETE, A DISTANCE CHOISIE.
+	 *
+	 * ARME PAR `-WorldseedOrageFace=<km>`, et c'est un outil de REGARD, pas une
+	 * regle du monde : une tempete se juge a l'oeil, et depuis le sol elle naît
+	 * a vingt-cinq kilometres, derriere le relief et la brume.
+	 *
+	 * POURQUOI EN VOL ET NON POSE AU SOL. Choix du proprietaire, et il resout
+	 * deux problemes d'un coup. 71 % de ce monde est ocean : viser une
+	 * coordonnee a vingt kilometres, c'est jouer a pile ou face avec la mer, et
+	 * l'on ne saurait pas si nager est un defaut ou le hasard. Et l'altitude
+	 * degage l'horizon, qui est precisement le sujet.
+	 *
+	 * ON NE REUTILISE PAS `TeleporterJoueur` : elle tient en vol le temps que le
+	 * sol durcisse, puis RELACHE -- elle fait atterrir. Ici on veut rester en
+	 * l'air, donc `MOVE_Flying`.
+	 *
+	 * ET L'ON NE VISE QU'UNE FOIS. Re-orienter a chaque releve se battrait avec
+	 * la souris du joueur ; le cap est journalise a chaque passage pour qu'il
+	 * puisse se reorienter lui-meme.
+	 */
+	void EnvoyerLeJoueurVoirLOrage(const AActor* Orage);
+
+	/** Vrai une fois le joueur envoye : il ne vaut que la premiere fois. */
+	bool bJoueurEnvoyeVoirLOrage = false;
 
 	/** Vrai une fois l'armement tente : il ne vaut que la premiere fois. */
 	bool bOragesRadiauxArmes = false;
