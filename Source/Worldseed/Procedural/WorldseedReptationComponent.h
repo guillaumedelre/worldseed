@@ -136,4 +136,10 @@ private:
 
 	/** Derniere matiere rendue, pour ne reposer la teinte qu'au changement. */
 	EWorldseedMatiereRampante DerniereMatiere = EWorldseedMatiereRampante::Aucune;
+
+	/** Le diagnostic a-t-il ete emis une premiere fois ? */
+	bool bDiagnostiquee = false;
+
+	/** Pour le reemettre periodiquement : un etat qui change apres coup compte. */
+	float SecondesDepuisDiagnostic = 0.0f;
 };

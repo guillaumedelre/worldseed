@@ -4,6 +4,11 @@
 
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "NiagaraSystemInstanceController.h"
+#include "NiagaraFunctionLibrary.h"
+
+#include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
 
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -87,26 +92,62 @@ bool UWorldseedReptationComponent::Preparer()
 		return false;
 	}
 
-	AActor* const Proprietaire = GetOwner();
-	if (!Proprietaire)
+	// --- ⚠ ON S'ATTACHE AU PION, PAS AU TERRAIN -----------------------------
+	//
+	// C'EST LA CAUSE DE TOUT CE QUI PRECEDE, et elle a coute cinq tentatives.
+	//
+	// Ce composant vit sur `AWorldseedTerrain`, et c'est juste : c'est le
+	// terrain qui sait ce qu'il y a SOUS les pieds. Mais son ACTEUR est a
+	// l'ORIGINE DU MONDE, quand le joueur se promene a quatorze kilometres de
+	// la. Un systeme de particules attache a cette racine a donc ses bornes
+	// la-bas : il tourne -- etat Active, age qui avance, mille particules par
+	// seconde -- et il n'est jamais DESSINE.
+	//
+	// LE SIGNE QUI L'A TRAHI : `SpawnSystemAttached` rend NULL sur cette racine,
+	// parce qu'elle fait un controle d'elimination prealable que le chemin
+	// manuel (`NewObject` + `RegisterComponent`) ne fait pas -- celui-la
+	// acceptait en silence et produisait un systeme invisible.
+	//
+	// LA DECISION APPARTIENT AU TERRAIN, LE RENDU APPARTIENT AU JOUEUR.
+	UWorld* const Monde = GetWorld();
+	APawn* const Pion = Monde ? UGameplayStatics::GetPlayerPawn(Monde, 0) : nullptr;
+	USceneComponent* const Support = Pion ? Pion->GetRootComponent() : nullptr;
+
+	if (!Support)
 	{
+		// PAS ENCORE DE PION : on reessaiera. Surtout ne pas verrouiller la
+		// recherche ici -- le pion arrive apres le terrain.
+		bSystemeCherche = false;
 		return false;
 	}
 
-	Particules = NewObject<UNiagaraComponent>(Proprietaire,
-		TEXT("WorldseedReptationParticules"));
+	// ON PASSE PAR LA FONCTION DU MOTEUR, PAS PAR `NewObject`.
+	//
+	// C'EST LE DEFAUT QUI A COUTE LE PLUS CHER ICI. Un composant bati a la main
+	// -- `NewObject` + `SetAsset` + `RegisterComponent` -- se charge, s'active,
+	// rend un controleur d'instance en etat ACTIVE dont l'age avance, et ne
+	// dessine RIEN. Mesure : meme image a un demi-point de clarte pres, que nos
+	// reglages soient poses ou que le systeme tourne sur ses valeurs d'usine
+	// (116,20 contre 116,89 dans le ciel, 145,24 contre 145,02 au sol).
+	//
+	// `SpawnSystemAttached` fait un travail d'initialisation que le chemin
+	// manuel ne fait pas, et c'est la voie que le moteur emploie partout.
+	Particules = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		Systeme,
+		Support,
+		NAME_None,
+		FVector::ZeroVector,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		/*bAutoDestroy=*/false,
+		/*bAutoActivate=*/false);
+
 	if (!Particules)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] reptation : SpawnSystemAttached n'a rien rendu"));
 		return false;
 	}
-
-	Particules->SetAsset(Systeme);
-	Particules->SetupAttachment(Proprietaire->GetRootComponent());
-	// ON NE L'AUTO-ACTIVE PAS : il ne doit tourner que quand quelque chose
-	// rampe reellement, sans quoi une foret paierait des particules qu'elle ne
-	// montre pas.
-	Particules->bAutoActivate = false;
-	Particules->RegisterComponent();
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] reptation : systeme « %s » charge, particules pretes"),
@@ -198,7 +239,6 @@ void UWorldseedReptationComponent::Appliquer(
 	// camera -- il porte `Override Camera Transform` et `Custom Camera Position`
 	// -- mais ses BORNES sont celles du composant : laisse a l'origine du monde,
 	// il serait elimine du rendu des que le joueur s'en eloigne.
-	Particules->SetWorldLocation(Origine);
 
 	// --- LA FORME DE LA NAPPE, POSEE UNE FOIS -------------------------------
 	//
@@ -207,7 +247,24 @@ void UWorldseedReptationComponent::Appliquer(
 	// juste au-dessus du sol, une portee rasante, et presque pas de tourbillon.
 	// Ces valeurs ne dependent pas de la meteo : les reposer deux fois par
 	// seconde ne servirait a rien.
-	if (!bFormePosee)
+	// LE TEST QUI SEPARE « MES REGLAGES CASSENT » DE « LE SYSTEME NE REND PAS ».
+	//
+	// Le controleur dit que le systeme TOURNE -- etat Active, age qui avance,
+	// mille particules par seconde, visible, non elimine par la distance -- et
+	// rien ne se dessine. Les deux explications restantes sont opposees : soit
+	// un de mes reglages de forme etouffe le rendu (boite de ponte ramenee de
+	// 2500 a 150, portee de 10000 a 2500), soit le systeme a besoin d'autre
+	// chose. `-WorldseedReptationBrut=1` n'applique AUCUNE forme et laisse les
+	// defauts du pack : si des grains apparaissent alors, le coupable est chez
+	// moi.
+	static const bool bBrut = []()
+	{
+		int32 V = 0;
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedReptationBrut="), V);
+		return V != 0;
+	}();
+
+	if (!bFormePosee && !bBrut)
 	{
 		bFormePosee = true;
 
@@ -264,16 +321,22 @@ void UWorldseedReptationComponent::Appliquer(
 	}
 
 	// --- CE QUI SUIT LA METEO ------------------------------------------------
+	//
+	// EN MODE BRUT on ne touche a RIEN, pas meme la ponte : le but est de voir
+	// le systeme tel que le pack le livre, sans une seule de nos ecritures.
 	const float Ponte = FMath::Clamp(Reptation.Intensite, 0.0f, 1.0f) * PonteMax;
-	Particules->SetVariableFloat(NomPonte, Ponte);
-	Particules->SetVariableFloat(NomPonteCPU, Ponte);
-	Particules->SetVariableFloat(NomAlpha,
-		FMath::Clamp(0.25f + 0.75f * Reptation.Intensite, 0.0f, 1.0f));
+	if (!bBrut)
+	{
+		Particules->SetVariableFloat(NomPonte, Ponte);
+		Particules->SetVariableFloat(NomPonteCPU, Ponte);
+		Particules->SetVariableFloat(NomAlpha,
+			FMath::Clamp(0.25f + 0.75f * Reptation.Intensite, 0.0f, 1.0f));
+	}
 
 	// LA TEINTE NE SE REPOSE QU'AU CHANGEMENT DE MATIERE. C'est un `Vector3f`
 	// et non une couleur -- mesure, pas supposition -- donc l'alpha se pilote a
 	// part.
-	if (Reptation.Matiere != DerniereMatiere)
+	if (Reptation.Matiere != DerniereMatiere && !bBrut)
 	{
 		DerniereMatiere = Reptation.Matiere;
 		Particules->SetVariableVec3(NomTeinte, FVector(
@@ -303,4 +366,54 @@ void UWorldseedReptationComponent::Appliquer(
 	{
 		Particules->Activate();
 	}
+
+	// --- LE CONTROLE QUI SEPARE « INVISIBLE » DE « INEXISTANT » -------------
+	//
+	// IL MANQUAIT, ET C'EST POUR CELA QUE TROIS REGLAGES ONT ETE TENTES A
+	// L'AVEUGLE. Juger sur l'image ne dit pas si le systeme TOURNE : des grains
+	// de taille nulle, un systeme elimine par la distance et un systeme qui ne
+	// pond rien rendent tous les trois la meme image -- et le meme chiffre.
+	//
+	// LE CONTROLEUR NE COMPTE PAS LES PARTICULES (`GetNumParticles` est
+	// commente dans `NiagaraSystemInstance.h`), mais il dit ce qui compte
+	// vraiment : l'etat d'execution REEL -- pas celui qu'on a demande --, si le
+	// systeme s'est termine, si son age avance, et la distance de LOD qui
+	// pourrait l'avoir elimine.
+	//
+	// UNE FOIS, PUIS TOUTES LES DIX SECONDES : un etat qui change apres coup est
+	// precisement ce qu'on cherche, et un journal par demi-seconde serait
+	// illisible.
+	SecondesDepuisDiagnostic += 0.5f;
+	if (!bDiagnostiquee || SecondesDepuisDiagnostic >= 10.0f)
+	{
+		bDiagnostiquee = true;
+		SecondesDepuisDiagnostic = 0.0f;
+
+		if (FNiagaraSystemInstanceControllerConstPtr Ctrl =
+				Particules->GetSystemInstanceController())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] reptation : etat REEL %d (demande %d), termine %s, ")
+				TEXT("age %.1f s, LOD %.0f cm | actif %s, visible %s, ponte %.0f, ")
+				TEXT("taille %.1f"),
+				static_cast<int32>(Ctrl->GetActualExecutionState()),
+				static_cast<int32>(Ctrl->GetRequestedExecutionState()),
+				Ctrl->IsComplete() ? TEXT("OUI") : TEXT("non"),
+				Ctrl->GetAge(), Ctrl->GetLODDistance(),
+				Particules->IsActive() ? TEXT("oui") : TEXT("NON"),
+				Particules->IsVisible() ? TEXT("oui") : TEXT("NON"),
+				Ponte, TailleGrain);
+		}
+		else
+		{
+			// PAS DE CONTROLEUR = PAS D'INSTANCE. Le composant existe, il est
+			// « actif », et rien ne tourne derriere : c'est le cas que l'image
+			// ne peut pas distinguer des autres.
+			UE_LOG(LogTemp, Error,
+				TEXT("[Worldseed] reptation : AUCUN controleur d'instance -- le ")
+				TEXT("systeme n'a jamais demarre, quoi qu'en dise IsActive()"));
+		}
+	}
 }
+
+
