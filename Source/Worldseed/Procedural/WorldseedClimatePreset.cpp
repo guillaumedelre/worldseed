@@ -7,6 +7,7 @@
 #include "Procedural/WorldseedClimatePreset.h"
 
 #include "Procedural/WorldseedKoppen.h"
+#include "Procedural/WorldseedPerlin.h"
 #include "Procedural/WorldseedRules.h"
 
 namespace
@@ -44,7 +45,20 @@ FWorldseedClimatePresetRules FWorldseedClimatePresetRules::FromRules(
 	Out.MediterraneanLatMinDeg = Num(TEXT("mediterraneanLatMinDeg"), 30.0);
 	Out.MediterraneanLatMaxDeg = Num(TEXT("mediterraneanLatMaxDeg"), 45.0);
 
-	Out.DustPrecipMaxMm = Num(TEXT("dustPrecipMaxMm"), 250.0);
+	Out.PoussierePleinePluieMm = Num(TEXT("poussierePleinePluieMm"), 120.0);
+	Out.PoussiereNullePluieMm = Num(TEXT("poussiereNullePluieMm"), 350.0);
+	Out.PoussiereGelNulleC = Num(TEXT("poussiereGelNulleC"), -8.0);
+	Out.PoussiereGelPleineC = Num(TEXT("poussiereGelPleineC"), 0.0);
+	Out.PoussiereVoile = Num(TEXT("poussiereVoile"), 2.0);
+	Out.PoussiereVentSeuil = Num(TEXT("poussiereVentSeuil"), 6.5);
+	Out.PoussiereVentMordant = Num(TEXT("poussiereVentMordant"), 3.0);
+	Out.PoussierePeriodeFacteur = Num(TEXT("poussierePeriodeFacteur"), 3.0);
+
+	Out.VentCalme = Num(TEXT("ventCalme"), 1.0);
+	Out.VentMordantAgitation = Num(TEXT("ventMordantAgitation"), 9.0);
+	Out.VentPluie = Num(TEXT("ventPluie"), 2.0);
+	Out.VentMaxUds = Num(TEXT("ventMaxUds"), 10.0);
+	Out.VentForme = Num(TEXT("ventForme"), 3.0);
 	Out.PluieFrequenceEchelleMm = Num(TEXT("pluieFrequenceEchelleMm"), 625.0);
 	Out.PluieIntensitePlancher = Num(TEXT("pluieIntensitePlancher"), 0.5);
 
@@ -316,7 +330,18 @@ namespace WorldseedClimatePreset
 			}
 		}
 
-		Out.bDustPresent = (Sample.PrecipMm < Rules.DustPrecipMaxMm) && (T > 5.0f);
+		// LA POUSSIERE N'EST PAS UNE AFFAIRE DE CHALEUR : le `T > 5.0f` en dur
+		// qui vivait ici excluait le Gobi et la Patagonie. Voir `DustPart`.
+		//
+		// MAIS ELLE EST UNE AFFAIRE DE GEL, et le retrait du seuil d'origine
+		// avait fait POUDROYER LA CALOTTE -- 99,9 % de voile a -18,8 C. Les deux
+		// termes se multiplient : il faut un sol SEC **et** DEGELE.
+		const float PartAridite = 1.0f - WorldseedPerlin::Smoothstep(
+			Rules.PoussierePleinePluieMm, Rules.PoussiereNullePluieMm, Sample.PrecipMm);
+		const float PartDegel = WorldseedPerlin::Smoothstep(
+			Rules.PoussiereGelNulleC, Rules.PoussiereGelPleineC, T);
+
+		Out.DustPart = PartAridite * PartDegel;
 
 		if (Sample.LatitudeDeg < 0.0f)
 		{

@@ -691,6 +691,16 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 				TEXT("[Worldseed] meteo : « Animate Time of Day » introuvable sur %s ")
 				TEXT("-- impossible de dire si la saison avancera"), *Bridge.Describe());
 		}
+		else if (!bHorloge && WorldseedCielClairDemande())
+		{
+			// ON NE CRIE PAS SUR LE COMPORTEMENT DEMANDE. Sous le ciel
+			// d'inspection l'horloge est figee A DESSEIN, et l'avertissement
+			// ci-dessous conseillerait d'armer ce qu'on vient volontairement de
+			// desarmer -- du bruit qui se lit comme une information.
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] meteo : horloge figee (ciel d'inspection) -- la ")
+				TEXT("saison ne bougera pas, c'est voulu"));
+		}
 		else if (!bHorloge)
 		{
 			UE_LOG(LogTemp, Warning,

@@ -82,7 +82,29 @@ struct WORLDSEED_API FWorldseedClimatePreset
 	float RainfallMm[SeasonCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	float SnowfallMm[SeasonCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-	bool bDustPresent = false;
+	/**
+	 * A QUEL POINT LE SOL D'ICI PEUT DONNER DE LA POUSSIERE, de zero a un.
+	 *
+	 * C'ETAIT UN BOOLEEN, ET DEUX CHOSES CLOCHAIENT.
+	 *
+	 * LE FROID EN PRIVAIT : la regle exigeait `PrecipMm < 250 && TempMeanC > 5`,
+	 * et ce `5` en dur excluait les deux plus grands deserts froids du monde. Le
+	 * Gobi (-0,4 C de moyenne, 194 mm) et la Patagonie sont des sources de
+	 * poussiere majeures -- les loess de Chine du Nord viennent du Gobi, pas du
+	 * Sahara -- et le vent d'hiver y souffle plus fort qu'en ete. Ce qui souleve
+	 * du sable est un sol NU ET SEC, pas un sol chaud.
+	 *
+	 * ET LE SEUIL FRANC FAISAIT UN MUR : a 250 mm en dur, une cellule a 249
+	 * portait le voile entier et sa voisine a 251 rien du tout. Sur la maille de
+	 * 15,6 m du monde, le joueur traversait ce mur en vingt metres -- douze
+	 * secondes de marche -- et seul le fondu du ciel l'adoucissait.
+	 *
+	 * LA PART EST SURE PARCE QUE `Smoothstep` REND EXACTEMENT ZERO au-dela de
+	 * `PoussiereNullePluieMm` : une foret tropicale a 2400 mm reste rigoureusement
+	 * a zero, donc le defaut de l'aurore -- un voile faible et permanent PARTOUT,
+	 * parce qu'un defaut valait 0,12 au lieu de 0 -- ne peut pas se reproduire.
+	 */
+	float DustPart = 0.0f;
 
 	float Get(const float (&Values)[SeasonCount], EWorldseedSeason S) const
 	{
@@ -112,7 +134,126 @@ struct WORLDSEED_API FWorldseedClimatePresetRules
 	float MediterraneanLatMinDeg = 30.0f;
 	float MediterraneanLatMaxDeg = 45.0f;
 
-	float DustPrecipMaxMm = 250.0f;
+	/**
+	 * LES DEUX BORNES DE L'ARIDITE QUI DONNE DE LA POUSSIERE, en mm de pluie
+	 * par an : pleine au-dessous de la premiere, nulle au-dessus de la seconde.
+	 *
+	 * Elles remplacent `dustPrecipMaxMm`, un seuil franc a 250 -- la valeur de
+	 * Koppen pour l'aridite, qui reste donc encadree par les deux.
+	 */
+	float PoussierePleinePluieMm = 120.0f;
+	float PoussiereNullePluieMm = 350.0f;
+
+	/**
+	 * LE GEL, ET IL A FALLU LE REMETTRE -- MAIS PAS LE MEME.
+	 *
+	 * Retirer le `T > 5` en dur a bien rendu sa poussiere au Gobi, et il a
+	 * aussi fait POUDROYER LA CALOTTE GLACIAIRE : releve du 29 septembre 2026,
+	 * 99,9 % de voile et 56 tempetes par an a -18,8 C. Un desert polaire est
+	 * couvert de GLACE, pas de sable.
+	 *
+	 * LE BON CRITERE N'EST DONC PAS LA CHALEUR MAIS LE GEL PERMANENT : sous une
+	 * certaine moyenne annuelle, le sol reste en pergelisol et sous la neige
+	 * toute l'annee, et il n'a rien a donner au vent. C'est la meme idee que le
+	 * critere EF de Koppen, en continu plutot qu'en seuil.
+	 *
+	 * LES BORNES SE LISENT CONTRE LES SITES MESURES : calotte -10,4 et -18,8 C
+	 * (doit rendre zero), toundra -13,9 (zero), desert froid BWk +13,0 (plein),
+	 * et le Gobi reel -0,4 C de moyenne -- qui doit garder sa poussiere, puisque
+	 * c'est LUI qui a motive le retrait du seuil d'origine.
+	 */
+	float PoussiereGelNulleC = -8.0f;
+	float PoussiereGelPleineC = 0.0f;
+
+	/**
+	 * LE VOILE PERMANENT, sur l'echelle 0..10 d'UDS.
+	 *
+	 * Un desert n'est jamais parfaitement limpide : il y a presque toujours de
+	 * la poussiere en suspension, et c'est la tempete qui est rare -- l'inverse
+	 * de ce que le modele faisait, qui ne donnait RIEN les trois quarts du temps
+	 * puis presque une tempete.
+	 *
+	 * DEUX VALEURS MESUREES L'ENCADRENT. Balayage du 29 septembre 2026, clarte
+	 * du lointain au meme point : Dust 0 -> 124,4 ; Dust 2 -> 128,8 ; Dust 5 ->
+	 * 136,3 ; Dust 10 -> 140,5, pour un bruit inter-lancement de 0,1. A 2 l'effet
+	 * vaut donc QUARANTE-QUATRE FOIS le bruit tout en restant discret a l'oeil :
+	 * c'est exactement ce qu'on demande a un voile de fond.
+	 */
+	float PoussiereVoile = 2.0f;
+
+	/**
+	 * LE SEUIL DE SALTATION ET SON EXPOSANT, sur l'echelle du vent.
+	 *
+	 * LE SABLE NE SE SOULEVE PAS PROGRESSIVEMENT : il faut depasser une vitesse
+	 * de friction seuil, apres quoi le flux transporte croit comme le CUBE de
+	 * cette vitesse (Bagnold, 1941). L'exposant n'est donc pas un curseur
+	 * d'ambiance, il est source -- et c'est lui qui rend la tempete RARE sans
+	 * qu'on ait a la rationner.
+	 *
+	 * LE SEUIL SE LIT CONTRE L'ECHELLE DU PACK, ou `Overcast` vaut 3 et ou seuls
+	 * `Rain_Thunderstorm`, `Snow_Blizzard` et `Sand_Dust_Storm` atteignent 10.
+	 */
+	float PoussiereVentSeuil = 6.5f;
+	float PoussiereVentMordant = 3.0f;
+
+	/**
+	 * COMBIEN DE FOIS LA POUSSIERE EST PLUS LENTE QUE LA PLUIE.
+	 *
+	 * UNE TEMPETE DE SABLE DURE DES HEURES, une averse passe. Et le fondu du
+	 * pilote vaut douze secondes : a la periode nominale, l'octave la plus
+	 * rapide du signal bat toutes les trente secondes, donc une excursion au
+	 * centile 95 dure environ trois secondes et le fondu n'en restituerait qu'un
+	 * cinquieme. Ralentir NE DEPLACE AUCUN QUANTILE -- la table d'`Uniformiser`
+	 * reste valide -- et troque du NOMBRE d'episodes contre de la DUREE.
+	 */
+	float PoussierePeriodeFacteur = 3.0f;
+
+	/**
+	 * LE VENT, SUR L'ECHELLE 0..10 D'UDS, ET ELLE EST MESUREE.
+	 *
+	 * Relevee dans les treize prereglages livres par le pack le 29 septembre
+	 * 2026 : 1 (Foggy, Snow_Light, Sand_Dust_Calm), 2 (Clear_Skies,
+	 * Partly_Cloudy, Rain_Light), 2,5 (Cloudy), 3 (Overcast, Rain), 4 (Snow),
+	 * 10 (Rain_Thunderstorm, Snow_Blizzard, Sand_Dust_Storm).
+	 *
+	 * NOTRE PLAFOND VALAIT 8, ET C'ETAIT UNE INVENTION : une tempete de sable de
+	 * ce monde ne pouvait pas atteindre le vent que le pack reserve a ses trois
+	 * etats violents. Pire, la formule seuillait le signal BRUT et faisait
+	 * dependre le vent de la PLUIE -- donc dans un desert, ou `Occurrence` est
+	 * nulle, il plafonnait a 1 + 3 x 0,9327 = 3,80, soit moins qu'un ciel gris.
+	 *
+	 * UDW AJOUTE SES PROPRES RAFALES par-dessus (`Current`/`Target Wind Gust
+	 * Multiplier`) : notre valeur est la composante LENTE, et il ne faut pas
+	 * modeliser la rafale deux fois.
+	 *
+	 * L'UNITE PHYSIQUE RESTE NON ETABLIE. Le releve binaire annoncait une
+	 * variable `Knots at Wind Intensity 10` ; l'API ne la trouve pas. Ne pas
+	 * citer de noeuds tant que ce n'est pas mesure.
+	 */
+	float VentCalme = 1.0f;
+	float VentMordantAgitation = 9.0f;
+	float VentPluie = 2.0f;
+	float VentMaxUds = 10.0f;
+
+	/**
+	 * LA FORME DE LA DISTRIBUTION DU VENT, et sans elle il soufflait sans cesse.
+	 *
+	 * `Souffle` est UNIFORME par construction -- c'est tout l'objet
+	 * d'`Uniformiser` -- donc une rampe lineaire rend une moyenne au MILIEU de
+	 * la plage. Mesure du 29 septembre 2026 : 6,3 sur 10 en moyenne sur les 22
+	 * sites, soit plus du double d'`Overcast` (3) EN PERMANENCE, quand le pack
+	 * reserve 10 a ses trois etats violents et pose 2 pour un ciel clair.
+	 *
+	 * Le vent reel est tres dissymetrique -- beaucoup de vent faible, peu de
+	 * vent fort, ce qu'une loi de Weibull decrit. L'exposant en est la forme la
+	 * plus simple : a 3, la moyenne tombe a `VentCalme + Mordant/4`, soit 3,25
+	 * -- l'echelle du pack entre `Overcast` et `Rain` -- et le maximum reste 10.
+	 *
+	 * IL S'AJOUTE AU CUBE DE LA SALTATION, et c'est voulu : le premier decrit la
+	 * distribution du VENT, le second la physique du TRANSPORT. Ce sont deux
+	 * faits distincts, pas un exposant qu'on empile pour rationner.
+	 */
+	float VentForme = 3.0f;
 
 	/**
 	 * L'ECHELLE QUI TRANSFORME UN CUMUL MENSUEL EN FREQUENCE DE PLUIE, en mm.

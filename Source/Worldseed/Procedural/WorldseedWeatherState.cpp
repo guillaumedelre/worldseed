@@ -35,20 +35,37 @@ namespace
 	// cent d'averse, c'est-a-dire rien. Un seuil oublie lors d'un changement
 	// d'unite ne casse rien et ment a chaque ligne.
 	constexpr float VisibleFall = 0.5f;
-	constexpr float VisibleDust = 0.5f;
 	constexpr float ThickFog = 1.6f;
 	constexpr float OvercastSky = 5.0f;
+
+	// LA POUSSIERE A DEUX SEUILS, PARCE QU'ELLE A DEUX REGIMES.
+	//
+	// Elle valait 0,5, ce qui convenait quand elle etait nulle les trois quarts
+	// du temps. Depuis qu'un voile PERMANENT de 2 couvre les climats arides, ce
+	// seuil ferait afficher « POUSSIERE » cent pour cent du temps dans un desert
+	// et rendrait « degage » inatteignable -- un seuil oublie lors d'un
+	// changement d'unite ne casse rien et ment a chaque ligne, et c'est
+	// exactement ce que le commentaire du dessus reproche a la version d'avant.
+	//
+	// LES DEUX VALEURS SONT CALEES SUR LA MESURE du 29 septembre 2026, clarte du
+	// lointain : Dust 2 -> +4,4 sur 124 (discret, c'est le voile), Dust 5 ->
+	// +11,9 (le lointain s'estompe), Dust 10 -> +16,1 (l'horizon disparait).
+	constexpr float VisibleVoile = 1.0f;
+	constexpr float VisibleTempete = 5.0f;
 }
 
 FString FWorldseedWeather::DescribeRegime() const
 {
 	// L'ordre suit ce qui domine le regard : une averse se voit plus qu'un ciel
 	// couvert, et la neige plus qu'une pluie.
+	if (Dust > VisibleTempete) { return TEXT("TEMPETE DE SABLE"); }
 	if (Snow > VisibleFall) { return TEXT("NEIGE"); }
 	if (Rain > VisibleFall) { return TEXT("PLUIE"); }
-	if (Dust > VisibleDust) { return TEXT("POUSSIERE"); }
 	if (Fog > ThickFog) { return TEXT("BROUILLARD"); }
 	if (CloudCoverage > OvercastSky) { return TEXT("couvert"); }
+	// LE VOILE PASSE APRES LE CIEL COUVERT, a dessein : il est permanent dans un
+	// climat aride, donc il ne doit masquer aucun evenement.
+	if (Dust > VisibleVoile) { return TEXT("voile de sable"); }
 	return TEXT("degage");
 }
 
@@ -149,12 +166,42 @@ namespace WorldseedWeatherState
 		Out.Rain = Fall * (1.0f - SnowShare) * UdsEchelle;
 		Out.Snow = Fall * SnowShare * UdsEchelle;
 
-		// --- poussiere ----------------------------------------------------------
-		// Le prereglage dit seulement si le climat en connait ; l'agitation dit
-		// quand elle se leve.
-		Out.Dust = Preset.bDustPresent
-			? FMath::Clamp(FMath::Max(Storm - 0.62f, 0.0f) * 2.6f, 0.0f, 1.0f) * UdsEchelle
-			: 0.0f;
+		// --- LE VENT D'ABORD, LA POUSSIERE ENSUITE ------------------------------
+		//
+		// L'ORDRE EST INVERSE PAR RAPPORT A CE QUI EXISTAIT, et c'est le pack
+		// qui l'impose. Releve du 29 septembre 2026 sur ses treize prereglages :
+		// `Sand_Dust_Calm` et `Sand_Dust_Storm` posent TOUS DEUX `Dust = 10` et
+		// ne different QUE par `Wind Intensity` -- 1 contre 10. La tempete de
+		// sable est donc un etat de VENT, la poussiere en etant l'effet, ce qui
+		// est aussi la physique : le sable ne se souleve qu'au-dela d'une
+		// vitesse de friction seuil.
+		//
+		// UN SIGNAL SEPARE ET PLUS LENT, pour deux raisons mesurees.
+		//
+		// 1. LE FONDU DU PILOTE VAUT DOUZE SECONDES. A la periode nominale,
+		//    l'octave la plus rapide de `Storminess` bat toutes les trente
+		//    secondes : une excursion au centile 95 dure environ trois secondes
+		//    et le fondu n'en restituerait qu'un cinquieme. Ralentir NE DEPLACE
+		//    AUCUN QUANTILE -- la table d'`Uniformiser` reste valide -- et troque
+		//    du NOMBRE d'episodes contre de la DUREE, ce qui est le but.
+		// 2. IL NE DOIT PAS SUIVRE LES AVERSES. La poussiere se leve quand il ne
+		//    pleut PAS ; un signal commun les ferait coincider. Meme procede que
+		//    l'aurore, qui decale deja sa graine.
+		//
+		// ⚠ ET IL PASSE PAR `Uniformiser`, CE QUE L'ANCIENNE FORME NE FAISAIT
+		// PAS. Elle seuillait `Storm` BRUT a 0,62 -- le defaut « un seuil n'est
+		// pas une part » que ce depot a paye quatre fois, et que la pluie evite
+		// cinquante lignes plus haut dans ce meme fichier. Deux consequences :
+		// la part obtenue n'etait pas celle qu'on croyait, et surtout le support
+		// du signal etant BORNE a 0,9327, `Dust = 10` etait INATTEIGNABLE --
+		// maximum reel 8,13. `Uniformiser` rend exactement 1,0 au sommet du
+		// support, donc le haut de l'echelle redevient atteignable PAR
+		// CONSTRUCTION, et non par un reglage qu'il faudrait pousser.
+		const float Souffle = WorldseedWeatherSignal::Uniformiser(
+			WorldseedWeatherSignal::Storminess(
+				Params.TimeSeconds,
+				Params.VariationPeriodS * FMath::Max(PresetRules.PoussierePeriodeFacteur, 0.1f),
+				Params.Seed ^ 0x53414E44u));            // « SAND »
 
 		// --- brouillard ---------------------------------------------------------
 		// LE PYTHON N'EN MODELISE PAS : les prereglages d'UDS n'ont pas de case
@@ -222,11 +269,39 @@ namespace WorldseedWeatherState
 			* FMath::Clamp(Activite * 1.4f, 0.0f, 1.0f);
 
 		// --- vent ---------------------------------------------------------------
+		//
+		// La DIRECTION rejoue la circulation generale, donc les memes vents qui
+		// ont transporte l'humidite pendant la generation du monde.
 		Out.WindDirectionDeg = WorldseedWind::PrevailingYawDeg(
 			Sample.LatitudeDeg, Params.LatSpanDeg);
 
+		// L'EXPOSANT N'EST PAS DECORATIF : `Souffle` est UNIFORME, donc une rampe
+		// lineaire rendrait une moyenne au MILIEU de la plage -- mesure, 6,3 sur
+		// 10 en permanence, plus du double d'`Overcast`. Le vent reel est tres
+		// dissymetrique, et l'exposant en est la forme la plus simple.
 		Out.WindIntensity = FMath::Clamp(
-			1.0f + 3.0f * Storm + 2.0f * Occurrence, 0.5f, 8.0f);
+			PresetRules.VentCalme
+			+ PresetRules.VentMordantAgitation
+				* FMath::Pow(Souffle, FMath::Max(PresetRules.VentForme, 0.1f))
+			+ PresetRules.VentPluie * Occurrence,
+			0.5f, PresetRules.VentMaxUds);
+
+		// --- LA POUSSIERE SORT DU VENT ------------------------------------------
+		//
+		// LA SALTATION A UN SEUIL, ET LE FLUX CROIT COMME LE CUBE de la vitesse
+		// (Bagnold, 1941) : c'est cet exposant, et non un rationnement, qui rend
+		// la tempete rare tout en laissant le voile permanent.
+		const float Saltation = FMath::Clamp(
+			(Out.WindIntensity - PresetRules.PoussiereVentSeuil)
+				/ FMath::Max(PresetRules.VentMaxUds - PresetRules.PoussiereVentSeuil, 1e-3f),
+			0.0f, 1.0f);
+
+		// ET LA PLUIE RABAT LA POUSSIERE -- meme fait physique que le brouillard
+		// qui se leve quand il ne pleut pas, quelques lignes plus haut.
+		Out.Dust = Preset.DustPart * (1.0f - Occurrence) * FMath::Max(
+			PresetRules.PoussiereVoile,
+			PresetRules.VentMaxUds
+				* FMath::Pow(Saltation, PresetRules.PoussiereVentMordant));
 
 		return Out;
 	}
