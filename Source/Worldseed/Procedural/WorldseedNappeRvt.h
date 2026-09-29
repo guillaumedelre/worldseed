@@ -6,6 +6,7 @@
 
 struct FWorldseedBiomeMap;
 struct FWorldseedGeometry;
+struct FWorldseedRvtRegles;
 class AActor;
 class USceneComponent;
 class UStaticMeshComponent;
@@ -85,6 +86,33 @@ struct FWorldseedNappeRvtReleve
 	float PoidsMax = 0.0f;
 	float TeinteMax = 0.0f;
 
+	/**
+	 * Les altitudes rencontrees, et combien de texels sortent du volume.
+	 *
+	 * L'ENCODAGE DE LA HAUTEUR EST UN INTERVALLE FIGE, et c'est le genre de
+	 * reglage qui se perime en silence : le jour ou le relief depassera
+	 * `HauteurBasM`/`HauteurHautM`, la hauteur cuite SATURERA -- le feuillage
+	 * s'ancrera a une altitude fausse sur tout un massif, sans une erreur.
+	 * Un compte a zero dit que les bornes tiennent encore ; un compte non nul
+	 * dit exactement de combien il faut les elargir.
+	 */
+	float AltitudeMin = 0.0f;
+	float AltitudeMax = 0.0f;
+	int64 HorsBornes = 0;
+
+	/**
+	 * La pente la plus raide de la normale cuite, en degres.
+	 *
+	 * ELLE DIT SI LA NORMALE DECRIT UN RELIEF OU UN PLAN. Une normale cuite a
+	 * partir d'un gradient nul -- relief non transmis, pas de grille mal lue --
+	 * rendrait (0, 0, 1) partout, c'est-a-dire EXACTEMENT ce que le moteur
+	 * ecrit quand l'entree n'est pas branchee : le defaut qu'on vient de
+	 * corriger serait de retour, a l'identique, et aucune image ne saurait les
+	 * distinguer. Une pente maximale a zero est donc une ERREUR, pas un monde
+	 * plat.
+	 */
+	float PenteMaxDeg = 0.0f;
+
 	/** Temps de cuisson, en millisecondes. */
 	double Ms = 0.0;
 };
@@ -101,22 +129,60 @@ namespace WorldseedNappeRvt
 	 * (`FWorldseedGeometry::UVDepuisMetres`) : la ligne 0 est au SUD et la
 	 * colonne 0 au meridien de bordure, donc la copie est directe.
 	 */
+	/**
+	 * LES BORNES DE L'ENCODAGE SONT CELLES DU VOLUME, ET ON LES PREND CHEZ LUI.
+	 *
+	 * Elles ont d'abord ete recopiees ici en deux constantes, avec un
+	 * commentaire qui demandait de les tenir egales a `FWorldseedRvtRegles`.
+	 * C'est exactement la forme de defaut que ce depot paye le plus souvent :
+	 * deux echelles qui divergent un jour donneraient un ancrage faux PARTOUT,
+	 * sans une erreur, et le commentaire ne peut rien y faire. On prend donc
+	 * les regles du volume en parametre.
+	 *
+	 * `ExagerationZ` va avec, et l'oublier serait la meme faute d'un cran plus
+	 * bas : `ElevationM` est en metres de SIMULATION, le volume est en metres
+	 * du MONDE, et le terrain applique ce facteur entre les deux.
+	 */
 	WORLDSEED_API bool Cuire(const FWorldseedBiomeMap& Biomes,
 		const FWorldseedGeometry& Geo,
+		const TArray<float>& ElevationM,
+		float ExagerationZ, const FWorldseedRvtRegles& RvtRegles,
 		UTexture2D*& OutPoids, UTexture2D*& OutTeinte,
+		UTexture2D*& OutHauteur, UTexture2D*& OutNormale,
 		FWorldseedNappeRvtReleve& Releve);
 
 	/**
 	 * Pose la nappe sur l'acteur. Rend le composant, ou nullptr.
 	 *
-	 * `Textures` sont les RVT posees sur le monde : la nappe n'ecrit QUE dans
-	 * celle qui porte la couleur. Elle laisse la RVT de HAUTEUR intacte --
-	 * elle n'en connait pas le contenu, et y ecrire une altitude plate
-	 * changerait l'ancrage du feuillage sans qu'on l'ait mesure.
+	 * ELLE ECRIT DANS LES DEUX RVT, ET LA SECONDE EST LA CONDITION DE LA
+	 * PREMIERE. La note qui tenait ici disait qu'on laissait la RVT de HAUTEUR
+	 * intacte « a dessein », parce qu'une nappe plate y poserait une altitude
+	 * constante. Le constat etait juste -- le plan est a Z = 0, donc
+	 * `WorldPosition.b` y vaut zero partout -- mais la conclusion etait fausse :
+	 * il ne fallait pas renoncer a la hauteur, il fallait CESSER de la prendre
+	 * sur la geometrie et la cuire comme le reste.
+	 *
+	 * CE QUE CETTE ABSENCE COUTAIT, mesure le 28 septembre 2026 :
+	 * `M_Master_Cliff_Mat` melange la roche du pan et la couleur du sol par
+	 * `MF_HeightLerp_MaterialAttribute`, dont l'entree B vient de `MF_RVT` --
+	 * et `MF_RVT` echantillonne DEUX runtime virtual textures,
+	 * `RVT_Landscape_Material` ET `RVT_Landscape_Height` (type WORLD_HEIGHT).
+	 * Son masque ancre l'objet dans le sol en comparant l'altitude du monde a
+	 * celle lue dans la RVT. Sans hauteur ecrite, ce masque ne mord jamais et
+	 * le dessus des pans garde sa roche -- quels que soient les switchs, la
+	 * nappe de couleur ou le materiau.
+	 *
+	 * LE SECOND ECHANTILLONNAGE EST CACHE DANS UNE FONCTION, et c'est ce qui a
+	 * fait ecarter cette piste deux fois : le maitre n'annonce qu'UNE
+	 * expression de RVT, la seconde vivant dans `MF_RVT`. Le depot a la meme
+	 * note depuis septembre -- « un echantillonnage de RVT peut etre cache dans
+	 * une fonction de materiau » -- et il faut descendre dans les
+	 * `MaterialFunctionCall` pour le voir.
 	 */
 	WORLDSEED_API UStaticMeshComponent* Poser(AActor* Proprietaire,
 		USceneComponent* Racine,
 		TArrayView<URuntimeVirtualTexture* const> Textures,
 		double LargeurM, double HauteurM,
-		UTexture2D* Poids, UTexture2D* Teinte);
+		UTexture2D* Poids, UTexture2D* Teinte, UTexture2D* Hauteur,
+		UTexture2D* Normale, const FWorldseedRvtRegles& RvtRegles);
 }

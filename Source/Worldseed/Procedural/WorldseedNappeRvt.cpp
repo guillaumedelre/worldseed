@@ -6,6 +6,8 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "GameFramework/Actor.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/SoftObjectPath.h"
@@ -15,6 +17,7 @@
 #include "Procedural/WorldseedApparence.h"
 #include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedRules.h"   // FWorldseedGeometry, WorldseedMetersToCm
+#include "Procedural/WorldseedRvt.h"     // FWorldseedRvtRegles
 
 namespace
 {
@@ -37,8 +40,56 @@ FColor Encoder(const FLinearColor& Valeur)
 	return C;
 }
 
+/**
+ * La texture de HAUTEUR, en SEIZE BITS, et ce n'est pas un luxe.
+ *
+ * Le volume de RVT couvre 3200 m (de -600 a +2600). Sur huit bits cela ferait
+ * 12,5 m par pas -- le masque de `MF_RVT` se fond sur quelques metres, il ne
+ * verrait qu'un escalier. En seize bits le pas tombe a 4,9 cm.
+ *
+ * `PF_G16` porte UN canal de seize bits non signes, donc 16,8 Mo pour la
+ * grille du jeu, contre 33,5 pour une RGBA huit bits. La hauteur coute donc
+ * MOINS que les deux textures deja cuites.
+ *
+ * SANS sRGB, et c'est portant : une hauteur est une grandeur LINEAIRE, et la
+ * courbe sRGB la tordrait. Les deux autres textures, elles, encodent des
+ * couleurs et gardent leur sRGB -- c'est le meme aller-retour assume depuis le
+ * 27 septembre.
+ */
+UTexture2D* CreerTextureHauteur(int32 Largeur, int32 Hauteur,
+	const TArray<uint16>& Pixels, const TCHAR* Nom)
+{
+	UTexture2D* const T = UTexture2D::CreateTransient(
+		Largeur, Hauteur, PF_G16, FName(Nom));
+	if (!T)
+	{
+		return nullptr;
+	}
+
+	T->SRGB = false;
+	T->Filter = TextureFilter::TF_Bilinear;
+	T->NeverStream = true;
+	T->AddressX = TextureAddress::TA_Wrap;
+	T->AddressY = TextureAddress::TA_Clamp;
+	T->CompressionSettings = TextureCompressionSettings::TC_Grayscale;
+
+	FTexturePlatformData* const Data = T->GetPlatformData();
+	if (!Data || Data->Mips.Num() == 0)
+	{
+		return nullptr;
+	}
+
+	void* const Dest = Data->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+	FMemory::Memcpy(Dest, Pixels.GetData(),
+		static_cast<SIZE_T>(Pixels.Num()) * sizeof(uint16));
+	Data->Mips[0].BulkData.Unlock();
+
+	T->UpdateResource();
+	return T;
+}
+
 UTexture2D* CreerTexture(int32 Largeur, int32 Hauteur,
-	const TArray<FColor>& Pixels, const TCHAR* Nom)
+	const TArray<FColor>& Pixels, const TCHAR* Nom, bool bSRGB = true)
 {
 	UTexture2D* const T = UTexture2D::CreateTransient(
 		Largeur, Hauteur, PF_B8G8R8A8, FName(Nom));
@@ -49,7 +100,7 @@ UTexture2D* CreerTexture(int32 Largeur, int32 Hauteur,
 
 	// LES REGLAGES SE POSENT AVANT `UpdateResource`, qui fige la ressource RHI.
 	// Poses apres, ils ne prennent qu'au prochain appel -- et il n'y en a pas.
-	T->SRGB = true;
+	T->SRGB = bSRGB;
 	T->Filter = TextureFilter::TF_Bilinear;
 	T->NeverStream = true;
 
@@ -79,11 +130,16 @@ UTexture2D* CreerTexture(int32 Largeur, int32 Hauteur,
 namespace WorldseedNappeRvt
 {
 bool Cuire(const FWorldseedBiomeMap& Biomes, const FWorldseedGeometry& Geo,
+	const TArray<float>& ElevationM,
+	float ExagerationZ, const FWorldseedRvtRegles& RvtRegles,
 	UTexture2D*& OutPoids, UTexture2D*& OutTeinte,
+	UTexture2D*& OutHauteur, UTexture2D*& OutNormale,
 	FWorldseedNappeRvtReleve& Releve)
 {
 	OutPoids = nullptr;
 	OutTeinte = nullptr;
+	OutHauteur = nullptr;
+	OutNormale = nullptr;
 	Releve = FWorldseedNappeRvtReleve();
 
 	const int32 NX = Geo.NX;
@@ -104,10 +160,60 @@ bool Cuire(const FWorldseedBiomeMap& Biomes, const FWorldseedGeometry& Geo,
 
 	TArray<FColor> Poids;
 	TArray<FColor> Teinte;
+	TArray<uint16> Hauteur;
+	TArray<FColor> Normale;
 	TBitArray<> EstTerre;
 	Poids.SetNumUninitialized(Total);
 	Teinte.SetNumUninitialized(Total);
+	Hauteur.SetNumUninitialized(Total);
+	Normale.SetNumUninitialized(Total);
 	EstTerre.Init(false, Total);
+
+	// UN MINIMUM QUI PART DE ZERO NE VOIT JAMAIS UN MONDE ENTIEREMENT EMERGE,
+	// et un maximum qui part de zero ne voit jamais un monde entierement
+	// noye : les deux rendraient un intervalle plausible et faux. La boucle
+	// tourne au moins une fois, les gardes ci-dessus l'assurant.
+	Releve.AltitudeMin = TNumericLimits<float>::Max();
+	Releve.AltitudeMax = TNumericLimits<float>::Lowest();
+
+	// UN VOLUME PLAT DIVISERAIT PAR ZERO. Il n'a aucun sens -- une RVT de
+	// hauteur sans epaisseur ne peut rien encoder -- mais il arriverait ici
+	// sous la forme d'un NaN dans toute la texture, donc d'un ancrage aleatoire
+	// plutot que d'une erreur.
+	const float PlageZ = FMath::Max(RvtRegles.HautM - RvtRegles.BasM, 1.0f);
+
+	// --- LA NORMALE DU RELIEF, ET POURQUOI ELLE EST PORTANTE ---------------
+	//
+	// `MF_RVT` ne melange pas que la couleur : il melange des ATTRIBUTS DE
+	// MATERIAU, normale comprise. Une sortie RVT dont l'entree `Normal` n'est
+	// pas branchee ecrit (0, 0, 1) -- releve dans le moteur,
+	// `MaterialExpressions.cpp:3081` -- c'est-a-dire la normale d'une surface
+	// PLATE. Des que le masque d'ancrage mord, le dessus d'un pan INCLINE
+	// recoit donc cette normale-la, et le voila eclaire comme un plan
+	// horizontal tout en projetant l'ombre d'une pente. Mesure a l'image :
+	// dessus entierement NOIR sous un dither, qui disparait a
+	// `ShowFlag.DynamicShadows 0`.
+	//
+	// LA DEMO DU PACK N'A PAS CE DEFAUT parce que son Landscape ecrit une VRAIE
+	// normale dans la RVT. C'est la meme lecon que la hauteur, un cran plus
+	// loin : ce que le pack fournit par sa geometrie, nous devons le CUIRE.
+	//
+	// ELLE SE DERIVE DU RELIEF, ON NE LA STOCKE PAS. Gradient centre sur la
+	// grille, exageration comprise -- la normale VISIBLE est celle du relief
+	// exagere, pas celle du relief brut.
+	const float PasM = FMath::Max(Geo.MetersPerPixel(), 0.001f);
+
+	auto AltitudeEn = [&ElevationM, NX, NY, ExagerationZ](int32 I, int32 J) -> float
+	{
+		// LA LONGITUDE S'ENROULE, LA LATITUDE SE BORNE. Un pole n'a pas de
+		// voisin au-dela ; le meridien de bordure, si. Borner les deux
+		// creerait une ligne de normales fausses sur toute la hauteur du
+		// monde, exactement la couture que l'enroulement existe pour eviter.
+		const int32 Ic = ((I % NX) + NX) % NX;
+		const int32 Jc = FMath::Clamp(J, 0, NY - 1);
+		const int32 K = Jc * NX + Ic;
+		return (ElevationM.IsValidIndex(K) ? ElevationM[K] : 0.0f) * ExagerationZ;
+	};
 
 	for (int32 I = 0; I < Total; ++I)
 	{
@@ -125,6 +231,62 @@ bool Cuire(const FWorldseedBiomeMap& Biomes, const FWorldseedGeometry& Geo,
 
 		Poids[I] = Encoder(P);
 		Teinte[I] = Encoder(T / TeinteMax);
+
+		// LA HAUTEUR EST ENCODEE SUR LA PLAGE DU VOLUME, ET SUR RIEN D'AUTRE.
+		// Le moteur relit `WorldHeight` avec la transform du volume de RVT :
+		// normaliser sur les bornes REELLES du monde donnerait un ancrage faux,
+		// d'autant plus faux que le monde est plat. On ECRETE plutot que de
+		// replier -- un relief au-dela des bornes doit saturer au bord, pas
+		// ressortir en bas.
+		//
+		// ET L'ALTITUDE EST PORTEE DANS L'ESPACE DU MONDE AVANT D'ETRE
+		// NORMALISEE : `ElevationM` est en metres de simulation, le volume en
+		// metres du monde, et le terrain multiplie par l'exageration entre les
+		// deux. Comparer les deux directement marcherait tant que le facteur
+		// vaut un, et deviendrait faux le jour ou il change.
+		const float Z = (ElevationM.IsValidIndex(I) ? ElevationM[I] : 0.0f)
+			* ExagerationZ;
+		const float Normalisee = FMath::Clamp(
+			(Z - RvtRegles.BasM) / PlageZ, 0.0f, 1.0f);
+		Hauteur[I] = static_cast<uint16>(FMath::RoundToInt(Normalisee * 65535.0f));
+
+		Releve.AltitudeMin = FMath::Min(Releve.AltitudeMin, Z);
+		Releve.AltitudeMax = FMath::Max(Releve.AltitudeMax, Z);
+		if (Z <= RvtRegles.BasM || Z >= RvtRegles.HautM)
+		{
+			++Releve.HorsBornes;
+		}
+
+		// --- la normale du relief, par gradient centre ---------------------
+		{
+			const int32 Ix = I % NX;
+			const int32 Jy = I / NX;
+
+			const float Dzdx =
+				(AltitudeEn(Ix + 1, Jy) - AltitudeEn(Ix - 1, Jy)) / (2.0f * PasM);
+			const float Dzdy =
+				(AltitudeEn(Ix, Jy + 1) - AltitudeEn(Ix, Jy - 1)) / (2.0f * PasM);
+
+			const FVector N = FVector(-Dzdx, -Dzdy, 1.0).GetSafeNormal();
+
+			// ENCODEE EN LINEAIRE, ET C'EST L'INVERSE DES DEUX AUTRES TEXTURES.
+			// Les poids et la teinte sont des COULEURS, relues par un
+			// echantillonneur qui decode le sRGB ; une normale est une
+			// DIRECTION, et la courbe sRGB la tordrait. Le materiau fait donc
+			// le `x * 2 - 1` a la main plutot que de passer par un
+			// echantillonneur de carte de normales -- dont le type devrait
+			// s'accorder a la texture PAR DEFAUT du parametre, ce qui est
+			// precisement le piege qu'on evite.
+			Normale[I] = FLinearColor(
+				static_cast<float>(N.X) * 0.5f + 0.5f,
+				static_cast<float>(N.Y) * 0.5f + 0.5f,
+				static_cast<float>(N.Z) * 0.5f + 0.5f,
+				1.0f).ToFColor(/*bSRGB=*/false);
+
+			Releve.PenteMaxDeg = FMath::Max(Releve.PenteMaxDeg,
+				FMath::RadiansToDegrees(FMath::Acos(
+					FMath::Clamp(static_cast<float>(N.Z), 0.0f, 1.0f))));
+		}
 
 		Releve.PoidsMax = FMath::Max(Releve.PoidsMax,
 			FMath::Max3(P.R, P.G, FMath::Max(P.B, P.A)));
@@ -229,41 +391,67 @@ bool Cuire(const FWorldseedBiomeMap& Biomes, const FWorldseedGeometry& Geo,
 
 	OutPoids = CreerTexture(NX, NY, Poids, TEXT("WorldseedNappePoids"));
 	OutTeinte = CreerTexture(NX, NY, Teinte, TEXT("WorldseedNappeTeinte"));
+	OutHauteur = CreerTextureHauteur(NX, NY, Hauteur,
+		TEXT("WorldseedNappeHauteur"));
+
+	// LA NORMALE N'EST PAS UNE COULEUR, DONC PAS DE sRGB. Les deux premieres
+	// textures encodent des couleurs et assument l'aller-retour sRGB ;
+	// celle-ci porte une direction, que la courbe tordrait.
+	OutNormale = CreerTexture(NX, NY, Normale, TEXT("WorldseedNappeNormale"),
+		/*bSRGB=*/false);
 
 	Releve.Largeur = NX;
 	Releve.Hauteur = NY;
-	Releve.Mo = 2.0 * static_cast<double>(Total) * sizeof(FColor) / (1024.0 * 1024.0);
+	Releve.Mo = (3.0 * static_cast<double>(Total) * sizeof(FColor)
+		+ static_cast<double>(Total) * sizeof(uint16)) / (1024.0 * 1024.0);
 	Releve.Ms = (FPlatformTime::Seconds() - Debut) * 1000.0;
 
-	return OutPoids != nullptr && OutTeinte != nullptr;
+	return OutPoids != nullptr && OutTeinte != nullptr && OutHauteur != nullptr
+		&& OutNormale != nullptr;
 }
 
 UStaticMeshComponent* Poser(AActor* Proprietaire, USceneComponent* Racine,
 	TArrayView<URuntimeVirtualTexture* const> Textures,
 	double LargeurM, double HauteurM,
-	UTexture2D* Poids, UTexture2D* Teinte)
+	UTexture2D* Poids, UTexture2D* Teinte, UTexture2D* Hauteur,
+	UTexture2D* Normale, const FWorldseedRvtRegles& RvtRegles)
 {
-	if (!Proprietaire || !Racine || !Poids || !Teinte)
+	if (!Proprietaire || !Racine || !Poids || !Teinte || !Hauteur || !Normale)
 	{
 		return nullptr;
 	}
 
-	// --- ON N'ECRIT QUE DANS LA RVT DE COULEUR ------------------------------
+	// --- ON ECRIT DANS LES DEUX, ET LA HAUTEUR N'EST PAS UN SUPPLEMENT ------
 	//
-	// La seconde RVT du pack porte la HAUTEUR DU MONDE, dont les materiaux de
-	// feuillage tirent leur fondu d'ancrage. Une nappe plate y ecrirait une
-	// altitude constante, ce qui deplacerait cet ancrage partout sans qu'on
-	// l'ait mesure. On la laisse donc exactement dans l'etat ou elle est.
+	// La note qui tenait ici disait qu'on laissait la RVT de HAUTEUR intacte
+	// « a dessein », une nappe plate ne pouvant y ecrire qu'une altitude
+	// constante. Le constat etait juste et la conclusion fausse : il ne
+	// fallait pas renoncer a la hauteur, mais cesser de la lire sur la
+	// GEOMETRIE -- le plan est a Z = 0 -- et la cuire comme le reste.
+	//
+	// SANS ELLE, LE DESSUS DES PANS NE PEUT PAS S'ACCORDER AU SOL. `MF_RVT`,
+	// que `M_Master_Cliff_Mat` appelle sur l'entree B de son HeightLerp,
+	// echantillonne DEUX runtime virtual textures : la couleur ET la hauteur.
+	// Son masque compare l'altitude du monde a celle du sol ; sans hauteur
+	// ecrite il ne mord jamais, et le pan garde sa roche.
 	//
 	// LE TYPE EST LU SUR L'ASSET, PAS DEDUIT DE SON RANG : un pack pourrait
 	// tres bien les livrer dans l'autre ordre, et l'erreur serait silencieuse.
 	URuntimeVirtualTexture* Couleur = nullptr;
+	URuntimeVirtualTexture* Altitude = nullptr;
 	for (URuntimeVirtualTexture* const T : Textures)
 	{
-		if (T && T->GetMaterialType() != ERuntimeVirtualTextureMaterialType::WorldHeight)
+		if (!T)
+		{
+			continue;
+		}
+		if (T->GetMaterialType() == ERuntimeVirtualTextureMaterialType::WorldHeight)
+		{
+			if (!Altitude) { Altitude = T; }
+		}
+		else if (!Couleur)
 		{
 			Couleur = T;
-			break;
 		}
 	}
 
@@ -273,6 +461,17 @@ UStaticMeshComponent* Poser(AActor* Proprietaire, USceneComponent* Racine,
 			TEXT("[Worldseed] nappe RVT : aucune RVT de COULEUR parmi les %d posees ")
 			TEXT("-- rien pose"), Textures.Num());
 		return nullptr;
+	}
+
+	// UNE ABSENCE SE DIT, ELLE NE SE DEVINE PAS. Sans RVT de hauteur, la
+	// couleur fonctionnera et le dessus des pans restera gris : c'est
+	// exactement le defaut qu'on vient de fermer, et un silence le rendrait
+	// indiscernable d'une regression du materiau.
+	if (!Altitude)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] nappe RVT : aucune RVT de HAUTEUR parmi les %d posees ")
+			TEXT("-- le dessus des pans restera gris"), Textures.Num());
 	}
 
 	UStaticMesh* const Plan = Cast<UStaticMesh>(
@@ -303,6 +502,25 @@ UStaticMeshComponent* Poser(AActor* Proprietaire, USceneComponent* Racine,
 
 	Mid->SetTextureParameterValue(TEXT("TexPoids"), Poids);
 	Mid->SetTextureParameterValue(TEXT("TexTeinte"), Teinte);
+	Mid->SetTextureParameterValue(TEXT("TexHauteur"), Hauteur);
+	Mid->SetTextureParameterValue(TEXT("TexNormale"), Normale);
+
+	// LES BORNES DU VOLUME, EN CENTIMETRES, POUR QUE LE MATERIAU DECODE.
+	//
+	// LE MOTEUR ATTEND UN Z DU MONDE EN UNITES UNREAL sur l'entree `WorldHeight`
+	// du noeud de sortie RVT : `VirtualTextureMaterial.usf` le prend tel quel et
+	// le repacke lui-meme avec la transform du volume (`PackWorldHeight`). Le
+	// materiau doit donc rendre `Bas + Lu * Plage`, en CENTIMETRES -- rendre la
+	// valeur normalisee [0..1] telle quelle ecrirait une altitude d'un
+	// centimetre, ce qui se lirait comme une RVT de hauteur « qui marche » et
+	// poserait l'ancrage du feuillage au ras de zero partout.
+	//
+	// Les bornes viennent des regles du VOLUME, pas d'une copie locale : c'est
+	// la meme source que celle qui a servi a cuire la texture.
+	Mid->SetVectorParameterValue(TEXT("MondeZCm"),
+		FLinearColor(RvtRegles.BasM * WorldseedMetersToCm,
+			(RvtRegles.HautM - RvtRegles.BasM) * WorldseedMetersToCm,
+			0.0f, 0.0f));
 	Mid->SetVectorParameterValue(TEXT("MondeEtendueCm"),
 		FLinearColor(static_cast<float>(LargeurCm), static_cast<float>(HauteurCm),
 			1.0f, 1.0f));
@@ -333,13 +551,37 @@ UStaticMeshComponent* Poser(AActor* Proprietaire, USceneComponent* Racine,
 	// imposerait `Always`. Le moteur le dit en toutes lettres :
 	// « Never render to the main pass. Use this for primitives that only
 	// render to Runtime Virtual Texture. »
+	// UNE SURCHARGE, PARCE QU'UN A/B NE DOIT ISOLER QU'UNE CHOSE. Couper la
+	// nappe entiere par `-WorldseedNappeRvt=0` emporterait la COULEUR avec la
+	// hauteur, et l'on ne saurait plus laquelle des deux a change le dessus des
+	// pans. Et l'on ne touche pas a `world_rules.json` : son empreinte entre
+	// dans la cle du cache, donc les deux moities ne joueraient plus le meme
+	// monde.
+	int32 AvecHauteur = 1;
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedNappeHauteur="), AvecHauteur);
+
 	SM->RuntimeVirtualTextures.Add(Couleur);
+	if (Altitude && AvecHauteur != 0)
+	{
+		SM->RuntimeVirtualTextures.Add(Altitude);
+	}
+	else if (Altitude)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] nappe RVT : hauteur COUPEE par ")
+			TEXT("-WorldseedNappeHauteur=0 (la couleur reste ecrite)"));
+	}
 	SM->VirtualTextureRenderPassType = ERuntimeVirtualTextureMainPassType::Never;
 
 	// Le plan du moteur fait cent centimetres de cote : l'echelle vaut donc
-	// directement l'etendue en metres. Z = 0 a dessein -- la nappe n'ecrit
-	// aucune hauteur, donc son altitude n'a pas d'effet, et le niveau de la
-	// mer est le choix qui se defend le jour ou elle en ecrira une.
+	// directement l'etendue en metres.
+	//
+	// Z = 0, ET L'ALTITUDE DE LA NAPPE N'A AUCUNE IMPORTANCE MEME MAINTENANT
+	// QU'ELLE ECRIT UNE HAUTEUR. C'est precisement le point qui avait fait
+	// ecarter cette piste : on croyait que la RVT de hauteur prendrait le Z de
+	// la GEOMETRIE, donc zero partout. Elle prend ce que le materiau met sur
+	// l'entree `WorldHeight` du noeud de sortie -- ici la hauteur CUITE -- et
+	// la position du plan ne l'atteint pas.
 	SM->SetRelativeLocation(FVector::ZeroVector);
 	SM->SetRelativeScale3D(FVector(LargeurM, HauteurM, 1.0));
 	SM->RegisterComponent();

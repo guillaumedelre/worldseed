@@ -638,6 +638,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
 	bool bParoiMateriauDuPack = true;
 
+	/**
+	 * Fondu d'ancrage du pan dans le sol, en centimetres. Zero = celui du pack.
+	 *
+	 * `MF_RVT` ancre le maillage par `Clamp((WorldZ - hauteur RVT) / Smooth)`,
+	 * et le pack pose `Smooth` a **352 cm**. Cette valeur est taille pour sa
+	 * carte de demonstration, ou la hauteur vient d'un Landscape ecrit sommet
+	 * par sommet. Notre hauteur est cuite a **15,6 m par texel** depuis le
+	 * relief MACRO, quand la surface visible est du VOXEL : l'ecart est du
+	 * meme ordre que le fondu, donc le masque BASCULE au lieu de fondre.
+	 *
+	 * MEME FAMILLE QUE LE CARRELAGE DU SABLE : une valeur d'auteur JUSTE
+	 * devient fausse quand on change l'echelle du monde, et ce qui est une
+	 * FREQUENCE SPATIALE se recale sur la taille reelle du terrain.
+	 *
+	 * `-WorldseedPanFondu=<cm>` la balaie sans recompiler, et sans toucher a
+	 * `world_rules.json` -- dont l'empreinte entre dans la cle du cache, donc
+	 * les deux moities d'un A/B ne joueraient plus le meme monde.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
+	int32 ParoiFonduCm = 4000;
+
 	/** Les reglages du semis. Voir `FWorldseedParoiRegles`. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worldseed|Parois")
 	float ParoiMonteeMaxFrac = 0.35f;
@@ -960,7 +981,11 @@ private:
 	 * batit a partir des lots statiques. Voir `WorldseedNappeRvt.h` pour les
 	 * trois autres voies pesees et la mesure qui a tranche.
 	 */
-	void PreparerNappeRvt(TArrayView<URuntimeVirtualTexture* const> Textures);
+	void PreparerNappeRvt(TArrayView<URuntimeVirtualTexture* const> Textures,
+		const FWorldseedRvtRegles& RvtRegles);
+
+	/** Elargit le fondu d'ancrage du pan a la mesure de NOTRE maille. */
+	void ElargirLeFonduDuPan(UInstancedStaticMeshComponent* ISM);
 
 
 	/**
@@ -1001,6 +1026,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> NappeRvtTeinte;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> NappeRvtHauteur;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> NappeRvtNormale;
 
 
 public:

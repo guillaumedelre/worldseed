@@ -1464,6 +1464,8 @@ void AWorldseedVoxelTerrain::PreparerParois()
 				TEXT("pans restera BLEU -- %s"), *ParoiMateriau.ToString());
 		}
 
+		ElargirLeFonduDuPan(ISM);
+
 		ISM->RegisterComponent();
 		ParoiComposants.Add(ISM);
 
@@ -1616,15 +1618,105 @@ void AWorldseedVoxelTerrain::PreparerRvt()
 
 	UE_LOG(LogTemp, Log, TEXT("[Worldseed] RVT : %d texture(s) posee(s)"), Posees);
 
-	PreparerNappeRvt(Textures);
+	PreparerNappeRvt(Textures, Regles);
+}
+
+void AWorldseedVoxelTerrain::ElargirLeFonduDuPan(UInstancedStaticMeshComponent* ISM)
+{
+	if (!ISM)
+	{
+		return;
+	}
+
+	// --- POURQUOI CE REGLAGE EXISTE, ET IL EST CHIFFRE ---------------------
+	//
+	// `MF_RVT` ancre un maillage dans le sol par
+	// `Clamp((WorldZ - hauteur lue dans la RVT) / Smooth)`, et le pack pose
+	// **`Smooth` a 352 cm**, soit TROIS METRES ET DEMI de fondu. C'est taille
+	// pour sa carte de demonstration, ou la hauteur de la RVT est ecrite par un
+	// Landscape, sommet par sommet, exactement la ou le pan est pose.
+	//
+	// CHEZ NOUS LA HAUTEUR EST CUITE A 15,6 m PAR TEXEL, depuis le relief
+	// MACRO, alors que la surface qu'on voit est du VOXEL -- qui s'en ecarte de
+	// `overhangAmplitudeM` (huit metres) plus la corde d'une maille de
+	// trente-et-un metres sur une pente. L'ecart est donc du meme ordre que le
+	// fondu, voire plus grand : le masque ne fond pas, il BASCULE, et le dessus
+	// des pans rend une valeur extreme au lieu de la couleur du sol.
+	//
+	// ON ELARGIT DONC LE FONDU A LA MESURE DE NOTRE MAILLE, pas a celle du
+	// pack. C'est la meme lecon que le carrelage du sable : une valeur d'auteur
+	// JUSTE devient fausse quand on change l'echelle du monde, et ce qui est une
+	// FREQUENCE SPATIALE se recale sur la taille reelle du terrain.
+	//
+	// ET LE REGLAGE VIT DANS LE CODE, PAS DANS L'ASSET. `Content/Orasot_Bundle/`
+	// est exclu du depot : une valeur posee sur `MI_Cliff_2` serait perdue au
+	// prochain clone, sans que rien ne le signale. Ce depot a deja paye trois
+	// fois cette lecon -- le PlayerStart qui revient, les acteurs d'eclairage
+	// disparus, la grille climatique qu'aucun script ne rejouait.
+	int32 FonduCm = ParoiFonduCm;
+	FParse::Value(FCommandLine::Get(), TEXT("WorldseedPanFondu="), FonduCm);
+
+	if (FonduCm <= 0)
+	{
+		return;   // zero rend le comportement du pack, a l'identique
+	}
+
+	// UNE INSTANCE DYNAMIQUE PAR COMPOSANT, ET C'EST LE SEUL COUT. Elle ne
+	// change aucun commutateur STATIQUE, donc aucune permutation de shader
+	// nouvelle : `Smooth` est un scalaire, il se pose a chaud.
+	for (int32 S = 0; S < ISM->GetNumMaterials(); ++S)
+	{
+		UMaterialInterface* const Base = ISM->GetMaterial(S);
+		if (!Base)
+		{
+			continue;
+		}
+
+		UMaterialInstanceDynamic* const Mid =
+			UMaterialInstanceDynamic::Create(Base, this);
+		if (!Mid)
+		{
+			continue;
+		}
+
+		Mid->SetScalarParameterValue(TEXT("Smooth"), static_cast<float>(FonduCm));
+
+		// ON RELIT CE QU'ON ECRIT. `SetScalarParameterValue` est MUET sur un
+		// nom que le materiau ne declare pas -- le depot a paye exactement
+		// cela sur la rampe du decor, trois lignes devenues des no-op sous un
+		// journal qui annoncait « rampe ARMEE ».
+		float Relu = 0.0f;
+		if (!Mid->GetScalarParameterValue(TEXT("Smooth"), Relu))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[Worldseed] parois : %s ne declare pas `Smooth` -- le ")
+				TEXT("fondu d'ancrage n'a PAS ete elargi, le dessus du pan ")
+				TEXT("gardera sa valeur extreme"), *Base->GetName());
+			continue;
+		}
+
+		ISM->SetMaterial(S, Mid);
+
+		if (S == 0)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] parois : fondu d'ancrage RELU a %.0f cm sur %s ")
+				TEXT("(le pack pose 352 cm, taille pour un Landscape ; notre ")
+				TEXT("hauteur est cuite a 15,6 m par texel)"),
+				Relu, *Base->GetName());
+		}
+	}
 }
 
 void AWorldseedVoxelTerrain::PreparerNappeRvt(
-	TArrayView<URuntimeVirtualTexture* const> Textures)
+	TArrayView<URuntimeVirtualTexture* const> Textures,
+	const FWorldseedRvtRegles& RvtRegles)
 {
 	NappeRvt = nullptr;
 	NappeRvtPoids = nullptr;
 	NappeRvtTeinte = nullptr;
+	NappeRvtHauteur = nullptr;
+	NappeRvtNormale = nullptr;
 
 	if (Textures.Num() == 0)
 	{
@@ -1647,19 +1739,25 @@ void AWorldseedVoxelTerrain::PreparerNappeRvt(
 
 	UTexture2D* Poids = nullptr;
 	UTexture2D* Teinte = nullptr;
+	UTexture2D* Hauteur = nullptr;
+	UTexture2D* Normale = nullptr;
 	FWorldseedNappeRvtReleve Releve;
 
-	if (!WorldseedNappeRvt::Cuire(Biomes(), Geometry, Poids, Teinte, Releve))
+	if (!WorldseedNappeRvt::Cuire(Biomes(), Geometry, HeightsM(),
+		HeightExaggeration, RvtRegles, Poids, Teinte, Hauteur, Normale, Releve))
 	{
 		return;
 	}
 
 	NappeRvtPoids = Poids;
 	NappeRvtTeinte = Teinte;
+	NappeRvtHauteur = Hauteur;
+	NappeRvtNormale = Normale;
 
 	NappeRvt = WorldseedNappeRvt::Poser(this, RootScene, Textures,
 		static_cast<double>(Geometry.WidthM()),
-		static_cast<double>(Geometry.HeightM), Poids, Teinte);
+		static_cast<double>(Geometry.HeightM), Poids, Teinte, Hauteur, Normale,
+		RvtRegles);
 
 	if (!NappeRvt)
 	{
@@ -1695,6 +1793,55 @@ void AWorldseedVoxelTerrain::PreparerNappeRvt(
 			TEXT("elle ECRIT DU NOIR. Tout ce qui la lit rendra noir, a ")
 			TEXT("commencer par le dessus des pans de falaise."),
 			Releve.PoidsMax, Releve.TeinteMax);
+	}
+
+	// --- ET ON DIT CE QUE LA HAUTEUR A ECRIT ------------------------------
+	//
+	// LE RELIEF DOIT TENIR DANS LE VOLUME, ET C'EST LE GENRE DE BORNE QUI SE
+	// PERIME EN SILENCE. Au-dela, l'encodage SATURE : le feuillage et le dessus
+	// des pans s'ancreraient a une altitude fausse sur tout un massif, sans une
+	// erreur et sans qu'aucune image ne permette de le distinguer d'un defaut
+	// de materiau. Un compte a zero dit que les bornes tiennent ; un compte non
+	// nul dit de combien il faut les elargir.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] nappe RVT : hauteur cuite sur le volume ")
+		TEXT("[%.0f .. %.0f] m, relief RELEVE [%.0f .. %.0f] m, ")
+		TEXT("%lld texel(s) hors bornes"),
+		RvtRegles.BasM, RvtRegles.HautM,
+		Releve.AltitudeMin, Releve.AltitudeMax, Releve.HorsBornes);
+
+	// --- ET LA NORMALE DOIT DECRIRE UN RELIEF, PAS UN PLAN -----------------
+	//
+	// UNE NORMALE PLATE EST EXACTEMENT LE DEFAUT QU'ON VIENT DE CORRIGER. Le
+	// moteur ecrit (0, 0, 1) quand l'entree `Normal` d'une sortie RVT n'est pas
+	// branchee ; une normale CUITE a partir d'un relief qui n'arrive pas rend
+	// la meme chose. Les deux donnent le dessus des pans NOIR sous un dither,
+	// et aucune image ne saurait les distinguer. Une pente maximale a zero est
+	// donc une erreur, pas un monde plat.
+	if (Releve.PenteMaxDeg < 1.0f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Worldseed] nappe RVT : la normale cuite est PLATE ")
+			TEXT("(pente max %.2f deg) -- elle vaut la valeur par defaut du ")
+			TEXT("moteur, donc le dessus des pans redeviendra noir"),
+			Releve.PenteMaxDeg);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] nappe RVT : normale cuite, pente maximale ")
+			TEXT("%.1f deg"), Releve.PenteMaxDeg);
+	}
+
+	if (Releve.HorsBornes > 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Worldseed] nappe RVT : %lld texel(s) SORTENT du volume ")
+			TEXT("[%.0f .. %.0f] m -- relief [%.0f .. %.0f] m. La hauteur y ")
+			TEXT("sature, donc l'ancrage du feuillage y est faux. Elargir ")
+			TEXT("`FWorldseedRvtRegles::BasM/HautM`."),
+			Releve.HorsBornes, RvtRegles.BasM, RvtRegles.HautM,
+			Releve.AltitudeMin, Releve.AltitudeMax);
 	}
 }
 
