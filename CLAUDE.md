@@ -11960,3 +11960,153 @@ que du TEMPS, jamais du lieu ; le brouillard volumetrique au sol
 que notre `ProceduralMeshComponent` genere des champs de distance ; et le SON,
 dont aucune des trois briques du pack n'est employee alors que l'etat meteo
 qu'elles consomment est deja ecrit et mesure.
+
+> **LA DERNIERE LIGNE EST FAUSSE, ET LE RELEVE DU MEME JOUR L'A DEMENTIE** --
+> voir « Le son : pour une fois, le pack n'arrivait PAS eteint » en fin de
+> fichier. **DEUX des trois briques etaient deja employees** : les effets meteo
+> et l'occlusion arrivent ARMES, et vingt-six assets sonores etaient joues par
+> l'etat meteo qu'on ecrivait deja. Une seule etait absente, le son d'ambiance.
+> **Je l'avais deduit de cinq precedents et non mesure** -- cinq fois ou le pack
+> livrait une fonctionnalite eteinte. Une habitude n'est pas une mesure.
+
+### Le son : pour une fois, le pack n'arrivait PAS eteint (29 septembre 2026)
+
+Demande du proprietaire : « commencons par utiliser tous les sons du pack ».
+L'inventaire publie la veille affirmait qu'« aucune des trois briques sonores
+du pack n'est employee ». **C'ETAIT FAUX, et le releve l'a dit avant qu'une
+ligne de C++ ne soit ecrite.**
+
+**LE RELEVE, instance ET defaut de classe, sur les 925 variables du ciel et
+les 584 de la meteo :**
+
+    Enable Weather Sound Effects                   VRAI
+    Use Occlusion to Attenuate Sounds in Interiors VRAI
+    Global Sound Asset       UDS_Global_WeatherSounds       assigne
+    Directional Sound Asset  UDS_Directional_WeatherSounds  assigne
+    Weather Sounds Master Volume / Wind / Rain            1
+    Close Thunder / Distant Thunder / Wind Whistling      1
+    Environment Sound                              None   <- le seul trou
+
+**C'EST LA PREMIERE FONCTIONNALITE DE CE PACK QUE CE DEPOT TROUVE ALLUMEE**,
+apres cinq qui etaient eteintes -- les aurores, les dix surcharges manuelles
+d'UDW, le givre, les gouttes d'ecran, l'arc-en-ciel et la chaleur. La pluie, le
+vent, le tonnerre et la poussiere s'entendaient donc DEJA, pilotes par l'etat
+meteo que le pilote du ciel ecrit depuis le 28 septembre : **vingt-six des
+quatre-vingt-dix-neuf assets sonores du pack etaient joues sans qu'une ligne
+ait jamais ete ecrite pour eux.**
+
+    REGLE, ET C'EST L'AUTRE SENS DE CELLE QU'ON CONNAISSAIT : on ne suppose pas
+    qu'une brique d'un pack tiers est eteinte, on le VERIFIE. Cinq precedents
+    dans l'autre sens ne font pas une regle d'inference -- ils font une
+    habitude, et une habitude n'est pas une mesure.
+
+#### Ce qui manquait vraiment, et ce que le pack ne peut pas savoir
+
+`Environment Sound` valait None : les vingt-sept chants d'oiseaux, les insectes
+de nuit et les deux vents d'arbres dormaient sur le disque. **Et c'est le seul
+trou que le pack ne puisse pas combler seul** : son metasound module deja les
+oiseaux, les insectes et le vent dans les arbres par l'HEURE, la METEO et le
+VENT -- il ne connait pas le BIOME. C'est donc exactement, et seulement, ce que
+nous avions a lui apporter.
+
+**TROIS DOSAGES ET NON UNE AMBIANCE PAR BIOME, et c'est une contrainte MESUREE
+et non un choix.** Le pack livre une seule source, `Forest_Example`. Ses deux
+sous-sources existent bien comme assets separes, mais elles sortent en **MONO**
+(`Forest_Birds`) et en **QUAD** (`Forest_TreeWind`), quand la documentation
+exige du **5.1** pour qu'une ambiance recoive l'occlusion et le panoramique
+directionnel. Aucune des deux n'est jouable seule, et composer une ambiance
+NOUVELLE demanderait d'ecrire un graphe MetaSound -- **pas scriptable, meme mur
+que Niagara le 29 septembre**. Ce qui reste scriptable est le DATA ASSET, qui ne
+porte que trois champs : une source, une echelle de volume, des surcharges de
+parametre.
+
+#### LA MESURE QUI TRANCHE EST UN INVENTAIRE DE COMPOSANTS, PAS UN DRAPEAU
+
+Un drapeau relu ne prouve rien -- cinquieme fois. Pour du son, la seule mesure
+qui tranche est l'inventaire des composants audio VIVANTS, et on l'enumere sur
+le MONDE et non sur les deux acteurs d'UDS : un inventaire tronque se lit
+exactement comme un inventaire complet.
+
+Deux lancements apparies, meme graine, meme heure, horloge figee, releve a six
+secondes :
+
+| | foret tropicale (19438, -3656) | desert chaud (19375, -8844) |
+|---|---|---|
+| composants audio | 7 | 6 |
+| qui JOUENT | 4 | 3 |
+| `Forest_Example` | **present** | **absent** |
+| `Environment Sound Time Integer` du pack | 5 | **-1** |
+
+**La difference est BINAIRE, pas un pourcentage.** Et le -1 du desert est une
+preuve de plus : c'est le pack lui-meme qui dit que rien ne tourne.
+
+#### Trois defauts de journal corriges en chemin, tous de la meme famille
+
+1. **`ReadNumber` NE SAIT PAS LIRE UN BOOLEEN**, et s'en servir quand meme rend
+   faux pour une variable presente : le premier releve annoncait « effets meteo
+   ILLISIBLES, occlusion ILLISIBLE » sur deux variables a VRAI. Ce depot avait
+   deja RETIRE une ligne pour cette raison exacte -- la relecture de
+   `Simulate Real Sun` -- au lieu de la reparer. `ReadBool` existe desormais.
+2. **`GetNumber` ne lisait pas les ENTIERS.** UDW expose ses trois etats
+   d'ambiance en INT, et le journal les declarait illisibles.
+3. **`Count` n'est pas `Aucune`.** Tant que les deux rendaient « aucune », le
+   premier passage dans un desert ecrivait « ambiance « aucune » -> « aucune » »
+   -- ce qui se lit comme un appel inutile alors que c'est la POSE INITIALE.
+
+#### Et un avertissement qui mentait, dans le script meme qui le denonce
+
+Le controle de format du script de fabrication testait les chaines `"SURROUND"`
+et `"5_1"` ; l'enumerateur s'appelle **`FIVE_DOT_ONE`**. Il a donc crie « la
+source n'est pas en 5.1 » sur une source qui l'etait. **Un avertissement qui
+ment coute plus cher que pas d'avertissement**, et celui-la se trouvait a
+quarante lignes d'un commentaire qui l'explique.
+
+#### Ce qui reste, et ce qu'il coute
+
+**DOUZE ASSETS SUR QUATRE-VINGT-DIX-NEUF NE SONT TOUJOURS PAS JOUES** : les six
+compressions de neige, le deplacement dans la neige, les quatre flaques et le
+mouvement d'eau. Ils appartiennent a `UDS_DLWE_Interaction_Sounds`, qui se
+declenche quand le joueur POSE LE PIED -- il faut un composant
+`DLWE_Interaction` parente a chaque pied du squelette, et il n'en existe aucun.
+
+**ET LA CONDITION PREALABLE N'EST PAS LE COMPOSANT, C'EST LE SOL.** La
+documentation est explicite : hors Landscape, il faut declarer les MATERIAUX
+PHYSIQUES du sol dans « Physical Materials which Enable DLWE Interactions on
+Non-Landscapes ». Or notre terrain est un `ProceduralMeshComponent`, et le
+releve du 29 septembre 2026 est sans appel -- **zero occurrence de
+`PhysicalMaterial` dans tout `Source/Worldseed/Procedural/`**. Il faut donc
+d'abord donner un materiau physique au terrain voxel, ce qui est un chantier a
+part entiere et non un detail de cablage.
+
+#### Ce qui n'a PAS ete touche, et pourquoi
+
+**LES CINQ CURSEURS DE VOLUME PAR FAMILLE.** La documentation dit que le volume
+resultant s'echelonne avec ces reglages **ET** avec l'etat meteo courant : ils
+sont donc deja modules par ce que nous ecrivons, et y toucher doublerait la
+modulation. Les poser tous a 1,0 dans le fichier de regles ajouterait cinq
+boutons INERTES -- ce que le proprietaire a demande d'arreter de garder le
+23 septembre. Seul le MAITRE est expose, parce que c'est le seul qui permette
+de faire de la place a autre chose sans deregler l'equilibre interne du pack.
+
+**TROIS DES SIX N'ONT AUCUN `OnRep_`** -- tonnerre proche, tonnerre lointain,
+sifflement -- d'ou l'appel a `Apply Sound Effects Volume Levels`, que le pack
+expose pour cela.
+
+#### Le pont sait desormais appeler une fonction A PARAMETRES
+
+`Change Environment Sound` en prend trois. `CallFunction` refusait tout ce qui
+en prend un, et son commentaire disait pourquoi : une pile mal formee
+corromprait la memoire. `ChangerAmbiance` construit donc la pile par les
+PROPRIETES de la fonction, apparie par **TYPE** et non par nom -- les noms
+Blueprint portent des espaces que la reflexion assainit d'une version a l'autre
+-- **COMPTE** les parametres et refuse si la signature n'en porte pas exactement
+trois, un de chaque. Un pack qui en ajouterait un quatrieme nous trouve muets
+plutot que dangereux.
+
+#### Mesure de non-regression
+
+150 oracles verts (145 avant), dont cinq neufs avec **trois temoins montes,
+verifies, retires**. Le monde n'a pas bouge d'un octet malgre le changement
+d'empreinte des regles : le CORPS du cache rend le meme MD5
+`ce255f6745ca1d2ee5cdc80a29e10991` sur trois entrees de cles differentes, dont
+une anterieure au chantier.
