@@ -100,4 +100,5 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ---
 
 *Le récit des commits — ce qu'ils ont corrigé, et les mesures qui ont tranché —
-vit dans `CLAUDE.md`. Ici ne se trouve que la consigne.*
+vit dans `Docs/registre/` (voir la section D de `CLAUDE.md`, qui dit comment
+y chercher). Ici ne se trouve que la consigne.*

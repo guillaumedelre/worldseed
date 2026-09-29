@@ -33,7 +33,7 @@ economise une projection de terrain par couche, soit une trentaine.
 Le filtre du sampler est `Point`. En `Bilinear` - la valeur PAR DEFAUT de tous
 les noeuds PCG - les identifiants de biome s'interpolent et la vegetation d'un
 biome deborde sur ses voisins : 1,71 % des points mesures sur le banc, du type
-palmier de plage plante en zone alpine. Voir CLAUDE.md section 11.
+palmier de plage plante en zone alpine. Voir Docs/registre/unreal-pieges.md, section 11.
 """
 
 from __future__ import annotations
@@ -347,7 +347,7 @@ def _fresh_graph(asset_path: str) -> "unreal.PCGGraph":
 
     Supprimer un graphe encore reference par un PCGComponent du niveau leve une
     ensure dans ObjectTools qui ouvre un modal : l'editeur se fige et tout appel
-    MCP pend jusqu'au timeout. Voir CLAUDE.md section 11.
+    MCP pend jusqu'au timeout. Voir Docs/registre/unreal-pieges.md, section 11.
     """
     if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
         graph = unreal.EditorAssetLibrary.load_asset(asset_path)

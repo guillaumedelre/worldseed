@@ -91,5 +91,4 @@ chercher dans l'autre source. C'est précisément pour cela qu'il y en a deux.
 ---
 
 *Pourquoi une police plutôt que des images, et ce que chaque piège a coûté :
-`Content/Worldseed/Fonts/PROVENANCE.md` et la section « La police d'icônes » de
-`CLAUDE.md` (23 septembre 2026).*
+`Content/Worldseed/Fonts/PROVENANCE.md` et la section « La police d’icônes » de `Docs/registre/interface.md` (23 septembre 2026).*

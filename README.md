@@ -19,7 +19,8 @@ une maille de 15,6 m. Le voxel travaille au mètre par-dessus, dans une bande de
 résolution cousus par Transvoxel.
 
 L'eau se limite à l'**océan**, confié au plugin Water : rivières, cascades et
-lacs ont été retirés le 18 septembre 2026, et `CLAUDE.md` porte les mesures qui
+lacs ont été retirés le 18 septembre 2026, et `Docs/registre/geologie.md` porte
+les mesures qui
 l'ont motivé.
 
 Le climat n'est pas décoratif. Il est calé sur des mesures terrestres sourcées,
@@ -250,10 +251,17 @@ fois.
 
 ## Documentation
 
-- **`CLAUDE.md`** — le registre. Les pièges rencontrés, la mesure qui les a
-  révélés, et les pistes abandonnées avec la raison de ne pas les rouvrir. À lire
-  avant de toucher au moteur : c'est le document le plus utile du dépôt, et de
-  loin le plus long.
+- **`CLAUDE.md`** — les **consignes**, et elles seules : ce qui n'existe plus,
+  comment travailler, la **doctrine de mesure** (les pièges nommés, un par
+  ligne), et les décisions prises par le propriétaire. Court à dessein — il est
+  fait pour être tenu en tête, pas parcouru.
+- **`Docs/registre/`** — la **preuve**. Sept fichiers, 186 séances : ce qui a
+  été mesuré, ce qui a tranché, et surtout **les pistes abandonnées avec la
+  raison de ne pas les rouvrir**. Il ne se lit pas en entier, il se cherche —
+  `grep -n -i '<sujet>' Docs/registre/*.md`. C'est le document le plus utile du
+  dépôt, et il vivait dans `CLAUDE.md` jusqu'au 29 septembre 2026 : l'y laisser
+  coûtait 176 000 tokens à chaque tour, ce qui le rendait trop gros pour être
+  consulté *avant* de chercher — donc inutile là où il servait le plus.
 - **[`Docs/atlas-worldseed.html`](Docs/atlas-worldseed.html)** — la chaîne de
   génération planétaire, étape par étape : le sous-sol (huit roches, dix bancs,
   et pourquoi c'est la roche qui décide des formes), la sculpture du relief

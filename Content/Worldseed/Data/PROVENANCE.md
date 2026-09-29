@@ -77,6 +77,6 @@ genre.
 
 ⚠ **Le fichier n'a jamais été commité : il n'est pas récupérable par git.** Ce
 qui en survit est ce paragraphe et la section « Le générateur de noms : cinq
-outils comparés » de `CLAUDE.md`, qui garde la mesure et le raisonnement. Le
+outils comparés » de `Docs/registre/interface.md`, qui garde la mesure et le raisonnement. Le
 refaire demanderait de rouvrir le projet Godot `terrain-3d`, où la grammaire
 d'origine, elle, existe toujours.
