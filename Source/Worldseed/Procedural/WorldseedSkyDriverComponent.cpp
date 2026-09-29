@@ -258,6 +258,19 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	// pointeurs.
 	ArmerLesPasDlwe();
 
+	// ET ON LES RELIT PENDANT QU'ON MARCHE. Quatre passages a cinq secondes
+	// d'intervalle : le banc commence sa marche apres le premier, et un son de
+	// pas ne dure qu'un instant.
+	if (!PasDlwe.IsEmpty() && ReleveesDesPas < 4)
+	{
+		TempsDepuisPasS += DeltaSeconds;
+		if (TempsDepuisPasS > 5.0f * static_cast<float>(ReleveesDesPas + 1))
+		{
+			++ReleveesDesPas;
+			ReleverLesPasDlwe();
+		}
+	}
+
 	// --- position du soleil --------------------------------------------------
 	if (bDriveSunPosition
 		&& FMath::Abs(Sample.LatitudeDeg - LastSunLatitudeDeg) >= SunLatitudeStepDeg)
@@ -1743,6 +1756,9 @@ void UWorldseedSkyDriverComponent::ArmerLesPasDlwe()
 	// pas faire recommencer a la trame suivante : on empilerait des composants
 	// sur le meme pied.
 	PionEquipe = Pion;
+	PasDlwe.Reset();
+	TempsDepuisPasS = 0.0f;
+	ReleveesDesPas = 0;
 
 	int32 Poses = 0;
 	int32 Regles = 0;
@@ -1776,6 +1792,7 @@ void UWorldseedSkyDriverComponent::ArmerLesPasDlwe()
 		C->AttachToComponent(Maille,
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
 		++Poses;
+		PasDlwe.Add(C);
 
 		// ON DIT QUEL SOCKET A SERVI. Le repli sur l'os place le contact a la
 		// cheville : su, c'est un compromis ; tu, c'est un defaut qu'on
@@ -1796,4 +1813,94 @@ void UWorldseedSkyDriverComponent::ArmerLesPasDlwe()
 		TEXT("[Worldseed] pas DLWE : %d/2 composant(s) poses, %d regle(s) avec ")
 		TEXT("notre materiau physique, sur %s"),
 		Poses, Regles, *Pion->GetName());
+}
+
+void UWorldseedSkyDriverComponent::ReleverLesPasDlwe() const
+{
+	// LES QUATRE CONDITIONS, DANS L'ORDRE OU ELLES TOMBENT. Un silence n'a pas
+	// une cause mais quatre, et elles n'appellent pas le meme remede :
+	//
+	//   Asleep                    le composant s'est endormi (hors distance)
+	//   Sound Enabled             l'interrupteur du composant
+	//   Snow Depth                ce qu'il VOIT sous le pied -- zero = pas de
+	//                             neige la, ou physmat refuse par le pack
+	//   Interaction Sound         la source audio, que le pack instancie
+	//
+	// C'EST LA TROISIEME QUI SEPARE LES DEUX HYPOTHESES COUTEUSES : une
+	// profondeur nulle avec un physmat accepte veut dire « il n'y a pas de
+	// neige ici », et l'on force la meteo ; une profondeur nulle partout, meteo
+	// forcee, veut dire que le pack ne reconnait pas notre sol -- et l'on
+	// revient a la liste blanche.
+	int32 Eveilles = 0, Armes = 0, VoientDeLaNeige = 0, Sonnent = 0;
+
+	for (const TWeakObjectPtr<USceneComponent>& Faible : PasDlwe)
+	{
+		const USceneComponent* const C = Faible.Get();
+		if (!C)
+		{
+			continue;
+		}
+
+		bool bDort = false, bSon = false;
+		double Neige = 0.0, Poussiere = 0.0, Flaque = 0.0;
+		const bool bDortLu =
+			FWorldseedUdsBridge::LireBooleenDe(C, TEXT("Asleep"), bDort);
+		const bool bSonLu =
+			FWorldseedUdsBridge::LireBooleenDe(C, TEXT("Sound Enabled"), bSon);
+		const bool bNeigeLue =
+			FWorldseedUdsBridge::LireNombreDe(C, TEXT("Snow Depth"), Neige);
+		FWorldseedUdsBridge::LireNombreDe(C, TEXT("Dust Depth"), Poussiere);
+		FWorldseedUdsBridge::LireNombreDe(C, TEXT("Puddle Fluid Depth"), Flaque);
+
+		// ⚠ `IsPlaying()` NE DISCRIMINE RIEN, MESURE LE 29 SEPTEMBRE 2026, et
+		// cette ligne a d'abord menti. A/B apparie, horloge figee : la source
+		// rend VRAI avec `-WorldseedNeigeForce=10` ET avec zero neige. C'est un
+		// MetaSound persistant -- le pack l'instancie et le laisse tourner, la
+		// selection se faisant a l'interieur du graphe. Un composant audio qui
+		// « joue » ne prouve donc PAS qu'un son sort.
+		//
+		// On garde la colonne parce que l'ABSENCE de source, elle, serait
+		// concluante -- mais on ne l'appelle plus « JOUE ».
+		const UAudioComponent* const Source = Cast<UAudioComponent>(
+			FWorldseedUdsBridge::LireObjet(C, TEXT("Interaction Sound")));
+
+		// LA DISTANCE D'ACTIVITE VIENT DES REGLAGES QU'ON A DUPLIQUES : si la
+		// copie l'a perdue, le composant dormirait pour cette raison, et ce
+		// serait notre faute et non celle du pack.
+		double Portee = -1.0;
+		const UObject* const Reglages =
+			FWorldseedUdsBridge::LireObjet(C, TEXT("Interaction Settings"));
+		const bool bPorteeLue = FWorldseedUdsBridge::LireNombreDe(
+			Reglages, TEXT("Active Distance"), Portee);
+
+		if (bDortLu && !bDort) { ++Eveilles; }
+		if (bSonLu && bSon) { ++Armes; }
+		if (bNeigeLue && Neige > 0.0) { ++VoientDeLaNeige; }
+		if (Source) { ++Sonnent; }
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] pas DLWE #%d : %s | Asleep=%s%s | %s%s | ")
+			TEXT("neige %.3f%s poussiere %.3f flaque %.3f | portee %.0f%s | ")
+			TEXT("source %s"),
+			ReleveesDesPas, *C->GetName(),
+			bDort ? TEXT("VRAI") : TEXT("faux"),
+			bDortLu ? TEXT("") : TEXT(" (ILLISIBLE)"),
+			bSon ? TEXT("son arme") : TEXT("SON COUPE"),
+			bSonLu ? TEXT("") : TEXT(" (ILLISIBLE)"),
+			Neige, bNeigeLue ? TEXT("") : TEXT(" (ILLISIBLE)"),
+			Poussiere, Flaque,
+			Portee, bPorteeLue ? TEXT("") : TEXT(" (ILLISIBLE)"),
+			Source ? *Source->GetName() : TEXT("AUCUNE"));
+	}
+
+	// LE COMPTE EN DERNIER, ET IL SE LIT SEUL -- MAIS IL NE DIT PAS
+	// L'AUDIBILITE, ET C'EST ECRIT DANS LA LIGNE POUR QU'ON NE L'Y LISE PAS.
+	// « source » compte des composants audio EXISTANTS, pas des sons entendus :
+	// la seule preuve d'audibilite reste l'oreille, ou un enregistrement de
+	// submix compare entre deux etats.
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] pas DLWE releve %d/4 : %d/%d non endormis, %d armes, ")
+		TEXT("%d voient de la neige, %d sources (existence, PAS audibilite)"),
+		ReleveesDesPas, Eveilles, PasDlwe.Num(), Armes, VoientDeLaNeige,
+		Sonnent);
 }

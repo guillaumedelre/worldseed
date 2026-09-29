@@ -85,6 +85,21 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	 *  que de deviner, comme pour les tableaux. */
 	static bool EcrireObjet(UObject* Cible, FName Propriete, UObject* Valeur);
 
+	/**
+	 * Un nombre, sur une cible quelconque. Double, float ou int.
+	 *
+	 * ELLES EXISTENT POUR L'ENTONNOIR DES PAS. Savoir que deux composants sont
+	 * poses ne dit pas pourquoi ils sont muets : il faut lire, SUR eux, la
+	 * profondeur de neige qu'ils voient, s'ils dorment, et si leur source audio
+	 * existe. Un compte de composants n'est pas une mesure d'effet.
+	 */
+	static bool LireNombreDe(const UObject* Cible, FName Propriete,
+		double& OutValeur);
+
+	/** Un booleen, sur une cible quelconque. */
+	static bool LireBooleenDe(const UObject* Cible, FName Propriete,
+		bool& OutValeur);
+
 	/** Cherche les acteurs UDS du monde. Faux si le niveau n'en contient aucun. */
 	bool Resolve(UWorld* World);
 

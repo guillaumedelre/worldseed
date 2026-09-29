@@ -35,7 +35,13 @@ namespace
 		return false;
 	}
 
-	bool GetNumber(const AActor* Actor, FName PropertyName, double& OutValue)
+	// LA CIBLE EST UN `UObject`, PAS UN ACTEUR, DEPUIS LE 29 SEPTEMBRE 2026.
+	// Elargi -- jamais duplique -- pour lire l'entonnoir des composants
+	// `DLWE_Interaction` : profondeur de neige, sommeil, son. Un `AActor` etant
+	// un `UObject`, tous les appelants d'avant sont inchanges, et la
+	// non-regression se lit dans le releve meteo, qui passe par ReadNumber pour
+	// une dizaine de grandeurs et les annoncerait ILLISIBLES.
+	bool GetNumber(const UObject* Actor, FName PropertyName, double& OutValue)
 	{
 		if (!Actor || PropertyName.IsNone())
 		{
@@ -409,6 +415,28 @@ bool FWorldseedUdsBridge::LireTableauObjets(const UObject* Cible,
 		OutValeurs.Add(Interieur->GetObjectPropertyValue(Helper.GetRawPtr(i)));
 	}
 	return true;
+}
+
+bool FWorldseedUdsBridge::LireNombreDe(const UObject* Cible, FName Propriete,
+	double& OutValeur)
+{
+	return GetNumber(Cible, Propriete, OutValeur);
+}
+
+bool FWorldseedUdsBridge::LireBooleenDe(const UObject* Cible, FName Propriete,
+	bool& OutValeur)
+{
+	if (!Cible)
+	{
+		return false;
+	}
+	if (const FBoolProperty* const Prop = CastField<FBoolProperty>(
+			Cible->GetClass()->FindPropertyByName(Propriete)))
+	{
+		OutValeur = Prop->GetPropertyValue_InContainer(Cible);
+		return true;
+	}
+	return false;
 }
 
 UObject* FWorldseedUdsBridge::LireObjet(const UObject* Cible, FName Propriete)

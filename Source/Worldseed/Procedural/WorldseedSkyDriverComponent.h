@@ -365,6 +365,29 @@ private:
 	 */
 	bool ReglerUnPasDlwe(class USceneComponent* Composant, UObject* Physmat) const;
 
+	/**
+	 * L'ENTONNOIR DES PAS : POURQUOI ILS SE TAISENT, QUAND ILS SE TAISENT.
+	 *
+	 * DEUX COMPOSANTS POSES NE SONT PAS DEUX SONS. Entre l'un et l'autre il y a
+	 * quatre conditions, et un compte de composants n'en mesure aucune : le
+	 * composant doit etre EVEILLE, son `Sound Enabled` arme, il doit VOIR de la
+	 * neige sous le pied, et sa source audio doit exister. Les lire toutes rend
+	 * un silence DIAGNOSTIQUABLE au lieu d'un silence.
+	 *
+	 * ET IL SE REPETE, parce qu'un son de pas est TRANSITOIRE : un instantane
+	 * ne l'attrape que par chance, et le releve du son -- tire une fois a six
+	 * secondes -- arrive avant que le banc n'ait commence a marcher. Quatre
+	 * passages espaces couvrent la marche.
+	 */
+	void ReleverLesPasDlwe() const;
+
+	/** Les deux composants poses, pour les relire. Faibles : le pion meurt. */
+	TArray<TWeakObjectPtr<class USceneComponent>> PasDlwe;
+
+	/** Temps cumule depuis l'armement, et nombre de releves deja faits. */
+	float TempsDepuisPasS = 0.0f;
+	int32 ReleveesDesPas = 0;
+
 	/** Le pion deja equipe. FAIBLE : une mort du joueur doit re-armer. */
 	TWeakObjectPtr<class APawn> PionEquipe;
 
