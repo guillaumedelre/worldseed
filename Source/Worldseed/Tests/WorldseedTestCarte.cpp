@@ -4,6 +4,7 @@
 
 #include "Tests/WorldseedTestMondeFictif.h"
 
+#include "Procedural/WorldseedBiomes.h"
 #include "Procedural/WorldseedCarte.h"
 #include "Procedural/WorldseedGrid.h"
 #include "Procedural/WorldseedRetourMenu.h"
@@ -1071,6 +1072,89 @@ bool FWorldseedTestCarteEchap::RunTest(const FString& Parameters)
 	// enfermerait le joueur dans le niveau.
 	TestTrue(TEXT("TEMOIN : carte jamais ouverte, Echap quitte"),
 		WorldseedEchap::DoitRamenerAuMenu(false, Trame, 0));
+
+	return true;
+}
+
+
+/**
+ * LA BANQUISE SE VOIT SUR LA CARTE, COMME SUR LE GLOBE.
+ *
+ * LE DEFAUT QU'IL GARDE, ET IL ETAIT VISIBLE DANS LE JEU LIVRE. Le globe du
+ * menu peint la mer prise en glace -- `CoverColour(SeaIce)` -- pendant que la
+ * carte plein ecran et la minimap rendaient un degrade bathymetrique au meme
+ * endroit, sur le MEME monde. `CouleurCellule` ne lisait `Cover` que
+ * au-dessus de zero. Mesure au moment de la correction : **2,83 % de la mer
+ * du monde** est gelee (Terre : 3 a 5 selon la saison), dont 100 % de la mer
+ * entre 80 et 90 degres -- un pole nord qui n'a aucune terre et n'en aura
+ * jamais, `northPole` valant `ocean`.
+ *
+ * POURQUOI LA COUVERTURE ET NON LE BIOME. `AppearanceBiome` ne traduit que
+ * `Rock` et `Beach` ; pour toutes les autres, l'ocean compris, elle rend le
+ * biome CLIMATIQUE, qui est defini PARTOUT -- meme sous la mer. Lire la
+ * banquise par elle est donc impossible, et c'est exactement le piege qui
+ * avait fait annoncer a la nappe RVT « 8 388 608 terre / 0 mer » sur un monde
+ * a 71 % d'ocean.
+ *
+ * CE QUE CE TEST NE GARDE PAS : il ne dit rien du jeu, ou la banquise n'a ni
+ * geometrie ni materiau -- on traverse un plan d'eau bleu la ou la carte dit
+ * blanc. C'est un chantier ouvert, pas un oubli.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedTestCarteBanquise,
+	"Worldseed.Carte.LaBanquiseSeVoit",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedTestCarteBanquise::RunTest(const FString& Parameters)
+{
+	constexpr float FondM = -350.0f;
+	const FLinearColor Attendue =
+		WorldseedBiomes::CoverColour(EWorldseedCover::SeaIce);
+
+	// Une cellule de mer PEU PROFONDE : c'est le cas le plus dur, parce que le
+	// degrade y est clair et donc le plus proche du blanc de la glace.
+	constexpr float PlateauM = -20.0f;
+
+	const FLinearColor Gelee = WorldseedCarte::CouleurCellule(
+		PlateauM, 0, static_cast<uint8>(EWorldseedCover::SeaIce), FondM);
+	const FLinearColor Libre = WorldseedCarte::CouleurCellule(
+		PlateauM, 0, static_cast<uint8>(EWorldseedCover::Ocean), FondM);
+
+	TestTrue(TEXT("la mer gelee prend la teinte de banquise DU GLOBE -- une ")
+		TEXT("seconde teinte ecrite a la main finirait par diverger, et ")
+		TEXT("l'ecart se verrait entre les deux ecrans"),
+		Gelee.Equals(Attendue, 1e-4f));
+
+	// TEMOIN, ET SANS LUI LE TEST NE PROUVE RIEN : si la mer LIBRE rendait
+	// deja ce blanc, la premiere assertion passerait sans que la branche ait
+	// ete prise. C'est le cas d'avant la correction, a l'envers.
+	TestFalse(TEXT("TEMOIN : la mer LIBRE ne prend pas cette teinte"),
+		Libre.Equals(Attendue, 1e-4f));
+
+	// ET ELLE DOIT SE DISTINGUER DU HAUT-FOND, qui est la seule chose dont on
+	// puisse la confondre : le degrade bathymetrique est clair sur le plateau
+	// continental. Sans cet ecart, la banquise se lirait comme une mer peu
+	// profonde -- juste au chiffre, illisible a l'oeil.
+	auto Clarte = [](const FLinearColor& C)
+	{ return 0.299f * C.R + 0.587f * C.G + 0.114f * C.B; };
+
+	const float Ecart = Clarte(Gelee) - Clarte(Libre);
+	AddInfo(FString::Printf(
+		TEXT("clarte : banquise %.3f, haut-fond %.3f, ecart %.3f"),
+		Clarte(Gelee), Clarte(Libre), Ecart));
+
+	TestTrue(FString::Printf(
+		TEXT("la banquise tranche sur le haut-fond (ecart de clarte %.3f)"),
+		Ecart), Ecart > 0.2f);
+
+	// LA COUVERTURE NE DOIT PAS DETOURNER UNE TERRE. `SeaIce` n'est jamais
+	// posee sur une cellule emergee -- la classification sort avant -- mais la
+	// carte doit rester juste meme si elle l'etait un jour, sans quoi un
+	// defaut de classification se traduirait par un continent blanc.
+	const FLinearColor Terre = WorldseedCarte::CouleurCellule(
+		120.0f, 0, static_cast<uint8>(EWorldseedCover::SeaIce), FondM);
+
+	TestFalse(TEXT("au-dessus de zero, la teinte reste celle du BIOME"),
+		Terre.Equals(Attendue, 1e-4f));
 
 	return true;
 }

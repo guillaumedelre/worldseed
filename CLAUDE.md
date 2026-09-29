@@ -11251,17 +11251,21 @@ pole nord et il n'y en aura jamais**, par construction, comme l'Arctique. Ce
 que le globe peint en blanc la-haut est donc la mer prise en glace :
 `EWorldseedCover::SeaIce`, une COUVERTURE et non un biome.
 
-**ELLE A EXACTEMENT UN CONSOMMATEUR VISUEL DANS TOUT LE PROJET :**
+**ELLE N'AVAIT ALORS QU'UN CONSOMMATEUR VISUEL DANS TOUT LE PROJET :**
 
     WorldseedGlobe.cpp:309    Color = CoverColour(SeaIce)    0,82 / 0,88 / 0,94
 
-Ni la carte plein ecran, ni la minimap, ni le jeu ne la connaissent --
+Ni la carte plein ecran, ni la minimap, ni le jeu ne la connaissaient --
 `AppearanceBiome` ne traduit que `Rock` et `Beach`, tout le reste tombe dans
 son `default`. **Il n'existe donc ni geometrie ni materiau de glace de mer** :
 en jeu, la surface au pole nord est le plan d'eau du plugin Water, et elle est
 bleue. La banquise est une couleur sur une carte, pas un objet du monde.
-**NON CORRIGE** -- c'est un chantier a part, et DLWE n'y peut rien : il habille
-un materiau de SOL, et la-haut il n'y a pas de sol.
+**DLWE n'y peut rien** : il habille un materiau de SOL, et la-haut il n'y a
+pas de sol.
+
+> **LES CARTES LA PEIGNENT DEPUIS LE 29 SEPTEMBRE 2026** -- voir « La banquise
+> se voit enfin sur la carte » en fin de fichier. **Le JEU, lui, ne la connait
+> toujours pas**, et c'est le chantier qui reste.
 
 #### 2. La VRAIE calotte rendait GRISE, et la teinte ne pouvait pas la sauver
 
@@ -11424,3 +11428,77 @@ mesure**.
 - **l'alpin et la toundra n'ont aucune part de neige**, a dessein : leur neige
   est SAISONNIERE et revient a la meteo, qui pilote deja DLWE. Leur donner une
   part permanente les figerait sous la neige en plein ete.
+
+### La banquise se voit enfin sur la carte (29 septembre 2026)
+
+Signale : « et la banquise au pole nord ? ». Elle etait CALCULEE juste depuis
+toujours, et n'existait que sur le globe du menu.
+
+**LA MESURE D'ABORD, parce qu'elle dit que le calcul n'est pas en cause :**
+
+    80-90 deg   100,0 % de la mer de la bande    (0,0 % emerge : aucune terre)
+    70-80 deg    59,9 %                          (9,3 % emerge, dont 53,9 % de calotte)
+    le monde      2,83 % de toute la mer         (Terre : 3 a 5 selon la saison)
+
+Le critere est le bon -- la mer prend en glace quand son mois le plus chaud
+reste sous `SeaIceTempC`, seuil tenu SEPARE de celui de la calotte parce que
+l'eau salee gele vers -1,8 degre et non a zero.
+
+**LE DEFAUT ETAIT DANS UNE SEULE LIGNE, ET IL TOUCHAIT TROIS ECRANS.**
+`WorldseedCarte::CouleurCellule` ne lisait `Cover` que **au-dessus de zero** ;
+sous zero elle rendait un degrade bathymetrique et ignorait la banquise. Or
+la carte plein ecran, la minimap ET `ProbeCarte` passent tous par ce peintre :
+une correction les sert tous les trois. Le globe, lui, a son propre chemin --
+d'ou l'incoherence, **blanc sur un ecran et bleu sur l'autre, pour le meme
+monde**.
+
+**ET CE N'EST PAS `AppearanceBiome` QUI POUVAIT LA RENDRE.** Elle ne traduit
+que `Rock` et `Beach` ; pour toutes les autres couvertures -- l'ocean compris
+-- elle rend le biome CLIMATIQUE, defini PARTOUT, meme sous la mer. C'est
+exactement le piege qui avait fait annoncer a la nappe RVT « 8 388 608 terre /
+0 mer » sur un monde a 71 % d'ocean. **La banquise se lit sur la COUVERTURE,
+et nulle part ailleurs.**
+
+**LA TEINTE VIENT DE `CoverColour`, LA MEME FONCTION QUE LE GLOBE.** Deux
+blancs poses a la main finiraient par diverger, et l'ecart se verrait
+precisement la ou l'on compare les deux ecrans -- ce qu'on vient de fermer.
+
+**AUCUN DEGRADE SOUS ELLE** : la banquise flotte et cache le fond. Sa lisiere
+est franche dans la nature, et un fondu la ferait lire comme un haut-fond.
+
+**VU A L'IMAGE, et mesure sur la carte du monde** :
+
+    bande polaire NORD   R 234 V 241 B 248   <- CoverColour(SeaIce), attendu 236/241/249
+    mer voisine               125     155     182   le haut-fond clair
+    plein ocean                58      89     130   l'abysse
+    bande polaire SUD         242     246     250   <- la CALOTTE, donc de la TERRE
+
+Les deux glaces se distinguent aussi l'une de l'autre, la glace de mer etant
+legerement plus bleutee -- ce qui est correct.
+
+**L'ORACLE GARDE L'ECART, PAS LA TEINTE.** `Worldseed.Carte.LaBanquiseSeVoit`
+compare la clarte de la banquise a celle du haut-fond **sur une mer PEU
+PROFONDE**, c'est-a-dire le cas le plus dur, celui ou le degrade est le plus
+clair donc le plus proche du blanc. Temoin monte puis retire : la branche
+cassee rend **« banquise 0,531, haut-fond 0,531, ecart 0,000 »** -- la banquise
+indiscernable du haut-fond, le defaut d'avant, ecrit par le test lui-meme.
+Apres correction : **0,869 contre 0,531, ecart 0,338**.
+
+**TROIS VOIES ONT ETE PRESENTEES ET ECARTEES POUR L'INSTANT**, et il faut les
+garder pour ne pas les redecouvrir :
+
+| voie | ce qu'elle coute |
+|---|---|
+| une NAPPE de banquise praticable, a Z proche de zero, avec collision | le patron existe trois fois (sol de fond, nappe RVT, chunks) et elle pourrait se bosseler en cretes de compression et recevoir DLWE ; reste a trancher nappe unique du monde (memoire : le sol de fond pese deja 2 M sommets) ou streaming a ecrire. **Non chiffre.** |
+| peindre l'EAU par un masque cuit, greffe dans le materiau du plugin Water | quasi gratuit, mais **on ne marche pas dessus** -- on traverse et l'on tombe a l'eau -- et la surface ondulerait comme de l'eau sous une couleur de glace |
+| la mailler en VOXEL | le diffuseur ne maille qu'UNE bande, autour du relief macro : sous la mer c'est le FOND. Il faudrait une seconde bande, ou remonter la surface a zero et perdre le fond marin sous la glace. **Chantier lourd.** |
+
+**CE QUI RESTE OUVERT, ET C'EST LA QUESTION D'ORIGINE** : en jeu, la banquise
+n'a ni geometrie ni materiau. Le joueur peut marcher sur une ile arctique --
+il y a 9,3 % de terres entre 70 et 80 degres, blanches par DLWE depuis le
+28 septembre -- arriver au rivage, et voir de l'eau BLEUE la ou la carte et le
+globe montrent du blanc.
+
+**ET UNE INCONNUE NON MESUREE** : on ne sait pas si le personnage sait nager.
+Si non, une banquise praticable serait le SEUL moyen d'atteindre le pole, ce
+qui change son interet.

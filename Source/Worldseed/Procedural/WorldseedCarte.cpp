@@ -254,6 +254,29 @@ FLinearColor CouleurCellule(float AltitudeM, uint8 BiomeIndex, uint8 Cover,
 			WorldseedBiomes::AppearanceBiome(BiomeIndex, Cover));
 	}
 
+	// --- LA BANQUISE SE LIT SOUS ZERO, ET ELLE SEULE --------------------
+	//
+	// `AppearanceBiome` NE PEUT PAS LA RENDRE : elle ne traduit que `Rock` et
+	// `Beach`, et pour toutes les autres couvertures -- l'ocean compris --
+	// elle rend le biome CLIMATIQUE, defini partout, meme sous la mer. C'est
+	// exactement le piege qui avait fait annoncer a la nappe RVT
+	// « 8 388 608 terre / 0 mer » sur un monde a 71 % d'ocean. La banquise se
+	// lit donc sur la COUVERTURE, et nulle part ailleurs.
+	//
+	// ET C'EST `CoverColour` QUI DONNE LA TEINTE, la meme fonction que le
+	// globe : deux blancs poses a la main finiraient par diverger, et l'ecart
+	// se verrait precisement la ou l'on compare les deux ecrans -- ce qui est
+	// le defaut qu'on ferme ici. Le globe la peignait, la carte et la minimap
+	// l'ignoraient, sur le MEME monde.
+	//
+	// AUCUN DEGRADE SOUS ELLE : la banquise flotte et cache le fond. Sa
+	// lisiere est franche dans la nature, et elle doit l'etre ici -- un fondu
+	// la ferait lire comme un haut-fond.
+	if (static_cast<EWorldseedCover>(Cover) == EWorldseedCover::SeaIce)
+	{
+		return WorldseedBiomes::CoverColour(EWorldseedCover::SeaIce);
+	}
+
 	// LE FOND MARIN PORTE UN DEGRADE, et ce n'est pas une coquetterie : sans
 	// lui le plateau continental disparait, et l'on ne voit plus POURQUOI une
 	// cote est la. Clair sur le plateau, sombre dans l'abysse.
