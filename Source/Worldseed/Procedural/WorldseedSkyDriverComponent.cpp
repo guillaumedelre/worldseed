@@ -4,6 +4,10 @@
 
 #include "Components/AudioComponent.h"
 #include "Components/DirectionalLightComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/Character.h"
+#include "Kismet/GameplayStatics.h"
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedWeatherReadout.h"
@@ -245,6 +249,14 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			bPresetRulesLoaded = true;   // on n'insiste pas a chaque passage
 		}
 	}
+
+	// --- les pas dans la neige, et il faut un pion ---------------------------
+	//
+	// HORS DU BLOC A TIR UNIQUE, ET CE N'EST PAS UN OUBLI : le pion n'existe pas
+	// forcement quand les regles se chargent, et il est REMPLACE a chaque mort
+	// du joueur. Le cout d'un passage sans rien a faire est une comparaison de
+	// pointeurs.
+	ArmerLesPasDlwe();
 
 	// --- position du soleil --------------------------------------------------
 	if (bDriveSunPosition
@@ -1555,3 +1567,233 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 	}
 }
 
+
+// ============================================================ LES PAS DLWE
+
+namespace
+{
+	/**
+	 * Le chemin de la classe du pack, en DUR et en MOU a la fois.
+	 *
+	 * En dur parce qu'il n'y a pas d'autre facon de nommer un Blueprint d'un
+	 * pack absent du depot ; en mou parce que `LoadClass` rend nul plutot que
+	 * d'empecher le projet de se construire. Le suffixe `_C` est celui de la
+	 * CLASSE GENEREE : sans lui on charge le Blueprint et non la classe, et
+	 * `NewObject` refuserait.
+	 */
+	const TCHAR* const CheminClasseDlwe =
+		TEXT("/Game/UltraDynamicSky/Blueprints/Weather_Effects/")
+		TEXT("DLWE_Interaction.DLWE_Interaction_C");
+
+	/** Notre materiau physique du sol, pose le 29 septembre 2026. */
+	const TCHAR* const CheminPhysmat =
+		TEXT("/Game/Worldseed/Physics/PM_WorldseedTerre.PM_WorldseedTerre");
+
+	/** La liste blanche, MESUREE sur l'asset et non lue dans la documentation. */
+	const FName NomListeBlanche(
+		TEXT("Physical Materials which enable DLWE Interactions on non-Landscapes"));
+
+	const FName NomReglages(TEXT("Interaction Settings"));
+
+	/**
+	 * Le socket d'un pied, par ordre de preference.
+	 *
+	 * LES SOCKETS AUTHORES D'ABORD, LES OS ENSUITE. Relevé sur
+	 * `SKM_Quinn_Simple`, 94 entrees : `foot_l_Socket` et `foot_r_Socket`
+	 * existent, et ils sont poses a la SEMELLE ; `foot_l` et `foot_r` sont des
+	 * os, donc a la CHEVILLE -- une quinzaine de centimetres trop haut pour un
+	 * contact. On prend le meilleur qui existe, et l'on DIT lequel : un repli
+	 * silencieux ressemblerait a une mesure.
+	 */
+	struct FPiedDlwe
+	{
+		const TCHAR* Cote;
+		TArray<FName> Candidats;
+	};
+
+	TArray<FPiedDlwe> PiedsDlwe()
+	{
+		return {
+			{ TEXT("gauche"), { TEXT("foot_l_Socket"), TEXT("foot_l") } },
+			{ TEXT("droit"),  { TEXT("foot_r_Socket"), TEXT("foot_r") } },
+		};
+	}
+}
+
+bool UWorldseedSkyDriverComponent::ReglerUnPasDlwe(USceneComponent* Composant,
+	UObject* Physmat) const
+{
+	if (!Composant || !Physmat)
+	{
+		return false;
+	}
+
+	UObject* const ReglagesDuPack =
+		FWorldseedUdsBridge::LireObjet(Composant, NomReglages);
+	if (!ReglagesDuPack)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] pas DLWE : « %s » illisible ou nul sur %s. ")
+			TEXT("Sans reglages, la liste blanche n'a pas d'hote et les douze ")
+			TEXT("sons resteront muets."),
+			*NomReglages.ToString(), *Composant->GetName());
+		return false;
+	}
+
+	// LA COPIE EST OUTREE SUR LE COMPOSANT : privee, transitoire, et l'asset
+	// partage du pack n'est jamais touche.
+	UObject* const Copie = DuplicateObject<UObject>(ReglagesDuPack, Composant);
+	if (!Copie)
+	{
+		return false;
+	}
+
+	int32 Taille = 0;
+	if (!FWorldseedUdsBridge::AjouterAuTableauObjets(Copie, NomListeBlanche,
+			Physmat, &Taille))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] pas DLWE : « %s » REFUSEE sur %s. Le nom a ")
+			TEXT("change de version d'UDS, ou ce n'est pas un tableau de ")
+			TEXT("materiaux physiques."),
+			*NomListeBlanche.ToString(), *Copie->GetClass()->GetName());
+		return false;
+	}
+
+	if (!FWorldseedUdsBridge::EcrireObjet(Composant, NomReglages, Copie))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] pas DLWE : la copie des reglages n'a pas pu etre ")
+			TEXT("REPOSEE sur %s -- le composant garde ceux du pack, sans ")
+			TEXT("notre materiau."), *Composant->GetName());
+		return false;
+	}
+
+	// ET L'ON RELIT, parce qu'une ecriture par reflexion qui rend vrai n'est
+	// pas une preuve -- douze fois paye dans ce depot.
+	const UObject* const Relu =
+		FWorldseedUdsBridge::LireObjet(Composant, NomReglages);
+	TArray<UObject*> ListeRelue;
+	const bool bListeRelue = FWorldseedUdsBridge::LireTableauObjets(
+		Relu, NomListeBlanche, ListeRelue);
+	const bool bPhysmatPresent = ListeRelue.Contains(Physmat);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] pas DLWE : %s -> reglages %s, liste %s (%d entree(s)), ")
+		TEXT("notre physmat %s"),
+		*Composant->GetName(),
+		Relu == Copie ? TEXT("A NOUS") : TEXT("PAS les notres"),
+		bListeRelue ? TEXT("relue") : TEXT("ILLISIBLE"),
+		ListeRelue.Num(),
+		bPhysmatPresent ? TEXT("PRESENT") : TEXT("ABSENT"));
+
+	return Relu == Copie && bPhysmatPresent && Taille > 0;
+}
+
+void UWorldseedSkyDriverComponent::ArmerLesPasDlwe()
+{
+	if (bPasDlweIndisponible)
+	{
+		return;
+	}
+
+	UWorld* const Monde = GetWorld();
+	APawn* const Pion = Monde ? UGameplayStatics::GetPlayerPawn(Monde, 0) : nullptr;
+	if (!Pion || PionEquipe.Get() == Pion)
+	{
+		return;
+	}
+
+	// LE MAILLAGE AVANT TOUT LE RESTE : sans squelette, aucun socket, donc rien
+	// a quoi parenter. On ne journalise pas ce cas a chaque trame -- il se
+	// produirait pour un pion sans maillage, et le pion suivant reessaiera.
+	const ACharacter* const Perso = Cast<ACharacter>(Pion);
+	USkeletalMeshComponent* const Maille = Perso ? Perso->GetMesh() : nullptr;
+	if (!Maille)
+	{
+		return;
+	}
+
+	UClass* const Classe = LoadClass<USceneComponent>(nullptr, CheminClasseDlwe);
+	if (!Classe)
+	{
+		// PAS UNE ERREUR : le jeu doit tourner sans le pack. Mais dit une fois,
+		// sinon l'absence se lirait comme un silence.
+		bPasDlweIndisponible = true;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] pas DLWE : %s introuvable -- pack absent, les ")
+			TEXT("douze sons d'interaction resteront muets et c'est normal."),
+			CheminClasseDlwe);
+		return;
+	}
+
+	UObject* const Physmat = StaticLoadObject(UObject::StaticClass(), nullptr,
+		CheminPhysmat);
+	if (!Physmat)
+	{
+		bPasDlweIndisponible = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] pas DLWE : notre materiau physique %s est ")
+			TEXT("INTROUVABLE. Sans lui la liste blanche resterait vide et ")
+			TEXT("DLWE ignorerait le terrain voxel."), CheminPhysmat);
+		return;
+	}
+
+	// LE PION EST MARQUE AVANT LA BOUCLE, PAS APRES. Un echec partiel ne doit
+	// pas faire recommencer a la trame suivante : on empilerait des composants
+	// sur le meme pied.
+	PionEquipe = Pion;
+
+	int32 Poses = 0;
+	int32 Regles = 0;
+	for (const FPiedDlwe& Pied : PiedsDlwe())
+	{
+		FName Socket = NAME_None;
+		for (const FName& Candidat : Pied.Candidats)
+		{
+			if (Maille->DoesSocketExist(Candidat))
+			{
+				Socket = Candidat;
+				break;
+			}
+		}
+		if (Socket.IsNone())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] pas DLWE : aucun socket pour le pied %s ")
+				TEXT("(essayes : %s). Ce pied ne fera pas de bruit."),
+				Pied.Cote, *FString::JoinBy(Pied.Candidats, TEXT(", "),
+					[](const FName& N) { return N.ToString(); }));
+			continue;
+		}
+
+		USceneComponent* const C = NewObject<USceneComponent>(Pion, Classe);
+		if (!C)
+		{
+			continue;
+		}
+		C->RegisterComponent();
+		C->AttachToComponent(Maille,
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+		++Poses;
+
+		// ON DIT QUEL SOCKET A SERVI. Le repli sur l'os place le contact a la
+		// cheville : su, c'est un compromis ; tu, c'est un defaut qu'on
+		// chercherait ailleurs.
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] pas DLWE : pied %s parente a « %s »%s"),
+			Pied.Cote, *Socket.ToString(),
+			Socket == Pied.Candidats[0] ? TEXT("")
+				: TEXT(" (REPLI sur l'os : contact a la cheville)"));
+
+		if (ReglerUnPasDlwe(C, Physmat))
+		{
+			++Regles;
+		}
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] pas DLWE : %d/2 composant(s) poses, %d regle(s) avec ")
+		TEXT("notre materiau physique, sur %s"),
+		Poses, Regles, *Pion->GetName());
+}

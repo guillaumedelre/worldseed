@@ -411,6 +411,48 @@ bool FWorldseedUdsBridge::LireTableauObjets(const UObject* Cible,
 	return true;
 }
 
+UObject* FWorldseedUdsBridge::LireObjet(const UObject* Cible, FName Propriete)
+{
+	if (!Cible)
+	{
+		return nullptr;
+	}
+	if (const FObjectPropertyBase* const Prop = CastField<FObjectPropertyBase>(
+			Cible->GetClass()->FindPropertyByName(Propriete)))
+	{
+		return Prop->GetObjectPropertyValue(
+			Prop->ContainerPtrToValuePtr<void>(Cible));
+	}
+	return nullptr;
+}
+
+bool FWorldseedUdsBridge::EcrireObjet(UObject* Cible, FName Propriete,
+	UObject* Valeur)
+{
+	if (!Cible)
+	{
+		return false;
+	}
+	FObjectPropertyBase* const Prop = CastField<FObjectPropertyBase>(
+		Cible->GetClass()->FindPropertyByName(Propriete));
+	if (!Prop)
+	{
+		return false;
+	}
+
+	// MEME REFUS QUE POUR LES TABLEAUX : un pointeur d'un type que le pack
+	// n'attend pas plante chez lui, et l'ecriture, elle, aurait « reussi ».
+	// Une valeur NULLE est acceptee : c'est un effacement legitime.
+	if (Valeur && (!Prop->PropertyClass || !Valeur->IsA(Prop->PropertyClass)))
+	{
+		return false;
+	}
+
+	Prop->SetObjectPropertyValue(
+		Prop->ContainerPtrToValuePtr<void>(Cible), Valeur);
+	return true;
+}
+
 bool FWorldseedUdsBridge::AjouterAuTableauObjets(UObject* Cible,
 	FName Propriete, UObject* Valeur, int32* OutTaille)
 {

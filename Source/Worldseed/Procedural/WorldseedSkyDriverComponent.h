@@ -327,5 +327,54 @@ private:
 	 * distinct, le premier appel croirait n'avoir rien a faire.
 	 */
 	EWorldseedAmbiance AmbianceCourante = EWorldseedAmbiance::Count;
+
+	// ------------------------------------------------- les pas dans la neige
+
+	/**
+	 * EQUIPER LE PION DE DEUX `DLWE_Interaction`, UN PAR PIED.
+	 *
+	 * POURQUOI ICI, ET C'EST UN ARBITRAGE DU PROPRIETAIRE (29 septembre 2026).
+	 * Les douze assets sonores d'interaction de DLWE ne jouent que si un
+	 * composant du pack est parente a un pied. Trois voies existaient : un
+	 * script rejouable sur le Blueprint du pion, du code dans
+	 * `AWorldseedCharacter`, ou ici. Les deux premieres ont un defaut chacune :
+	 * le Blueprint du pion vit HORS du depot -- `.gitignore` n'ouvre que
+	 * `Content/Worldseed/`, pour ne pas redistribuer des packs payants -- donc
+	 * un composant pose a la main serait perdu au prochain clone ; et
+	 * `AWorldseedCharacter` est du code a nous, mais y citer un chemin d'asset
+	 * d'UDS briserait la promesse de ce projet, que le PONT soit le seul
+	 * endroit qui connaisse le pack.
+	 *
+	 * Ce pilote, lui, connait UDS par construction : c'est sa raison d'etre.
+	 *
+	 * ET ELLE SE RAPPELLE A CHAQUE PASSAGE, A DESSEIN. Le pion n'existe pas
+	 * forcement quand les autres `Armer*` tournent, et il est REMPLACE a chaque
+	 * mort. Le garde-fou n'est donc pas un booleen mais le pion lui-meme :
+	 * `PionEquipe` faible, compare au pion courant.
+	 */
+	void ArmerLesPasDlwe();
+
+	/**
+	 * Donner a UN composant des reglages a NOUS, portant notre physmat.
+	 *
+	 * ON DUPLIQUE, ON N'ECRIT PAS DANS CEUX DU PACK. `Interaction Settings`
+	 * pointe par defaut sur `Standard_DLWE_Interaction_Settings`, un asset
+	 * PARTAGE et non versionne : y ajouter notre materiau le salirait dans
+	 * l'editeur et risquerait d'etre sauvegarde par accident. La copie est
+	 * outree sur le composant, donc transitoire et privee.
+	 */
+	bool ReglerUnPasDlwe(class USceneComponent* Composant, UObject* Physmat) const;
+
+	/** Le pion deja equipe. FAIBLE : une mort du joueur doit re-armer. */
+	TWeakObjectPtr<class APawn> PionEquipe;
+
+	/**
+	 * Vrai quand la classe du pack est introuvable.
+	 *
+	 * UN SEUL AVERTISSEMENT, PAS UN PAR TRAME. Le jeu doit tourner sans UDS --
+	 * c'est la promesse du README -- donc l'absence n'est pas une erreur, mais
+	 * la journaliser soixante fois par seconde noierait tout le reste.
+	 */
+	bool bPasDlweIndisponible = false;
 };
 

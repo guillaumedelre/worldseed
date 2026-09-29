@@ -7,6 +7,7 @@
 #include "Components/SceneComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Sound/SoundClass.h"
+#include "Sound/SoundCue.h"
 
 /**
  * CE QUE CES ORACLES PROTEGENT.
@@ -178,6 +179,77 @@ bool FWorldseedPontTableauxRefuseAuLieuDeDeviner::RunTest(const FString&)
 		Cible->ChildClasses.Num(), 1);
 
 	Cible->ChildClasses.Reset();
+	return true;
+}
+
+// --- LE POINTEUR SIMPLE, POUR `Interaction Settings` ----------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedPontObjetEcritRelitEtEffacce,
+	"Worldseed.Pont.ObjetEcritRelitEtEffacce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedPontObjetEcritRelitEtEffacce::RunTest(const FString&)
+{
+	// `USoundCue::SoundClassObject` est un `USoundClass*` : exactement la forme
+	// de `Interaction Settings`, et totalement inerte.
+	USoundCue* const Cible = NewObject<USoundCue>();
+	USoundClass* const Valeur = NewObject<USoundClass>();
+	const FName Nom(TEXT("SoundClassObject"));
+
+	// LE TEMOIN EST L'ETAT D'AVANT : nul. Sans lui, lire notre valeur ne
+	// prouverait pas qu'on l'a ecrite.
+	TestNull(TEXT("il part nul"),
+		FWorldseedUdsBridge::LireObjet(Cible, Nom));
+
+	TestTrue(TEXT("l'ecriture reussit"),
+		FWorldseedUdsBridge::EcrireObjet(Cible, Nom, Valeur));
+	TestTrue(TEXT("et se relit a la bonne valeur"),
+		FWorldseedUdsBridge::LireObjet(Cible, Nom) == Valeur);
+
+	// L'EFFACEMENT EST LEGITIME, et il doit passer : `EcrireObjet` accepte nul
+	// a dessein. Sans ce cas, un refus trop zele empecherait de remettre les
+	// reglages du pack si on le voulait.
+	TestTrue(TEXT("nul est accepte"),
+		FWorldseedUdsBridge::EcrireObjet(Cible, Nom, nullptr));
+	TestNull(TEXT("et le champ redevient nul"),
+		FWorldseedUdsBridge::LireObjet(Cible, Nom));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedPontObjetRefuseLeMauvaisType,
+	"Worldseed.Pont.ObjetRefuseLeMauvaisType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedPontObjetRefuseLeMauvaisType::RunTest(const FString&)
+{
+	USoundCue* const Cible = NewObject<USoundCue>();
+	USoundClass* const BonType = NewObject<USoundClass>();
+	USceneComponent* const MauvaisType = NewObject<USceneComponent>();
+	const FName Nom(TEXT("SoundClassObject"));
+
+	TestFalse(TEXT("objet d'une autre classe : refuse"),
+		FWorldseedUdsBridge::EcrireObjet(Cible, Nom, MauvaisType));
+	TestNull(TEXT("et rien n'a ete ecrit"),
+		FWorldseedUdsBridge::LireObjet(Cible, Nom));
+
+	TestFalse(TEXT("propriete absente : refuse"),
+		FWorldseedUdsBridge::EcrireObjet(Cible, NomAbsent, BonType));
+	TestNull(TEXT("et sa lecture rend nul"),
+		FWorldseedUdsBridge::LireObjet(Cible, NomAbsent));
+
+	TestFalse(TEXT("cible nulle : refuse"),
+		FWorldseedUdsBridge::EcrireObjet(nullptr, Nom, BonType));
+	TestNull(TEXT("lecture sur cible nulle : nul"),
+		FWorldseedUdsBridge::LireObjet(nullptr, Nom));
+
+	// LE TEMOIN DES REFUS : la forme valide DOIT passer, sinon une fonction qui
+	// refuse tout passerait cet oracle en entier.
+	TestTrue(TEXT("temoin : la forme valide passe"),
+		FWorldseedUdsBridge::EcrireObjet(Cible, Nom, BonType));
+	TestTrue(TEXT("temoin : et elle a bien ecrit"),
+		FWorldseedUdsBridge::LireObjet(Cible, Nom) == BonType);
+
 	return true;
 }
 

@@ -68,6 +68,23 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	static bool LireTableauObjets(const UObject* Cible, FName Propriete,
 		TArray<UObject*>& OutValeurs);
 
+	/**
+	 * Un pointeur d'objet SIMPLE, pas un tableau. Nullptr si la propriete
+	 * manque, n'est pas un objet, ou vaut nul -- les trois cas sont
+	 * indiscernables ici, et c'est l'appelant qui doit le dire dans son journal.
+	 *
+	 * ELLE EXISTE POUR `Interaction Settings`, que chaque composant
+	 * `DLWE_Interaction` tient et qui porte la liste blanche. On le lit pour le
+	 * DUPLIQUER : ecrire dans celui du pack toucherait un asset partage, non
+	 * versionne, et le salirait dans l'editeur.
+	 */
+	static UObject* LireObjet(const UObject* Cible, FName Propriete);
+
+	/** Poser un pointeur d'objet simple. Faux si la propriete manque, n'est pas
+	 *  un objet, ou si la valeur n'est pas du type attendu -- on refuse plutot
+	 *  que de deviner, comme pour les tableaux. */
+	static bool EcrireObjet(UObject* Cible, FName Propriete, UObject* Valeur);
+
 	/** Cherche les acteurs UDS du monde. Faux si le niveau n'en contient aucun. */
 	bool Resolve(UWorld* World);
 
