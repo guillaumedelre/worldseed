@@ -103,8 +103,25 @@ private:
 	 * de l'annee est LUE dans Ultra Dynamic Sky, qui ne la fait avancer que si
 	 * son « Animate Time of Day » est arme. `BP_WorldseedClimat` s'en chargeait
 	 * avant que la generation ne passe en C++ ; le reglage est parti avec lui.
+	 *
+	 * ELLE N'ARME PAS SOUS `-WorldseedCielClair` : ce drapeau existe pour qu'un
+	 * A/B par lancements successifs ait la meme lumiere des deux cotes, et
+	 * `AWorldseedTerrain::CielDInspection` fige l'horloge au BeginPlay pour
+	 * cela. Cette fonction la reposait a vrai quelques secondes plus tard,
+	 * `OnRep_` compris, donc la garde etait MORTE depuis le 28 septembre 2026.
 	 */
 	void ArmerHorloge(const class UWorldseedRules& Rules);
+
+	/**
+	 * Pose l'heure de depart demandee par `-WorldseedHeure=`.
+	 *
+	 * SEPAREE DE L'ARMEMENT A DESSEIN. `ArmerHorloge` faisait deux choses, et
+	 * `-WorldseedCielClair` n'en concerne qu'une : on veut une horloge FIGEE a
+	 * une heure CHOISIE, pour aller photographier ce qui n'arrive que la nuit.
+	 * Une sortie precoce dans `ArmerHorloge` aurait casse le cadrage horaire de
+	 * tout le harnais photo, qui emploie les deux drapeaux ensemble.
+	 */
+	void PoserHeureDeDepart();
 
 	/** Heure relevee au moment de l'armement, ou -1 si l'horloge n'est pas armee. */
 	double HeureALArmement = -1.0;

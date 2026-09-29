@@ -757,6 +757,7 @@ void AWorldseedTerrain::CielDInspection()
 	// une reflexion qui echoue est silencieuse, et l'on croirait le ciel fige
 	// alors qu'il continue de tourner.
 	int32 Figes = 0;
+	int32 Reveils = 0;
 	if (UWorld* const World = GetWorld())
 	{
 		for (TActorIterator<AActor> It(World); It; ++It)
@@ -767,22 +768,54 @@ void AWorldseedTerrain::CielDInspection()
 				continue;
 			}
 
+			bool bPosee = false;
 			for (const TCHAR* Nom : { TEXT("Animate Time of Day"), TEXT("AnimateTimeOfDay") })
 			{
 				if (FBoolProperty* const Prop = CastField<FBoolProperty>(
 						Acteur->GetClass()->FindPropertyByName(FName(Nom))))
 				{
 					Prop->SetPropertyValue_InContainer(Acteur, false);
-					++Figes;
+					bPosee = true;
+				}
+			}
+
+			// ET ON DECLENCHE LE RAPPEL, PARCE QUE FIGER N'EST PAS ARRETER.
+			//
+			// « Animate Time of Day » est une variable repliquee a RepNotify :
+			// c'est son `OnRep_` qui DEMARRE et qui ARRETE la boucle
+			// d'animation, et le moteur ne l'appelle jamais quand on pose la
+			// variable par reflexion. Ce depot a paye la moitie « demarrer »
+			// trois fois -- l'horloge, l'aurore, et la premiere version de ce
+			// bloc -- et la moitie « arreter » etait restee. Poser faux sans
+			// rappel laisse donc tourner une boucle DEJA LANCEE : le drapeau se
+			// relit a faux, et le temps continue de passer.
+			//
+			// SANS ARGUMENT, a dessein : une pile de parametres mal formee
+			// passee a `ProcessEvent` corromprait la memoire.
+			if (bPosee)
+			{
+				++Figes;
+				if (UFunction* const Fn = Acteur->FindFunction(
+						FName(TEXT("OnRep_Animate Time of Day"))))
+				{
+					if (Fn->NumParms == 0)
+					{
+						Acteur->ProcessEvent(Fn, nullptr);
+						++Reveils;
+					}
 				}
 			}
 		}
 	}
 
+	// LE COMPTE DES RAPPELS EST DIT A PART, parce qu'une propriete posee sans
+	// rappel declenche est exactement le defaut qu'on vient de corriger : si
+	// « rappel OnRep » vaut zero pour un acteur trouve, la boucle tourne
+	// peut-etre encore, et le controle d'avancement de `Drive` le criera.
 	UE_LOG(LogTemp, Warning,
 		TEXT("[Worldseed] ciel d'inspection : nuages volumetriques coupes, ")
-		TEXT("horloge figee sur %d acteur(s) UDS"),
-		Figes);
+		TEXT("horloge figee sur %d acteur(s) UDS, rappel OnRep appele %d fois"),
+		Figes, Reveils);
 
 	if (Figes == 0)
 	{

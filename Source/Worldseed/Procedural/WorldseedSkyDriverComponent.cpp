@@ -58,6 +58,24 @@ namespace
 	};
 
 	float CelsiusToFahrenheit(float C) { return C * 1.8f + 32.0f; }
+
+	// LE CIEL D'INSPECTION EST LU UNE FOIS, ET SOUS UN NOM PREFIXE.
+	//
+	// Prefixe `Worldseed` parce qu'UBT concatene les `.cpp` en une seule unite
+	// de traduction, ou deux namespaces anonymes n'en font qu'un : ce depot a
+	// casse TROIS fois sur des noms trop generiques partages entre deux fichiers
+	// (`WorldseedMetersToCm`, `SUB`, `CompterNonFinis`), et la collision ne
+	// dependait pas du code ecrit mais du REGROUPEMENT choisi par UBT.
+	//
+	// LU UNE SEULE FOIS parce que la ligne de commande ne change pas, et que
+	// deux lecteurs -- l'armement et le controle d'avancement -- doivent voir la
+	// meme reponse.
+	bool WorldseedCielClairDemande()
+	{
+		static const bool bDemande = FParse::Param(
+			FCommandLine::Get(), TEXT("WorldseedCielClair"));
+		return bDemande;
+	}
 }
 
 UWorldseedSkyDriverComponent::UWorldseedSkyDriverComponent()
@@ -259,19 +277,50 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 					TEXT("[Worldseed] horloge : « Time of Day » illisible -- ")
 					TEXT("impossible de dire si le temps passe"));
 			}
-			else if (FMath::IsNearlyEqual(Maintenant, HeureALArmement, 1e-4))
-			{
-				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] horloge : ARMEE MAIS FIGEE a %.4f apres %.1f s. ")
-					TEXT("UDS met sa vitesse en cache : il faut probablement poser les ")
-					TEXT("durees AVANT son BeginPlay, ou dans la carte."),
-					Maintenant, TempsDepuisArmementS);
-			}
 			else
 			{
-				UE_LOG(LogTemp, Log,
-					TEXT("[Worldseed] horloge : le temps passe -- %.4f a %.4f en %.1f s"),
-					HeureALArmement, Maintenant, TempsDepuisArmementS);
+				// LE MEME CONTROLE REPOND A DEUX QUESTIONS OPPOSEES, et son
+				// verdict s'inverse avec le drapeau : sous `-WorldseedCielClair`
+				// une horloge figee est le SUCCES, ailleurs c'est l'echec. Un
+				// message unique aurait crie au defaut sur le comportement
+				// voulu, et ce depot compte deja plusieurs releves ou du bruit
+				// se lisait comme une information.
+				const bool bFigee = FMath::IsNearlyEqual(Maintenant, HeureALArmement, 1e-4);
+				const bool bVoulueFigee = WorldseedCielClairDemande();
+
+				if (bFigee && bVoulueFigee)
+				{
+					UE_LOG(LogTemp, Log,
+						TEXT("[Worldseed] horloge : FIGEE a %.4f apres %.1f s, ")
+						TEXT("comme demande -- l'A/B est valide"),
+						Maintenant, TempsDepuisArmementS);
+				}
+				else if (bFigee)
+				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[Worldseed] horloge : ARMEE MAIS FIGEE a %.4f apres %.1f s. ")
+						TEXT("UDS met sa vitesse en cache : il faut probablement poser les ")
+						TEXT("durees AVANT son BeginPlay, ou dans la carte."),
+						Maintenant, TempsDepuisArmementS);
+				}
+				else if (bVoulueFigee)
+				{
+					// FIGER N'EST PAS ARRETER. `CielDInspection` pose le drapeau
+					// par reflexion, ce qui ne declenche aucun rappel : une
+					// boucle deja lancee continue. Si cette ligne parait, tout
+					// A/B par lancements successifs est INVALIDE.
+					UE_LOG(LogTemp, Error,
+						TEXT("[Worldseed] horloge : le temps passe MALGRE ")
+						TEXT("-WorldseedCielClair -- %.4f a %.4f en %.1f s. ")
+						TEXT("Tout A/B par lancements successifs est invalide."),
+						HeureALArmement, Maintenant, TempsDepuisArmementS);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Log,
+						TEXT("[Worldseed] horloge : le temps passe -- %.4f a %.4f en %.1f s"),
+						HeureALArmement, Maintenant, TempsDepuisArmementS);
+				}
 			}
 		}
 	}
@@ -296,6 +345,32 @@ void UWorldseedSkyDriverComponent::ArmerHorloge(const UWorldseedRules& Rules)
 		UE_LOG(LogTemp, Log,
 			TEXT("[Worldseed] horloge : non armee (uds.animerHorloge a zero) -- ")
 			TEXT("Ultra Dynamic Sky garde ses propres reglages"));
+		return;
+	}
+
+	// --- LE CIEL D'INSPECTION INTERDIT D'ARMER, ET C'EST LUI QUI DOIT GAGNER --
+	//
+	// `AWorldseedTerrain::CielDInspection` fige « Animate Time of Day » au
+	// BeginPlay, sous `-WorldseedCielClair`, pour qu'un A/B par lancements
+	// successifs ait la meme lumiere des deux cotes -- trente secondes d'ecart
+	// au chargement font douze minutes de jeu. Puis cette fonction le reposait a
+	// vrai quelques secondes plus tard, rappel `OnRep_` compris : le DERNIER
+	// ecrivain gagnait, et la garde etait morte SILENCIEUSEMENT.
+	//
+	// PREUVE, sur SEPT journaux independants tous lances avec le drapeau : les
+	// trois lignes se suivent -- « horloge figee sur 1 acteur(s) UDS », puis
+	// « horloge : armee », puis « le temps passe -- 1300,0000 a 1303,3407 en
+	// 5,5 s ». La troisieme mesure l'horloge EN MARCHE dans une session censee
+	// la figer, et son chiffre est coherent sept fois (3,18 a 3,43 unites).
+	//
+	// ON LE JOURNALISE plutot que de sortir en silence : un silence se lirait
+	// « tout va bien », et c'est exactement ce qui a laisse ce defaut vivre.
+	if (WorldseedCielClairDemande())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] horloge : NON armee -- ciel d'inspection ")
+			TEXT("(-WorldseedCielClair). L'heure de depart est posee quand meme."));
+		PoserHeureDeDepart();
 		return;
 	}
 
@@ -349,6 +424,11 @@ void UWorldseedSkyDriverComponent::ArmerHorloge(const UWorldseedRules& Rules)
 		Nuit, bNuit ? TEXT("") : TEXT(" (REFUSEE)"),
 		bReveillee ? TEXT("appele") : TEXT("INTROUVABLE"));
 
+	PoserHeureDeDepart();
+}
+
+void UWorldseedSkyDriverComponent::PoserHeureDeDepart()
+{
 	// --- CHOISIR L'HEURE DE DEPART, POUR ALLER VOIR CE QUI N'ARRIVE QUE LA NUIT
 	//
 	// L'AURORE NE SE VOIT QUE DANS LE NOIR : UDS porte une « Daytime Aurora
@@ -373,10 +453,13 @@ void UWorldseedSkyDriverComponent::ArmerHorloge(const UWorldseedRules& Rules)
 			bPosee ? TEXT("acceptee") : TEXT("REFUSEE, « Time of Day » introuvable"));
 	}
 
-	// ON MEMORISE L'HEURE POUR VERIFIER QU'ELLE AVANCE. Armer n'est pas faire
-	// avancer : la valeur peut etre posee et le temps rester fige, et c'est
-	// precisement le genre d'echec muet que ce depot a paye plusieurs fois.
-	// Le controle se fait quelques secondes plus tard, dans `Drive`.
+	// ON MEMORISE L'HEURE POUR VERIFIER QU'ELLE AVANCE -- OU QU'ELLE N'AVANCE
+	// PAS. Armer n'est pas faire avancer, et symetriquement FIGER N'EST PAS
+	// ARRETER : `CielDInspection` pose le drapeau a faux par reflexion, ce qui
+	// ne declenche aucun rappel, donc une boucle d'animation DEJA LANCEE peut
+	// continuer de tourner. Le seul controle qui tranche est de relire l'heure
+	// quelques secondes plus tard, et il vaut dans les DEUX sens : il se fait
+	// dans `Drive`.
 	Bridge.ReadNumber(TEXT("Time of Day"), HeureALArmement);
 }
 
