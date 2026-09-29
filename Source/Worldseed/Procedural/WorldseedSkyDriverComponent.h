@@ -188,6 +188,40 @@ private:
 	void ArmerLaSimulationSolaire(const class UWorldseedRules& Rules);
 
 	/**
+	 * LA CARTE DU CIEL REELLE, A LA PLACE D'UNE TEXTURE REPETEE.
+	 *
+	 * CE QU'ON GAGNE. Par defaut le pack repete une texture d'etoiles sur la
+	 * voute -- `Stars Tiling` vaut 2,5, donc le meme morceau de ciel plusieurs
+	 * fois. `Simulate Real Stars` lui substitue une carte a 360 degres, orientee
+	 * d'apres la LATITUDE et la DATE : les constellations tournent dans le bon
+	 * sens, la Polaire monte quand on va vers le nord, et l'hemisphere sud voit
+	 * un autre ciel.
+	 *
+	 * ET LE PREREQUIS EST SATISFAIT DEPUIS CETTE SEANCE, ce qui n'etait pas le
+	 * cas avant : un ciel reel ne veut rien dire sans latitude, or `Simulate
+	 * Real Sun` arrivait a FAUX et la latitude que nous ecrivions n'etait pas
+	 * evaluee. Elle l'est desormais.
+	 *
+	 * LES DEUX TEXTURES SONT LIVREES PAR LE PACK -- releve, non suppose :
+	 * `Real Stars Texture` pointe `Real_Stars`, et `Real Stars Sprites Starmap`
+	 * un catalogue `Starmap500k`. Rien a fabriquer.
+	 *
+	 * ⚠ ARMER N'EST PAS AFFICHER, quatrieme fois dans ce depot. Il n'existe
+	 * AUCUN `OnRep_Simulate Real Stars` -- l'enumeration des 568 fonctions le
+	 * confirme -- mais bien un `Static Properties - Stars`, exactement la forme
+	 * que la documentation du pack nomme et que `Simulate Real Sun` a deja
+	 * imposee ici. On appelle donc les deux voies et l'on journalise laquelle a
+	 * pris.
+	 *
+	 * LA PORTE EST DANS LES REGLES SANS Y ETRE ECRITE : `Rules.Num` prend un
+	 * defaut, donc `uds.simulerLesEtoiles` absent vaut ARME et apparait au
+	 * releve des cles manquantes. Aucune empreinte de `world_rules.json` n'est
+	 * touchee, donc aucun monde en cache invalide -- et le reglage existe le
+	 * jour ou l'on acceptera une regeneration pour l'y ecrire.
+	 */
+	void ArmerLesEtoilesReelles(const class UWorldseedRules& Rules);
+
+	/**
 	 * Pose `Global Water Level`, que `Use UDS Water Level` attend.
 	 *
 	 * La fonction est DEJA armee sur l'acteur meteo -- c'est son defaut -- mais
@@ -209,7 +243,17 @@ private:
 	 * signe que ce depot connait par coeur -- deux mesures identiques pour deux
 	 * reglages differents.
 	 */
-	bool ElevationDuSoleil(float& OutDegres) const;
+	/**
+	 * L'elevation de la lumiere directionnelle la plus INTENSE, et son NOM.
+	 *
+	 * ⚠ CE N'EST PAS TOUJOURS LE SOLEIL, malgre le nom de cette fonction. De
+	 * jour oui ; la nuit le soleil est eteint et c'est la LUNE qui gagne. D'ou
+	 * `OutNomLumiere` : sans lui le journal annoncait une elevation de lune en
+	 * l'appelant « soleil », ce qu'un lancement a `-WorldseedHeure=1` a revele
+	 * le 29 septembre 2026 -- 54,7 degres a une heure du matin.
+	 */
+	bool ElevationDuSoleil(float& OutDegres,
+		FString* OutNomLumiere = nullptr) const;
 
 	/** Heure relevee au moment de l'armement, ou -1 si l'horloge n'est pas armee. */
 	double HeureALArmement = -1.0;

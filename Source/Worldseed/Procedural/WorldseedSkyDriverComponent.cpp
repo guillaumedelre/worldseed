@@ -244,6 +244,12 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			bPresetRulesLoaded = true;
 			ArmerHorloge(*Rules);
 			ArmerLaSimulationSolaire(*Rules);
+
+			// LES ETOILES APRES LE SOLEIL, ET L'ORDRE COMPTE : un ciel reel
+			// s'oriente d'apres la latitude et la date, que `Simulate Real Sun`
+			// rend evaluees. L'armer avant reviendrait a orienter une voute sur
+			// une latitude que rien ne lit encore.
+			ArmerLesEtoilesReelles(*Rules);
 			PoserNiveauDeLEau(*Rules);
 			AmbianceRegles = FWorldseedAmbianceRegles::FromRules(*Rules);
 			ArmerLeSon(*Rules);
@@ -644,14 +650,30 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			// des qu'on le pose, comme `Animate Time of Day` et `Use Auroras`
 			// avant lui. L'ELEVATION EST LA PREUVE, parce qu'elle est un EFFET.
 			float Elevation = 0.0f;
-			if (ElevationDuSoleil(Elevation))
+			FString NomLumiere;
+			if (ElevationDuSoleil(Elevation, &NomLumiere))
 			{
 				const float Attendue = 90.0f - FMath::Abs(Sample.LatitudeDeg);
+
+				// LE NOM DE LA LUMIERE, ET L'ATTENDU NE VAUT QU'A MIDI. La nuit
+				// le soleil est eteint et c'est la LUNE qui est la plus intense :
+				// cette ligne annoncait alors son elevation en l'appelant
+				// « soleil » -- 54,7 degres a une heure du matin, vu le
+				// 29 septembre 2026. La comparaison d'equinoxe, elle, n'a de sens
+				// qu'autour de midi, donc on ne l'imprime que la.
+				const bool bPresDeMidi =
+					FMath::Abs(Params.HeureDuJour - 12.0f) < 2.0f;
 				UE_LOG(LogTemp, Warning,
-					TEXT("[Worldseed] soleil : elevation %.1f deg a %.1f h, latitude ")
-					TEXT("%.1f -- attendu %.1f au midi d'equinoxe, et SOIXANTE a ")
-					TEXT("toute latitude si la simulation dort"),
-					Elevation, Params.HeureDuJour, Sample.LatitudeDeg, Attendue);
+					TEXT("[Worldseed] soleil : %s a %.1f deg a %.1f h, latitude ")
+					TEXT("%.1f%s"),
+					*NomLumiere, Elevation, Params.HeureDuJour,
+					Sample.LatitudeDeg,
+					bPresDeMidi
+						? *FString::Printf(
+							TEXT(" -- attendu %.1f au midi d'equinoxe, et ")
+							TEXT("SOIXANTE a toute latitude si la simulation dort"),
+							Attendue)
+						: TEXT(" (hors de midi : l'attendu d'equinoxe ne s'applique pas)"));
 			}
 			else
 			{
@@ -892,7 +914,8 @@ void UWorldseedSkyDriverComponent::ArmerLaSimulationSolaire(const UWorldseedRule
 		bStatique ? TEXT("appele") : TEXT("introuvable"));
 }
 
-bool UWorldseedSkyDriverComponent::ElevationDuSoleil(float& OutDegres) const
+bool UWorldseedSkyDriverComponent::ElevationDuSoleil(float& OutDegres,
+	FString* OutNomLumiere) const
 {
 	const AActor* const Ciel = Bridge.CielBrut();
 	if (Ciel == nullptr)
@@ -900,10 +923,22 @@ bool UWorldseedSkyDriverComponent::ElevationDuSoleil(float& OutDegres) const
 		return false;
 	}
 
-	// LA LUMIERE LA PLUS INTENSE EST LE SOLEIL. UDS porte DEUX lumieres
-	// directionnelles -- le soleil et la lune -- et la lune est reglee bien plus
-	// bas. Prendre la premiere venue rendrait la lune une nuit sur deux, et le
-	// releve sauterait sans qu'on sache pourquoi.
+	// LA LUMIERE LA PLUS INTENSE EST LE SOLEIL -- MAIS SEULEMENT DE JOUR, et
+	// cette nuance a manque jusqu'au 29 septembre 2026.
+	//
+	// UDS porte DEUX lumieres directionnelles, le soleil et la lune. De jour la
+	// lune est reglee bien plus bas, donc « la plus intense » designe le soleil
+	// et tout va bien. LA NUIT LE SOLEIL EST ETEINT : c'est alors la LUNE qui
+	// gagne, et ce releve annoncait son elevation en l'appelant « soleil ».
+	//
+	// MESURE QUI L'A REVELE : un lancement a `-WorldseedHeure=1` rendait
+	// « elevation 54,7 deg a 1,0 h » -- impossible pour un soleil, plausible
+	// pour une lune. Le calcul etait juste, c'est le NOM qui mentait.
+	//
+	// ON NE DEVINE PLUS, ON REND LE NOM. Choisir par nom de composant serait
+	// fragile -- un pack renomme -- donc on garde le critere d'intensite, qui
+	// decrit ce que la scene RECOIT vraiment, et l'appelant dit de quelle
+	// lumiere il parle.
 	const UDirectionalLightComponent* Meilleure = nullptr;
 	float MeilleureIntensite = -1.0f;
 
@@ -928,6 +963,10 @@ bool UWorldseedSkyDriverComponent::ElevationDuSoleil(float& OutDegres) const
 	// de l'inclinaison de ce vecteur. Se tromper de signe rendrait un soleil
 	// sous l'horizon a midi, et le chiffre resterait plausible.
 	OutDegres = -Meilleure->GetComponentRotation().Pitch;
+	if (OutNomLumiere)
+	{
+		*OutNomLumiere = Meilleure->GetName();
+	}
 	return true;
 }
 
@@ -2441,4 +2480,67 @@ void UWorldseedSkyDriverComponent::PiloterLesOrages(EWorldseedBiome Biome)
 		TEXT("posee(s), relu %s"),
 		static_cast<int32>(Biome), *FString::Join(Detail, TEXT(" ")),
 		Posees, *FString::Join(Relu, TEXT(" ")));
+}
+
+void UWorldseedSkyDriverComponent::ArmerLesEtoilesReelles(
+	const UWorldseedRules& Rules)
+{
+	if (Rules.Num(TEXT("uds"), TEXT("simulerLesEtoiles"), 1.0) < 0.5)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] etoiles : carte reelle NON armee ")
+			TEXT("(uds.simulerLesEtoiles a zero) -- la voute gardera sa texture ")
+			TEXT("repetee"));
+		return;
+	}
+
+	// L'ETAT D'AVANT, PARCE QU'UN TEMOIN COMMENCE PAR LA. Le pack livre faux ;
+	// lire vrai voudrait dire que la carte l'a deja arme, et l'experience ne
+	// dirait pas ce qu'on croit.
+	bool bAvant = false;
+	const bool bLu = Bridge.ReadBool(TEXT("Simulate Real Stars"), bAvant);
+
+	const bool bEcrit = Bridge.WriteBool(TEXT("Simulate Real Stars"), true);
+
+	// ARMER N'EST PAS APPLIQUER. Aucun `OnRep_Simulate Real Stars` n'existe --
+	// l'enumeration des 568 fonctions du ciel le confirme -- mais bien un
+	// `Static Properties - Stars`. On propose les deux voies et l'on dit
+	// laquelle a pris : c'est ainsi qu'on a trouve que le soleil passait par la
+	// seconde.
+	const bool bRappel = Bridge.CallFunction(TEXT("OnRep_Simulate Real Stars"));
+	const bool bStatique = Bridge.CallFunction(TEXT("Static Properties - Stars"));
+
+	bool bApres = false;
+	const bool bRelu = Bridge.ReadBool(TEXT("Simulate Real Stars"), bApres);
+
+	// ET ON REGARDE UN EFFET, PAS SEULEMENT LE DRAPEAU. `Real Stars Sprites` est
+	// un composant Niagara que le pack instancie quand la voie reelle vit : nul
+	// avant, il devient un objet. C'est faible -- le pack ne le peuple peut-etre
+	// qu'au zoom, `Real Stars Fade to Sprites When Zoomed` valant vrai -- donc on
+	// le journalise sans en faire une preuve.
+	const UObject* const Sprites = FWorldseedUdsBridge::LireObjet(
+		Bridge.CielBrut(), TEXT("Real Stars Sprites"));
+	double Repetition = 0.0;
+	Bridge.ReadNumber(TEXT("Stars Tiling"), Repetition);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] etoiles : avant %s%s -> ecrit %s, OnRep_ %s, ")
+		TEXT("Static Properties - Stars %s, relu %s%s | repetition %.2f, ")
+		TEXT("sprites %s"),
+		bAvant ? TEXT("VRAI") : TEXT("faux"),
+		bLu ? TEXT("") : TEXT(" (ILLISIBLE)"),
+		bEcrit ? TEXT("oui") : TEXT("REFUSE"),
+		bRappel ? TEXT("appele") : TEXT("ABSENT (attendu)"),
+		bStatique ? TEXT("appelee") : TEXT("ABSENTE"),
+		bApres ? TEXT("VRAI") : TEXT("faux"),
+		bRelu ? TEXT("") : TEXT(" (ILLISIBLE)"),
+		Repetition,
+		Sprites ? *Sprites->GetName() : TEXT("aucun"));
+
+	// CE QU'AUCUNE LIGNE DE JOURNAL NE DIRA, et il faut l'ecrire : que le ciel
+	// soit JUSTE. Les constellations se jugent a l'oeil, de nuit, et la seule
+	// facon de le verifier est `-WorldseedHeure=` puis un regard.
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] etoiles : la JUSTESSE du ciel ne se lit pas ici -- ")
+		TEXT("elle se regarde de nuit (-WorldseedHeure=1)"));
 }
