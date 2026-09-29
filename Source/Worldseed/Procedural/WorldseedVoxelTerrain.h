@@ -724,6 +724,29 @@ public:
 	/** Vrai une fois le releve fait : il ne vaut que la premiere fois. */
 	bool bEspecesReleve = false;
 
+	/**
+	 * Journaliser le materiau physique du sol, une fois le monde rempli.
+	 *
+	 * ARME PAR `-WorldseedPhysmat=<demi-cote en metres>`, et zero autrement.
+	 * MEME PORTE QUE LE RELEVE DES ESPECES, et pour une raison plus forte
+	 * encore : un chunk pas encore maille ne porte AUCUNE collision, donc une
+	 * sonde lancee trop tot ne rendrait que des ratees -- et un tableau vide se
+	 * lirait comme « pas de materiau physique » alors qu'on aurait seulement
+	 * mesure avant que le sol existe.
+	 *
+	 * La commande console `Worldseed.Physmat` fait la meme chose a la demande,
+	 * mais la console d'Unreal s'ouvre sur `VK_OEM_3` -- la touche `u accent
+	 * grave` en AZERTY -- et laisse son caractere dans la ligne : c'est
+	 * l'interrupteur qui est la voie sure en mesure automatisee.
+	 */
+	float PhysmatRayonM = 0.0f;
+
+	/** Cote de la grille de colonnes, arme par `-WorldseedPhysmatCote=`. */
+	int32 PhysmatCote = 7;
+
+	/** Vrai une fois le releve fait : il ne vaut que la premiere fois. */
+	bool bPhysmatReleve = false;
+
 	// ------------------------------------------------------------- RVT
 
 	/**
@@ -955,6 +978,41 @@ public:
 	 * emplacement-la.
 	 */
 	FString EspecesAutour(const FVector& CentreCm, double RayonCm) const;
+
+	/**
+	 * QUEL MATERIAU PHYSIQUE PORTE LE SOL -- MESURE PAR UNE TRACE.
+	 *
+	 * ELLE NE RELIT PAS UN REGLAGE, ELLE MESURE L'EFFET. Ce depot a paye le
+	 * piege exact sur la collision : `get_collision_enabled()` rend le reglage
+	 * du COMPOSANT, toujours vrai ici, et non la presence de donnees cuites --
+	 * le sol etait troue et l'inventaire le declarait plein. Relire le champ
+	 * `PhysMaterial` d'un materiau ne dirait pas davantage ce qu'une trace
+	 * rencontre reellement.
+	 *
+	 * OU LE PHYSMAT SE POSE, ET POURQUOI CE N'EST PAS ICI. Nos chunks portent
+	 * `bUseComplexAsSimpleCollision` (`ProceduralMeshComponent.cpp:518`), donc
+	 * la resolution passe par `FBodyInstance::GetComplexPhysicalMaterials`, qui
+	 * construit UN PHYSMAT PAR SLOT DE MATERIAU en appelant
+	 * `Material->GetPhysicalMaterial()` (`BodyInstance.cpp:3323-3341`). Le slot
+	 * `PhysMaterial` du materiau de terrain suffit donc, et ne coute pas une
+	 * ligne sur le chemin chaud du streaming. Une instance retombe sur son
+	 * parent (`MaterialInstance.cpp:2172`) : equiper le parent couvre toutes
+	 * ses instances.
+	 *
+	 * ⚠ ET L'ORDRE EST PORTANT : avec `bUseAsyncCooking`, la resolution est
+	 * MISE EN CACHE a la creation du corps (`BodyInstance.cpp:3285`). Un
+	 * physmat pose apres que la section existe ne prendrait pas -- meme forme
+	 * que le piege deja paye ici : il n'existe aucune facon de donner la
+	 * collision a une section deja creee.
+	 *
+	 * TROIS PIEGES SONT DESARMES DANS L'IMPLEMENTATION, et chacun rendrait la
+	 * sonde MUETTE : `bReturnPhysicalMaterial` vaut faux par defaut ;
+	 * `GEngine->DefaultPhysMaterial` est rendu quand rien n'est pose et il
+	 * n'est PAS nul, donc une absence se lit comme une presence si l'on ne le
+	 * NOMME pas ; et une trace qui ne touche rien n'est pas un resultat.
+	 */
+	FString PhysmatAutour(const FVector& CentreCm, double RayonCm,
+		int32 Cote) const;
 
 private:
 	/** Un composant d'instances par espece, dans l'ordre du catalogue. */

@@ -278,12 +278,22 @@ void UWorldseedReptationComponent::Appliquer(
 		// qui saute retombe ; c'est ce qui distingue la course au sol d'une
 		// nappe qui flotte.
 		//
-		// ⚠ NON VERIFIE SUR LE TERRAIN VOXEL, et c'est le seul point qui peut
-		// faire echouer cette voie : la collision Niagara passe par les champs
-		// de distance ou par des traces de scene, et un `ProceduralMeshComponent`
-		// n'a peut-etre pas de mesh distance field. Si rien ne colle, le repli
-		// est `World Spawn Offset` seul -- suffisant sur du plat, pas sur un
-		// versant.
+		// ⚠ MESURE LE 29 SEPTEMBRE 2026 : LA VOIE DES CHAMPS DE DISTANCE EST
+		// MORTE ICI, et ce n'est plus une inquietude mais un releve.
+		//
+		// `bSupportsDistanceFieldRepresentation` vaut FAUX par defaut
+		// (`PrimitiveSceneProxy.cpp:394`), et seuls deux proxys l'arment --
+		// `StaticMeshSceneProxy.cpp:340` et `NaniteResources.cpp:1035` -- tous
+		// deux sous condition d'une `FDistanceFieldVolumeData` CONSTRUITE sur un
+		// asset de static mesh. `ProceduralMeshComponent` ne porte pas une seule
+		// occurrence de `distancefield` : son proxy herite du faux. Le champ de
+		// distance GLOBAL etant assemble a partir des champs par objet, les deux
+		// routes tombent ensemble.
+		//
+		// IL RESTE DONC LA COLLISION PAR TAMPON DE PROFONDEUR, qui ne lit pas le
+		// terrain mais l'image -- donc elle ignore ce qui est hors champ, et
+		// c'est la limite a mesurer si l'on reprend cette voie. Le repli reste
+		// `World Spawn Offset` seul : suffisant sur du plat, pas sur un versant.
 		Particules->SetVariableBool(NomColler, true);
 		Particules->SetVariableBool(NomCollision, true);
 

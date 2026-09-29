@@ -129,6 +129,53 @@ namespace
 			RayonM * WorldseedMetersToCm));
 	}
 
+	/**
+	 * LE MATERIAU PHYSIQUE DU SOL, A LA DEMANDE.
+	 *
+	 * LA FORMULE VIT SUR LE TERRAIN, PAS ICI -- `PhysmatAutour`, qui porte le
+	 * pourquoi et les pieges desarmes. Deux copies divergeraient, et l'ecart se
+	 * verrait exactement la ou l'on compare une mesure prise a la console a
+	 * celle qu'ecrit `-WorldseedPhysmat=` : les deux doivent etre LA MEME
+	 * mesure, sinon aucune des deux ne tranche.
+	 *
+	 * LE CENTRE EST LE PION, parce qu'un materiau physique se juge la ou l'on
+	 * MARCHE. Le point vise conviendrait a un defaut d'aspect, pas a des pas.
+	 */
+	void Physmat(const TArray<FString>& Args, UWorld* Monde, FOutputDevice& Ar)
+	{
+		AWorldseedVoxelTerrain* const Terrain = TrouverTerrain(Monde);
+		const APawn* const Pion = Monde
+			? UGameplayStatics::GetPlayerPawn(Monde, 0) : nullptr;
+		if (!Terrain || !Pion)
+		{
+			Ar.Logf(TEXT("Worldseed : %s -- cette commande ne vaut qu'en jeu."),
+				Terrain ? TEXT("aucun pion, et la sonde part de lui")
+						: TEXT("aucun terrain voxel dans ce monde"));
+			return;
+		}
+
+		double RayonM = 50.0;
+		int32 Cote = 7;
+		if (Args.Num() >= 1)
+		{
+			RayonM = FMath::Max(1.0, FCString::Atod(*Args[0]));
+		}
+		if (Args.Num() >= 2)
+		{
+			Cote = FCString::Atoi(*Args[1]);
+		}
+
+		Ar.Logf(TEXT("%s"), *Terrain->PhysmatAutour(Pion->GetActorLocation(),
+			RayonM * WorldseedMetersToCm, Cote));
+	}
+
+	FAutoConsoleCommandWithWorldArgsAndOutputDevice GPhysmat(
+		TEXT("Worldseed.Physmat"),
+		TEXT("Le materiau physique qu'une trace rencontre sur le sol, et ce "
+			 "qu'elle a touche. Arguments optionnels : demi-cote en metres "
+			 "(50 par defaut), cote de la grille (7)."),
+		FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&Physmat));
+
 	FAutoConsoleCommandWithWorldArgsAndOutputDevice GEspeces(
 		TEXT("Worldseed.Especes"),
 		TEXT("Ce qui est pose autour du point vise, avec son materiau effectif. "

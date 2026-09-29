@@ -15,7 +15,9 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Engine/World.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -736,6 +738,16 @@ void AWorldseedVoxelTerrain::BeginPlay()
 		{
 			EspecesRayonM = FMath::Max(0.0f, RayonEspeces);
 		}
+		float RayonPhysmat = 0.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPhysmat="), RayonPhysmat))
+		{
+			PhysmatRayonM = FMath::Max(0.0f, RayonPhysmat);
+		}
+		int32 CotePhysmat = PhysmatCote;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedPhysmatCote="), CotePhysmat))
+		{
+			PhysmatCote = FMath::Clamp(CotePhysmat, 1, 41);
+		}
 		int32 ParChunk = bIsmParChunk ? 1 : 0;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedIsmParChunk="), ParChunk))
 		{
@@ -835,6 +847,20 @@ void AWorldseedVoxelTerrain::UpdateChunks()
 		bEspecesReleve = true;
 		UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"),
 			*EspecesAutour(StreamingOriginCm(), EspecesRayonM * WorldseedMetersToCm));
+	}
+
+	// --- LE MATERIAU PHYSIQUE DU SOL, MEME PORTE -----------------------------
+	//
+	// ET LA RAISON D'ATTENDRE EST PLUS FORTE ICI : la collision est CUITE au
+	// televersement du chunk. Avant, une trace ne touche rien -- pas « rien de
+	// pose », rien du tout -- et un tableau vide se lirait comme un terrain sans
+	// materiau physique.
+	if (PhysmatRayonM > 0.0f && !bPhysmatReleve && BuiltChunks > 300)
+	{
+		bPhysmatReleve = true;
+		UE_LOG(LogTemp, Log, TEXT("[Worldseed] %s"),
+			*PhysmatAutour(StreamingOriginCm(),
+				PhysmatRayonM * WorldseedMetersToCm, PhysmatCote));
 	}
 }
 
@@ -2244,6 +2270,108 @@ FString AWorldseedVoxelTerrain::EspecesAutour(const FVector& CentreCm,
 	if (Trouves.Num() == 0)
 	{
 		Sortie += TEXT("  (rien : hors du rayon de semis, ou biome sans recette)\n");
+	}
+	return Sortie;
+}
+
+FString AWorldseedVoxelTerrain::PhysmatAutour(const FVector& CentreCm,
+	double RayonCm, int32 Cote) const
+{
+	UWorld* const W = GetWorld();
+	if (!W)
+	{
+		return TEXT("Physmat : aucun monde -- cette sonde ne vaut qu'en jeu.");
+	}
+
+	Cote = FMath::Clamp(Cote, 1, 41);
+	RayonCm = FMath::Max(1.0, RayonCm);
+	const double Pas = (Cote > 1) ? (2.0 * RayonCm / (Cote - 1)) : 0.0;
+
+	// bTraceComplex A VRAI : c'est le maillage de triangles qui porte le tableau
+	// des physmats, un par slot de materiau. Une trace simple rendrait le
+	// physmat du corps entier, pas celui de la face touchee.
+	FCollisionQueryParams P(SCENE_QUERY_STAT(WorldseedPhysmat), true);
+	P.bReturnPhysicalMaterial = true;
+	if (const APawn* const Pion = UGameplayStatics::GetPlayerPawn(W, 0))
+	{
+		P.AddIgnoredActor(Pion);
+	}
+
+	TMap<FString, int32> ParPhysmat;
+	TMap<FString, int32> ParComposant;
+	int32 Touches = 0;
+	int32 Ratees = 0;
+
+	for (int32 iy = 0; iy < Cote; ++iy)
+	{
+		for (int32 ix = 0; ix < Cote; ++ix)
+		{
+			const FVector Colonne(
+				CentreCm.X - RayonCm + ix * Pas,
+				CentreCm.Y - RayonCm + iy * Pas,
+				CentreCm.Z);
+
+			FHitResult Touche;
+			if (!W->LineTraceSingleByChannel(Touche,
+				Colonne + FVector(0.0, 0.0, 5000.0),
+				Colonne - FVector(0.0, 0.0, 20000.0),
+				ECC_Visibility, P))
+			{
+				++Ratees;
+				continue;
+			}
+			++Touches;
+
+			const UPhysicalMaterial* const Phys = Touche.PhysMaterial.Get();
+			++ParPhysmat.FindOrAdd(Phys
+				? Phys->GetName() : FString(TEXT("<nul>")));
+
+			// LOCALISER AVANT DE COMPTER. Un tableau de physmats qui aurait en
+			// fait sonde la nappe d'horizon, un pan de falaise ou un rocher pose
+			// ne se distinguerait pas autrement d'un tableau portant sur les
+			// chunks -- et c'est le chunk qui nous interesse.
+			++ParComposant.FindOrAdd(Touche.Component.IsValid()
+				? Touche.Component->GetName() : FString(TEXT("<nul>")));
+		}
+	}
+
+	// LE DEFAUT DU MOTEUR SE NOMME, SINON UNE ABSENCE SE LIT COMME UNE PRESENCE.
+	// `GetComplexPhysicalMaterials` rend `GEngine->DefaultPhysMaterial` quand le
+	// materiau n'en porte aucun (`BodyInstance.cpp:3334`), et il n'est PAS nul :
+	// sans cette ligne, la sortie montrerait un physmat partout et l'on
+	// conclurait que le terrain en a un.
+	const FString NomDefaut = (GEngine && GEngine->DefaultPhysMaterial)
+		? GEngine->DefaultPhysMaterial->GetName()
+		: FString(TEXT("<aucun defaut moteur>"));
+
+	FString Sortie = FString::Printf(
+		TEXT("Physmat autour de (%.0f, %.0f) m : %d colonnes sur %.0f m de ")
+		TEXT("cote, %d touchees, %d ratees.\n"),
+		CentreCm.X / WorldseedMetersToCm, CentreCm.Y / WorldseedMetersToCm,
+		Cote * Cote, 2.0 * RayonCm / WorldseedMetersToCm, Touches, Ratees);
+
+	Sortie += FString::Printf(
+		TEXT("  le defaut du moteur s'appelle \"%s\" : le lire ci-dessous, ")
+		TEXT("c'est n'avoir AUCUN materiau physique pose.\n"), *NomDefaut);
+
+	for (const TPair<FString, int32>& E : ParPhysmat)
+	{
+		Sortie += FString::Printf(TEXT("  physmat  %-34s %4d%s\n"),
+			*E.Key, E.Value,
+			E.Key == NomDefaut ? TEXT("   <- rien de pose") : TEXT(""));
+	}
+	for (const TPair<FString, int32>& E : ParComposant)
+	{
+		Sortie += FString::Printf(TEXT("  touche   %-34s %4d\n"),
+			*E.Key, E.Value);
+	}
+
+	if (Ratees > 0)
+	{
+		Sortie += FString::Printf(
+			TEXT("  ATTENTION : %d colonnes sans aucun sol. Un chunk pas encore ")
+			TEXT("maille ne porte pas de collision -- ces colonnes ne disent ")
+			TEXT("RIEN du materiau physique, ni pour ni contre.\n"), Ratees);
 	}
 	return Sortie;
 }
