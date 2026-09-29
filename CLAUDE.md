@@ -11789,3 +11789,174 @@ sable. Mesure du renforcement, contraste du lointain sous Dust = 8 : 1000 ->
 20,35. **C'est le CONTRASTE qui bouge, pas la clarte** -- une densite de grains
 ne deplace pas la luminance moyenne, elle mange les DETAILS. Mesurer la clarte
 sur cette question ne voit rien, et c'est ce qui m'avait egare.
+
+### Le pack a une DOCUMENTATION, et elle nomme le piege paye trois fois (29 septembre 2026)
+
+`Ultra Dynamic Sky 9.7 Documentation.html` -- 245 Ko, 1308 lignes de texte une
+fois les balises retirees, une entree par fonction du pack. **Elle n'avait
+jamais ete lue.** Le proprietaire l'a signalee au moment ou ce depot en etait a
+sa TROISIEME variable ecrite fidelement et jamais evaluee.
+
+**LA REGLE GENERALE Y EST ECRITE EN TOUTES LETTRES**, section « Changing a
+Property at Runtime Has No Effect » :
+
+> *Some properties, if you just set them directly at runtime, will have no
+> effect. In most cases this would be because they are what the system calls
+> **static properties**. They are applied when the system starts up [...] For
+> these, you can call one of the **Static Properties** functions to apply the
+> change.*
+
+Nous avions reconstitue ce fait a la main, trois fois, sous la forme
+particuliere des `OnRep_` : `Animate Time of Day`, `Use Auroras`, puis
+`Simulate Real Sun`. Mesure du 29 septembre : `OnRep_Simulate Real Sun`
+**n'existe pas**, `Static Properties - Sun` **oui**, et c'est elle qui applique.
+Il existe aussi `Hard Reset Cache`, qui force tout d'un coup, et
+`Max Property Cache Period` pour la latence d'application.
+
+**LA REGLE POUR LA SUITE** : devant un effet du pack qui ne s'affiche pas, on
+cherche dans CET ORDRE -- l'interrupteur maitre de la fonctionnalite, puis
+`OnRep_<nom>`, puis `Static Properties - <categorie>`. Et l'on ne conclut que
+sur un EFFET mesure, jamais sur le drapeau relu : un drapeau se relit a vrai des
+qu'on le pose, et c'est exactement ce qui a laisse vivre les trois defauts.
+
+**COMMENT LA LIRE SANS L'OUVRIR** : `sed -e 's/<[^>]*>/ /g'` puis un decodage
+des entites rend un texte grepable de 197 Ko ; `grep -o` sur les balises de
+titre donne le plan complet en une commande. Les deux tiennent dans un contexte.
+
+**ET UN INVENTAIRE DE VARIABLES SE FAIT PAR `list_variables`, PAS PAR `dir()`.**
+`unreal.BlueprintService.list_variables` prend le chemin du BLUEPRINT
+(`/Game/UltraDynamicSky/Blueprints/Ultra_Dynamic_Weather`), **jamais celui de la
+classe generee** qui finit en `_C` -- celui-la rend zero, en silence. Et le champ
+du struct rendu s'appelle **`variable_name`**, pas `name` : `get_editor_property`
+sur `"name"` leve, le repli `str(v)` imprime alors le struct entier et l'on croit
+a une API capricieuse. Releve ainsi : 925 variables sur UDS, 584 sur UDW.
+
+### La latitude ecrite dans le vide, et un second defaut de la meme famille (29 septembre 2026)
+
+**TROISIEME OCCURRENCE, ET LA PLUS COUTEUSE** : le pilote ecrivait `Latitude` et
+`Longitude` deux fois par seconde depuis des mois, dans un ciel dont
+`Simulate Real Sun` valait **FAUX**. UDS trace alors un arc solaire SIMPLIFIE
+dont l'elevation de midi vaut `90 - Sun Pitch`, **soixante degres a toutes les
+latitudes**. Tout le calage de latitude du monde etait decoratif : pas de
+variation saisonniere de la duree du jour, pas de soleil de minuit, meme course
+du soleil a l'equateur et au cercle polaire.
+
+**LA MESURE QUI TRANCHE EST L'ECART ENTRE DEUX LATITUDES, jamais une valeur
+absolue** -- un arc simplifie rend un chiffre parfaitement plausible :
+
+    equateur, latitude  -0,1 -> elevation 88,9 deg a midi  (attendu 89,9)
+    polaire,  latitude  74,8 -> elevation 15,3 deg         (attendu 15,2)
+    avant : les deux auraient rendu 60,0
+
+C'est le signe que ce depot connait par coeur -- deux mesures identiques pour
+deux reglages differents -- et c'est la sixieme fois qu'il sert.
+
+**ELLE SE LIT SUR LA LUMIERE DIRECTIONNELLE, PAS SUR UNE VARIABLE DU PACK.** Un
+nom de variable change d'une version a l'autre, et ce depot a deja recopie un nom
+FAUX depuis un message du moteur (`r.Water.WaterMesh.MaxWidthInTiles`, qui
+n'existe pas). La rotation d'un composant est ce que la scene recoit vraiment.
+**On prend la plus INTENSE des lumieres** : UDS en porte deux, le soleil et la
+lune, et prendre la premiere venue rendrait la lune une nuit sur deux.
+
+**LE FUSEAU SUIT LA LONGITUDE, ET IL LA SUIT EN MARCHANT.** La documentation est
+explicite. Un monde n'a pas de fuseaux administratifs : on pose le fuseau
+SOLAIRE, `longitude / 15`. Le poser une fois au demarrage ne suffirait pas --
+ce monde couvre 360 degres de longitude.
+
+**SECOND DEFAUT, MEME FAMILLE : UNE FONCTION ARMEE SUR UN NIVEAU A MOINS
+L'INFINI.** `Use UDS Water Level` vaut DEJA vrai sur l'acteur meteo -- c'est son
+defaut -- mais `Global Water Level` valait **-100 000 000**. Elle tournait donc
+sur une mer inatteignable. Notre ocean est un plan a Z = 0 : ce n'est pas un
+reglage mais une CONSTANTE du monde.
+
+**UNE LIGNE DE JOURNAL QUI MENTAIT A ETE RETIREE EN CHEMIN.** Elle relisait
+`Simulate Real Sun` par `ReadNumber`, qui ne sait pas lire un booleen, et
+annoncait « illisible » pour une variable parfaitement presente -- du bruit qui
+ressemble a une information, exactement ce que ce fichier reproche ailleurs.
+
+### La brume : cinq champs continus, et deux suppositions dementies (29 septembre 2026)
+
+Le brouillard n'avait qu'un terme -- la fraicheur -- plafonne a 2,5 sur une
+echelle qui va a 10. Il ne pouvait donc jamais etre un brouillard.
+
+**LES PREREGLAGES DU PACK NE DONNENT QUE LES DEUX BORNES** : `Foggy` pose
+`Fog = 10`, les douze autres 1 ou 2. La brume est le SEUL terme de cette chaine
+qui n'ait aucun releve derriere lui, et ses poids sont ARBITRAIRES -- a juger a
+l'image et au bulletin, pas contre une source. Le pack donne quand meme une
+SOURCE utile : `Foggy` pose `Wind Intensity = 1`, quand `Overcast` vaut 3 et les
+trois etats violents 10. Le pack dit donc lui-meme qu'un brouillard va avec de
+l'air calme, et c'est le levier le plus sur des cinq.
+
+**CINQUIEME FORME DE « UN SEUIL N'EST PAS UNE PART ».** Le premier jet employait
+le bruit `Haze` BRUT, dont la loi se masse autour d'un demi : le produit de cinq
+facteurs tous bornes par un n'atteignait alors JAMAIS le haut de l'echelle.
+Mesure -- la brume EPAISSE tombait a 0,0 ou 0,1 pour cent sur les VINGT-DEUX
+sites, y compris les plus humides. Le signal passe desormais par `Uniformiser` :
+maximum releve 8,3 en taiga, 6,8 sur la calotte.
+
+**DEUX DE MES PROPRES SUPPOSITIONS ONT ETE DEMENTIES PAR LEUR TEMOIN**, et c'est
+la partie qui vaut :
+
+1. *« Sans un terme d'humidite cotiere, la brume manquerait le desert cotier »* --
+   le cas meme dont je me servais pour refuser une liste de biomes. Le temoin :
+   a zero, **aucun test ne tombe**. Le desert de ce monde est couvert **23 % de
+   l'annee**, et rend 2,05 de brume sans ce terme contre 2,48 avec. Je l'avais
+   suppose sans nuages.
+2. *« Notre modele lie la pluie aux nuages, donc l'arc-en-ciel est
+   inatteignable »* -- colonne ajoutee au bulletin : **87 episodes par an en
+   mediterraneen, 102 en foret tropicale, 97 en savane, 31 en taiga**. Le moment
+   existe parce que l'averse est BREVE et que la couverture ne sature pas a
+   chaque fois.
+
+**LE VENT EST EXTRAIT EN FONCTION PUBLIQUE** (`VentDepuisSouffle`) : la brume en
+a besoin et se calcule AVANT lui -- les nuages dont elle depend sont plus haut,
+la poussiere qui depend du vent plus bas, et aucun ordre ne met les trois
+d'affilee. Recopier la formule aurait fait diverger deux copies, et la brume
+aurait suivi un vent qui n'existe pas.
+
+**LIMITES MESUREES, NON CORRIGEES.** La sonde n'a AUCUN site de cote temperee
+oceanique -- le mediterraneen a 45 degres est le plus proche, et il est sec en
+ete par definition -- donc elle ne peut pas montrer le cas ou la brume devrait
+culminer. Et la foret tropicale ne fait JAMAIS de brume matinale (maximum 2,6)
+parce que le terme de fraicheur s'annule au-dessus de 25 degres, alors que le
+vrai critere est l'ECART AU POINT DE ROSEE : a humidite relative proche de cent,
+un faible refroidissement nocturne suffit.
+
+### L'arc-en-ciel et la chaleur qui tremble : ou les chercher (29 septembre 2026)
+
+Les deux arrivaient eteints, comme le givre et les gouttes avant eux --
+QUATRIEME fois que ce depot paye la doctrine du pack, qui desarme tout ce qui
+coute. Ni l'un ni l'autre ne demande de pilotage : leur etat se deduit de ce que
+nous ecrivons deja.
+
+**LA CHALEUR NE SE CHERCHE PAS DE PRES**, et le chiffre le dit :
+
+    versant proche, oeil a 20 m      0,2 % de pixels changes
+    vue d'horizon,  oeil a 140 m    31,0 %
+
+Ce n'est pas une contradiction : `Heat Distortion Start Distance` vaut **70 m**
+et le masque d'horizon un exposant de 2,5. C'est un mirage LOINTAIN, et le
+chercher a vingt metres revenait a le pousser hors de sa portee -- meme faute
+que la fenetre d'eau ramenee a 0,5 km.
+
+**ET ELLE NE SE LEVERA PRESQUE JAMAIS SEULE**, ce qui est un arbitrage et non un
+defaut : `Heat Distortion Temperature Range` vaut **85 a 100 degres FAHRENHEIT**
+-- 29,4 a 37,8 Celsius -- quand notre desert le plus chaud fait **28,6 de
+moyenne annuelle**. D'ou `-WorldseedChaleurForce=`, qui pose
+`Manual Heat Distortion` : sans temoin, « chaleur 0,000 » ne se separe pas en
+« il ne fait pas assez chaud » et « la chaine est morte ».
+
+**PIEGE DE CAPTURE REFAIT** : la premiere vue a ete prise avec l'oeil a deux
+metres, donc DANS le sable. Le depot a la regle depuis septembre -- « toujours
+sonder avant de poser » -- et l'image obtenue, une masse blanchatre illisible,
+ressemble trait pour trait a un defaut de rendu.
+
+**CE QUI RESTE A BRANCHER** est inventorie a part, lecture de documentation par
+lecture de documentation, avec ce qui est MESURE distingue de ce qui ne l'est
+pas. Les trois lignes qui pesent le plus : les `Radial Storms`, qui repondent a
+la limite que `world_rules.json` documente lui-meme -- le signal meteo ne depend
+que du TEMPS, jamais du lieu ; le brouillard volumetrique au sol
+(`Render Ground Fog`), qui donnerait la nappe rasante SANS Niagara, sous reserve
+que notre `ProceduralMeshComponent` genere des champs de distance ; et le SON,
+dont aucune des trois briques du pack n'est employee alors que l'etat meteo
+qu'elles consomment est deja ecrit et mesure.
