@@ -168,10 +168,10 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 	L.Add(TEXT(""));
 	L.Add(TEXT("site                      lat   Koppen   T an  mm/an   pluie averse  neige  degage couvert")
 		TEXT("   orages   aurore   voile  sable tempe   vent  vent")
-		TEXT("   brume  epais  max   nuit   jour   | CIBLE, sans fondu"));
+		TEXT("   brume  epais  max   nuit   jour    arc-en-ciel   | CIBLE, sans fondu"));
 	L.Add(TEXT("                                             C    mm       %     %       %       %      %")
 		TEXT("    (episodes/an)       %      %  /an    moy   max")
-		TEXT("       %      %  0-10      %      %   | pluie %  orages sable        X       Y (m)"));
+		TEXT("       %      %  0-10      %      %      %   /an   | pluie %  orages sable        X       Y (m)"));
 
 	// --- les sites, repartis en latitude -------------------------------------
 	//
@@ -318,6 +318,35 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		// deux n'appellent pas le meme remede, et c'est ce chiffre qui a montre
 		// que le signal ne passait pas par `Uniformiser`.
 		float BrumeMax = 0.0f;
+
+		// --- L'ARC-EN-CIEL EST-IL SEULEMENT ATTEIGNABLE ? -------------------
+		//
+		// LE PACK POSE TROIS CONDITIONS, et la deuxieme est celle qui inquiete :
+		// il faut de la pluie ou de la brume pour le rendre visible, un ciel
+		// assez DEGAGE pour que le soleil atteigne la camera -- « if the camera
+		// is under an overcast cloud layer, the effect won't appear » -- et un
+		// soleil assez BAS sur l'horizon.
+		//
+		// ⚠ J'AI CRAINT QUE CE SOIT IMPOSSIBLE, ET LA MESURE M'A DEMENTI.
+		// Notre modele lie la pluie aux nuages -- `CloudCoverage` monte avec
+		// l'occurrence de pluie, et fortement -- et j'en ai deduit qu'il ne
+		// pleuvrait JAMAIS sous un ciel clair, donc que l'effet serait arme
+		// pour rien. Cette colonne repond : 87 episodes par an en
+		// mediterraneen, 102 en foret tropicale, 97 en savane, 31 en taiga, et
+		// zero dans les deserts -- ou il ne pleut pas, ce qui est correct. Le
+		// moment existe parce que l'averse est BREVE et que la couverture ne
+		// sature pas a chaque fois.
+		//
+		// LE COMPTE EST UN PLAFOND, et il faut le dire : le pack ajoute sa
+		// propre condition sur l'elevation du soleil, plus fine que la fenetre
+		// horaire employee ici. Ce qui est etabli est que le couple « pluie
+		// visible sous un ciel degage » se rencontre, pas le nombre exact
+		// d'arcs-en-ciel qu'un joueur verra.
+		//
+		// LE SOLEIL BAS SE LIT SUR L'HEURE, faute de mieux : la sonde ne connait
+		// pas l'elevation solaire, qui demande la simulation d'UDS. Avant huit
+		// heures et apres seize, le soleil est bas a toute latitude moyenne.
+		FCompteur Arc;
 		FWorldseedWeather Courant;
 
 		// LE VENT N'EST PAS UN COMPTEUR, C'EST UNE AMPLITUDE -- et il faut les
@@ -388,6 +417,12 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			Brouillard.Voir(Courant.Fog >= SeuilBrouillard);
 			BrumeMax = FMath::Max(BrumeMax, Courant.Fog);
 
+			const bool bSoleilBas = Params.HeureDuJour < 8.0f
+				|| Params.HeureDuJour >= 16.0f;
+			Arc.Voir(Courant.Rain >= SeuilPluie
+				&& Courant.CloudCoverage <= SeuilCouvert
+				&& bSoleilBas);
+
 			// MINUIT A SIX HEURES contre DIX A SEIZE : deux fenetres franches,
 			// separees par les deux transitions ou la brume se leve et se
 			// reforme. Les compter ferait tendre les deux colonnes l'une vers
@@ -421,7 +456,7 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 		L.Add(FString::Printf(
 			TEXT("%-24s %5.0f   %-6s %5.1f %6.0f  %5.1f %5.1f  %5.1f   %5.1f  %5.1f    %4d     %4d")
 			TEXT("  %6.1f %6.1f %5d  %5.1f %5.1f")
-			TEXT("  %6.1f %6.1f %5.1f %6.1f %6.1f")
+			TEXT("  %6.1f %6.1f %5.1f %6.1f %6.1f %6.2f %5d")
 			TEXT("   |%6.1f %5d %5d   %7.0f %7.0f"),
 			*Etiquette, Echantillon.LatitudeDeg, WorldseedKoppen::Nom(Classe),
 			Echantillon.TempMeanC, Echantillon.PrecipMm,
@@ -433,6 +468,7 @@ FString UWorldseedProbeLibrary::ProbeCiel(int32 Seed, float HeightMeters,
 			Brume.Pas * Cent, Brouillard.Pas * Cent, BrumeMax,
 			BrumeNuit * 100.0f / FMath::Max(PasNuit, 1),
 			BrumeJour * 100.0f / FMath::Max(PasJour, 1),
+			Arc.Pas * Cent, Arc.Episodes,
 			PluieCible.Pas * Cent, OrageCible.Episodes, SableCible.Episodes, XM, YM));
 	}
 

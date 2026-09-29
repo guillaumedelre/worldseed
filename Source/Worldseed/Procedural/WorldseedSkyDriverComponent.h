@@ -137,6 +137,41 @@ private:
 	 */
 	void PoserHeureDeDepart();
 
+	/**
+	 * Arme `Simulate Real Sun`, sans quoi la latitude ecrite n'est pas evaluee.
+	 *
+	 * TROISIEME FOIS DANS CE DEPOT. `Animate Time of Day` et `Use Auroras`
+	 * avaient deja ce defaut : une valeur ecrite fidelement, relue a la bonne
+	 * valeur, et qu'aucun interrupteur n'evalue. Sans cette simulation, UDS
+	 * trace un arc solaire SIMPLIFIE dont l'elevation de midi est la meme a
+	 * l'equateur qu'au cercle polaire.
+	 */
+	void ArmerLaSimulationSolaire(const class UWorldseedRules& Rules);
+
+	/**
+	 * Pose `Global Water Level`, que `Use UDS Water Level` attend.
+	 *
+	 * La fonction est DEJA armee sur l'acteur meteo -- c'est son defaut -- mais
+	 * le niveau vaut -100 000 000, donc elle tourne sur une mer inatteignable.
+	 */
+	void PoserNiveauDeLEau(const class UWorldseedRules& Rules);
+
+	/**
+	 * Releve l'elevation du soleil, pour prouver que la simulation est vivante.
+	 *
+	 * ELLE NE LIT AUCUNE VARIABLE DU PACK, a dessein : elle prend la rotation
+	 * de la lumiere directionnelle, qui est ce que la scene recoit vraiment.
+	 * Un nom de variable peut changer d'une version du pack a l'autre, et ce
+	 * depot a deja recopie un nom faux depuis un message du moteur.
+	 *
+	 * LE CONTROLE QUI TRANCHE EST L'ECART ENTRE DEUX LATITUDES, pas une valeur
+	 * absolue : sans simulation, l'elevation de midi vaut `90 - Sun Pitch`
+	 * PARTOUT, donc deux latitudes eloignees rendent le meme chiffre. C'est le
+	 * signe que ce depot connait par coeur -- deux mesures identiques pour deux
+	 * reglages differents.
+	 */
+	bool ElevationDuSoleil(float& OutDegres) const;
+
 	/** Heure relevee au moment de l'armement, ou -1 si l'horloge n'est pas armee. */
 	double HeureALArmement = -1.0;
 

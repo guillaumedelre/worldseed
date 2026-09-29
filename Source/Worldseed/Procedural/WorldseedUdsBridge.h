@@ -29,6 +29,17 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	/** Nom des classes trouvees, pour les journaux. */
 	FString Describe() const;
 
+	/**
+	 * L'acteur ciel lui-meme, pour ce que la reflexion ne sait pas atteindre.
+	 *
+	 * ELLE EXISTE POUR UN SEUL APPELANT : le releve de l'elevation du soleil,
+	 * qui lit la rotation de la lumiere directionnelle plutot qu'une variable du
+	 * pack. Un nom de variable change d'une version a l'autre -- ce depot a deja
+	 * recopie un nom faux depuis un message du moteur -- alors que la rotation
+	 * d'un composant est ce que la scene recoit vraiment.
+	 */
+	AActor* CielBrut() const { return SkyActor.Get(); }
+
 	// --- lecture -------------------------------------------------------------
 
 	/**

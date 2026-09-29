@@ -2,7 +2,9 @@
 
 #include "Procedural/WorldseedSkyDriverComponent.h"
 
+#include "Components/DirectionalLightComponent.h"
 #include "Procedural/WorldseedPipeline.h"
+#include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedWeatherReadout.h"
 
 namespace
@@ -227,6 +229,8 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			PresetRules = FWorldseedClimatePresetRules::FromRules(*Rules);
 			bPresetRulesLoaded = true;
 			ArmerHorloge(*Rules);
+			ArmerLaSimulationSolaire(*Rules);
+			PoserNiveauDeLEau(*Rules);
 		}
 		else
 		{
@@ -244,8 +248,20 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		if (Bridge.WriteLatLon(Sample.LatitudeDeg, LongitudeDeg))
 		{
 			LastSunLatitudeDeg = Sample.LatitudeDeg;
-			UE_LOG(LogTemp, Log, TEXT("[Worldseed] ciel : latitude %.1f  longitude %.1f"),
-				Sample.LatitudeDeg, LongitudeDeg);
+
+			// LE FUSEAU SUIT LA LONGITUDE, ET IL DOIT LA SUIVRE EN MARCHANT.
+			// Un monde n'a pas de fuseaux administratifs : on pose le fuseau
+			// SOLAIRE, `longitude / 15`, pour que midi soit partout le midi
+			// solaire. Le poser une fois au demarrage ne suffirait pas -- notre
+			// monde fait 64 km de large, soit 360 degres de longitude, et un
+			// joueur qui le traverse passerait par tous les fuseaux.
+			const double Fuseau = static_cast<double>(LongitudeDeg) / 15.0;
+			const bool bFuseau = Bridge.WriteNumber(TEXT("Time Zone"), Fuseau);
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[Worldseed] ciel : latitude %.1f  longitude %.1f  fuseau %+.1f h%s"),
+				Sample.LatitudeDeg, LongitudeDeg, Fuseau,
+				bFuseau ? TEXT("") : TEXT(" (REFUSE)"));
 		}
 		else
 		{
@@ -526,6 +542,68 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 				Givre, bG ? TEXT("") : TEXT(" ILLISIBLE"),
 				Gouttes, bD ? TEXT("") : TEXT(" ILLISIBLE"),
 				Coule, Expo, Current.Rain, Current.Snow);
+
+			// ARMER N'EST PAS AFFICHER, quatrieme fois. Les deux effets neufs
+			// se relisent par leur intensite COURANTE, qu'UDW calcule : c'est
+			// un EFFET, pas un drapeau, et c'est la seule chose qui prouve que
+			// la chaine va jusqu'au bout. La TEMPERATURE accompagne la chaleur
+			// parce qu'elle en est l'entree -- sans elle, « chaleur 0,000 » ne
+			// se separe pas en « il ne fait pas chaud ici » et « la chaleur ne
+			// sait pas qu'il fait chaud ».
+			double Arc = 0.0, Chaleur = 0.0, Temp = 0.0;
+			const bool bArcLu = Bridge.ReadNumber(
+				TEXT("Current Rainbow Strength"), Arc);
+			const bool bChaudLu = Bridge.ReadNumber(
+				TEXT("Current Heat Distortion Value"), Chaleur);
+			const bool bTempLue = Bridge.ReadNumber(
+				TEXT("Target Heat Distortion Value"), Temp);
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : arc-en-ciel %.3f%s, chaleur %.3f%s ")
+				TEXT("(cible %.3f%s) | pluie %.1f brume %.1f nuages %.1f vent %.1f"),
+				Arc, bArcLu ? TEXT("") : TEXT(" ILLISIBLE"),
+				Chaleur, bChaudLu ? TEXT("") : TEXT(" ILLISIBLE"),
+				Temp, bTempLue ? TEXT("") : TEXT(" ILLISIBLE"),
+				Current.Rain, Current.Fog, Current.CloudCoverage,
+				Current.WindIntensity);
+
+			// --- LA SIMULATION SOLAIRE EST-ELLE VIVANTE ? --------------------
+			//
+			// ARMER N'EST PAS EVALUER, et c'est le defaut que ce releve garde :
+			// `Simulate Real Sun` arrivait a FAUX, si bien que la latitude
+			// ecrite deux fois par seconde ne servait a rien. Le drapeau se
+			// relit a vrai des qu'on le pose -- comme `Animate Time of Day` et
+			// `Use Auroras` avant lui -- donc seul l'EFFET prouve quelque chose.
+			//
+			// LE CHIFFRE SE LIT CONTRE LA LATITUDE, jamais seul. Sans
+			// simulation, l'elevation de midi vaut `90 - Sun Pitch`, c'est-a-
+			// dire SOIXANTE degres a toutes les latitudes : deux lancements a
+			// des latitudes eloignees rendraient le meme chiffre. Avec elle,
+			// le registre de septembre donne 87,1 a 5 degres, 45,4 a 47 et 7,6
+			// a 85. L'attendu est donc `90 - |latitude|` a la declinaison
+			// saisonniere pres, au plus vingt-trois degres.
+			// ON NE RELIT PAS LE DRAPEAU, ET C'EST DELIBERE. `ReadNumber` ne sait
+			// pas lire un booleen : sa reponse dirait « illisible » pour une
+			// variable parfaitement presente, donc un message qui ment. Et le
+			// drapeau ne prouverait rien de toute facon -- il se relit a vrai
+			// des qu'on le pose, comme `Animate Time of Day` et `Use Auroras`
+			// avant lui. L'ELEVATION EST LA PREUVE, parce qu'elle est un EFFET.
+			float Elevation = 0.0f;
+			if (ElevationDuSoleil(Elevation))
+			{
+				const float Attendue = 90.0f - FMath::Abs(Sample.LatitudeDeg);
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] soleil : elevation %.1f deg a %.1f h, latitude ")
+					TEXT("%.1f -- attendu %.1f au midi d'equinoxe, et SOIXANTE a ")
+					TEXT("toute latitude si la simulation dort"),
+					Elevation, Params.HeureDuJour, Sample.LatitudeDeg, Attendue);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Worldseed] soleil : aucune lumiere directionnelle sur %s -- ")
+					TEXT("l'elevation ne peut pas etre relevee"), *Bridge.Describe());
+			}
 		}
 	}
 
@@ -698,6 +776,126 @@ void UWorldseedSkyDriverComponent::ArmerHorloge(const UWorldseedRules& Rules)
 	PoserHeureDeDepart();
 }
 
+void UWorldseedSkyDriverComponent::ArmerLaSimulationSolaire(const UWorldseedRules& Rules)
+{
+	// --- LA LATITUDE N'ETAIT PAS EVALUEE, ET C'EST LA TROISIEME FOIS ---------
+	//
+	// Ce composant ecrit `Latitude` et `Longitude` dans Ultra Dynamic Sky des
+	// que le joueur se deplace d'un demi-degre. Or `Simulate Real Sun` arrive a
+	// FAUX, et sans lui UDS trace un arc solaire SIMPLIFIE dont l'elevation de
+	// midi vaut `90 - Sun Pitch`, IDENTIQUE A TOUTES LES LATITUDES. Nous
+	// ecrivions donc fidelement, deux fois par seconde, une valeur que rien ne
+	// lisait -- exactement le defaut de `Animate Time of Day` (28 septembre
+	// 2026) et celui de `Use Auroras` le meme jour. Le releve du 29 septembre
+	// sur l'acteur du niveau : `Simulate Real Sun = False`, `Time Zone = 0`.
+	//
+	// CE QU'ON PERD SANS ELLE, et ce n'est pas un detail d'eclairage : la duree
+	// du jour ne varie plus avec la saison, il n'y a pas de soleil de minuit aux
+	// poles, et la course du soleil est la meme a l'equateur qu'au cercle
+	// polaire. Tout le calage de latitude du monde devient decoratif.
+	//
+	// LE FUSEAU SUIT LA LONGITUDE, ET IL LE FAUT. La documentation du pack est
+	// explicite : « make sure to set the Time Zone to the correct UTC offset for
+	// the location, so that Time of Day will be interpreted correctly as local
+	// to this location ». Un monde n'a pas de fuseaux administratifs ; on pose
+	// donc le fuseau SOLAIRE, `longitude / 15`, pour que midi soit le midi
+	// solaire partout. Sans lui, a 92 degres de longitude, midi tomberait plus
+	// de six heures a cote -- et la brume, qui depend de l'heure, suivrait.
+	if (Rules.Num(TEXT("uds"), TEXT("simulerLeSoleil"), 1.0) < 0.5)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] soleil : simulation NON armee (uds.simulerLeSoleil a ")
+			TEXT("zero) -- la latitude ecrite ne sera pas evaluee"));
+		return;
+	}
+
+	const bool bSoleil = Bridge.WriteBool(TEXT("Simulate Real Sun"), true);
+	const bool bLune = Bridge.WriteBool(TEXT("Simulate Real Moon"), true);
+
+	// ARMER N'EST PAS APPLIQUER, et la documentation du pack le dit en propres
+	// termes : « Some properties, if you just set them directly at runtime, will
+	// have no effect [...] they are static properties [...] you can call one of
+	// the Static Properties functions to apply the change ». C'est la forme
+	// GENERALE du piege que ce depot a paye trois fois sur des `OnRep_`. On
+	// propose donc les deux voies, et l'on journalise laquelle a pris.
+	const bool bRappel = Bridge.CallFunction(TEXT("OnRep_Simulate Real Sun"));
+	const bool bStatique = Bridge.CallFunction(TEXT("Static Properties - Sun"));
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] soleil : simulation reelle %s (lune %s), rappel OnRep %s, ")
+		TEXT("Static Properties - Sun %s"),
+		bSoleil ? TEXT("ARMEE") : TEXT("REFUSEE -- « Simulate Real Sun » introuvable"),
+		bLune ? TEXT("armee") : TEXT("refusee"),
+		bRappel ? TEXT("appele") : TEXT("introuvable"),
+		bStatique ? TEXT("appele") : TEXT("introuvable"));
+}
+
+bool UWorldseedSkyDriverComponent::ElevationDuSoleil(float& OutDegres) const
+{
+	const AActor* const Ciel = Bridge.CielBrut();
+	if (Ciel == nullptr)
+	{
+		return false;
+	}
+
+	// LA LUMIERE LA PLUS INTENSE EST LE SOLEIL. UDS porte DEUX lumieres
+	// directionnelles -- le soleil et la lune -- et la lune est reglee bien plus
+	// bas. Prendre la premiere venue rendrait la lune une nuit sur deux, et le
+	// releve sauterait sans qu'on sache pourquoi.
+	const UDirectionalLightComponent* Meilleure = nullptr;
+	float MeilleureIntensite = -1.0f;
+
+	TArray<UDirectionalLightComponent*> Lumieres;
+	Ciel->GetComponents<UDirectionalLightComponent>(Lumieres);
+	for (const UDirectionalLightComponent* L : Lumieres)
+	{
+		if (L != nullptr && L->Intensity > MeilleureIntensite)
+		{
+			MeilleureIntensite = L->Intensity;
+			Meilleure = L;
+		}
+	}
+
+	if (Meilleure == nullptr)
+	{
+		return false;
+	}
+
+	// UNE LUMIERE DIRECTIONNELLE POINTE DANS LE SENS DE SON AXE X, donc son
+	// vecteur va du soleil VERS la scene : l'elevation du soleil est l'oppose
+	// de l'inclinaison de ce vecteur. Se tromper de signe rendrait un soleil
+	// sous l'horizon a midi, et le chiffre resterait plausible.
+	OutDegres = -Meilleure->GetComponentRotation().Pitch;
+	return true;
+}
+
+void UWorldseedSkyDriverComponent::PoserNiveauDeLEau(const UWorldseedRules& Rules)
+{
+	// --- UNE FONCTION ARMEE SUR UN NIVEAU A MOINS L'INFINI ------------------
+	//
+	// `Use UDS Water Level` vaut DEJA vrai sur l'acteur meteo -- c'est son
+	// defaut -- mais `Global Water Level` vaut **-100 000 000**. La fonction
+	// tourne donc sur un niveau d'eau inatteignable et ne fait rien. Releve du
+	// 29 septembre 2026 sur l'acteur du niveau.
+	//
+	// CE QU'ELLE APPORTE, d'apres la documentation du pack : les particules de
+	// pluie et de neige cessent de tomber SOUS la mer, les gouttes d'ecran
+	// s'eteignent quand la camera passe sous l'eau et l'ecran se remouille en
+	// ressortant, l'arc-en-ciel se masque sous la surface, et l'occlusion
+	// sonore devient totale en plongee. Notre ocean est un plan a Z = 0, donc
+	// la valeur n'est pas un reglage : c'est une CONSTANTE du monde.
+	const float NiveauM = static_cast<float>(
+		Rules.Num(TEXT("uds"), TEXT("niveauMerM"), 0.0));
+	const double NiveauCm = static_cast<double>(NiveauM) * WorldseedMetersToCm;
+
+	const bool bPose = Bridge.WriteNumber(TEXT("Global Water Level"), NiveauCm);
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] eau : niveau global %s a %.0f cm -- les particules ne ")
+		TEXT("tomberont plus sous la mer"),
+		bPose ? TEXT("pose") : TEXT("REFUSE, « Global Water Level » introuvable"),
+		NiveauCm);
+}
+
 void UWorldseedSkyDriverComponent::PoserHeureDeDepart()
 {
 	// --- CHOISIR L'HEURE DE DEPART, POUR ALLER VOIR CE QUI N'ARRIVE QUE LA NUIT
@@ -848,6 +1046,66 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 			bGivreReveille ? TEXT("appele") : TEXT("absent"),
 			bGouttes ? TEXT("ARMEES") : TEXT("REFUSEES"),
 			bGouttesReveillees ? TEXT("appele") : TEXT("absent"));
+
+		// --- L'ARC-EN-CIEL ET LA CHALEUR QUI TREMBLE ------------------------
+		//
+		// LES DEUX ARRIVENT ETEINTS, comme le givre et les gouttes avant eux --
+		// releve du 29 septembre 2026 sur l'acteur du niveau : `Enable Rainbow`
+		// et `Enable Heat Distortion` a FAUX. C'est la doctrine du pack, qui
+		// livre desarme tout ce qui coute, et ce depot a maintenant paye quatre
+		// fois pour l'apprendre.
+		//
+		// NI L'UN NI L'AUTRE NE DEMANDE DE PILOTAGE, et c'est ce qui les rend
+		// bon marche a brancher : leur etat se deduit tout seul de ce que nous
+		// ecrivons deja.
+		//
+		// L'ARC-EN-CIEL suit trois conditions, toutes tenues par l'etat meteo :
+		// il faut de la pluie ou de la brume pour le rendre visible, un ciel
+		// assez degage pour que le soleil atteigne la camera, et un soleil
+		// assez BAS sur l'horizon. La troisieme est la plus interessante ici :
+		// elle ne devient vraie que depuis que `Simulate Real Sun` est armee,
+		// sans quoi le soleil suivait un arc identique a toutes les latitudes.
+		//
+		// LA CHALEUR QUI TREMBLE suit la TEMPERATURE d'UDW -- et nous la lui
+		// donnons deja, saison par saison, depuis le prereglage climatique
+		// (`<Saison> Temperature Min and Max`, quelques lignes plus haut). Elle
+		// se leve donc d'elle-meme sur un desert chaud, et nulle part ailleurs.
+		// LE VENT L'ETEINT DE LUI-MEME : l'effet est un mirage d'air immobile
+		// au-dessus d'un sol surchauffe, et le pack le masque avec la poussiere
+		// -- ce qui repond exactement a la demande, « dans les deserts quand il
+		// n'y a pas de tempete ».
+		// LE TEMOIN DE CHALEUR PASSE PAR `Manual Heat Distortion`, que le pack
+		// expose pour cela. Il est indispensable ici plus qu'ailleurs : le
+		// seuil du pack est 85 a 100 degres Fahrenheit -- 29,4 a 37,8 Celsius,
+		// releve le 29 septembre 2026 dans `Heat Distortion Temperature Range`
+		// -- quand notre desert le plus chaud fait 28,6 de MOYENNE ANNUELLE.
+		// L'effet ne se leve donc qu'aux heures chaudes de l'ete, et guetter ce
+		// moment ne separerait pas « il ne fait pas assez chaud » de « la
+		// chaine est morte ».
+		float Tremblement = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedChaleurForce="), Tremblement)
+			&& Tremblement >= 0.0f)
+		{
+			Bridge.WriteNumber(TEXT("Manual Heat Distortion"),
+				FMath::Clamp(Tremblement, 0.0f, 1.0f));
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : CHALEUR FORCEE a %.2f -- temoin"),
+				FMath::Clamp(Tremblement, 0.0f, 1.0f));
+		}
+
+		const bool bArc = Bridge.WriteBool(TEXT("Enable Rainbow"), true);
+		const bool bArcReveille = Bridge.CallFunction(TEXT("OnRep_Enable Rainbow"));
+		const bool bChaleur = Bridge.WriteBool(TEXT("Enable Heat Distortion"), true);
+		const bool bChaleurReveillee = Bridge.CallFunction(
+			TEXT("OnRep_Enable Heat Distortion"));
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] meteo : arc-en-ciel %s (rappel %s), chaleur qui ")
+			TEXT("tremble %s (rappel %s)"),
+			bArc ? TEXT("ARME") : TEXT("REFUSE"),
+			bArcReveille ? TEXT("appele") : TEXT("absent"),
+			bChaleur ? TEXT("ARMEE") : TEXT("REFUSEE"),
+			bChaleurReveillee ? TEXT("appele") : TEXT("absent"));
 
 		// --- LE DOSAGE DES PARTICULES ---------------------------------------
 		//
