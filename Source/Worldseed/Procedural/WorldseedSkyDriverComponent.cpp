@@ -278,6 +278,16 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 				TemoinPoussiere);
 		}
 
+		float Neigeux = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedNeigeForce="), Neigeux)
+			&& Neigeux >= 0.0f)
+		{
+			TemoinNeige = FMath::Clamp(Neigeux, 0.0f, 10.0f);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] meteo : NEIGE FORCEE a %.1f sur 10 -- temoin"),
+				TemoinNeige);
+		}
+
 		float Ventee = -1.0f;
 		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedVentForce="), Ventee)
 			&& Ventee >= 0.0f)
@@ -334,6 +344,20 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 		Current.Fog = 1.0f;
 		Current.Rain = 0.0f;
 		Current.Snow = 0.0f;
+	}
+
+	if (TemoinNeige >= 0.0f)
+	{
+		// L'ETAT DE `Snow_Blizzard`, MESURE dans les prereglages du pack :
+		// Snow 10, Wind 10, Cloud 10, Fog 10. On garde les proportions, et la
+		// poussiere tombe a zero -- il ne neige pas dans une tempete de sable.
+		const float Part = TemoinNeige / 10.0f;
+		Current.Snow = TemoinNeige;
+		Current.WindIntensity = FMath::Max(Current.WindIntensity, TemoinNeige);
+		Current.CloudCoverage = FMath::Max(Current.CloudCoverage, 8.0f * Part);
+		Current.Fog = FMath::Max(Current.Fog, 1.0f + 9.0f * Part);
+		Current.Rain = 0.0f;
+		Current.Dust = 0.0f;
 	}
 
 	if (TemoinVent >= 0.0f)

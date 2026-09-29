@@ -167,6 +167,17 @@ void UWorldseedReptationComponent::Appliquer(
 		FParse::Value(FCommandLine::Get(), TEXT("WorldseedReptationTaille="), V);
 		return V;
 	}();
+	// CELLE-CI ACCEPTE LE NEGATIF, et c'est tout son objet : la boite se
+	// descend sous la camera. Un sentinelle a -1 ne conviendrait donc pas.
+	static const bool bDecalageDonne = FParse::Param(
+		FCommandLine::Get(), TEXT("WorldseedReptationDecalageDonne"));
+	static const float DecalageSurcharge = []()
+	{
+		float V = 0.0f;
+		FParse::Value(FCommandLine::Get(), TEXT("WorldseedReptationDecalage="), V);
+		return V;
+	}();
+	if (bDecalageDonne) { DecalageSolCm = DecalageSurcharge; }
 
 	if (PonteSurcharge >= 0.0f) { PonteMax = PonteSurcharge; }
 	if (HauteurSurcharge >= 0.0f) { HauteurPonteCm = HauteurSurcharge; }

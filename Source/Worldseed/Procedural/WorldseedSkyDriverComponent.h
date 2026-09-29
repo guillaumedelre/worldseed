@@ -185,4 +185,19 @@ private:
 	 * jour venteux, ou le sable court alors que le voile reste modere.
 	 */
 	float TemoinVent = -1.0f;
+
+	/**
+	 * Temoin de NEIGE force par `-WorldseedNeigeForce=` ; negatif = inactif.
+	 *
+	 * IL REPOND A UNE QUESTION DU PROPRIETAIRE : « quand on regarde le ciel on
+	 * voit des grains en mouvement, la meme chose existe-t-elle pour la
+	 * neige ? ». Elle se verifie au lieu de se supposer -- et c'est d'autant
+	 * plus utile que les grains en question ne viennent PAS de notre composant
+	 * de reptation, mais d'UDW lui-meme, qui instancie son propre systeme des
+	 * que `Dust` depasse zero. Mesure : couper la reptation ne deplace pas
+	 * l'image d'un demi-point de clarte, ciel compris.
+	 *
+	 * Il pose l'etat de `Snow_Blizzard`, releve dans les prereglages du pack.
+	 */
+	float TemoinNeige = -1.0f;
 };

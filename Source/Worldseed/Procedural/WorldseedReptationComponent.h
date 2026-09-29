@@ -64,9 +64,26 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Worldseed|Reptation")
 	float HauteurPonteCm = 150.0f;
 
-	/** Decalage vertical de la ponte : juste au-dessus du sol. */
+	/**
+	 * DECALAGE VERTICAL DE LA PONTE, et il doit etre NEGATIF.
+	 *
+	 * ⚠ LA BOITE DE PONTE EST CENTREE SUR LA CAMERA, pas sur le sol. A deux
+	 * metres de hauteur d'oeil, une boite de 150 cm couvre donc de 1,25 m a
+	 * 2,75 m -- a hauteur de tete et au-dessus. Il faut la DESCENDRE.
+	 *
+	 * CE DEFAUT A EXISTE, et il m'a fait conclure de travers : avec un decalage
+	 * de +20 cm, les grains etaient bien la mais dans le CIEL, et ma mesure --
+	 * ciblee sur le bas de l'image, la ou je VOULAIS le sable -- rendait trois
+	 * fois le meme chiffre. J'en ai deduit « invisible » alors que c'etait
+	 * « ailleurs ». C'est le proprietaire qui l'a vu, en levant les yeux.
+	 *
+	 * LA LECON : mesurer la zone ou l'on ATTEND l'effet ne dit rien de ce qui se
+	 * passe hors de cette zone. Une mesure ciblee doit s'accompagner d'une
+	 * mesure de l'image ENTIERE, sans quoi elle confirme surtout son propre
+	 * cadrage.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Worldseed|Reptation")
-	float DecalageSolCm = 20.0f;
+	float DecalageSolCm = -170.0f;
 
 	/**
 	 * PORTEE DE LA NAPPE, en centimetres.
