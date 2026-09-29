@@ -74,6 +74,255 @@ namespace
 		}
 		return static_cast<float>(Mouilles) / FMath::Max(1, Echantillons);
 	}
+
+	/** Ce qu'un cycle de poussiere et de vent donne, sur un climat donne. */
+	struct FReleve
+	{
+		float PoussiereMax = 0.0f;
+		float PartVoile = 0.0f;      // part du temps au-dessus de 1,0
+		float PartTempete = 0.0f;    // part du temps au-dessus de 5,0
+		float VentMax = 0.0f;
+		float VentMoyen = 0.0f;
+		int32 PluieEtSable = 0;      // les deux a la fois : ne doit pas arriver
+	};
+
+	/**
+	 * ON ECHANTILLONNE PLUSIEURS CYCLES DE POUSSIERE, pas plusieurs cycles de
+	 * PLUIE -- et ce n'est pas la meme duree. Le signal de poussiere est ralenti
+	 * par `poussierePeriodeFacteur` (3 par defaut), donc sa periode vaut 540 s
+	 * quand celle de la pluie en vaut 180. Un pas cale sur la pluie ne verrait
+	 * qu'une poignee de cycles et rendrait une loterie sur la graine.
+	 */
+	FReleve Releve(const FWorldseedClimateSample& Sample,
+		const FWorldseedClimatePresetRules& Regles, int32 Echantillons = 3000)
+	{
+		FWorldseedWeatherParams P;
+		P.VariationPeriodS = 180.0f;
+		P.SeasonPhase = 0.5f;
+		P.LatSpanDeg = 180.0f;
+		P.Seed = 20260909;
+
+		FReleve R;
+		double VentSomme = 0.0;
+		int32 Voile = 0, Tempete = 0;
+
+		for (int32 I = 0; I < Echantillons; ++I)
+		{
+			P.TimeSeconds = static_cast<float>(I) * 31.0f;   // ~172 cycles lents
+			const FWorldseedWeather W =
+				WorldseedWeatherState::Evaluate(Sample, Regles, P);
+
+			R.PoussiereMax = FMath::Max(R.PoussiereMax, W.Dust);
+			R.VentMax = FMath::Max(R.VentMax, W.WindIntensity);
+			VentSomme += W.WindIntensity;
+			if (W.Dust > 1.0f) { ++Voile; }
+			if (W.Dust > 5.0f) { ++Tempete; }
+			if (W.Dust > 3.0f && W.Rain > 1.5f) { ++R.PluieEtSable; }
+		}
+
+		const float N = static_cast<float>(FMath::Max(1, Echantillons));
+		R.PartVoile = Voile / N;
+		R.PartTempete = Tempete / N;
+		R.VentMoyen = static_cast<float>(VentSomme) / N;
+		return R;
+	}
+
+	/** Les quatre climats qui decident, decrits par leurs seules mesures. */
+	FWorldseedClimateSample DesertChaud()  { return Climat(22.0f, 163.0f, 18.0f, 0.85f, 30.0f); }
+	FWorldseedClimateSample Gobi()         { return Climat(-0.4f, 194.0f, 38.0f, 0.95f, 43.0f); }
+	FWorldseedClimateSample Calotte()      { return Climat(-18.8f, 125.0f, 25.0f, 0.90f, -75.0f); }
+	FWorldseedClimateSample Tropique()     { return Climat(26.0f, 2400.0f, 3.0f, 0.15f, 4.0f); }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoPoussiereSuitLAridite,
+	"Worldseed.Meteo.LaPoussiereSuitLAridite",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoPoussiereSuitLAridite::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	const float Desert = WorldseedClimatePreset::Build(DesertChaud(), Regles).DustPart;
+	const float Foret = WorldseedClimatePreset::Build(Tropique(), Regles).DustPart;
+
+	AddInfo(FString::Printf(TEXT("part de poussiere : desert %.3f, foret tropicale %.3f"),
+		Desert, Foret));
+
+	TestTrue(TEXT("un desert en donne largement"), Desert > 0.8f);
+
+	// EXACTEMENT ZERO, ET C'EST CE QUI REND LA PART CONTINUE SURE. Si
+	// `Smoothstep` ne fermait pas franchement, une foret tropicale porterait un
+	// voile faible et PERMANENT -- le defaut exact de l'aurore, dont le defaut
+	// du pack valait 0,12 au lieu de 0 et posait un rideau a l'equateur.
+	TestEqual(TEXT("une foret tropicale n'en donne AUCUNE"), Foret, 0.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoCalotteNePoudroiePas,
+	"Worldseed.Meteo.LaCalotteNePoudroiePas",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoCalotteNePoudroiePas::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// CE DEFAUT A EXISTE, et il venait d'une correction juste : retirer le
+	// `T > 5` en dur a rendu sa poussiere au Gobi -- c'etait le but -- et a
+	// aussi donne 99,9 % de voile et 56 tempetes par an a -18,8 C. Un desert
+	// polaire est aride, et il est couvert de GLACE.
+	const float Glace = WorldseedClimatePreset::Build(Calotte(), Regles).DustPart;
+	const float Froid = WorldseedClimatePreset::Build(Gobi(), Regles).DustPart;
+
+	AddInfo(FString::Printf(TEXT("part de poussiere : calotte %.3f, Gobi %.3f"),
+		Glace, Froid));
+
+	TestEqual(TEXT("une calotte glaciaire ne poudroie pas"), Glace, 0.0f);
+
+	// ET LE TEMOIN DANS L'AUTRE SENS, sans lequel « la calotte rend zero » se
+	// satisferait d'un terme de gel qui aurait tout referme : le Gobi est a
+	// -0,4 C de moyenne annuelle, et c'est LUI qui a motive le retrait du seuil.
+	TestTrue(TEXT("mais un desert froid en donne, sinon le correctif a tout ferme"),
+		Froid > 0.5f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoTempeteAtteintLeHaut,
+	"Worldseed.Meteo.LaTempeteAtteintLeHautDeLEchelle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoTempeteAtteintLeHaut::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// DEUX SITES, ET C'EST UN ATTENDU CORRIGE.
+	//
+	// La premiere version exigeait 9,5 sur le desert chaud du monde, qui recoit
+	// 163 mm/an : sa part d'aridite vaut 0,908, donc son maximum ATTEIGNABLE est
+	// 9,08 et le test tombait. L'attendu etait naif, pas le code -- il supposait
+	// une part de 1, ce qui ne se produit que sous `poussierePleinePluieMm`.
+	//
+	// Ce test demande si LA CHAINE peut atteindre le haut de l'echelle, donc il
+	// le demande la ou rien ne la bride : un desert hyper-aride, comme le site
+	// « desert chaud (aride) » de la sonde, mesure a 64 mm/an. Le desert
+	// ordinaire garde les parts, qui sont sa vraie question.
+	const FWorldseedClimateSample HyperAride = Climat(24.0f, 60.0f, 18.0f, 0.9f, 25.0f);
+	const FReleve H = Releve(HyperAride, Regles);
+	const FReleve D = Releve(DesertChaud(), Regles);
+
+	AddInfo(FString::Printf(
+		TEXT("hyper-aride (part %.3f) : poussiere max %.2f  |  desert (part %.3f) : ")
+		TEXT("max %.2f, voile %.1f %%, tempete %.1f %%, vent max %.2f"),
+		WorldseedClimatePreset::Build(HyperAride, Regles).DustPart, H.PoussiereMax,
+		WorldseedClimatePreset::Build(DesertChaud(), Regles).DustPart,
+		D.PoussiereMax, D.PartVoile * 100.0f, D.PartTempete * 100.0f, D.VentMax));
+
+	// LE HAUT DE L'ECHELLE DOIT ETRE ATTEIGNABLE, et il ne l'etait pas : la
+	// forme d'avant soustrayait une constante a un signal dont le support est
+	// BORNE a 0,9327, donc `Dust = 10` plafonnait a 8,13 quoi qu'on regle.
+	// Passer par `Uniformiser` supprime la cause au lieu de compenser l'effet.
+	TestTrue(TEXT("la tempete atteint le haut de l'echelle du pack"),
+		H.PoussiereMax >= 9.5f);
+
+	// ET LE VOILE EST PERMANENT, sans quoi « la tempete monte a 10 » serait
+	// compatible avec un desert limpide le reste du temps -- l'inverse du reel.
+	TestTrue(TEXT("et le voile est permanent"), D.PartVoile > 0.9f);
+
+	// LA BANDE, PAS UN POINT : seule la forme voulue la satisfait. Trop rare, la
+	// tempete n'existe pas pour le joueur ; trop frequente, ce n'est plus une
+	// tempete. Mesure au bulletin du ciel : 1,4 % du temps, 12 episodes par an.
+	TestTrue(TEXT("la tempete reste rare, mais elle existe"),
+		D.PartTempete > 0.002f && D.PartTempete < 0.08f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoVentSuitLePack,
+	"Worldseed.Meteo.LeVentSuitLEchelleDuPack",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoVentSuitLePack::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	const FReleve D = Releve(DesertChaud(), Regles);
+
+	AddInfo(FString::Printf(TEXT("vent : moyenne %.2f, maximum %.2f"),
+		D.VentMoyen, D.VentMax));
+
+	// LES DEUX BORNES VIENNENT DES PREREGLAGES LIVRES PAR LE PACK, relevees par
+	// l'API : 2 pour un ciel clair, 3 pour `Overcast`, 4 pour `Snow`, et 10 pour
+	// les trois etats violents. Notre plafond valait 8, une invention.
+	TestTrue(TEXT("le vent atteint le 10 que le pack reserve aux tempetes"),
+		D.VentMax >= 9.5f);
+
+	// ET IL NE SOUFFLE PAS SANS CESSE. Ce defaut a existe : `Souffle` etant
+	// UNIFORME par construction, une rampe lineaire rendait une moyenne au
+	// MILIEU de la plage -- 6,3 sur 10 mesures, plus du double d'`Overcast`, et
+	// IDENTIQUE sur les vingt-deux sites de la sonde.
+	TestTrue(TEXT("mais il ne souffle pas en permanence"),
+		D.VentMoyen > 1.5f && D.VentMoyen < 5.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoPoussiereNeTombePasSousLaPluie,
+	"Worldseed.Meteo.LaPoussiereNeTombePasSousLaPluie",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoPoussiereNeTombePasSousLaPluie::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// UNE STEPPE, parce que c'est le seul endroit ou les deux peuvent se
+	// rencontrer : assez seche pour poudroyer, assez arrosee pour qu'il pleuve.
+	// Un desert ne prouverait rien -- il n'y pleut jamais.
+	const FReleve S = Releve(Climat(14.0f, 300.0f, 20.0f, 0.8f, 40.0f), Regles);
+
+	AddInfo(FString::Printf(TEXT("steppe : voile %.1f %%, instants pluie+sable %d"),
+		S.PartVoile * 100.0f, S.PluieEtSable));
+
+	TestEqual(TEXT("il ne pleut jamais PENDANT une tempete de sable"),
+		S.PluieEtSable, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoEchelleDuPack,
+	"Worldseed.Meteo.LEchelleEstCelleDuPack",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWorldseedMeteoEchelleDuPack::RunTest(const FString&)
+{
+	FString Erreur;
+	const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur);
+	if (!TestNotNull(TEXT("les regles se chargent"), R)) { AddError(Erreur); return false; }
+	const FWorldseedClimatePresetRules Regles = FWorldseedClimatePresetRules::FromRules(*R);
+
+	// LA GARDE CONTRE LA CLASSE DE BUG « 0..1 CONTRE 0..10 », qui a rendu la
+	// pluie invisible jusqu'au 28 septembre 2026 : l'averse la plus violente du
+	// monde valait 1,0, soit le TIERS de la plus legere bruine que le pack sache
+	// dessiner. Les trois valeurs sont relevees dans ses assets.
+	AddInfo(FString::Printf(TEXT("vent : calme %.1f, maximum %.1f ; voile %.1f"),
+		Regles.VentCalme, Regles.VentMaxUds, Regles.PoussiereVoile));
+
+	TestEqual(TEXT("le maximum du vent est le 10 du pack"), Regles.VentMaxUds, 10.0f);
+	TestTrue(TEXT("le calme est de l'ordre du ciel clair du pack"),
+		Regles.VentCalme >= 0.5f && Regles.VentCalme <= 3.0f);
+	TestTrue(TEXT("le voile est faible mais non nul"),
+		Regles.PoussiereVoile > 0.5f && Regles.PoussiereVoile < 4.0f);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldseedMeteoDistingueLesClimats,
