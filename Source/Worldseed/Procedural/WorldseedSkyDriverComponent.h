@@ -4,6 +4,7 @@
 
 #include "Components/ActorComponent.h"
 #include "CoreMinimal.h"
+#include "Procedural/WorldseedAmbiance.h"
 #include "Procedural/WorldseedClimatePreset.h"
 #include "Procedural/WorldseedUdsBridge.h"
 #include "Procedural/WorldseedWeatherState.h"
@@ -86,6 +87,22 @@ public:
 
 	/** Les regles de la section « uds », telles qu'elles ont ete lues. */
 	const FWorldseedClimatePresetRules& ReglesMeteo() const { return PresetRules; }
+
+	/**
+	 * Fait suivre au SON D'AMBIANCE le sol sous les pieds du joueur.
+	 *
+	 * SEPAREE DE `Drive` PARCE QU'ELLE NE LIT PAS LE MEME CHAMP. Le climat
+	 * s'echantillonne en continu ; le biome et la couverture se lisent AU POINT
+	 * dans la carte des biomes, et c'est le terrain qui sait le faire -- il le
+	 * fait deja pour la reptation, au meme minuteur et au meme endroit. Lui
+	 * demander le resultat coute une lecture de plus et aucun tick.
+	 *
+	 * ELLE NE FAIT RIEN TANT QUE LA FAMILLE NE CHANGE PAS : un appel deux fois
+	 * par seconde qui relancerait le fondu a chaque passage rendrait l'ambiance
+	 * inaudible, et `Change Environment Sound` n'est pas gratuit -- il charge
+	 * une source.
+	 */
+	void PiloterAmbiance(EWorldseedBiome Biome, EWorldseedCover Couverture);
 
 private:
 	/** Ecrit l'etat courant dans UDS. */
@@ -263,5 +280,52 @@ private:
 	/** Le controle differe des effets d'ecran : armer n'est pas afficher. */
 	bool bEcranVerifie = false;
 	float TempsDepuisEcranS = 0.0f;
+
+	/**
+	 * Arme le son du pack et pose le volume maitre.
+	 *
+	 * ET POUR UNE FOIS LE PACK N'ARRIVE PAS ETEINT. Releve du 29 septembre
+	 * 2026, instance ET defaut de classe : `Enable Weather Sound Effects` vaut
+	 * VRAI, `Use Occlusion to Attenuate Sounds in Interiors` vaut VRAI, les six
+	 * curseurs de volume valent 1, et les deux sources -- `UDS_Global_
+	 * WeatherSounds` et `UDS_Directional_WeatherSounds` -- sont assignees. La
+	 * pluie, le vent, le tonnerre et la poussiere s'entendent donc DEJA, pilotes
+	 * par l'etat meteo que ce composant ecrit depuis le 28 septembre.
+	 *
+	 * CE QUI SUIT NE LES REARME PAS, IL LES MESURE ET LES MIXE. Reposer un
+	 * drapeau deja vrai ne prouverait rien -- ce depot a cinq entrees sur cette
+	 * classe d'erreur -- alors que relire ce que le pack a reellement retenu
+	 * dit si la chaine tient.
+	 */
+	void ArmerLeSon(const class UWorldseedRules& Rules);
+
+	/**
+	 * QU'EST-CE QUI JOUE VRAIMENT ?
+	 *
+	 * UN DRAPEAU RELU NE PROUVE RIEN, et c'est la lecon la plus chere de ce
+	 * depot. La seule mesure qui tranche pour du son est l'inventaire des
+	 * COMPOSANTS AUDIO vivants : lesquels existent, lesquels jouent, et quelle
+	 * source ils portent. On l'enumere sur le monde entier plutot que sur les
+	 * deux acteurs d'UDS -- un inventaire tronque se lit exactement comme un
+	 * inventaire complet, et le mixeur du pack peut vivre ailleurs.
+	 *
+	 * DIFFERE, comme le controle des effets d'ecran : les sources du pack sont
+	 * instanciees au BeginPlay puis demarrees, et les lire au premier tick
+	 * rendrait zero pour une bonne raison -- on conclurait de travers.
+	 */
+	void ReleverLeSon() const;
+
+	/** Regles d'ambiance, lues une fois avec les autres. */
+	FWorldseedAmbianceRegles AmbianceRegles;
+
+	/**
+	 * La famille d'ambiance en cours.
+	 *
+	 * `Count` VAUT « ON N'A ENCORE RIEN POSE », et ce n'est pas `Aucune` : la
+	 * difference compte au tout premier passage, ou il faut bel et bien
+	 * ARRETER l'ambiance si le joueur nait dans un desert. Sans cet etat
+	 * distinct, le premier appel croirait n'avoir rien a faire.
+	 */
+	EWorldseedAmbiance AmbianceCourante = EWorldseedAmbiance::Count;
 };
 

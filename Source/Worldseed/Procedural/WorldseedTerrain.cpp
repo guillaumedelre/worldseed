@@ -648,16 +648,40 @@ void AWorldseedTerrain::FeedSky(float DeltaSeconds)
 	SkyDriver->Drive(Sample, LongitudeDeg, AltitudeM, Geometry.LatSpanDeg,
 		WorldSeed, DeltaSeconds);
 
-	// --- CE QUI RAMPE SOUS LES PIEDS ----------------------------------------
+	// --- LE SOL SOUS LES PIEDS, LU UNE FOIS POUR DEUX CONSOMMATEURS ---------
 	//
-	// MEME MINUTEUR, MEME POINT, AUCUN TICK NOUVEAU : ce qui court au sol change
-	// a l'echelle du kilometre, comme le climat. Et l'on relit le sol AU POINT,
-	// pas au centre du chunk.
+	// MEME MINUTEUR, MEME POINT, AUCUN TICK NOUVEAU : ce qui court au sol et ce
+	// qu'on ENTEND changent tous deux a l'echelle du kilometre, comme le climat.
+	// Et l'on relit le sol AU POINT, pas au centre du chunk -- une bande
+	// littorale fait de l'ordre de trente-sept metres quand un chunk en fait
+	// trente-deux, donc trancher au centre donnerait un trait de cote en
+	// marches d'escalier.
 	//
 	// APRES `Drive`, et c'est l'ordre qui compte : on veut l'etat meteo VECU,
 	// fondu compris, pas la cible. Le sable ne doit pas courir avant que le vent
 	// ne se leve a l'ecran.
-	if (Reptation && SkyDriver->HasSky())
+	if (!SkyDriver->HasSky())
+	{
+		return;
+	}
+
+	EWorldseedBiome BiomeApparent = EWorldseedBiome::Ocean;
+	EWorldseedCover Couverture = EWorldseedCover::None;
+	if (!LireSolAuPoint(static_cast<float>(Origin.X), static_cast<float>(Origin.Y),
+			BiomeApparent, Couverture))
+	{
+		return;
+	}
+
+	// --- CE QU'ON ENTEND ----------------------------------------------------
+	//
+	// LE PACK CONNAIT L'HEURE, LA METEO ET LE VENT ; IL NE CONNAIT PAS LE
+	// BIOME. C'est donc la seule chose que nous ayons a lui apporter, et elle
+	// suffit : on sort de la foret, les oiseaux s'arretent.
+	SkyDriver->PiloterAmbiance(BiomeApparent, Couverture);
+
+	// --- CE QUI RAMPE SOUS LES PIEDS ----------------------------------------
+	if (Reptation)
 	{
 		if (!bReptationRulesLoaded)
 		{
@@ -669,22 +693,16 @@ void AWorldseedTerrain::FeedSky(float DeltaSeconds)
 			}
 		}
 
-		EWorldseedBiome BiomeApparent = EWorldseedBiome::Ocean;
-		EWorldseedCover Couverture = EWorldseedCover::None;
-		if (LireSolAuPoint(static_cast<float>(Origin.X), static_cast<float>(Origin.Y),
-				BiomeApparent, Couverture))
-		{
-			// LE NIVEAU DE LA MER EST Z = 0 DANS CE MONDE, par construction :
-			// l'ocean du plugin Water est un plan a l'altitude zero, et toute
-			// la chaine s'y cale depuis le calage altimetrique.
-			const FWorldseedReptation Rep = WorldseedReptation::Evaluer(
-				BiomeApparent, Couverture,
-				static_cast<float>(Origin.Z), 0.0f,
-				SkyDriver->MeteoCourante(), SkyDriver->ReglesMeteo(),
-				ReptationRules);
+		// LE NIVEAU DE LA MER EST Z = 0 DANS CE MONDE, par construction :
+		// l'ocean du plugin Water est un plan a l'altitude zero, et toute la
+		// chaine s'y cale depuis le calage altimetrique.
+		const FWorldseedReptation Rep = WorldseedReptation::Evaluer(
+			BiomeApparent, Couverture,
+			static_cast<float>(Origin.Z), 0.0f,
+			SkyDriver->MeteoCourante(), SkyDriver->ReglesMeteo(),
+			ReptationRules);
 
-			Reptation->Appliquer(Rep, Origin);
-		}
+		Reptation->Appliquer(Rep, Origin);
 	}
 }
 

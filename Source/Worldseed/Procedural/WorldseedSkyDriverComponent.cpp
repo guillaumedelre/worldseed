@@ -2,10 +2,13 @@
 
 #include "Procedural/WorldseedSkyDriverComponent.h"
 
+#include "Components/AudioComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Procedural/WorldseedPipeline.h"
 #include "Procedural/WorldseedRules.h"
 #include "Procedural/WorldseedWeatherReadout.h"
+#include "Sound/SoundBase.h"
+#include "UObject/UObjectIterator.h"
 
 namespace
 {
@@ -231,6 +234,8 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			ArmerHorloge(*Rules);
 			ArmerLaSimulationSolaire(*Rules);
 			PoserNiveauDeLEau(*Rules);
+			AmbianceRegles = FWorldseedAmbianceRegles::FromRules(*Rules);
+			ArmerLeSon(*Rules);
 		}
 		else
 		{
@@ -604,6 +609,13 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 					TEXT("[Worldseed] soleil : aucune lumiere directionnelle sur %s -- ")
 					TEXT("l'elevation ne peut pas etre relevee"), *Bridge.Describe());
 			}
+
+			// --- ET LE SON : CE QUI JOUE, NON CE QU'ON A POSE ---------------
+			//
+			// Meme famille que les trois releves ci-dessus, et meme raison :
+			// un drapeau relu ne prouve rien. Pour du son, la seule mesure qui
+			// tranche est l'inventaire des composants audio VIVANTS.
+			ReleverLeSon();
 		}
 	}
 
@@ -867,6 +879,248 @@ bool UWorldseedSkyDriverComponent::ElevationDuSoleil(float& OutDegres) const
 	// sous l'horizon a midi, et le chiffre resterait plausible.
 	OutDegres = -Meilleure->GetComponentRotation().Pitch;
 	return true;
+}
+
+void UWorldseedSkyDriverComponent::ArmerLeSon(const UWorldseedRules& Rules)
+{
+	// --- ON RELIT AVANT D'ECRIRE, ET CETTE FOIS TOUT ETAIT DEJA ARME --------
+	//
+	// C'est la premiere fonctionnalite de ce pack que ce depot trouve ALLUMEE,
+	// apres cinq qui arrivaient eteintes -- les aurores, les dix surcharges
+	// manuelles, le givre, les gouttes, l'arc-en-ciel et la chaleur. Le releve
+	// du 29 septembre 2026 donne, instance et defaut de classe confondus :
+	//
+	//     Enable Weather Sound Effects                   VRAI
+	//     Use Occlusion to Attenuate Sounds in Interiors VRAI
+	//     Global Sound Asset       UDS_Global_WeatherSounds
+	//     Directional Sound Asset  UDS_Directional_WeatherSounds
+	//     Weather Sounds Master Volume                      1
+	//     Wind Volume / Rain Volume / Wind Whistling Volume 1
+	//     Close Thunder Volume / Distant Thunder Volume     1
+	//     Environment Sound                              None   <- le seul trou
+	//
+	// DONC ON NE REARME RIEN : on relit, et l'on crie si la lecture dement. Un
+	// drapeau qu'on repose se relit a vrai quoi qu'il arrive, et ce serait
+	// exactement le bruit qui se lit comme une mesure.
+	// ⚠ ET L'ON LIT UN BOOLEEN AVEC `ReadBool`, PAS AVEC `ReadNumber`. La
+	// premiere version de ce bloc employait `ReadNumber`, qui ne sait pas lire
+	// un booleen : le journal a annonce « effets meteo ILLISIBLES, occlusion
+	// ILLISIBLE » sur deux variables parfaitement presentes et toutes deux a
+	// VRAI. Ce depot avait deja RETIRE une ligne pour cette raison exacte --
+	// la relecture de `Simulate Real Sun` -- au lieu de la reparer ; elle l'est
+	// desormais, et le pont sait lire les deux.
+	bool bEffets = false;
+	const bool bEffetsLus = Bridge.ReadBool(TEXT("Enable Weather Sound Effects"), bEffets);
+
+	// SI LE PACK CHANGEAIT D'AVIS, ON LE RATTRAPE -- et alors seulement on
+	// ecrit, rappel compris. Poser un booleen par reflexion ne declenche aucun
+	// `OnRep_`, et `OnRep_Enable Weather Sound Effects` existe : sonde validee
+	// sur `OnRep_Animate Time of Day`, que ce fichier appelle avec succes.
+	if (bEffetsLus && !bEffets)
+	{
+		Bridge.WriteBool(TEXT("Enable Weather Sound Effects"), true);
+		Bridge.CallFunction(TEXT("OnRep_Enable Weather Sound Effects"));
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] son : « Enable Weather Sound Effects » etait ETEINT ")
+			TEXT("-- arme. Ni la pluie ni le vent ne s'entendaient."));
+	}
+
+	// --- LE VOLUME MAITRE, ET LUI SEUL --------------------------------------
+	//
+	// UN SEUL CURSEUR, PAS SIX. Le pack en expose six -- maitre, vent, pluie,
+	// tonnerre proche, tonnerre lointain, sifflement -- et sa documentation dit
+	// que « le volume resultant s'echelonne avec ces reglages ET l'etat meteo
+	// courant ». Les cinq par famille sont donc deja modules par la meteo que
+	// nous ecrivons : y toucher doublerait la modulation, et les poser tous a
+	// 1,0 dans le fichier de regles ajouterait cinq boutons INERTES -- ce que
+	// le proprietaire a demande d'arreter de garder, le 23 septembre 2026.
+	//
+	// LE MAITRE, LUI, EST UN VRAI REGLAGE DE MIXAGE : c'est le seul qui permette
+	// de faire de la place a autre chose sans deregler l'equilibre interne du
+	// pack. Il porte aussi le SON D'AMBIANCE, qui sort sur le meme bus
+	// (`UDS_Weather_AudioBus`) et passe par le meme mixeur.
+	const double Volume = FMath::Clamp(
+		Rules.Num(TEXT("uds"), TEXT("sonVolume"), 1.0), 0.0, 4.0);
+	const bool bVolumePose = Bridge.WriteNumber(TEXT("Weather Sounds Master Volume"), Volume);
+	if (bVolumePose)
+	{
+		// Son rappel existe, et il n'est pas decoratif : le volume maitre est
+		// applique par le mixeur, qui doit etre prevenu.
+		Bridge.CallFunction(TEXT("OnRep_Weather Sounds Master Volume"));
+		// ET LA FONCTION QUI APPLIQUE LES VOLUMES, que le pack expose pour
+		// cela -- trois des six curseurs n'ont AUCUN `OnRep_`, releve le
+		// 29 septembre : `Close Thunder Volume`, `Distant Thunder Volume` et
+		// `Wind Whistling Volume`. Sans cet appel, un reglage du maitre
+		// laisserait le tonnerre a son ancien niveau.
+		Bridge.CallFunction(TEXT("Apply Sound Effects Volume Levels"));
+	}
+
+	// --- L'OCCLUSION : ce qui etouffe les sons en grotte --------------------
+	//
+	// ELLE EST DEJA ARMEE, et c'est heureux : ce monde porte cent cinquante
+	// chambres, soixante-six bouches et des centaines de gouffres. Sans elle,
+	// la pluie s'entendrait aussi fort a trente metres sous terre qu'a l'air
+	// libre. On se contente de la RELIRE -- et de dire si elle a disparu.
+	bool bOcclusion = false;
+	const bool bOcclusionLue = Bridge.ReadBool(
+		TEXT("Use Occlusion to Attenuate Sounds in Interiors"), bOcclusion);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] son : effets meteo %s, occlusion en interieur %s, ")
+		TEXT("volume maitre %.2f%s"),
+		bEffetsLus ? (bEffets ? TEXT("ARMES") : TEXT("ETEINTS")) : TEXT("ILLISIBLES"),
+		bOcclusionLue ? (bOcclusion ? TEXT("ARMEE") : TEXT("ETEINTE"))
+			: TEXT("ILLISIBLE"),
+		Volume, bVolumePose ? TEXT("") : TEXT(" REFUSE"));
+}
+
+void UWorldseedSkyDriverComponent::ReleverLeSon() const
+{
+	// --- L'INVENTAIRE PORTE SUR LE MONDE, PAS SUR LES DEUX ACTEURS ----------
+	//
+	// Un inventaire TRONQUE se lit exactement comme un inventaire complet, et
+	// ce depot a paye cette lecon sur l'aurore : un balayage arrete a dix-huit
+	// entrees avait manque la seule qui comptait. Le mixeur du pack, les deux
+	// sources meteo et les composants d'ambiance ne vivent pas forcement sur le
+	// meme acteur -- et la documentation dit qu'UDW « met a jour les composants
+	// audio periodiquement », sans dire ou il les pose. On les compte donc tous.
+	const UWorld* const Monde = GetWorld();
+	if (!Monde)
+	{
+		return;
+	}
+
+	int32 Total = 0;
+	int32 Jouent = 0;
+	TArray<FString> Detail;
+
+	for (TObjectIterator<UAudioComponent> It; It; ++It)
+	{
+		const UAudioComponent* const C = *It;
+		if (!C || C->GetWorld() != Monde || C->IsTemplate())
+		{
+			continue;
+		}
+
+		++Total;
+		const bool bJoue = C->IsPlaying();
+		if (bJoue)
+		{
+			++Jouent;
+		}
+
+		// ON NOMME LA SOURCE, pas le composant : « AudioComponent_3 » ne dit
+		// rien, « UDS_Global_WeatherSounds » dit tout.
+		const USoundBase* const Son = C->Sound;
+		Detail.Add(FString::Printf(TEXT("%s%s x%.2f"),
+			Son ? *Son->GetName() : TEXT("(sans source)"),
+			bJoue ? TEXT("") : TEXT(" [MUET]"),
+			C->VolumeMultiplier));
+	}
+
+	// LE COMPTE EN PREMIER, et il se lit meme quand le detail deborde : c'est
+	// lui qui dit si l'inventaire vaut quelque chose. Zero composant sur un
+	// monde qui vient de demarrer voudrait dire « trop tot », pas « rien ne
+	// joue » -- d'ou le temps ecoule, affiche a cote.
+	if (Total == 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] son : AUCUN composant audio dans le monde apres %.0f s. ")
+			TEXT("Ni la pluie, ni le vent, ni le tonnerre ne peuvent s'entendre."),
+			TempsDepuisEcranS);
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] son apres %.0f s : %d composant(s) audio, dont %d qui ")
+		TEXT("JOUENT -- %s"),
+		TempsDepuisEcranS, Total, Jouent, *FString::Join(Detail, TEXT(", ")));
+
+	// --- ET LE SON D'AMBIANCE, qui etait le seul trou du pack ----------------
+	//
+	// LES TROIS ENTIERS PROUVENT QUE LE PACK MODULE. Ils valent -1 tant
+	// qu'aucune ambiance ne joue, et prennent un rang des qu'elle tourne :
+	// c'est par eux que le graphe MetaSound choisit entre les oiseaux, les
+	// insectes de nuit et le vent dans les arbres. Trois -1 sous une ambiance
+	// posee voudraient dire qu'elle joue sans savoir quand ni ou.
+	double Heure = -1.0, Meteo = -1.0, Vent = -1.0;
+	const bool bHeureLue = Bridge.ReadNumber(TEXT("Environment Sound Time Integer"), Heure);
+	Bridge.ReadNumber(TEXT("Environment Sound Weather Integer"), Meteo);
+	Bridge.ReadNumber(TEXT("Environment Sound Wind Integer"), Vent);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] son : ambiance « %s » -- le pack la module sur ")
+		TEXT("moment %s, meteo %.0f, vent %.0f"),
+		WorldseedAmbiance::Nom(AmbianceCourante),
+		bHeureLue ? *FString::Printf(TEXT("%.0f"), Heure) : TEXT("ILLISIBLE"),
+		Meteo, Vent);
+}
+
+void UWorldseedSkyDriverComponent::PiloterAmbiance(EWorldseedBiome Biome,
+	EWorldseedCover Couverture)
+{
+	if (!Bridge.IsValid() || !bPresetRulesLoaded)
+	{
+		return;
+	}
+
+	const EWorldseedAmbiance Voulue = WorldseedAmbiance::Choisir(Biome, Couverture);
+	if (Voulue == AmbianceCourante)
+	{
+		// RIEN A FAIRE, ET C'EST LE CAS NOMINAL. Relancer `Change Environment
+		// Sound` deux fois par seconde rendrait l'ambiance inaudible -- chaque
+		// appel repart d'un fondu -- et chargerait une source a chaque passage.
+		return;
+	}
+
+	const FString& Chemin = AmbianceRegles.Chemin(Voulue);
+	UObject* Asset = nullptr;
+	if (!Chemin.IsEmpty())
+	{
+		// SYNCHRONE A DESSEIN, malgre le troisieme argument du pack. Une
+		// ambiance chargee en differe arriverait APRES que le joueur a traverse
+		// la lisiere, et sur une frontiere etroite elle arriverait apres en
+		// etre ressorti. Les trois assets pesent ensemble moins qu'un maillage
+		// d'arbre : le cout se paie une fois, a la premiere entree en foret.
+		Asset = StaticLoadObject(UObject::StaticClass(), nullptr, *Chemin);
+		if (!Asset)
+		{
+			// UNE AMBIANCE INTROUVABLE NE DOIT PAS ETRE SILENCIEUSE. Ces trois
+			// assets sont produits par `Tools/UE/ambiances_worldseed.py` ; un
+			// depot fraichement clone sans le pack ne les a pas, et le jeu doit
+			// continuer -- mais on le DIT, une fois par famille.
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] son : ambiance « %s » introuvable (%s) -- le ")
+				TEXT("silence sera joue a la place. Rejouer ")
+				TEXT("Tools/UE/ambiances_worldseed.py."),
+				WorldseedAmbiance::Nom(Voulue), *Chemin);
+		}
+	}
+
+	// ON APPELLE MEME AVEC `nullptr`, et c'est la voie que le pack documente
+	// pour ARRETER une ambiance : « stop environment sounds by calling it with
+	// no environment sound asset selected ». Sortir de la foret doit rendre le
+	// silence, pas laisser les oiseaux dans le desert.
+	const bool bPose = Bridge.ChangerAmbiance(Asset, AmbianceRegles.FonduS, false);
+
+	if (!bPose)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] son : « Change Environment Sound » REFUSEE par %s ")
+			TEXT("-- signature inattendue. L'ambiance ne changera jamais."),
+			*Bridge.Describe());
+		// ON RETIENT QUAND MEME LA FAMILLE : sans cela on reessaierait deux fois
+		// par seconde, et le journal se remplirait d'un echec qu'on connait.
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] son : ambiance « %s » -> « %s » (fondu %.1f s)"),
+			WorldseedAmbiance::Nom(AmbianceCourante),
+			WorldseedAmbiance::Nom(Voulue), AmbianceRegles.FonduS);
+	}
+
+	AmbianceCourante = Voulue;
 }
 
 void UWorldseedSkyDriverComponent::PoserNiveauDeLEau(const UWorldseedRules& Rules)
