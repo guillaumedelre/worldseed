@@ -51,6 +51,33 @@ namespace
 	const FName NameWindManuel = TEXT("Wind Intensity - Manual Override");
 
 	/**
+	 * LE DOSAGE DES PARTICULES, ET LE PACK EST TRES INEGAL.
+	 *
+	 * Releve du 29 septembre 2026 sur l'acteur meteo, instance et defaut de
+	 * classe confondus :
+	 *
+	 *     Dust Particle Spawn Count    1 000     Dust Particle Alpha   0,60
+	 *     Snow Particle Spawn Count   20 000     Snow Flakes Alpha     1,00
+	 *     Rain Particle Spawn Count   20 000
+	 *
+	 * LA POUSSIERE EN A VINGT FOIS MOINS QUE LA NEIGE ET LA PLUIE, et elle est
+	 * en plus deux fois moins opaque. C'est un choix d'auteur defendable -- une
+	 * brume de poussiere est diffuse la ou une averse est faite de traits -- mais
+	 * il rend la tempete de sable clairsemee a hauteur d'oeil, alors que c'est
+	 * precisement l'evenement qu'on veut voir.
+	 *
+	 * ON PILOTE DONC LE DOSAGE, comme on pilote deja les curseurs. Ces valeurs
+	 * ne dependent NI du climat NI du temps : elles se posent une fois, dans le
+	 * bloc de controle, et non deux fois par seconde.
+	 */
+	const FName NameDustNombre = TEXT("Dust Particle Spawn Count");
+	const FName NameDustAlpha = TEXT("Dust Particle Alpha");
+	const FName NameDustTaille = TEXT("Dust Particle Scale");
+	const FName NameNeigeNombre = TEXT("Snow Particle Spawn Count");
+	const FName NameNeigeAlpha = TEXT("Snow Flakes Alpha");
+	const FName NameNeigeTaille = TEXT("Snow Flakes Scale");
+
+	/**
 	 * L'ORAGE ET L'AURORE, QUI N'ETAIENT PILOTES NI L'UN NI L'AUTRE.
 	 *
 	 * UDS n'arme « Thunder/Lightning » que par ses TYPES de meteo tout faits --
@@ -689,6 +716,71 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 			bVentManuel ? TEXT("ARMEE") : TEXT("REFUSEE (UDW ecrasera notre valeur)"),
 			bVentReveille ? TEXT("appele") : TEXT("INTROUVABLE"));
 
+		// --- LE DOSAGE DES PARTICULES ---------------------------------------
+		//
+		// UN FACTEUR, PAS UNE VALEUR ABSOLUE : les chiffres du pack sont son
+		// calage, et le multiplier garde ses proportions internes -- c'est lui
+		// qui sait ce qu'une particule coute a son systeme. Poser un nombre en
+		// dur figerait notre reglage sur la version du pack du jour.
+		//
+		// ET LA POUSSIERE MONTE PLUS QUE LA NEIGE, parce qu'elle partait de bien
+		// plus bas : mille contre vingt mille. Meme facteur, ce serait garder
+		// l'ecart de vingt.
+		//
+		// `PushWeather` est const et ne porte pas les regles : on les relit une
+		// fois, ici, comme le terrain le fait pour la reptation. Un defaut sert
+		// si elles manquent -- une meteo sans regles doit rester jouable.
+		double NombrePoussiere = 1000.0 * 6.0;
+		double NombreNeige = 20000.0 * 1.5;
+		double AlphaPoussiere = 0.85;
+		{
+			FString Erreur;
+			if (const UWorldseedRules* const R = WorldseedPipeline::GetRules(Erreur))
+			{
+				NombrePoussiere = R->Num(TEXT("uds"), TEXT("particulesPoussiere"),
+					NombrePoussiere);
+				NombreNeige = R->Num(TEXT("uds"), TEXT("particulesNeige"), NombreNeige);
+				AlphaPoussiere = R->Num(TEXT("uds"), TEXT("particulesPoussiereAlpha"),
+					AlphaPoussiere);
+			}
+		}
+
+		// ET UNE SURCHARGE POUR BALAYER SANS RECOMPILER, parce que le bon
+		// dosage se juge a l'image et qu'un A/B qui demande de rouvrir le
+		// fichier de regles en changerait l'empreinte -- donc regenererait le
+		// monde entre les deux moities.
+		float Facteur = -1.0f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("WorldseedParticules="), Facteur)
+			&& Facteur >= 0.0f)
+		{
+			NombrePoussiere *= Facteur;
+			NombreNeige *= Facteur;
+		}
+
+		NombrePoussiere = FMath::Clamp(NombrePoussiere, 0.0, 200000.0);
+		NombreNeige = FMath::Clamp(NombreNeige, 0.0, 200000.0);
+		AlphaPoussiere = FMath::Clamp(AlphaPoussiere, 0.0, 1.0);
+
+		const bool bNbP = Bridge.WriteNumber(NameDustNombre, NombrePoussiere);
+		const bool bNbN = Bridge.WriteNumber(NameNeigeNombre, NombreNeige);
+
+		// L'OPACITE SUIT, parce que multiplier des grains transparents ne rend
+		// pas une tempete : la poussiere du pack est a 0,60 quand la neige est
+		// a 1,00, et c'est l'autre moitie de l'ecart.
+		Bridge.WriteNumber(NameDustAlpha, AlphaPoussiere);
+
+		// LA TAILLE RESTE A CELLE DU PACK, a dessein : grossir un grain de sable
+		// le fait lire comme un flocon, et c'est le NOMBRE qui fait la densite.
+		double TailleP = 0.0, TailleN = 0.0;
+		Bridge.ReadNumber(NameDustTaille, TailleP);
+		Bridge.ReadNumber(NameNeigeTaille, TailleN);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] meteo : particules -- poussiere %.0f%s (alpha %.2f, ")
+			TEXT("taille %.2f), neige %.0f%s (taille %.2f)"),
+			NombrePoussiere, bNbP ? TEXT("") : TEXT(" REFUSEE"), AlphaPoussiere,
+			TailleP, NombreNeige, bNbN ? TEXT("") : TEXT(" REFUSEE"), TailleN);
+
 		// ET L'INTERRUPTEUR MAITRE DE L'AURORE, AVEC SON RAPPEL.
 		//
 		// `Use Auroras` est une variable repliquee a RepNotify, comme
@@ -817,3 +909,4 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 		}
 	}
 }
+
