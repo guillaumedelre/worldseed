@@ -306,6 +306,24 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 	// pointeurs.
 	ArmerLesPasDlwe();
 
+	// --- LE STATUT METEO DU PION, MEME FAMILLE QUE LES PAS -------------------
+	//
+	// Meme place et meme raison : il faut un pion, et il change a chaque mort.
+	ArmerLeStatutMeteo();
+	if (StatutMeteo.IsValid() && ReleveesDuStatut < 4)
+	{
+		// QUATRE PASSAGES A HUIT SECONDES. Plus espaces que les pas parce que ce
+		// qu'on mesure ici ACCUMULE : `Snowy Increase Speed` vaut 0,03 par
+		// seconde, donc il faut une trentaine de secondes pour approcher le
+		// maximum. Deux echantillons rapproches ne diraient pas si ca monte.
+		TempsDepuisStatutS += DeltaSeconds;
+		if (TempsDepuisStatutS > 8.0f * static_cast<float>(ReleveesDuStatut + 1))
+		{
+			++ReleveesDuStatut;
+			ReleverLeStatutMeteo();
+		}
+	}
+
 	// --- LES TEMPETES RADIALES, ARMEES PUIS COMPTEES -------------------------
 	//
 	// L'ARMEMENT EST A TIR UNIQUE, LE COMPTE NON : une tempete apparait en
@@ -1790,6 +1808,17 @@ namespace
 		TEXT("/Game/UltraDynamicSky/Blueprints/Weather_Effects/")
 		TEXT("DLWE_Interaction.DLWE_Interaction_C");
 
+	/**
+	 * Le statut meteo du pion. MEME PRECAUTION : suffixe `_C`, chemin en dur,
+	 * absence traitee comme un cas normal -- le jeu doit tourner sans le pack.
+	 *
+	 * Le nom trompe : « Actor » designe l'acteur SUIVI, pas la classe. C'est un
+	 * `UActorComponent`, verifie sur l'etiquette `ParentClass` du registre.
+	 */
+	const TCHAR* const CheminClasseStatut =
+		TEXT("/Game/UltraDynamicSky/Blueprints/Weather_Effects/")
+		TEXT("Actor_Weather_Status.Actor_Weather_Status_C");
+
 	/** Notre materiau physique du sol, pose le 29 septembre 2026. */
 	const TCHAR* const CheminPhysmat =
 		TEXT("/Game/Worldseed/Physics/PM_WorldseedTerre.PM_WorldseedTerre");
@@ -2770,6 +2799,135 @@ void UWorldseedSkyDriverComponent::ReleverLeVoileDeVent() const
 		Composant ? TEXT("present") : TEXT("NUL"),
 		Mid ? TEXT("present") : TEXT("NUL"),
 		Current.Fog, Current.Rain, Current.Snow, Current.WindIntensity);
+}
+
+void UWorldseedSkyDriverComponent::ArmerLeStatutMeteo()
+{
+	if (bStatutIndisponible)
+	{
+		return;
+	}
+
+	UWorld* const Monde = GetWorld();
+	APawn* const Pion = Monde ? UGameplayStatics::GetPlayerPawn(Monde, 0) : nullptr;
+	if (!Pion || PionDuStatut.Get() == Pion)
+	{
+		return;
+	}
+
+	UClass* const Classe = LoadClass<UActorComponent>(nullptr, CheminClasseStatut);
+	if (!Classe)
+	{
+		// PAS UNE ERREUR : le jeu doit tourner sans le pack payant. Mais DIT une
+		// fois, sinon l'absence se lirait comme un silence.
+		bStatutIndisponible = true;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] statut meteo : %s introuvable -- pack absent, ")
+			TEXT("l'exposition du personnage ne sera pas mesuree et c'est normal."),
+			CheminClasseStatut);
+		return;
+	}
+
+	// LE PION EST MARQUE AVANT LE RESTE, comme pour les pas : un echec partiel ne
+	// doit pas faire recommencer a la trame suivante, sinon on empile des
+	// composants sur le meme personnage.
+	PionDuStatut = Pion;
+	TempsDepuisStatutS = 0.0f;
+	ReleveesDuStatut = 0;
+
+	UActorComponent* const C = NewObject<UActorComponent>(Pion, Classe);
+	if (!C)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] statut meteo : NewObject a rendu nul sur %s"),
+			*Pion->GetName());
+		return;
+	}
+	C->RegisterComponent();
+	StatutMeteo = C;
+
+	// ON POSE `UDW` NOUS-MEMES, PLUTOT QUE D'ESPERER SON `Bind to UDW`.
+	//
+	// Le composant cherche l'acteur meteo a son `BeginPlay`, et un composant
+	// cree a l'execution le recoit bien de `RegisterComponent`. Mais la variable
+	// est NULLE au defaut de classe, et ce depot vient de payer la difference
+	// entre un defaut et une instance : on ECRIT, et le releve dira si cela
+	// servait. S'il l'avait deja trouve, l'ecriture repose la meme valeur.
+	if (AActor* const Meteo = Bridge.MeteoBrute())
+	{
+		FWorldseedUdsBridge::EcrireObjet(C, TEXT("UDW"), Meteo);
+	}
+	FWorldseedUdsBridge::AppelerSansArgumentSur(C, TEXT("Bind to UDW"));
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Worldseed] statut meteo : pose sur %s (%s)"),
+		*Pion->GetName(), *C->GetClass()->GetName());
+}
+
+void UWorldseedSkyDriverComponent::ReleverLeStatutMeteo() const
+{
+	const UActorComponent* const C = StatutMeteo.Get();
+	if (!C)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] statut meteo : le composant a disparu"));
+		return;
+	}
+
+	const auto Nombre = [C](const TCHAR* Nom)
+	{
+		double V = 0.0;
+		return FWorldseedUdsBridge::LireNombreDe(C, Nom, V) ? V : NAN;
+	};
+
+	const double Mouille = Nombre(TEXT("Wet"));
+	const double Neigeux = Nombre(TEXT("Snowy"));
+	const double Poussiereux = Nombre(TEXT("Dusty"));
+	const double Vent = Nombre(TEXT("Wind"));
+	const double SousLaPluie = Nombre(TEXT("Hit by Rain"));
+	const double SousLaNeige = Nombre(TEXT("Hit by Snow"));
+	const double TempC = Nombre(TEXT("Temperature (C)"));
+
+	// `UDW` EST LA PREMIERE CHOSE A DIRE. Sans lui les six grandeurs restent a
+	// zero, et un zero se lit comme « il ne pleut pas » : c'est le meme piege
+	// que le champ mort du releve de temperature, a ceci pres qu'ici il y a six
+	// zeros au lieu d'un.
+	const UObject* const Udw = FWorldseedUdsBridge::LireObjet(C, TEXT("UDW"));
+
+	bool bSousLEau = false;
+	FWorldseedUdsBridge::LireBooleenDe(C, TEXT("Actor Underwater"), bSousLEau);
+
+	// LES EVENEMENTS SONT LA MOITIE QUI COMPTE, et ils ne se relisent pas
+	// directement : un delegue n'expose pas « as-tu tire ». Mais le pack tient a
+	// cote de chacun l'ETAT qu'il a diffuse -- `ED_` pour « event dispatcher » --
+	// et c'est cela qui prouve le tir. `ED_Temperature State` vaut -1 tant que
+	// rien n'a ete diffuse, puis l'indice de l'etat : c'est un cas temoin gratuit,
+	// puisque -1 est impossible a confondre avec froid, neutre ou chaud.
+	const auto Drapeau = [C](const TCHAR* Nom)
+	{
+		bool B = false;
+		return FWorldseedUdsBridge::LireBooleenDe(C, Nom, B)
+			? (B ? TEXT("oui") : TEXT("non")) : TEXT("?");
+	};
+	double EtatTemp = -2.0;
+	FWorldseedUdsBridge::LireNombreDe(C, TEXT("ED_Temperature State"), EtatTemp);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] statut meteo : mouille %.3f neige %.3f poussiere %.3f ")
+		TEXT("vent %.3f | recoit pluie %.3f neige %.3f | %.1f C | sous l'eau %s ")
+		TEXT("| UDW %s | diffuses : pluie %s neige %s poussiere %s vent %s, ")
+		TEXT("temperature %s | pour une meteo pluie %.1f neige %.1f poussiere ")
+		TEXT("%.1f vent %.1f"),
+		Mouille, Neigeux, Poussiereux, Vent, SousLaPluie, SousLaNeige, TempC,
+		bSousLEau ? TEXT("VRAI") : TEXT("faux"),
+		Udw ? TEXT("trouve") : TEXT("NUL -- tout restera a zero"),
+		Drapeau(TEXT("ED_Rain Exposed")), Drapeau(TEXT("ED_Snow Exposed")),
+		Drapeau(TEXT("ED_Dust Exposed")), Drapeau(TEXT("ED_Wind Exposed")),
+		EtatTemp < -1.5 ? TEXT("ILLISIBLE")
+			: EtatTemp < -0.5 ? TEXT("RIEN DIFFUSE")
+			: EtatTemp < 0.5 ? TEXT("froid")
+			: EtatTemp < 1.5 ? TEXT("neutre") : TEXT("chaud"),
+		Current.Rain, Current.Snow, Current.Dust, Current.WindIntensity);
 }
 
 void UWorldseedSkyDriverComponent::ReleverLaTemperature() const

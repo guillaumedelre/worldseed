@@ -568,6 +568,63 @@ private:
 	/** Le pion deja equipe. FAIBLE : une mort du joueur doit re-armer. */
 	TWeakObjectPtr<class APawn> PionEquipe;
 
+	// ----------------------------------------- le statut meteo du pion
+
+	/**
+	 * Monte `Actor_Weather_Status` sur le pion du joueur.
+	 *
+	 * CE QUE LE COMPOSANT PRODUIT, releve sur ses 66 variables le 30 septembre
+	 * 2026 : par lancers de rayons il mesure l'exposition REELLE du personnage --
+	 * `Wet`, `Snowy`, `Dusty`, `Wind`, `Hit by Rain/Snow/Dust`, `Composite
+	 * Exposure` -- plus sa temperature locale et s'il est sous l'eau. Il porte
+	 * TREIZE delegues : expose / plus expose a la pluie, a la neige, a la
+	 * poussiere, au vent ; froid, neutre, chaud ; entree et sortie de l'eau.
+	 *
+	 * SES SEUILS SONT EN FAHRENHEIT -- froid 25, chaud 95, soit -3,9 et 35,0
+	 * Celsius. Le pont sait dans quelle echelle compte le pack, et c'est
+	 * necessaire ici : lus en Celsius ces deux nombres decriraient une belle
+	 * journee et une canicule mortelle.
+	 *
+	 * MEME FORME QUE `ArmerLesPasDlwe`, et pour la meme raison : le pion n'existe
+	 * pas au chargement des regles et il est REMPLACE a chaque mort du joueur.
+	 * Hors du bloc a tir unique, donc, avec `PionDuStatut` faible compare au pion
+	 * courant. Difference d'avec les pas : ce composant n'est pas un
+	 * `USceneComponent` et ne se parente a aucun socket -- il suit l'acteur.
+	 *
+	 * AUCUN ORACLE NE PEUT GARDER CECI, et il faut le dire : la classe est du
+	 * contenu de pack payant, absente du depot. Ni le chemin, ni le nom `UDW`,
+	 * ni `Bind to UDW` ne se testent hors contenu. Le seul controle est le
+	 * releve ci-dessous, et la mesure qui l'a valide est au registre du
+	 * 30 septembre 2026 -- exposition a la neige a 1,000 sous neige forcee 10,
+	 * `temperature froid` a -15 C repassant a `neutre` a +1,5 C.
+	 */
+	void ArmerLeStatutMeteo();
+
+	/**
+	 * Ce que le composant MESURE, et non ce qu'on lui a pose.
+	 *
+	 * Un composant present ne prouve rien : s'il n'a pas trouve l'acteur meteo,
+	 * ses six grandeurs restent a zero et se liraient comme « il ne pleut pas ».
+	 * On rend donc `UDW` avec elles, et la meteo qui devrait les produire.
+	 *
+	 * PLUSIEURS PASSAGES, comme pour les pas : `Status Query Period` vaut 1,25 s
+	 * chez le pack et les vitesses d'accumulation sont lentes -- `Snowy Increase
+	 * Speed` 0,03 par seconde -- donc un seul echantillon ne dirait pas si une
+	 * grandeur MONTE.
+	 */
+	void ReleverLeStatutMeteo() const;
+
+	/** Le composant pose, faible : le pion meurt. */
+	TWeakObjectPtr<class UActorComponent> StatutMeteo;
+
+	/** Le pion deja equipe du statut, et le rythme des releves. */
+	TWeakObjectPtr<class APawn> PionDuStatut;
+	float TempsDepuisStatutS = 0.0f;
+	int32 ReleveesDuStatut = 0;
+
+	/** Dit UNE FOIS que le pack est absent, puis se tait. */
+	bool bStatutIndisponible = false;
+
 	// --------------------------------------------- les tempetes radiales
 
 	/**
