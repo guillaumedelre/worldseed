@@ -96,6 +96,16 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	static bool LireNombreDe(const UObject* Cible, FName Propriete,
 		double& OutValeur);
 
+	/**
+	 * Un couple (minimum, maximum), sur une cible quelconque.
+	 *
+	 * Le gestionnaire de temperature d'UDW est un COMPOSANT du Blueprint meteo,
+	 * pas l'acteur : sa plage courante ne se lit donc pas par `ReadRange`, qui
+	 * ne connait que les deux acteurs.
+	 */
+	static bool LirePlageDe(const UObject* Cible, FName Propriete,
+		FVector2D& OutValeur);
+
 	/** Un booleen, sur une cible quelconque. */
 	static bool LireBooleenDe(const UObject* Cible, FName Propriete,
 		bool& OutValeur);
@@ -204,6 +214,19 @@ struct WORLDSEED_API FWorldseedUdsBridge
 	bool CallFunction(FName FunctionName) const;
 
 	/**
+	 * La meme chose sur une cible QUELCONQUE -- un composant, un objet de
+	 * reglages.
+	 *
+	 * ELLE EXISTE POUR LE GESTIONNAIRE DE TEMPERATURE, qui est un composant du
+	 * Blueprint meteo et non l'acteur : `CallFunction` ne le voit pas. Mesure du
+	 * 30 septembre 2026 -- nos quatre plages saisonnieres etaient POSEES sur
+	 * l'acteur et le gestionnaire tournait sur celles du pack, faute d'un
+	 * recalcul. Rend faux si la fonction est absente ou prend un argument :
+	 * muet plutot que dangereux.
+	 */
+	static bool AppelerSansArgumentSur(UObject* Cible, FName NomFonction);
+
+	/**
 	 * Change le SON D'AMBIANCE, avec un fondu.
 	 *
 	 * LA SEULE FONCTION A PARAMETRES DE CE PONT, et elle l'est par necessite :
@@ -249,6 +272,12 @@ struct WORLDSEED_API FWorldseedUdsBridge
 
 	/** Ecrit un couple (minimum, maximum), forme des plages de temperature. */
 	bool WriteRange(FName PropertyName, const FVector2D& Value) const;
+
+	/**
+	 * Relit ce couple. Sans elle, les quatre plages saisonnieres s'ecrivaient
+	 * sans qu'on puisse dire si elles avaient remplace celles du pack.
+	 */
+	bool ReadRange(FName PropertyName, FVector2D& OutValue) const;
 
 	ETemperatureScale TemperatureScale = ETemperatureScale::Fahrenheit;
 

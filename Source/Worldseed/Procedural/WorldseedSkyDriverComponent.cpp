@@ -151,6 +151,12 @@ namespace
 
 	float CelsiusToFahrenheit(float C) { return C * 1.8f + 32.0f; }
 
+	// L'INVERSE, POUR LES RELEVES. Le pack rend ses temperatures dans SON
+	// echelle, Fahrenheit par defaut, et un releve qui ne convertirait pas
+	// obligerait a faire le calcul de tete a chaque lecture de journal -- ce qui
+	// est exactement la facon de se tromper sur un seuil de froid.
+	float FahrenheitToCelsius(float F) { return (F - 32.0f) / 1.8f; }
+
 	// LE CIEL D'INSPECTION EST LU UNE FOIS, ET SOUS UN NOM PREFIXE.
 	//
 	// Prefixe `Worldseed` parce qu'UBT concatene les `.cpp` en une seule unite
@@ -167,6 +173,23 @@ namespace
 		static const bool bDemande = FParse::Param(
 			FCommandLine::Get(), TEXT("WorldseedCielClair"));
 		return bDemande;
+	}
+
+	// LE TEMOIN DU RECALCUL DES PLAGES DE TEMPERATURE.
+	//
+	// `-WorldseedPlages=0` laisse le gestionnaire du pack sur ses valeurs
+	// livrees, de sorte que « avec » et « sans » se mesurent dans le MEME etat du
+	// code. ARME PAR DEFAUT : un temoin s'eteint, il ne s'allume pas -- sans quoi
+	// une partie normale tournerait sur le comportement qu'on cherche a corriger.
+	bool WorldseedRecalculerLesPlages()
+	{
+		static const bool bArme = []
+		{
+			int32 Voulu = 1;
+			FParse::Value(FCommandLine::Get(), TEXT("WorldseedPlages="), Voulu);
+			return Voulu != 0;
+		}();
+		return bArme;
 	}
 }
 
@@ -743,6 +766,14 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			// un drapeau relu ne prouve rien. Pour du son, la seule mesure qui
 			// tranche est l'inventaire des composants audio VIVANTS.
 			ReleverLeSon();
+
+			// --- ET LA TEMPERATURE, PREREQUIS DU STATUT METEO DU PION --------
+			//
+			// Elle est relevee ICI et pas a l'armement pour la meme raison que
+			// le voile : `Temperature Update Period` vaut 2 secondes chez le
+			// pack, et une lecture immediate rendrait zero pour une bonne
+			// raison -- ce qui ferait accuser un systeme parfaitement vivant.
+			ReleverLaTemperature();
 		}
 	}
 
@@ -1613,6 +1644,48 @@ void UWorldseedSkyDriverComponent::PushWeather() const
 		if (!Bridge.WriteRange(SeasonRangeNames[S], Value) && bControle)
 		{
 			Refusees.Add(SeasonRangeNames[S].ToString());
+		}
+	}
+
+	// --- ET IL FAUT LE DIRE AU GESTIONNAIRE, SINON IL GARDE CELLES DU PACK ---
+	//
+	// MESURE DU 30 SEPTEMBRE 2026, et elle est le onzieme exemplaire du meme
+	// piege : poser une variable Blueprint par reflexion ne declenche aucun
+	// rappel. Les quatre plages etaient POSEES -- relues identiques colonne par
+	// colonne -- et `UDW_Temperature_Manager` tournait sur 29 a 64 Fahrenheit,
+	// soit a un degre pres son defaut de printemps livre (30 a 65), alors que
+	// nos plages polaires allaient de -11 a 30 Fahrenheit. Il les lit une fois
+	// et les met en cache.
+	//
+	// LE RAPPEL N'EST PAS UN `OnRep_` ET PAS UN `Static Properties -` : la liste
+	// des 408 fonctions de l'acteur meteo ne contient AUCUN
+	// « Static Properties - Temperature ». C'est le gestionnaire, un COMPOSANT,
+	// qui porte `Update Temperature Range` -- d'ou `AppelerSansArgumentSur`,
+	// puisque `CallFunction` ne voit que les deux acteurs.
+	//
+	// APPELE A CHAQUE ECRITURE, et ce n'est pas une negligence : nos plages
+	// changent avec le biome, donc a chaque pas du joueur, et il n'existe pas
+	// d'instant ou l'on saurait qu'elles ont fini de bouger. Le cout est une
+	// recherche de fonction et un recalcul que le pack fait deja toutes les
+	// deux secondes de son cote.
+	// LE TEMOIN `-WorldseedPlages=0` saute ce bloc, et laisse le pack sur ses
+	// valeurs livrees : « avec » et « sans » se mesurent alors dans le MEME etat
+	// du code. Sans cela on comparerait un chiffre du jour a un chiffre de la
+	// veille, ce que ce depot a deja paye deux fois.
+	if (AActor* const Meteo = WorldseedRecalculerLesPlages()
+			? Bridge.MeteoBrute() : nullptr)
+	{
+		TInlineComponentArray<UActorComponent*> Composants;
+		Meteo->GetComponents(Composants);
+		for (UActorComponent* const C : Composants)
+		{
+			if (C && C->GetClass()
+				&& C->GetClass()->GetName().Contains(TEXT("Temperature")))
+			{
+				FWorldseedUdsBridge::AppelerSansArgumentSur(
+					C, TEXT("Update Temperature Range"));
+				break;
+			}
 		}
 	}
 
@@ -2697,4 +2770,134 @@ void UWorldseedSkyDriverComponent::ReleverLeVoileDeVent() const
 		Composant ? TEXT("present") : TEXT("NUL"),
 		Mid ? TEXT("present") : TEXT("NUL"),
 		Current.Fog, Current.Rain, Current.Snow, Current.WindIntensity);
+}
+
+void UWorldseedSkyDriverComponent::ReleverLaTemperature() const
+{
+	AActor* const Meteo = Bridge.MeteoBrute();
+	if (!Meteo)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Worldseed] temperature : aucun acteur meteo -- rien a relever"));
+		return;
+	}
+
+	const bool bFahrenheit =
+		Bridge.TemperatureScale == FWorldseedUdsBridge::ETemperatureScale::Fahrenheit;
+
+	// --- 1. LE CHAMP QUE LA DOCUMENTATION DESIGNE, ET QUI NE PORTE RIEN ------
+	//
+	// `Temperature Weather State` est present en partie -- il est nul au defaut
+	// de classe -- mais son champ `Temperature` reste a ZERO alors que le
+	// gestionnaire tourne. CE N'EST DONC PAS LA VALEUR VIVANTE, et la premiere
+	// version de ce releve le mettait en titre : elle annoncait -17,8 C, qui
+	// n'est que la conversion d'un zero. On le garde, parce qu'un jour il
+	// portera peut-etre quelque chose, mais il est ETIQUETE pour ce qu'il est.
+	const UObject* const Etat = FWorldseedUdsBridge::LireObjet(
+		Meteo, TEXT("Temperature Weather State"));
+
+	double Brute = 0.0;
+	const bool bLue = Etat
+		&& FWorldseedUdsBridge::LireNombreDe(Etat, TEXT("Temperature"), Brute);
+
+	// --- 2. LE GESTIONNAIRE EST-IL MONTE ? -----------------------------------
+	//
+	// `UDW_Temperature_Manager` est un COMPOSANT du Blueprint meteo, et c'est
+	// lui qui calcule la cible. Un releve de commandlet ne peut pas le voir --
+	// il ne verrait que le defaut -- d'ou cet inventaire sur l'instance.
+	TInlineComponentArray<UActorComponent*> Composants;
+	Meteo->GetComponents(Composants);
+	FString Gestionnaire = TEXT("gestionnaire ABSENT");
+	float ViveC = NAN;
+	for (const UActorComponent* const C : Composants)
+	{
+		if (!C || !C->GetClass()
+			|| !C->GetClass()->GetName().Contains(TEXT("Temperature")))
+		{
+			continue;
+		}
+
+		// ET L'ON LIT SUR LUI, pas seulement son nom : un compte de composants
+		// n'est pas une mesure d'effet. C'est le gestionnaire qui tient la
+		// valeur VIVANTE -- `Last Temperature` -- et c'est ce que le premier
+		// passage de ce releve avait manque, en suivant la documentation vers
+		// un champ qui reste a zero.
+		double Derniere = 0.0, Cible = 0.0;
+		const bool bD = FWorldseedUdsBridge::LireNombreDe(
+			C, TEXT("Last Temperature"), Derniere);
+		const bool bC = FWorldseedUdsBridge::LireNombreDe(
+			C, TEXT("Target Temperature"), Cible);
+		FVector2D Plage = FVector2D::ZeroVector;
+		const bool bP = FWorldseedUdsBridge::LirePlageDe(
+			C, TEXT("Temperature Range"), Plage);
+
+		const auto EnCelsius = [bFahrenheit](double V)
+		{
+			return bFahrenheit
+				? FahrenheitToCelsius(static_cast<float>(V))
+				: static_cast<float>(V);
+		};
+
+		if (bD)
+		{
+			ViveC = EnCelsius(Derniere);
+		}
+
+		Gestionnaire = FString::Printf(
+			TEXT("%s cible %.1f%s C, plage %.0f..%.0f%s C"),
+			*C->GetName(),
+			EnCelsius(Cible), bC ? TEXT("") : TEXT("?"),
+			EnCelsius(Plage.X), EnCelsius(Plage.Y), bP ? TEXT("") : TEXT("?"));
+		break;
+	}
+
+	// --- 3. NOS PLAGES SONT-ELLES CELLES QU'UDW TIENT ? ----------------------
+	//
+	// On relit la plage de CHAQUE saison et on la compare a la notre, ramenees
+	// toutes deux en Celsius. C'est le seul controle qui distingue « nos plages
+	// sont posees » de « le pack a garde les siennes » -- et ses defauts livres
+	// sont 20-55, 30-65, 55-80, 40-70 en Fahrenheit, soit -6,7 a 26,7 Celsius,
+	// des valeurs assez credibles pour passer inapercues.
+	FString Plages;
+	for (int32 S = 0; S < FWorldseedClimatePreset::SeasonCount; ++S)
+	{
+		FVector2D Chez = FVector2D::ZeroVector;
+		const bool bPlageLue = Bridge.ReadRange(SeasonRangeNames[S], Chez);
+		const FVector2D ChezC = bFahrenheit
+			? FVector2D(FahrenheitToCelsius(static_cast<float>(Chez.X)),
+				FahrenheitToCelsius(static_cast<float>(Chez.Y)))
+			: Chez;
+		const FVector2D& Notre = Current.SeasonMinMaxC[S];
+
+		Plages += FString::Printf(
+			TEXT(" %c[%s%.0f..%.0f vs %.0f..%.0f]"),
+			TEXT("HPEA")[S], bPlageLue ? TEXT("") : TEXT("? "),
+			ChezC.X, ChezC.Y, Notre.X, Notre.Y);
+	}
+
+	// LA PHASE DE SAISON SE RELIT ICI, ET NON DEPUIS L'APPELANT : c'est UDS qui
+	// la fait avancer, et ce releve doit pouvoir se poser n'importe ou sans
+	// dependre d'une variable locale de la boucle.
+	float Phase = -1.0f;
+	const bool bPhaseLue = Bridge.ReadSeasonPhase(Phase);
+
+	// LA TEMPERATURE EST LA MESURE ; LA SAISON ET LES PLAGES SONT CE QUI PERMET
+	// DE LA JUGER. Cinq degres est juste en hiver continental et faux en desert
+	// chaud : sans le contexte, le chiffre ne se lit pas. Et l'echelle est DITE,
+	// parce que 25 est un froid mordant en Fahrenheit et une belle journee en
+	// Celsius.
+	// LA VALEUR VIVANTE EST EN TITRE, et une absence est BRUYANTE : si le
+	// gestionnaire manque, la ligne doit hurler plutot que d'imprimer un zero
+	// qu'on lirait comme une mesure.
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] temperature : %s | %s | phase de saison %.2f%s | ")
+		TEXT("plages HPEA, UDW vs nous, en C :%s | (le champ `Temperature ")
+		TEXT("Weather State` vaut %.1f %s%s -- ce n'est PAS la valeur vivante)"),
+		FMath::IsNaN(ViveC)
+			? TEXT("AUCUNE VALEUR VIVANTE")
+			: *FString::Printf(TEXT("%.1f C"), ViveC),
+		*Gestionnaire, Phase, bPhaseLue ? TEXT("") : TEXT(" ILLISIBLE"),
+		*Plages,
+		Brute, bFahrenheit ? TEXT("F") : TEXT("C"),
+		bLue ? TEXT("") : TEXT(", illisible"));
 }

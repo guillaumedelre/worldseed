@@ -92,6 +92,33 @@ namespace
 		return true;
 	}
 
+	/**
+	 * LE MIROIR DE `SetRange`, et il manquait.
+	 *
+	 * Une ecriture sans lecture ne se controle pas : le depot ecrivait les
+	 * quatre plages de temperature saisonnieres sans jamais pouvoir dire si
+	 * elles avaient remplace celles du pack -- dont les defauts, 20 a 80
+	 * Fahrenheit, sont assez credibles pour qu'un monde entier passe pour cale
+	 * alors qu'il tourne sur les valeurs livrees.
+	 */
+	bool GetRange(const UObject* Actor, FName PropertyName, FVector2D& OutValue)
+	{
+		if (!Actor || PropertyName.IsNone())
+		{
+			return false;
+		}
+
+		FStructProperty* Property = CastField<FStructProperty>(
+			Actor->GetClass()->FindPropertyByName(PropertyName));
+		if (!Property || Property->Struct != TBaseStructure<FVector2D>::Get())
+		{
+			return false;
+		}
+
+		OutValue = *Property->ContainerPtrToValuePtr<FVector2D>(Actor);
+		return true;
+	}
+
 	/** Lit une enumeration d'octet, quelle que soit sa forme de stockage. */
 	bool GetEnumByte(const AActor* Actor, FName PropertyName, uint8& OutValue)
 	{
@@ -251,18 +278,32 @@ bool FWorldseedUdsBridge::CallFunction(FName FunctionName) const
 	// qui n'en prennent pas, et l'on verifie ce point avant l'appel.
 	for (AActor* const Acteur : { SkyActor.Get(), WeatherActor.Get() })
 	{
-		if (!Acteur) { continue; }
-		if (UFunction* const Fn = Acteur->FindFunction(FunctionName))
+		if (AppelerSansArgumentSur(Acteur, FunctionName))
 		{
-			if (Fn->NumParms != 0)
-			{
-				continue;
-			}
-			Acteur->ProcessEvent(Fn, nullptr);
 			return true;
 		}
 	}
 	return false;
+}
+
+bool FWorldseedUdsBridge::AppelerSansArgumentSur(UObject* Cible, FName NomFonction)
+{
+	// LA MEME GARDE QUE `CallFunction`, ET ELLE N'EST ECRITE QU'ICI : deux
+	// copies d'un controle de securite finissent par diverger, et celle qui
+	// divergerait ici corromprait la pile d'appel.
+	if (!Cible || NomFonction.IsNone())
+	{
+		return false;
+	}
+
+	UFunction* const Fn = Cible->FindFunction(NomFonction);
+	if (!Fn || Fn->NumParms != 0)
+	{
+		return false;
+	}
+
+	Cible->ProcessEvent(Fn, nullptr);
+	return true;
 }
 
 bool FWorldseedUdsBridge::ChangerAmbiance(UObject* NouveauSon, float FonduS,
@@ -560,6 +601,12 @@ bool FWorldseedUdsBridge::LireNombreDe(const UObject* Cible, FName Propriete,
 	return GetNumber(Cible, Propriete, OutValeur);
 }
 
+bool FWorldseedUdsBridge::LirePlageDe(const UObject* Cible, FName Propriete,
+	FVector2D& OutValeur)
+{
+	return GetRange(Cible, Propriete, OutValeur);
+}
+
 bool FWorldseedUdsBridge::LireBooleenDe(const UObject* Cible, FName Propriete,
 	bool& OutValeur)
 {
@@ -756,4 +803,13 @@ bool FWorldseedUdsBridge::WriteRange(FName PropertyName, const FVector2D& Value)
 {
 	return SetRange(WeatherActor.Get(), PropertyName, Value)
 		|| SetRange(SkyActor.Get(), PropertyName, Value);
+}
+
+bool FWorldseedUdsBridge::ReadRange(FName PropertyName, FVector2D& OutValue) const
+{
+	// MEME ORDRE QUE L'ECRITURE, et ce n'est pas cosmetique : si les deux
+	// acteurs portaient une variable du meme nom, lire dans un ordre et ecrire
+	// dans l'autre rendrait un controle qui se contredit lui-meme.
+	return GetRange(WeatherActor.Get(), PropertyName, OutValue)
+		|| GetRange(SkyActor.Get(), PropertyName, OutValue);
 }

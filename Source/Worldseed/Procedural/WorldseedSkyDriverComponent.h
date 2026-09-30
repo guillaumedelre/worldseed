@@ -307,6 +307,32 @@ private:
 	void ReleverLeVoileDeVent() const;
 
 	/**
+	 * LA TEMPERATURE D'UDW EST-ELLE VIVANTE, ET SUIT-ELLE NOS PLAGES ?
+	 *
+	 * C'est le PREREQUIS du statut meteo du pion, et il se mesure AVANT d'ecrire
+	 * la moindre ligne de ce chantier : `Actor_Weather_Status` ne fabrique pas
+	 * de temperature, il la LIT sur l'acteur meteo, y ajoute un decalage local
+	 * et declenche ses evenements de froid et de chaud sur des seuils. Si la
+	 * temperature d'UDW dort, tout ce qu'on batirait dessus serait decoratif --
+	 * et c'est exactement le defaut que ce depot a paye sur la latitude, sur
+	 * l'horloge et sur les etoiles.
+	 *
+	 * CE QUE LE RELEVE DE COMMANDLET A ETABLI, et qui dicte ce qu'on lit ici :
+	 * la temperature courante ne vit sur AUCUN des deux acteurs. Elle est sur un
+	 * troisieme objet, `Temperature Weather State` (un `UDS_Weather_Settings`),
+	 * qui est NUL au defaut de classe -- donc la seule lecture qui vaille est
+	 * celle de l'INSTANCE, en partie.
+	 *
+	 * ET L'ON DONNE LE CONTEXTE AVEC LE CHIFFRE : une temperature de 5 degres
+	 * est juste en hiver continental et fausse en plein desert chaud. Sans la
+	 * saison, le biome et la plage que NOUS avons ecrite, le chiffre ne se
+	 * jugerait pas. Les seuils du pack, eux, sont en FAHRENHEIT (froid 25,
+	 * chaud 95) : on les rend dans les deux echelles pour qu'aucune conversion
+	 * ne se fasse de tete.
+	 */
+	void ReleverLaTemperature() const;
+
+	/**
 	 * Pose `Global Water Level`, que `Use UDS Water Level` attend.
 	 *
 	 * La fonction est DEJA armee sur l'acteur meteo -- c'est son defaut -- mais
