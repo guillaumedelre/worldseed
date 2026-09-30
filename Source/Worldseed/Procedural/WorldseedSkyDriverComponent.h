@@ -126,6 +126,34 @@ public:
 	 */
 	void PiloterLesOrages(EWorldseedBiome Biome);
 
+	/**
+	 * L'HABILLAGE DES MATIERES : neige, humidite et poussiere sur les surfaces.
+	 *
+	 * POURQUOI IL FAUT L'ECRIRE, ET C'EST UNE HYPOTHESE REFUTEE QUI L'ETABLIT.
+	 * Le pack porte `Material Snow Coverage`, `Material Wetness` et `Material
+	 * Dust Coverage`, et son interrupteur `Simulate Changing Material State Over
+	 * Time` arrive DEJA arme -- mais son drapeau derive `Material State Sim
+	 * Active` vaut FAUX, et les trois grandeurs restent a 0,000 sous une neige a
+	 * 10 sur 10.
+	 *
+	 * J'ai cru que le pack se mettrait a calculer des qu'un materiau
+	 * consommerait ses fonctions de meteo. Mesure du 30 septembre 2026, APRES la
+	 * greffe de `Foliage_Weather_Effects` sur trois maitres : toujours 0,000.
+	 * L'hypothese est donc morte, et c'est a nous d'ecrire.
+	 *
+	 * LES SURCHARGES MANUELLES SONT INDISPENSABLES, et le depot le sait de
+	 * premiere main : sans elles UDW ecrase notre valeur au tick suivant --
+	 * c'est ce qui a ete paye sur la poussiere, le vent et le tonnerre.
+	 *
+	 * L'ECHELLE N'EST PAS CELLE DES CURSEURS. Les huit curseurs meteo vont de 0
+	 * a 10 ; ces trois grandeurs vont de 0 a 1, plafonnees par
+	 * `Max Material Snow Coverage` et `Max Material Wetness`. Confondre les deux
+	 * poserait 10 sur une echelle qui sature a 1, ce qui se lirait comme un
+	 * reglage qui marche -- et le depot a deja paye qu'un seuil n'est pas une
+	 * part.
+	 */
+	void PiloterLesMatieres(const FWorldseedWeather& Meteo) const;
+
 private:
 	/** Ecrit l'etat courant dans UDS. */
 	void PushWeather() const;

@@ -574,6 +574,11 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 
 	PushWeather();
 
+	// L'HABILLAGE DES MATIERES SUIT L'ETAT METEO, donc il se pose APRES lui et
+	// au meme rythme : la neige sur les arbres doit monter et descendre avec la
+	// neige du ciel, pas une fois pour toutes.
+	PiloterLesMatieres(Current);
+
 	// --- LES EFFETS D'ECRAN MONTENT-ILS VRAIMENT ? ---------------------------
 	//
 	// ARMER N'EST PAS AFFICHER, et le depot a la meme lecon pour l'horloge et
@@ -702,11 +707,14 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			const bool bPoussMatLue = Bridge.ReadNumber(
 				TEXT("Material Dust Coverage"), PoussiereMat);
 
+			// LA NEIGE EST DESORMAIS ECRITE PAR NOUS, les deux autres non -- et
+			// c'est ce que cette ligne doit dire, sans quoi elle conseillerait
+			// encore d'ecrire ce qui l'est deja. L'humidite garde la simulation
+			// du pack ; la poussiere est ecartee par arbitrage.
 			UE_LOG(LogTemp, Warning,
-				TEXT("[Worldseed] matieres : humidite %.3f%s, neige %.3f%s, ")
-				TEXT("poussiere %.3f%s | pour une meteo pluie %.1f neige %.1f ")
-				TEXT("poussiere %.1f -- si elles restent a zero, le pack ne les ")
-				TEXT("calcule pas et il faudra les ECRIRE"),
+				TEXT("[Worldseed] matieres : humidite %.3f%s (au pack), ")
+				TEXT("neige %.3f%s (a nous), poussiere %.3f%s (ecartee) | ")
+				TEXT("pour une meteo pluie %.1f neige %.1f poussiere %.1f"),
 				Mouille, bMouilleLu ? TEXT("") : TEXT(" ILLISIBLE"),
 				NeigeMat, bNeigeMatLue ? TEXT("") : TEXT(" ILLISIBLE"),
 				PoussiereMat, bPoussMatLue ? TEXT("") : TEXT(" ILLISIBLE"),
@@ -2573,4 +2581,73 @@ void UWorldseedSkyDriverComponent::ArmerLesEtoilesReelles(
 	UE_LOG(LogTemp, Log,
 		TEXT("[Worldseed] etoiles : la JUSTESSE du ciel ne se lit pas ici -- ")
 		TEXT("elle se regarde de nuit (-WorldseedHeure=1)"));
+}
+
+void UWorldseedSkyDriverComponent::PiloterLesMatieres(
+	const FWorldseedWeather& Meteo) const
+{
+	// --- ON N'ECRIT QUE LA NEIGE, ET LES DEUX AUTRES SONT DES CHOIX ----------
+	//
+	// LA POUSSIERE EST ECARTEE PAR ARBITRAGE DU PROPRIETAIRE, et c'est consigne :
+	// « les deux prereglages du pack posent `Material Dust Coverage = 1`, nous ne
+	// l'ecrivons pas, et le sol restera donc propre sous la tempete. C'est un
+	// choix, pas un oubli. » On ne le reprend pas au passage.
+	//
+	// L'HUMIDITE PORTE SA PROPRE SIMULATION -- `Wetness Dry Duration` 90 s,
+	// `Wetness Dry Speed without Sunlight` 0,3, `Melted Snow Coverage
+	// Contributes to Wetness` 0,75. La remplacer par un ratio de la pluie
+	// detruirait un modele temporel qu'on n'a pas compris : une surface resterait
+	// mouillee pile tant qu'il pleut, et secherait instantanement. On la laisse.
+	//
+	// Il reste donc la NEIGE, qui est l'objet de ce chantier : des arbres blancs
+	// sous un sol blanc.
+	static const FName NomNeigeMat(TEXT("Material Snow Coverage"));
+	static const FName NomNeigeManuel(
+		TEXT("Material Snow Coverage - Manual Override"));
+	static const FName NomRappelNeige(
+		TEXT("OnRep_Material Snow Coverage - Manual Override"));
+	static const FName NomStatiqueMat(
+		TEXT("Static Properties - Material Effects"));
+
+	// ⚠ L'ECHELLE N'EST PAS CELLE DES CURSEURS. Les huit curseurs meteo vont de
+	// 0 a 10 ; cette grandeur va de 0 a 1, plafonnee par `Max Material Snow
+	// Coverage`. Y poser 10 se lirait comme un reglage qui marche -- la valeur
+	// saturerait -- et l'on ne verrait jamais de neige PARTIELLE.
+	double Plafond = 1.0;
+	Bridge.ReadNumber(TEXT("Max Material Snow Coverage"), Plafond);
+	const double Couverture = FMath::Clamp(
+		static_cast<double>(Meteo.Snow) / 10.0, 0.0, FMath::Max(0.0, Plafond));
+
+	const bool bEcrit = Bridge.WriteNumber(NomNeigeMat, Couverture);
+
+	// LA SURCHARGE MANUELLE, SANS QUOI UDW ECRASE AU TICK SUIVANT. Paye sur la
+	// poussiere, le vent et le tonnerre -- et ce sont des booleens INDEPENDANTS,
+	// donc en armer un n'arme pas les autres.
+	const bool bManuel = Bridge.WriteBool(NomNeigeManuel, true);
+	const bool bRappel = Bridge.CallFunction(NomRappelNeige);
+	const bool bStatique = Bridge.CallFunction(NomStatiqueMat);
+
+	// ET L'ON RELIT : poser un nombre par reflexion ne prouve pas qu'il tient,
+	// surtout quand un autre systeme peut reprendre la main.
+	double Relue = -1.0;
+	const bool bRelu = Bridge.ReadNumber(NomNeigeMat, Relue);
+
+	// JOURNALISE UNE FOIS PAR CHANGEMENT UTILE, PAS A CHAQUE TRAME. Un releve
+	// qui se repete soixante fois par seconde noie tout le reste -- et du bruit
+	// qu'on lit comme une information coute plus cher que pas d'information.
+	static double DerniereDite = -1.0;
+	if (FMath::Abs(Relue - DerniereDite) > 0.02)
+	{
+		DerniereDite = Relue;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Worldseed] matieres : neige %.1f/10 -> couverture %.3f ")
+			TEXT("(plafond %.2f) | ecrit %s, surcharge %s, OnRep_ %s, ")
+			TEXT("Static Properties %s, relu %.3f%s"),
+			Meteo.Snow, Couverture, Plafond,
+			bEcrit ? TEXT("oui") : TEXT("REFUSE"),
+			bManuel ? TEXT("armee") : TEXT("REFUSEE"),
+			bRappel ? TEXT("appele") : TEXT("absent"),
+			bStatique ? TEXT("appelee") : TEXT("ABSENTE"),
+			Relue, bRelu ? TEXT("") : TEXT(" (ILLISIBLE)"));
+	}
 }
