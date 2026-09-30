@@ -352,6 +352,11 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[2] UN DRAPEAU RELU NE PROUVE RIEN.** Il se relit a vrai des qu'on le pose.
   La seule mesure qui tranche est l'EFFET — un inventaire de composants vivants,
   une elevation solaire, une couleur a l'ecran.
+- **UN RELEVE PRIS SUR LE DEFAUT DE CLASSE NE DIT RIEN DE L'INSTANCE DU
+  NIVEAU.** Un acteur pose se configure a son demarrage : le defaut peut donner
+  faux et nul quand la scene tourne avec la brique DEJA montee. On releve LES
+  DEUX, et l'on nomme lequel on cite — sinon on ecrit un armement pour quelque
+  chose qui marchait, et les deux mesures tombent identiques au chiffre pres.
 - **[6] UN SEUIL N'EST PAS UNE PART.** Un bruit somme n'est pas uniforme : il se
   masse autour de sa moyenne et son support est BORNE. Seuiller dessus ne rend
   pas la part demandee. On uniformise d'abord, par une table de quantiles

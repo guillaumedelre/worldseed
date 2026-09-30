@@ -2820,3 +2820,50 @@ nom. La comparaison d'equinoxe ne s'imprime plus qu'autour de midi.
 l'autre, et son domaine de validite doit etre DIT. Le cas temoin etait juste ;
 c'est son domaine qui n'etait pas ecrit. Troisieme releve de ce depot corrige le
 meme jour pour avoir dit plus que ce qu'il mesurait.
+
+### Le voile de vent marchait deja, et mon armement ne faisait rien (30 septembre 2026)
+
+**DEUXIEME FOIS EN DEUX JOURS QU'UNE BRIQUE DU PACK ARRIVE ALLUMEE**, apres le
+son. La difference, et elle est a ma charge : le son a ete MESURE avant qu'une
+ligne de C++ ne soit ecrite ; le voile, non. J'ai ecrit `ArmerLeVoileDeVent`
+sur le patron du soleil et des etoiles -- `Static Properties - <categorie>`,
+trois precedents verts -- et le temoin l'a annule.
+
+    avec armement   intensite 0.442
+    SANS armement   intensite 0.442   <- au chiffre pres  (-WorldseedVoile=0)
+
+**DEUX MESURES IDENTIQUES AU CHIFFRE PRES : le levier n'etait pas lu.** Pas un
+plafond cache cette fois, ni deux fois la meme chose -- du code mort. Le releve
+qui m'avait convaincu d'armer disait :
+
+    Enable Post Process Wind Fog   FAUX
+    PPWF Component                 NUL
+
+**C'ETAIT LE DEFAUT DE CLASSE.** L'instance de `Ultra_Dynamic_Weather` posee
+dans `L_Worldseed_Proc` le monte a son demarrage, et l'inventaire de la veille
+avait justement releve « instance ET defaut de classe » sur les 925 variables
+du ciel. J'ai laisse tomber la moitie qui comptait le lendemain.
+
+**LE VOILE SUIT BIEN CE QUE NOUS ECRIVONS**, et c'est la seule chose que ce
+chantier a produite -- une preuve, pas du code :
+
+    brume 8 / vent 9   ->  0.442
+    brume 0 / vent 0   ->  0.140
+
+Les quatre entrees `PPWF Intensity from Fog / Rain / Snow / Wind` etaient
+assignees par le pack, et la brume et le vent que Worldseed ecrit les
+atteignent. **Reste inexplique** : le residu de 0.140 a quatre entrees nulles.
+Il n'est pas gratuit -- c'est du bruit de brume rendu pour rien -- mais il n'a
+pas ete cherche.
+
+**CE QUI EST RETIRE** : `ArmerLeVoileDeVent`, 72 lignes, et son temoin
+`-WorldseedVoile=`, devenu inerte des lors qu'il n'y avait plus rien a
+desarmer. **CE QUI RESTE** : `ReleverLeVoileDeVent`, qui a tranche, et au site
+d'appel un commentaire disant POURQUOI il n'y a pas d'armement -- sans quoi la
+prochaine lecture de l'inventaire en reecrira un. La regle citee dans ce
+commentaire est celle de la section B3, et elle etait deja ecrite : *« on ne
+suppose pas qu'une brique est eteinte, on le VERIFIE -- cinq precedents ne font
+pas une regle d'inference »*.
+
+Commit `2bb4e35`, 158 oracles verts -- aucun n'a bouge, ce chantier n'ayant rien
+ajoute a garder.
