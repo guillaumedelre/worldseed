@@ -151,6 +151,18 @@ BROCHES = {
 # chance de le modifier. Il reste branche en direct sur sa propriete.
 HORS_EMBALLAGE = {"WorldPositionOffset", "PixelDepthOffset", "Displacement"}
 
+# LES DEUX ENTREES QU'IL EST OBLIGATOIRE DE BRANCHER, et ce n'est pas un avis :
+# `Apply Snow / Dust` et `Apply Wetness` sont des booleens STATIQUES dont
+# `use_preview_value_as_default` vaut FAUX. Non branches, ils ne prennent pas un
+# defaut -- ils font ECHOUER la compilation, et le moteur substitue le materiau
+# par defaut, c'est-a-dire un damier gris sur tous les arbres.
+#
+# On les met a VRAI tous les deux : `Apply Wetness` est ce qui mouille une
+# surface sous la pluie, et le desarmer ici priverait le pack d'un effet qu'il
+# sait faire, au motif qu'on ne pilote pas encore `Material Wetness`. Sa valeur
+# reste a lui.
+OBLIGATOIRES = ("Apply Snow / Dust", "Apply Wetness")
+
 _log = []
 
 
@@ -180,19 +192,40 @@ def etat(chemin, fonction):
                   if e.get("class") == "MakeMaterialAttributes"]
 
     # L'ARETE QUI COMPTE : un emballage alimente-t-il la fonction de meteo ?
-    # C'est le seul maillon verifiable par relecture -- le dernier, vers la
-    # racine d'attributs, est invisible a l'export.
+    # C'est un maillon verifiable par relecture -- le dernier, vers la racine
+    # d'attributs, est invisible a l'export.
     ids_appels = {a.get("id") for a in appels}
     ids_makes = {m.get("id") for m in emballages}
     alimentee = any(c.get("source_id") in ids_makes
                     and c.get("target_id") in ids_appels
                     for c in d.get("connections", []))
 
+    # ⚠ ET LES DEUX INTERRUPTEURS OBLIGATOIRES, QUI MANQUAIENT A MON PREMIER JET.
+    # `Apply Snow / Dust` et `Apply Wetness` sont des booleens STATIQUES dont
+    # `use_preview_value_as_default` vaut FAUX : non branches, ils ne prennent
+    # pas un defaut, ils font ECHOUER LA COMPILATION. Mesure du 30 septembre
+    # 2026, apres ma greffe : « Failed to compile Material for platform
+    # PCD3D_SM6, Default Material will be used in game » sur les trois maitres,
+    # et leurs instances avec -- tous les arbres en damier gris.
+    #
+    # LA REPONSE ETAIT DEJA SOUS MES YEUX : le releve de notre propre sol
+    # montrait `MaterialExpressionStaticBool -> Apply Snow/Dust` et
+    # `-> Apply Wetness/Puddles`. Le patron prouve les portait, je ne les avais
+    # pas copies.
+    branchees = set()
+    for c in d.get("connections", []):
+        if c.get("target_id") in ids_appels:
+            branchees.add(str(c.get("target_input") or ""))
+    interrupteurs = all(
+        any(nom in b for b in branchees) for nom in OBLIGATOIRES)
+
     mat = unreal.EditorAssetLibrary.load_asset(chemin)
     return {
         "fonction": len(appels),
         "emballage": len(emballages),
         "alimentee": alimentee,
+        "interrupteurs": interrupteurs,
+        "branchees": sorted(branchees),
         "attributs": bool(mat.get_editor_property("use_material_attributes")),
         "sorties": [o.get("property") for o in d.get("output_connections", [])],
     }
@@ -208,7 +241,8 @@ def _saine(e):
     le drapeau soit arme. Le dernier maillon -- fonction vers la racine
     d'attributs -- reste invisible a l'export, et c'est dit dans l'en-tete.
     """
-    return e["fonction"] == 1 and e["alimentee"] and e["attributs"]
+    return (e["fonction"] == 1 and e["alimentee"] and e["attributs"]
+            and e["interrupteurs"])
 
 
 def greffer_une(cible, verifier):
@@ -252,8 +286,18 @@ def greffer_une(cible, verifier):
     # GREFFE comme s'il etait l'original.
     secours = "{0}/{1}_AvantNeige".format(DEST, court)
     if not unreal.EditorAssetLibrary.does_asset_exist(secours):
-        if unreal.EditorAssetLibrary.duplicate_asset(dst, secours) is None:
+        copie = unreal.EditorAssetLibrary.duplicate_asset(dst, secours)
+        if copie is None:
             log("ERROR", "sauvegarde impossible pour {} -- on NE GREFFE PAS "
+                         "sans filet".format(court))
+            return None
+        # ⚠ ET ON LA SAUVEGARDE SUR LE DISQUE. `duplicate_asset` cree en
+        # MEMOIRE : sans `save_loaded_asset` la copie meurt avec le commandlet,
+        # et le filet de securite n'existe pas. Le signe qui l'a trahi : la ligne
+        # « sauvegarde avant greffe » se reimprimait a chaque passage, alors
+        # qu'elle ne doit s'imprimer qu'UNE fois dans la vie du projet.
+        if not unreal.EditorAssetLibrary.save_loaded_asset(copie, False):
+            log("ERROR", "sauvegarde NON ECRITE pour {} -- on NE GREFFE PAS "
                          "sans filet".format(court))
             return None
         print("CREATED: {}".format(secours))
@@ -290,8 +334,29 @@ def greffer_une(cible, verifier):
     # par propriete ne mentionne pas. On reprend donc le SIEN.
     existants = [e for e in avant.get("expressions", [])
                  if e.get("class") == "MakeMaterialAttributes"]
-    a_creer = ["MaterialFunctionCall"] if existants \
-        else ["MakeMaterialAttributes", "MaterialFunctionCall"]
+
+    # UN APPEL DEJA PRESENT SE REUTILISE, IL NE SE DOUBLE PAS. Ce cas est celui
+    # d'une greffe PRECEDENTE INCOMPLETE -- la mienne, qui avait oublie les deux
+    # interrupteurs -- et en creer un second laisserait le premier casse dans le
+    # graphe. Restaurer depuis la sauvegarde serait l'autre voie, mais elle
+    # demanderait de SUPPRIMER un materiau de pack reference, ce que le depot
+    # sait fragile.
+    appel_present = None
+    for e in avant.get("expressions", []):
+        if e.get("class") == "MaterialFunctionCall" \
+                and fonction in json.dumps(e.get("properties", {})):
+            appel_present = e
+            break
+
+    a_creer = []
+    if not existants:
+        a_creer.append("MakeMaterialAttributes")
+    if appel_present is None:
+        a_creer.append("MaterialFunctionCall")
+    # UN BOOLEEN STATIQUE PAR INTERRUPTEUR OBLIGATOIRE. Sans eux la compilation
+    # ECHOUE et tous les arbres passent en damier gris -- mesure du
+    # 30 septembre 2026, payee comptant.
+    a_creer += ["StaticBool"] * len(OBLIGATOIRES)
 
     faits = unreal.MaterialNodeService.batch_create_expressions(
         dst, a_creer, [-300] * len(a_creer), [1600] * len(a_creer))
@@ -307,9 +372,13 @@ def greffer_une(cible, verifier):
     for e in neufs:
         par_classe.setdefault(e["class"], []).append(e)
     try:
-        appel = par_classe["MaterialFunctionCall"][0]
+        appel = appel_present if appel_present is not None \
+            else par_classe["MaterialFunctionCall"][0]
         emballage = existants[0] if existants \
             else par_classe["MakeMaterialAttributes"][0]
+        bools = par_classe["StaticBool"][:len(OBLIGATOIRES)]
+        if len(bools) != len(OBLIGATOIRES):
+            raise IndexError("booleens statiques manquants")
     except (KeyError, IndexError) as err:
         log("ERROR", "noeuds neufs inattendus sur {} : {}".format(dst, err))
         return None
@@ -317,12 +386,27 @@ def greffer_une(cible, verifier):
     if existants:
         log("REPRIS", "{} : l'emballage du pack est reutilise, rien n'est "
                       "duplique".format(dst.rsplit("/", 1)[-1]))
+    if appel_present is not None:
+        log("REPARE", "{} : appel de fonction deja present, on complete ce qui "
+                      "manque plutot que de le doubler".format(
+                          dst.rsplit("/", 1)[-1]))
 
-    n = unreal.MaterialNodeService.batch_set_properties(
-        dst, [appel["id"]], ["MaterialFunction"],
-        [_reference_fonction(fonction)])
-    if n != 1:
-        log("ERROR", "fonction non posee sur {}".format(dst))
+    ids = [appel["id"]]
+    props = ["MaterialFunction"]
+    vals = [_reference_fonction(fonction)]
+    # LES DEUX BOOLEENS A VRAI. LA PROPRIETE S'APPELLE `Value`, releve dans
+    # l'en-tete du moteur -- `uint32 Value:1`. J'avais ecrit `DefaultValue` par
+    # analogie avec `ScalarParameter`, et le compteur de retour l'a dit : « 1
+    # propriete posee sur 3 ». Le script a refuse d'aller plus loin, ce qui a
+    # evite d'ecrire un graphe a moitie cable.
+    for b in bools:
+        ids.append(b["id"])
+        props.append("Value")
+        vals.append("true")
+    n = unreal.MaterialNodeService.batch_set_properties(dst, ids, props, vals)
+    if n != len(ids):
+        log("ERROR", "{} propriete(s) posee(s) sur {} dans {}".format(
+            n, len(ids), dst))
         return None
 
     src_ids, src_out, tgt_ids, tgt_in = [], [], [], []
@@ -348,6 +432,14 @@ def greffer_une(cible, verifier):
     src_out.append("")
     tgt_ids.append(appel["id"])
     tgt_in.append("Material Attributes")
+
+    # ET LES DEUX INTERRUPTEURS, SANS QUOI RIEN NE COMPILE. Une broche de sortie
+    # unique se designe par la chaine VIDE -- un `StaticBool` n'en a qu'une.
+    for b, nom in zip(bools, OBLIGATOIRES):
+        src_ids.append(b["id"])
+        src_out.append("")
+        tgt_ids.append(appel["id"])
+        tgt_in.append(nom)
 
     c = unreal.MaterialNodeService.batch_connect_expressions(
         dst, src_ids, src_out, tgt_ids, tgt_in)
