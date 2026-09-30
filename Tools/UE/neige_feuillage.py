@@ -121,8 +121,26 @@ FN_SURFACE = ("/Game/UltraDynamicSky/Materials/Weather/"
 CIBLES = [
     {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Bark_Master",
      "suffixe": "EcorceSFL", "fonction": FN_SURFACE},
-    {"maitre": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/Materials/M_Master_Leaf",
-     "suffixe": "FeuilleGlobal", "fonction": FN_FEUILLAGE},
+    # `M_Master_Leaf` EST RETIRE, ET C'EST UNE MESURE QUI L'A SORTI :
+    #
+    #     (Function Foliage_Weather_Effects) (Node Add)
+    #         Arithmetic between types float4 and float3 are undefined
+    #
+    # Son `BaseColor` est un float4 -- RGBA -- et la fonction y ajoute une
+    # couleur de neige en float3. Les deux autres cibles compilent parce que leur
+    # couleur est en RGB. Le materiau a ete REMIS D'APLOMB en rebranchant son
+    # emballage directement sur la racine d'attributs (mes noeuds restent
+    # inertes dans le graphe), parce qu'il est REFERENCE par une dizaine
+    # d'instances de feuilles et de palmiers : le supprimer pour le restaurer
+    # aurait ete plus dangereux que de le rebrancher.
+    #
+    # POUR LE REPRENDRE il faudra masquer sa couleur a trois composantes avant
+    # l'emballage -- un `ComponentMask` RGB -- ce qui veut dire RECABLER l'entree
+    # `BaseColor` de l'emballage du pack, donc toucher a ce qu'il avait choisi.
+    # Ce n'est pas un detail de cablage : c'est une decision, et elle attend.
+    #
+    # {"maitre": ".../M_Master_Leaf", "suffixe": "FeuilleGlobal",
+    #  "fonction": FN_FEUILLAGE},
     {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Leaf_Master",
      "suffixe": "FeuilleSFL", "fonction": FN_FEUILLAGE},
 ]
