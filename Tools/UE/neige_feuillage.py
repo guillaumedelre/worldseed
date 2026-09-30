@@ -33,12 +33,30 @@ n'y a qu'un noeud a inserer sur un fil existant » -- et c'etait faux : le
 travail est le meme partout, et ce qui le dimensionne est le NOMBRE DE
 PROPRIETES a emballer, quatre a six, pas le drapeau.
 
-OU VIVENT LES COPIES
---------------------
-`/Game/Worldseed/PCG/Materials/`, exclu de git : ces materiaux DERIVENT d'un pack
-payant et les redistribuer violerait l'EULA. Ils se refont en une commande --
-c'est tout l'objet de ce fichier, et c'est pourquoi le script EST l'artefact
-versionne, pas son resultat.
+ON GREFFE DANS LE MAITRE DU PACK, SUR PLACE -- ET C'EST UNE MESURE QUI L'A DECIDE
+--------------------------------------------------------------------------------
+Mon premier jet greffait sur des COPIES, dans `/Game/Worldseed/PCG/Materials/`,
+et les aurait imposees aux maillages par `materiaux_forces`. C'etait faux, et
+`vegetation.py` porte la lecon en clair : « UN PACK SE CONSOMME PAR SON INSTANCE,
+JAMAIS PAR SON MAITRE ». `materiau_force` remplace TOUS les slots par le meme
+materiau, donc imposer une copie du maitre ferait perdre les surcharges de
+l'instance -- ce que le depot a paye a l'image, un carre plein couleur sable.
+
+MESURE DU 30 SEPTEMBRE 2026, sur les 91 references de maillage du catalogue :
+
+    slots atteignant nos trois maitres : 40
+        par une INSTANCE : 40
+        en DIRECT        :  0
+
+QUARANTE SUR QUARANTE passent par une instance. Greffer dans le maitre est donc
+la seule forme juste : chaque instance herite de la neige en GARDANT ses
+parametres, et il n'y a AUCUNE table de correspondance a maintenir.
+
+REJOUABLE, ET C'EST LA RAISON DE CE CHOIX AUTANT QUE LA MESURE. Les materiaux
+changeront et d'autres viendront : ajouter une cible est une ligne dans `CIBLES`,
+et un rejeu. Le patron est celui de `materiaux_ism.py` -- modifier du contenu NON
+VERSIONNE par un script, parce qu'une retouche a la main serait perdue au
+prochain clone sans que rien ne le signale.
 
 CE QUE CETTE GREFFE NE FAIT PAS
 -------------------------------
@@ -194,40 +212,55 @@ def _saine(e):
 
 
 def greffer_une(cible, verifier):
-    maitre = cible["maitre"]
     fonction = cible["fonction"]
-    dst = "{0}/M_Worldseed{1}Neige".format(DEST, cible["suffixe"])
-    court = maitre.rsplit("/", 1)[-1]
-
-    if not unreal.EditorAssetLibrary.does_asset_exist(maitre):
-        log("ABSENT", "{} -- pack non installe, cible ignoree".format(maitre))
-        return None
-
-    # IDEMPOTENCE PAR CONSTAT, jamais par destruction : `delete_asset` sur un
-    # materiau rend faux sans lever, et la greffe se poserait par-dessus.
-    if unreal.EditorAssetLibrary.does_asset_exist(dst):
-        e = etat(dst, fonction)
-        if _saine(e):
-            log("DEJA", "{} porte la greffe (sorties : {})".format(
-                dst.rsplit("/", 1)[-1], ", ".join(e["sorties"]) or "aucune"))
-            return dst
-        log("REPRENDRE", "{} existe mais la greffe est incomplete : {}".format(
-            dst.rsplit("/", 1)[-1], e))
-        if verifier:
-            return None
-
-    if verifier:
-        d = _graphe(maitre)
-        sorties = [o.get("property") for o in d.get("output_connections", [])]
-        log("A FAIRE", "{} -> {} | {} expression(s), sorties : {}".format(
-            court, dst.rsplit("/", 1)[-1], len(d.get("expressions", [])),
-            ", ".join(sorties)))
-        return None
+    # LA CIBLE EST LE MAITRE LUI-MEME : les 40 slots concernes passent tous par
+    # une INSTANCE, donc greffer dans le maitre est la seule facon de ne pas
+    # perdre leurs surcharges.
+    dst = cible["maitre"]
+    court = dst.rsplit("/", 1)[-1]
 
     if not unreal.EditorAssetLibrary.does_asset_exist(dst):
-        unreal.EditorAssetLibrary.duplicate_asset(maitre, dst)
-        print("CREATED: {}".format(dst))
-        log("CREATED", "{} (copie de {})".format(dst.rsplit("/", 1)[-1], court))
+        log("ABSENT", "{} -- pack non installe, cible ignoree".format(dst))
+        return None
+
+    # IDEMPOTENCE PAR CONSTAT, et elle est INDISPENSABLE ici : on ecrit dans du
+    # contenu de pack, donc un second passage qui ajouterait une seconde greffe
+    # abimerait l'original sans filet. On relit avant d'ecrire.
+    e = etat(dst, fonction)
+    if _saine(e):
+        log("DEJA", "{} porte la greffe (sorties : {})".format(
+            court, ", ".join(e["sorties"]) or "aucune"))
+        return dst
+
+    if verifier:
+        d = _graphe(dst)
+        sorties = [o.get("property") for o in d.get("output_connections", [])]
+        log("A FAIRE", "{} | {} expression(s), sorties : {} | etat {}".format(
+            court, len(d.get("expressions", [])), ", ".join(sorties), e))
+        return None
+
+    # --- UNE SAUVEGARDE AVANT DE TOUCHER AU PACK ----------------------------
+    #
+    # On ecrit dans un materiau d'un pack PAYANT, non versionne. Une case a
+    # cocher se decoche ; une greffe de graphe ne se defait pas, et sans filet
+    # il faudrait REINSTALLER le pack. Le depot a deja ce patron --
+    # `M_WorldseedLandscape_SauvegardeAvantDLWE`, gardee hors du depot comme
+    # l'original.
+    #
+    # ELLE NE SE REFAIT JAMAIS : si une sauvegarde existe, c'est qu'un passage
+    # precedent a deja modifie le maitre, et la REMPLACER figerait l'etat
+    # GREFFE comme s'il etait l'original.
+    secours = "{0}/{1}_AvantNeige".format(DEST, court)
+    if not unreal.EditorAssetLibrary.does_asset_exist(secours):
+        if unreal.EditorAssetLibrary.duplicate_asset(dst, secours) is None:
+            log("ERROR", "sauvegarde impossible pour {} -- on NE GREFFE PAS "
+                         "sans filet".format(court))
+            return None
+        print("CREATED: {}".format(secours))
+        log("SECOURS", "{} sauvegarde avant greffe".format(court))
+    else:
+        log("SECOURS", "{} a deja une sauvegarde, elle est GARDEE telle "
+                       "quelle".format(court))
 
     avant = _graphe(dst)
     sorties = {o.get("property"): o for o in avant.get("output_connections", [])}
