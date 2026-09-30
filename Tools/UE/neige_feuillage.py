@@ -172,6 +172,68 @@ CIBLES = [
      "suffixe": "FalaiseGlobal", "fonction": FN_SURFACE},
     {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Master_Material_Prop",
      "suffixe": "PropSFL", "fonction": FN_SURFACE},
+
+    # --- TOUT LE RESTE, D'APRES L'INVENTAIRE COMPLET DU 30 SEPTEMBRE 2026 ----
+    #
+    # ON A CESSE D'Y ALLER FAMILLE PAR FAMILLE AU FIL DES CAPTURES -- la foret,
+    # puis la savane, puis Egypt. L'inventaire releve TOUS les maitres atteints
+    # par le semis et par les pans, avec le nombre de maillages de chacun : c'est
+    # lui qui dit ce qui reste, et dans quel ordre.
+    #
+    # LA PIERRE ET LE BOIS prennent `Surface_Weather_Effects`, qui sait les
+    # gouttes et le ruissellement ; LA PLANTE prend `Foliage_Weather_Effects`,
+    # qui sait masquer la neige sous une feuille et par la courbure.
+    #
+    # `M_log_stump` PORTE DES CAILLOUX malgre son nom -- SM_small_stone_01 a 04 --
+    # et c'est pourquoi il prend la fonction de SURFACE. On classe sur ce que le
+    # materiau HABILLE, releve, pas sur ce que son nom suggere.
+    {"maitre": "/Game/Stylized_Forest/Materials/trees/M_log_stump",
+     "suffixe": "CaillouSF", "fonction": FN_SURFACE},
+    {"maitre": "/Game/Stylized_Forest/Materials/stones/M_stone",
+     "suffixe": "PierreSF", "fonction": FN_SURFACE},
+    {"maitre": "/Game/Stylized_Egypt/Materials/stones_materials/M_stones",
+     "suffixe": "PierreEGY", "fonction": FN_SURFACE},
+    {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Master_Wood_Branch",
+     "suffixe": "BrancheSFL", "fonction": FN_SURFACE},
+
+    {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Foliage_Flower_Master",
+     "suffixe": "FleurSFL", "fonction": FN_FEUILLAGE},
+    {"maitre": "/Game/Stylized_Forest/Materials/plants/M_plants",
+     "suffixe": "PlanteSF", "fonction": FN_FEUILLAGE},
+    {"maitre": "/Game/Stylized_Egypt/Materials/plants_materials/M_plants",
+     "suffixe": "PlanteEGY", "fonction": FN_FEUILLAGE},
+    {"maitre": "/Game/Stylized_Egypt/Materials/plants_materials/M_tree",
+     "suffixe": "ArbreEGY", "fonction": FN_FEUILLAGE},
+    # `M_Master_Flower` EST SORTI, ET C'EST UNE MESURE QUI L'A SORTI :
+    #
+    #     (Node MakeMaterialAttributes) Error on property Normal
+    #
+    # Ce qui alimente sa `Normal` n'entre pas dans la broche correspondante de
+    # l'emballage. Il n'avait PAS d'emballage avant la greffe -- j'en ai cree un
+    # et arme le drapeau -- donc le remettre d'aplomb a consiste a DESARMER
+    # `use_material_attributes` : ses connexions propriete par propriete, restees
+    # intactes, ont repris la main.
+    #
+    # POUR LE REPRENDRE il faudrait comprendre ce que sa normale produit, et
+    # sans doute l'adapter avant l'emballage -- donc toucher a son graphe. Trois
+    # maillages de fleurs sont en jeu : le detour n'est pas evident.
+    # {"maitre": ".../M_Master_Flower", "suffixe": "FleurGlobal",
+    #  "fonction": FN_FEUILLAGE},
+    {"maitre": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/Materials/M_Assets_MasterMat_Masked",
+     "suffixe": "AssetsMasque", "fonction": FN_FEUILLAGE},
+    {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Master_Grass",
+     "suffixe": "HerbeSFL", "fonction": FN_FEUILLAGE},
+
+    # ECARTE A DESSEIN : `M_Impostor_SimpleOffset`, 5 maillages. Un impostor est
+    # une IMAGE de l'objet vue de loin, pas l'objet : y appliquer de la neige
+    # calculee en espace monde donnerait un resultat qui ne correspond pas a ce
+    # que le vrai maillage montre de pres, et la BASCULE entre les deux se
+    # verrait. Il faudrait regenerer les impostors depuis les maillages greffes,
+    # ce qui est un autre chantier.
+    #
+    # ECARTE AUSSI : `WorldGridMaterial` sur `SFL:SM_Flower_2`. C'est le DAMIER
+    # du moteur -- ce maillage n'a pas de materiau propre, et c'est un defaut
+    # preexistant a signaler, pas une cible de greffe.
 ]
 
 # LES BROCHES DE `MakeMaterialAttributes` PORTENT LE NOM DE LEUR PROPRIETE,
@@ -292,6 +354,31 @@ def _saine(e):
             and e["interrupteurs"])
 
 
+def _migrer_sauvegarde(cible, court):
+    """Renommer une sauvegarde nommee d'apres le MATERIAU vers le SUFFIXE.
+
+    POURQUOI ELLE EXISTE. Les premieres sauvegardes portaient le nom court du
+    materiau, et il existe un `M_plants` chez Stylized_Forest ET un chez
+    Stylized_Egypt : leurs sauvegardes se sont ECRASEES, et le second a ete
+    greffe en croyant avoir un filet qui appartenait au premier. Le suffixe,
+    lui, est unique par construction.
+
+    SANS CETTE MIGRATION, le prochain passage croirait n'avoir aucune
+    sauvegarde et en creerait une depuis l'etat DEJA GREFFE -- il remplacerait
+    un bon filet par un filet inutile, EN SILENCE. C'est pire que pas de
+    migration du tout.
+    """
+    neuf = "{0}/{1}_AvantNeige".format(DEST, cible["suffixe"])
+    ancien = "{0}/{1}_AvantNeige".format(DEST, court)
+    if ancien == neuf:
+        return
+    if (unreal.EditorAssetLibrary.does_asset_exist(ancien)
+            and not unreal.EditorAssetLibrary.does_asset_exist(neuf)):
+        if unreal.EditorAssetLibrary.rename_asset(ancien, neuf):
+            log("MIGRE", "sauvegarde {} -> {}".format(
+                ancien.rsplit("/", 1)[-1], neuf.rsplit("/", 1)[-1]))
+
+
 def greffer_une(cible, verifier):
     fonction = cible["fonction"]
     # LA CIBLE EST LE MAITRE LUI-MEME : les 40 slots concernes passent tous par
@@ -307,6 +394,12 @@ def greffer_une(cible, verifier):
     # IDEMPOTENCE PAR CONSTAT, et elle est INDISPENSABLE ici : on ecrit dans du
     # contenu de pack, donc un second passage qui ajouterait une seconde greffe
     # abimerait l'original sans filet. On relit avant d'ecrire.
+    # LA MIGRATION DES SAUVEGARDES SE FAIT AVANT TOUT RETOUR ANTICIPE, et c'est
+    # une correction : placee plus bas, elle ne s'executait JAMAIS puisque les
+    # materiaux deja sains sortent ici meme. Un correctif qu'on ne peut pas
+    # atteindre ne corrige rien.
+    _migrer_sauvegarde(cible, court)
+
     e = etat(dst, fonction)
     if _saine(e):
         log("DEJA", "{} porte la greffe (sorties : {})".format(
@@ -331,7 +424,19 @@ def greffer_une(cible, verifier):
     # ELLE NE SE REFAIT JAMAIS : si une sauvegarde existe, c'est qu'un passage
     # precedent a deja modifie le maitre, et la REMPLACER figerait l'etat
     # GREFFE comme s'il etait l'original.
-    secours = "{0}/{1}_AvantNeige".format(DEST, court)
+    # ⚠ LE NOM DE LA SAUVEGARDE VIENT DU SUFFIXE, PAS DU NOM DU MATERIAU, et
+    # c'est un defaut paye comptant le 30 septembre 2026. Il existe un
+    # `M_plants` chez Stylized_Forest ET un chez Stylized_Egypt : leurs
+    # sauvegardes se sont ECRASEES, et le second a ete greffe en croyant avoir
+    # un filet qui appartenait au premier.
+    #
+    # Le precedent l'avait pourtant ecrit : « DEUX MATERIAUX PEUVENT PORTER LE
+    # MEME NOM. Comparer des CHEMINS, jamais des `get_name()`. » Je comparais
+    # bien des chemins pour les CIBLES, et j'ai construit le nom du FICHIER de
+    # sauvegarde a partir du nom court. Le suffixe, lui, est unique par
+    # construction -- c'est sa raison d'etre.
+    secours = "{0}/{1}_AvantNeige".format(DEST, cible["suffixe"])
+
     if not unreal.EditorAssetLibrary.does_asset_exist(secours):
         copie = unreal.EditorAssetLibrary.duplicate_asset(dst, secours)
         if copie is None:
@@ -348,6 +453,16 @@ def greffer_une(cible, verifier):
                          "sans filet".format(court))
             return None
         print("CREATED: {}".format(secours))
+        # ⚠ SI LE MATERIAU EST DEJA GREFFE, CE « FILET » CAPTURE L'ETAT GREFFE
+        # et ne vaut rien comme point de retour. Le cas se produit pour ce qui a
+        # ete greffe AVANT la correction du nommage -- concretement le
+        # `M_plants` d'Egypte. On le DIT plutot que de laisser croire a une
+        # protection : le vrai retour en arriere est de rebrancher l'emballage
+        # sur la racine d'attributs, ce qui defait la greffe sans rien detruire.
+        if e["fonction"] > 0:
+            log("ATTENTION", "{} etait DEJA greffe : cette sauvegarde capture "
+                             "l'etat greffe et n'est PAS un point de retour"
+                .format(court))
         log("SECOURS", "{} sauvegarde avant greffe".format(court))
     else:
         log("SECOURS", "{} a deja une sauvegarde, elle est GARDEE telle "
