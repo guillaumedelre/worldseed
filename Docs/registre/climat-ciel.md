@@ -2867,3 +2867,85 @@ pas une regle d'inference »*.
 
 Commit `2bb4e35`, 158 oracles verts -- aucun n'a bouge, ce chantier n'ayant rien
 ajoute a garder.
+
+### Le statut meteo du pion, et la temperature qui ne nous suivait pas (30 septembre 2026)
+
+**LE CHANTIER A COMMENCE PAR UN RELEVE, ET C'EST CE RELEVE QUI A TROUVE UN
+DEFAUT VIEUX DE PLUSIEURS SEANCES.** `Actor_Weather_Status` ne fabrique pas de
+temperature : il la LIT sur l'acteur meteo et diffuse ses evenements de froid et
+de chaud sur des seuils. La question du prerequis etait donc « cette temperature
+est-elle vivante, et suit-elle notre climat ». La reponse fut oui, et non.
+
+    SANS recalcul  plage 29..64 F ( -1,7..17,8 C)  temperature  52,8 F = +11,6 C
+    AVEC recalcul  plage  3..14 F (-16,1..-10,0 C) temperature  10,3 F = -12,1 C
+
+**A 77,5 DEGRES DE LATITUDE, LE PACK ANNONCAIT +11,6 C QUAND NOTRE CLIMAT DISAIT
+-12,1 C.** Et 29..64 Fahrenheit est, a un degre pres, son defaut de printemps
+livre (30..65) : assez credible pour qu'un monde entier passe pour cale en
+tournant sur les valeurs d'usine. C'est le piege [11] du depot, onzieme
+exemplaire -- poser une variable Blueprint par reflexion ne declenche aucun
+rappel. Nos quatre plages etaient POSEES, relues identiques colonne par colonne,
+et `UDW_Temperature_Manager` les avait mises en cache une fois pour toutes.
+
+**LA PISTE QU'IL NE FAUT PAS RETENTER** : ce n'est ni un `OnRep_`, ni le patron
+`Static Properties - <categorie>` qui avait servi trois fois. Les **408
+fonctions** de l'acteur meteo ne contiennent AUCUN « Static Properties -
+Temperature ». Le recalcul vit sur le COMPOSANT `UDW_Temperature_Manager`, sous
+`Update Temperature Range` -- d'ou une brique neuve au pont,
+`AppelerSansArgumentSur`, `CallFunction` ne voyant que les deux acteurs.
+
+#### ⚠ ET MON PREMIER RELEVE A SUIVI LA DOCUMENTATION VERS UN CHAMP MORT
+
+La chaine que la doc designe est `Ultra_Dynamic_Weather` ->
+`Temperature Weather State` -> `Temperature`. L'objet est bien present en partie
+-- il est nul au defaut de classe -- mais **son champ `Temperature` reste a
+ZERO** pendant que le gestionnaire tourne. Ma premiere ligne de journal mettait
+ce zero EN TITRE, converti depuis le Fahrenheit : « temperature : -17,8 C ».
+
+Un chiffre faux et parfaitement plausible. La valeur vivante est
+`Last Temperature`, **sur le composant**, et c'est en imprimant le nom du
+gestionnaire -- pas seulement sa presence -- que le releve s'est corrige
+lui-meme. *Un compte de composants n'est pas une mesure d'effet ; il faut LIRE
+sur eux.*
+
+#### LE COMPOSANT, LUI, A MARCHE DU PREMIER COUP
+
+Monte sur le pion par le pilote de ciel, comme les deux `DLWE_Interaction` des
+pieds et pour la meme raison -- le pion est remplace a chaque mort. **Le nom
+trompe** : « Actor » designe l'acteur SUIVI, et l'etiquette `ParentClass` du
+registre dit `ActorComponent`. Je m'etais corrige a tort dans l'autre sens avant
+de la lire.
+
+Quatre passages a huit secondes, sous neige forcee 10 :
+
+    neige 1.000  vent 0.947  recoit neige 1.000  -15.7 C  sous l'eau faux
+    neige 0.000  vent 1.000                      +11.5 C  sous l'eau VRAI
+    mouille 0.911 neige 0.178 vent 1.000         -15.0 C  sous l'eau faux
+    mouille 0.791 neige 0.418 vent 0.956          +1.5 C
+
+    diffuses : pluie NON  neige OUI  poussiere NON  vent OUI
+    temperature : froid a -15 C, neutre a +1,5 C et a +11,5 C
+
+**LES EVENEMENTS PARTENT AVEC LA BONNE POLARITE**, et c'est la moitie qui
+compte : pluie et poussiere restent muettes parce qu'elles valent zero, et le
+seuil de froid du pack -- 25 Fahrenheit, soit -3,9 Celsius -- discrimine
+exactement ou il le dit. `ED_Temperature State` vaut -1 tant que rien n'a ete
+diffuse : un cas temoin gratuit, impossible a confondre avec froid, neutre ou
+chaud.
+
+**ET LE PACK MOUILLE LE PERSONNAGE EN SORTANT DE L'EAU**, sans une goutte de
+pluie : `mouille 0,911` au passage qui suit `sous l'eau VRAI`. Comportement
+juste, que je ne cherchais pas -- `Wet Surface When Exiting Water` est arme par
+defaut. Troisieme fois cette semaine qu'une brique du pack fait plus que ce que
+j'en attendais.
+
+**CE QU'AUCUN ORACLE NE GARDE, et c'est ecrit dans l'en-tete** : la classe est du
+contenu de pack payant. Ni le chemin, ni `UDW`, ni `Bind to UDW` ne se testent
+hors contenu. En revanche les deux briques du pont ont leurs oracles, temoins
+montes puis retires -- bornes echangees et fonction absente acceptee ont fait
+tomber DEUX oracles, eux seuls, sur les 162.
+
+**RIEN NE CONSOMME ENCORE LES TREIZE DELEGUES** : c'est un arbitrage ouvert, pas
+un oubli.
+
+Commits `98b3af5` et `e42ff87`.
