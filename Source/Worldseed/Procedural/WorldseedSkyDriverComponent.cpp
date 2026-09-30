@@ -250,6 +250,18 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 			// rend evaluees. L'armer avant reviendrait a orienter une voute sur
 			// une latitude que rien ne lit encore.
 			ArmerLesEtoilesReelles(*Rules);
+
+			// LE VOILE DE VENT N'A PAS D'ARMEMENT, ET C'EST UNE MESURE QUI L'A
+			// DECIDE. J'en avais ecrit un -- trois appels d'application, comme
+			// pour le soleil et les etoiles -- en supposant que ce pack livre
+			// ses briques eteintes, six precedents a l'appui. Le TEMOIN l'a
+			// annule : avec et sans armement, l'intensite rend 0,442 AU CHIFFRE
+			// PRES pour brume 8 et vent 9. Le pack l'allumait deja.
+			//
+			// La regle du depot le disait dans les deux sens : « on ne suppose
+			// pas qu'une brique est eteinte, on le VERIFIE -- cinq precedents ne
+			// font pas une regle d'inference ». Le code mort est retire ; seul
+			// le RELEVE reste, parce que c'est lui qui a prouve.
 			PoserNiveauDeLEau(*Rules);
 			AmbianceRegles = FWorldseedAmbianceRegles::FromRules(*Rules);
 			ArmerLeSon(*Rules);
@@ -719,6 +731,11 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 				NeigeMat, bNeigeMatLue ? TEXT("") : TEXT(" ILLISIBLE"),
 				PoussiereMat, bPoussMatLue ? TEXT("") : TEXT(" ILLISIBLE"),
 				Current.Rain, Current.Snow, Current.Dust);
+
+			// LE VOILE SE RELIT ICI, DIFFERE COMME LES EFFETS D'ECRAN : son
+			// intensite a une duree de montee, et la lire a l'armement rendrait
+			// zero pour une bonne raison.
+			ReleverLeVoileDeVent();
 
 			// --- ET LE SON : CE QUI JOUE, NON CE QU'ON A POSE ---------------
 			//
@@ -2650,4 +2667,34 @@ void UWorldseedSkyDriverComponent::PiloterLesMatieres(
 			bStatique ? TEXT("appelee") : TEXT("ABSENTE"),
 			Relue, bRelu ? TEXT("") : TEXT(" (ILLISIBLE)"));
 	}
+}
+
+void UWorldseedSkyDriverComponent::ReleverLeVoileDeVent() const
+{
+	double Courante = 0.0, Cible = 0.0, Echelle = 0.0;
+	const bool bCouranteLue = Bridge.ReadNumber(
+		TEXT("Current PPWF Intensity"), Courante);
+	Bridge.ReadNumber(TEXT("Target PPWF Intensity"), Cible);
+	Bridge.ReadNumber(TEXT("PPWF Intensity Scale"), Echelle);
+
+	bool bActif = false;
+	Bridge.ReadBool(TEXT("Post Process Wind Fog Active"), bActif);
+	const UObject* const Composant = FWorldseedUdsBridge::LireObjet(
+		Bridge.MeteoBrute(), TEXT("PPWF Post Process"));
+	const UObject* const Mid = FWorldseedUdsBridge::LireObjet(
+		Bridge.MeteoBrute(), TEXT("Post Process Wind Fog MID"));
+
+	// L'INTENSITE COURANTE EST LA MESURE, le reste est du contexte. Et l'on
+	// donne la METEO avec elle : une intensite nulle par ciel clair et sans vent
+	// est le comportement JUSTE, alors que la meme par brume 10 serait un
+	// defaut. Sans ce contexte les deux se liraient pareil.
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Worldseed] voile : intensite %.3f%s (cible %.3f, echelle %.2f) ")
+		TEXT("| actif %s, composant %s, materiau %s | pour brume %.1f pluie ")
+		TEXT("%.1f neige %.1f vent %.1f"),
+		Courante, bCouranteLue ? TEXT("") : TEXT(" ILLISIBLE"), Cible, Echelle,
+		bActif ? TEXT("VRAI") : TEXT("faux"),
+		Composant ? TEXT("present") : TEXT("NUL"),
+		Mid ? TEXT("present") : TEXT("NUL"),
+		Current.Fog, Current.Rain, Current.Snow, Current.WindIntensity);
 }

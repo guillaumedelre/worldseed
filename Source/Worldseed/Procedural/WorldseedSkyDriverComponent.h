@@ -250,6 +250,63 @@ private:
 	void ArmerLesEtoilesReelles(const class UWorldseedRules& Rules);
 
 	/**
+	 * LE VOILE DE VENT EN POST-TRAITEMENT.
+	 *
+	 * CE QUE C'EST : du bruit de brume autour de la camera, qui derive avec le
+	 * vent. Il donne de la MATIERE a l'air -- une averse ou une bourrasque
+	 * cessent d'etre des particules devant un vide, et le pack le donne pour
+	 * bien moins cher que du brouillard volumetrique.
+	 *
+	 * ⚠ ET SON INTERRUPTEUR N'EST PAS UN BOOLEEN, c'est une ENUMERATION --
+	 * `UDS_PPWFToggle` -- livree a `ENABLE_WITHOUT_VOLUMETRIC_FOG`. Elle est
+	 * donc DEJA sur « active », ce qui aurait fait conclure « rien a faire » a
+	 * qui n'aurait lu qu'elle.
+	 *
+	 * CE SONT LES DRAPEAUX DERIVES QUI DISENT LA VERITE, septieme fois dans ce
+	 * pack. Releve du 30 septembre 2026 :
+	 *
+	 *     Post Process Wind Fog Active  = False
+	 *     Post Process Wind Fog Enabled = False
+	 *     PPWF Post Process             = None   (le composant n'existe pas)
+	 *     Post Process Wind Fog MID     = None   (ni le materiau)
+	 *     Current / Target PPWF Intensity = 0,0
+	 *
+	 * LES CINQ INTENSITES, ELLES, SONT DEJA POSEES : 1,4 pour la brume, la
+	 * pluie, la neige et la poussiere, 0,7 pour le vent. Le voile suivra donc
+	 * notre meteo sans qu'on ecrive une valeur -- c'est la chaine qui n'est pas
+	 * montee, pas le reglage qui manque.
+	 *
+	 * ON APPELLE LES TROIS VOIES ET L'ON DIT LAQUELLE A PRIS : le rappel de
+	 * l'enumeration, la fonction de mise a jour du pack, et
+	 * `Static Properties - Post Process Wind Fog`. Ce patron a suffi trois fois
+	 * -- soleil, etoiles, tempetes -- mais on le VERIFIE encore.
+	 *
+	 * ET LA PREUVE EST UN EFFET, PAS UN DRAPEAU : `Current PPWF Intensity` doit
+	 * MONTER quand il y a de la brume ou du vent, et le composant de
+	 * post-traitement doit cesser d'etre nul.
+	 */
+	/**
+	 * ⚠ IL N'Y A PAS D'ARMEMENT, ET C'EST UNE MESURE QUI L'A DECIDE.
+	 *
+	 * J'en avais ecrit un, sur le modele du soleil et des etoiles. Le TEMOIN
+	 * `-WorldseedVoile=0` l'a annule : avec et sans, l'intensite rend **0,442
+	 * au chiffre pres** pour brume 8 et vent 9. Le pack allumait deja le voile,
+	 * et les cinq intensites -- 1,4 pour brume, pluie, neige et poussiere, 0,7
+	 * pour le vent -- etaient deja posees. Il suit donc notre meteo sans qu'on
+	 * ecrive rien.
+	 *
+	 * CE QUI M'A EGARE : le defaut de CLASSE donne `Post Process Wind Fog
+	 * Active` a faux et le composant a nul, alors que l'INSTANCE du niveau les
+	 * monte au demarrage. Distinction que ce depot avait deja payee sur le son.
+	 *
+	 * Seul ce releve reste, parce que c'est lui qui a prouve -- et parce qu'une
+	 * intensite nulle par ciel clair est le comportement JUSTE, tandis que la
+	 * meme par brume 10 serait un defaut : sans le contexte meteo, les deux se
+	 * liraient pareil.
+	 */
+	void ReleverLeVoileDeVent() const;
+
+	/**
 	 * Pose `Global Water Level`, que `Use UDS Water Level` attend.
 	 *
 	 * La fonction est DEJA armee sur l'acteur meteo -- c'est son defaut -- mais
