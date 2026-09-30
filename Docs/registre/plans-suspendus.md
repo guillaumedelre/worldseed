@@ -636,3 +636,80 @@ la nappe à WPO, le décal animé.
 12. **Les valeurs des treize préréglages** viennent d'un parsing binaire des
     `.uasset`, validé sur un témoin connu mais contraire à la règle du projet.
     **À confirmer par A2 avant d'être gravé comme `SOURCE`.**
+
+---
+
+## Ce que le statut meteo du pion doit faire de ce qu'il sait (plan du 30 septembre 2026)
+
+**ETAT : le composant EST BRANCHE ET MESURE** (commit `e42ff87`, recit dans
+`climat-ciel.md` au 30 septembre 2026). Ce qui est suspendu n'est pas le
+branchement, c'est le CONSOMMATEUR : rien ne s'abonne aux treize delegues. Le
+proprietaire a demande de reprendre a la seance suivante, sans trancher.
+
+**A REMESURER AVANT D'EXECUTER** : que `Actor_Weather_Status` soit toujours pose
+sur le pion (chercher « statut meteo : pose sur » dans le journal), et que les
+evenements partent toujours -- la ligne de releve rend « diffuses : pluie ...
+neige ... » et « temperature froid / neutre / chaud ».
+
+### Ce qui est ETABLI, et qui n'est donc plus a chercher
+
+| fait | valeur mesuree le 30 septembre 2026 |
+|---|---|
+| la classe | `Actor_Weather_Status`, un **`ActorComponent`** malgre son nom |
+| son chemin | `/Game/UltraDynamicSky/Blueprints/Weather_Effects/Actor_Weather_Status.Actor_Weather_Status_C` |
+| ses sorties | `Wet`, `Snowy`, `Dusty`, `Wind`, `Hit by Rain/Snow/Dust`, `Composite Exposure`, `Temperature (C)` et `(F)`, `Actor Underwater` |
+| ses delegues | 13 : expose / plus expose a pluie, neige, poussiere, vent (8) ; froid, neutre, chaud (3) ; entree et sortie de l'eau (2) |
+| ses seuils | pluie / neige / poussiere 0,1 ; vent 0,5 ; froid **25 F** (-3,9 C) ; chaud **95 F** (35,0 C) |
+| son cout | `Status Query Period` 1,25 s ; `Update Values Period` 0,05 s ; `Max Trace Distance` 4000 cm ; `Max Active DIstance` 5000 cm |
+| ses traces | `Exposure Test Bounds` = ALL_COLLIDING_COMPONENTS_BOUNDS, canal `Visibility` |
+
+### LES TROIS VOIES PRESENTEES, avec ce qui les separe
+
+**1. Habiller le personnage.** Le composant tient `Dynamic Material Instances`,
+`Max Wet Value` 1,0, `Max Snowy Value` 1,0, `Max Dusty Value` **0,5** -- il sait
+donc mouiller et enneiger les materiaux du personnage LUI-MEME. Il faut greffer
+le materiau du mannequin avec la fonction meteo du pack, **exactement la recette
+de `Tools/UE/neige_feuillage.py`** appliquee aux 15 maitres de feuillage.
+
+- *Pour* : VISIBLE a l'oeil, donc validable par le proprietaire.
+- *Contre* : risque deja paye -- une greffe incomplete met le sujet en damier
+  gris, parce que `Apply Snow / Dust` et `Apply Wetness` sont des booleens
+  statiques SANS defaut. **Un patron prouve se copie EN ENTIER.** Et la
+  sauvegarde doit passer par `save_loaded_asset`, `duplicate_asset` ne creant
+  qu'en memoire.
+- *Note d'arbitrage* : `Max Dusty Value` a 0,5 est le defaut du pack. Le depot a
+  ECARTE le depot de poussiere sur les SURFACES (`Material Dust Coverage`) par
+  arbitrage du proprietaire -- a ne pas confondre : ici il s'agit du
+  PERSONNAGE, et l'arbitrage n'a pas ete rendu pour lui.
+
+**2. L'haleine gelee.** `Breath Systems` (TArray de NiagaraComponent, vide),
+`Controlling Breath Systems` (faux) et la fonction `Check for Particles to
+Control` vivent sur CE composant. L'inventaire du ciel porte « Haleine gelee »
+comme une ligne SEPAREE ; la meme brique la porte probablement.
+
+- *A verifier d'abord, et ce n'est pas mesure* : le composant CONTROLE des
+  systemes Niagara qu'il trouve sur l'acteur -- il n'en fabrique pas. Il faut
+  donc trouver le systeme d'haleine dans le pack (chercher « breath » au
+  registre d'assets) et le poser sur le pion.
+- *Pour* : moins cher que l'habillage, et fermerait deux lignes d'un coup.
+- *Contre* : visible seulement par froid. Notre point de depart polaire le
+  fournit -- la mesure du jour donne -15,7 C -- mais un depart tempere ne le
+  montrerait pas, donc le temoin doit forcer l'heure ET le lieu.
+
+**3. Brancher les delegues sur Worldseed.** Un abonne C++ exposant au jeu les
+quatre expositions, la temperature locale et les seuils.
+
+- *Pour* : c'est la « porte du gameplay » proprement dite.
+- *Contre* : **il n'y a rien derriere la porte.** Aucun systeme de survie
+  n'existe. Le resultat serait invisible, non validable a l'oeil, et du code que
+  rien n'appelle -- ce que ce depot reproche a une note qui survit a ce qu'elle
+  decrit.
+
+### L'INCERTITUDE QUI N'A PAS ETE LEVEE
+
+Le champ `Temperature Weather State.Temperature` de l'acteur meteo reste a ZERO
+alors que le gestionnaire tourne. On sait que ce n'est pas la valeur vivante --
+elle est sur `UDW_Temperature_Manager.Last Temperature` -- mais **on ne sait pas
+a quoi ce champ sert**, ni s'il se remplit dans un cas qu'on n'a pas visite
+(volume de temperature, interieur, surcharge par etat meteo). Le releve
+l'imprime et l'ETIQUETTE, ce qui suffit pour ne pas se faire reprendre par lui.
