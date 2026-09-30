@@ -143,6 +143,35 @@ CIBLES = [
     #  "fonction": FN_FEUILLAGE},
     {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Leaf_Master",
      "suffixe": "FeuilleSFL", "fonction": FN_FEUILLAGE},
+
+    # --- LES TROIS QUI HABILLENT CE QU'ON VOIT EN SAVANE --------------------
+    #
+    # AJOUTES APRES UNE CAPTURE DU PROPRIETAIRE, qui ne montrait AUCUN
+    # changement : les trois cibles precedentes appartiennent a
+    # `StylizedForestLandscape` -- bouleaux, chenes, pins, lierre -- et la scene
+    # etait une savane. Releve des maillages de l'image :
+    #
+    #     SM_PalmTree  ecorce  MI_Palm_Bark -> M_Assets_MasterMat
+    #                  palmes  MI_Palm_Leaf -> M_Master_Leaf  (sorti, float4)
+    #     SM_Rock_1            MI_Rock_1    -> M_Assets_MasterMat
+    #     SM_Rock_2            MI_Rock_2    -> M_Master_Cliff_Mat
+    #                          MI_Main_Stone_2 -> M_Master_Material_Prop
+    #
+    # `M_Assets_MasterMat` est donc le plus gros gisement du pack : ecorce ET
+    # rochers. Et les deux premiers sont les plus SIMPLES a greffer -- aucune
+    # connexion propriete par propriete, donc une insertion pure.
+    #
+    # LES DEUX PREMIERS LISENT LA RVT (mesure : 2 et 3 echantillons, dont dans
+    # `MF_RVT`), et ce n'est PAS un conflit : la teinte du sol alimente
+    # `BaseColor` en amont, puis traverse la fonction de neige. Les deux se
+    # composent. Le conflit que je redoutais venait de `materiaux_forces`, qui
+    # n'impose qu'un materiau -- il est mort avec la greffe sur place.
+    {"maitre": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/Materials/M_Assets_MasterMat",
+     "suffixe": "AssetsGlobal", "fonction": FN_SURFACE},
+    {"maitre": "/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Global/Materials/M_Master_Cliff_Mat",
+     "suffixe": "FalaiseGlobal", "fonction": FN_SURFACE},
+    {"maitre": "/Game/Orasot_Bundle/StylizedForestLandscape/Materials/M_Master_Material_Prop",
+     "suffixe": "PropSFL", "fonction": FN_SURFACE},
 ]
 
 # LES BROCHES DE `MakeMaterialAttributes` PORTENT LE NOM DE LEUR PROPRIETE,
@@ -326,19 +355,11 @@ def greffer_une(cible, verifier):
 
     avant = _graphe(dst)
     sorties = {o.get("property"): o for o in avant.get("output_connections", [])}
-    if not sorties:
-        log("ERROR", "{} n'a AUCUNE sortie branchee : greffe impossible".format(dst))
-        return None
-
     # CE QU'ON EMBALLE : les sorties reellement branchees, moins celles qui
     # n'ont rien a voir avec la neige. Emballer ce qui n'existe pas ferait des
     # connexions refusees et un compteur faux.
     a_emballer = [p for p in sorties
                   if p in BROCHES and p not in HORS_EMBALLAGE]
-    if "BaseColor" not in a_emballer:
-        log("ERROR", "{} n'a rien sur BaseColor : la neige n'aurait rien a "
-                     "colorer".format(dst))
-        return None
 
     # ON INSERE, ON N'AJOUTE PAS -- ET C'EST UNE CORRECTION DE MA PREMIERE
     # VERSION. Les materiaux du pack portent DEJA un `MakeMaterialAttributes`
@@ -352,6 +373,26 @@ def greffer_une(cible, verifier):
     # par propriete ne mentionne pas. On reprend donc le SIEN.
     existants = [e for e in avant.get("expressions", [])
                  if e.get("class") == "MakeMaterialAttributes"]
+
+    # ⚠ LES DEUX EXIGENCES CI-DESSOUS NE VALENT QUE S'IL FAUT CREER L'EMBALLAGE,
+    # et mon premier jet les imposait TOUJOURS -- ce qui refusait les materiaux
+    # les plus interessants sans que je le sache.
+    #
+    # MESURE DU 30 SEPTEMBRE 2026 : `M_Assets_MasterMat` -- l'ecorce des
+    # palmiers ET les rochers du desert -- et `M_Master_Cliff_Mat` n'ont AUCUNE
+    # connexion propriete par propriete. Ils sont VRAIMENT cables en attributs :
+    # leur emballage alimente la racine, et il n'y a rien d'autre. Leur greffe
+    # est donc la plus SIMPLE de toutes -- une insertion sur un fil existant --
+    # et des garde-fous ecrits pour l'autre cas la refusaient.
+    if not existants:
+        if not sorties:
+            log("ERROR", "{} n'a ni emballage ni sortie branchee : greffe "
+                         "impossible".format(dst))
+            return None
+        if "BaseColor" not in a_emballer:
+            log("ERROR", "{} n'a rien sur BaseColor : la neige n'aurait rien a "
+                         "colorer".format(dst))
+            return None
 
     # UN APPEL DEJA PRESENT SE REUTILISE, IL NE SE DOUBLE PAS. Ce cas est celui
     # d'une greffe PRECEDENTE INCOMPLETE -- la mienne, qui avait oublie les deux
