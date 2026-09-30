@@ -682,6 +682,36 @@ void UWorldseedSkyDriverComponent::Drive(const FWorldseedClimateSample& Sample,
 					TEXT("l'elevation ne peut pas etre relevee"), *Bridge.Describe());
 			}
 
+			// --- LA METEO ATTEINT-ELLE LES MATIERES ? -----------------------
+			//
+			// AUJOURD'HUI SEUL LE SOL REAGIT : la neige tient au sol, les
+			// empreintes se creusent, et le feuillage reste vert par-dessus. Le
+			// pack pilote l'habillage des AUTRES surfaces par trois grandeurs --
+			// humidite, neige, poussiere -- et la question qui decide la taille
+			// du chantier est : MONTENT-ELLES TOUTES SEULES quand il neige ?
+			//
+			// Si oui, la moitie « pilotage » est deja faite et il ne reste que
+			// la greffe des fonctions de materiau. Si elles restent a zero, il
+			// faut aussi les ecrire -- avec leurs surcharges manuelles, comme la
+			// poussiere et le vent, sans quoi UDW ecrase au tick suivant.
+			double Mouille = 0.0, NeigeMat = 0.0, PoussiereMat = 0.0;
+			const bool bMouilleLu = Bridge.ReadNumber(
+				TEXT("Material Wetness"), Mouille);
+			const bool bNeigeMatLue = Bridge.ReadNumber(
+				TEXT("Material Snow Coverage"), NeigeMat);
+			const bool bPoussMatLue = Bridge.ReadNumber(
+				TEXT("Material Dust Coverage"), PoussiereMat);
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Worldseed] matieres : humidite %.3f%s, neige %.3f%s, ")
+				TEXT("poussiere %.3f%s | pour une meteo pluie %.1f neige %.1f ")
+				TEXT("poussiere %.1f -- si elles restent a zero, le pack ne les ")
+				TEXT("calcule pas et il faudra les ECRIRE"),
+				Mouille, bMouilleLu ? TEXT("") : TEXT(" ILLISIBLE"),
+				NeigeMat, bNeigeMatLue ? TEXT("") : TEXT(" ILLISIBLE"),
+				PoussiereMat, bPoussMatLue ? TEXT("") : TEXT(" ILLISIBLE"),
+				Current.Rain, Current.Snow, Current.Dust);
+
 			// --- ET LE SON : CE QUI JOUE, NON CE QU'ON A POSE ---------------
 			//
 			// Meme famille que les trois releves ci-dessus, et meme raison :
