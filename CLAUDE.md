@@ -406,6 +406,11 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
   faute de commencer par la — apres que la note eut ete ecrite pour deux autres.
   Devant un defaut visuel, la premiere question n'est pas « quel terme le
   produit » mais « dans quelle PASSE vit-il ».
+- **UNE IMAGE NE DIT PAS QUI LA PRODUIT.** Regardant une capture, j'ai ecrit
+  « de la neige s'accumule sur les troncs, c'est ma greffe qui marche » : le
+  releve a montre qu'AUCUN materiau de cette image n'etait greffe. Une capture
+  prouve QU'UN effet existe, jamais sa CAUSE — pour l'attribuer, relever les
+  materiaux, les acteurs, ou couper le terme et regarder a nouveau.
 - **[4] UNE FORME QUI N'A PAS ETE VUE N'EST PAS VALIDEE.** Une forme mesuree
   juste peut rendre a l'ecran une surface qui ne ressemble a rien. Un fichier
   ECRIT n'est pas une vue JUGEE, et un fichier PRESENT n'est pas un fichier
@@ -443,6 +448,25 @@ Le nombre entre crochets dit combien de fois le depot a paye celui-la.
 - **[12] TOUTE ECRITURE DE PARAMETRE DE MATERIAU DEPUIS LE C++ SE RELIT.** L'API
   ne signale pas un nom inconnu : pose sur un parametre absent, elle ne rend
   rien, ne journalise rien, et ne fait rien.
+- **UN PATRON PROUVE SE COPIE EN ENTIER.** Notre sol montrait
+  `MakeMaterialAttributes` + fonction + DEUX `StaticBool` sur ses entrees
+  obligatoires ; j'ai copie les deux premiers et laisse les booleens. Or leurs
+  entrees n'ont PAS de defaut : non branchees, elles font ECHOUER la
+  compilation, et tous les arbres du monde sont passes en damier gris. Un
+  releve qu'on lit comme une illustration alors qu'il est une SPECIFICATION.
+- **UN NOM DE FICHIER DERIVE SE BATIT SUR UNE CLE UNIQUE, jamais sur un nom
+  d'asset.** Deux materiaux peuvent porter le meme nom — il existe un
+  `M_plants` chez Stylized_Forest ET chez Stylized_Egypt — et mes sauvegardes
+  se sont ECRASEES : le second a ete greffe en croyant avoir un filet qui
+  appartenait au premier. Corollaire de la regle des chemins, qu'on croit
+  respecter en comparant les CIBLES tout en nommant les FICHIERS au plus court.
+- **UN CORRECTIF PLACE APRES UN RETOUR ANTICIPE NE S'EXECUTE JAMAIS.** La
+  migration des sauvegardes vivait sous le `return` des cas deja sains : elle
+  n'a jamais tourne, et rien ne le disait.
+- **`duplicate_asset` CREE EN MEMOIRE.** Sans `save_loaded_asset`, la copie
+  meurt avec le commandlet — on croit avoir un filet de securite qui n'existe
+  pas. Le signe : une ligne « sauvegarde creee » qui se reimprime a chaque
+  passage.
 - **UN `SOFTCLASS` DOUBLE D'UNE VARIANTE « HARD » VEUT DIRE QU'IL FAUT
   CHARGER.** Le pack livre alors une fonction `Load <nom> Class` a appeler
   AVANT : un spawn sur une classe nulle ne fait rien et ne le dit pas. Signe qui

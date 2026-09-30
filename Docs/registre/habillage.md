@@ -1879,3 +1879,104 @@ mesure**.
   est SAISONNIERE et revient a la meteo, qui pilote deja DLWE. Leur donner une
   part permanente les figerait sous la neige en plein ete.
 
+
+### La neige sur les arbres et les rochers (30 septembre 2026)
+
+**LE PROPRIETAIRE A VALIDE : « ok ca fonctionne ».** Le sol tenait la neige et
+les empreintes s'y creusaient depuis la veille, et tout le reste restait vert --
+defaut devenu voyant A CAUSE de ce qui avait reussi.
+
+**QUINZE MAITRES GREFFES**, `Surface_Weather_Effects` pour la pierre et le bois,
+`Foliage_Weather_Effects` pour la plante. Classes sur ce que le materiau
+HABILLE, releve, pas sur ce que son nom suggere : `M_log_stump` porte des
+CAILLOUX.
+
+#### LE PATRON VENAIT DE NOTRE PROPRE SOL
+
+    valeurs propriete par propriete -> MakeMaterialAttributes
+                                    -> fonction de meteo
+                                    -> racine d'attributs (MP_MaterialAttributes)
+    + DEUX StaticBool sur `Apply Snow / Dust` et `Apply Wetness`
+
+**ON GREFFE DANS LE MAITRE, SUR PLACE.** Mesure : sur les 91 references du
+catalogue, **40 slots sur 40** atteignent nos cibles par une INSTANCE, zero en
+direct. Forcer une copie du maitre par `materiaux_forces` aurait donc efface
+quarante jeux de surcharges -- `vegetation.py` portait la lecon en clair, « un
+pack se consomme par son instance, jamais par son maitre ». La greffe sur place
+n'a en outre AUCUNE table a maintenir : rejouer le point, c'est relancer le
+script.
+
+#### QUATRE DEFAUTS PAYES, ET TROIS AVAIENT LEUR REPONSE SOUS MES YEUX
+
+**LES DEUX INTERRUPTEURS OBLIGATOIRES.** `Apply Snow / Dust` et `Apply Wetness`
+sont des booleens STATIQUES dont `use_preview_value_as_default` vaut faux : non
+branches, ils font ECHOUER la compilation. Tous les arbres du monde sont passes
+en damier gris. Or le releve de notre sol, lu deux heures plus tot, montrait les
+deux `StaticBool`. **Un patron prouve se copie EN ENTIER** -- je l'avais lu comme
+une illustration alors que c'etait une specification. Regle en B3.
+
+**LA SAUVEGARDE N'ETAIT JAMAIS ECRITE.** `duplicate_asset` cree en MEMOIRE ;
+sans `save_loaded_asset` la copie mourait avec le commandlet. J'avais greffe
+dans des materiaux payants en croyant avoir un recours. Signe : la ligne
+« sauvegarde creee » se reimprimait a chaque passage.
+
+**LE NOM DE LA SAUVEGARDE VENAIT DU NOM COURT.** Il existe un `M_plants` chez
+Stylized_Forest ET chez Stylized_Egypt : leurs sauvegardes se sont ECRASEES. Le
+precedent l'avait ecrit -- « comparer des CHEMINS, jamais des get_name() » -- et
+je comparais bien des chemins pour les CIBLES tout en nommant les FICHIERS au
+plus court. Migration vers le SUFFIXE, unique par construction. **Residu assume :
+`PlanteEGY_AvantNeige` n'existe pas.**
+
+**ET LA MIGRATION NE TOURNAIT PAS**, placee sous le `return` des cas deja sains.
+Un correctif qu'on ne peut pas atteindre ne corrige rien.
+
+#### UNE IMAGE NE DIT PAS QUI LA PRODUIT
+
+Regardant la premiere capture du proprietaire, j'ai ecrit que « de la neige
+s'accumule sur le dessus des troncs, et c'est le comportement juste ». Le releve
+a montre qu'**AUCUN materiau de cette image n'etait greffe** : mes trois
+premieres cibles venaient de `StylizedForestLandscape` -- bouleaux, chenes,
+pins -- et la scene etait une SAVANE. J'attribuais a mon travail un effet que je
+n'avais pas produit. Regle en B2.
+
+C'est ce qui a fait passer la methode de la CAPTURE a l'INVENTAIRE : un releve
+de tous les maitres atteints par le semis et par les pans, avec leur poids en
+maillages, au lieu d'attendre qu'une image revele le manque suivant. Il a
+d'ailleurs repondu sans aller voir a la question des pans de falaise -- ils
+passent par `M_Master_Cliff_Mat`, greffe au tour precedent.
+
+#### LE PILOTAGE VIENT DE NOUS, ET UNE HYPOTHESE EST MORTE EN CHEMIN
+
+Le pack porte `Material Snow Coverage`, et son interrupteur `Simulate Changing
+Material State Over Time` arrive DEJA arme -- mais son drapeau derive
+`Material State Sim Active` vaut FAUX. J'ai suppose qu'il se mettrait a calculer
+des qu'un materiau consommerait ses fonctions. **Mesure APRES la greffe : encore
+0,000 sous une neige a 10 sur 10.** C'est donc a nous d'ecrire, avec la surcharge
+manuelle sans laquelle UDW ecrase au tick suivant.
+
+⚠ **L'ECHELLE N'EST PAS CELLE DES CURSEURS** : les huit curseurs meteo vont de 0
+a 10, cette grandeur de 0 a 1. Y poser 10 aurait sature et se serait lu comme un
+reglage qui marche, en interdisant toute neige PARTIELLE.
+
+**DEUX GRANDEURS NE SONT PAS ECRITES, ET CE SONT DES CHOIX.** La poussiere reste
+ecartee par arbitrage du proprietaire. L'humidite garde la simulation du pack --
+sechage en 90 s, trois fois plus lent sans soleil, la neige fondue y contribuant
+a 0,75 -- qu'un ratio de la pluie detruirait.
+
+#### CE QUI RESTE ECARTE, CHACUN AVEC SA MESURE
+
+| maitre | raison | maillages |
+|---|---|---|
+| `M_Master_Leaf` | `Arithmetic between types float4 and float3` | 16 |
+| `M_Master_Flower` | `(Node MakeMaterialAttributes) Error on property Normal` | 3 |
+| `M_Impostor_SimpleOffset` | un impostor est une IMAGE de l'objet, pas l'objet | 5 |
+
+Les deux premiers ont ete REMIS D'APLOMB sans rien supprimer : rebrancher
+l'emballage sur la racine pour l'un, desarmer `use_material_attributes` pour
+l'autre -- la greffe etant ADDITIVE, elle se defait.
+
+**ANOMALIE PREEXISTANTE SIGNALEE, NON TOUCHEE :** `SFL:SM_Flower_2` porte
+`WorldGridMaterial`, le damier du moteur. Ce maillage n'a pas de materiau propre.
+
+**NON CHIFFRE :** le cout shader de ces quinze greffes, pas plus que celui de
+DLWE ne l'a jamais ete. L'ATH affichait 157 FPS avant.
